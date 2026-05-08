@@ -7,6 +7,7 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from display import DISPLAY_MULTIPLIER
+from timeutil import local_now
 
 import alerts as _alerts
 import anomaly as _anomaly
@@ -279,7 +280,7 @@ def check_alerts(usage, users, online, now, month_key, *, _opener=None):
 
 def main():
     users = load_json(USERS_FILE, {})
-    now = datetime.now()
+    now = local_now()
     month_key = billing_month_key(now)
     traffic = get("/traffic?clear=1") or {}
     merge_traffic(traffic, get_xray_traffic())

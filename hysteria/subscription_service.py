@@ -17,6 +17,7 @@ import urllib.request
 import alerts
 import user_compat
 import xray_config
+from timeutil import local_now
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
@@ -194,9 +195,10 @@ def migrate_admin_password():
         save_json(META_FILE, meta)
 
 
-def month_key():
+def month_key(now=None):
     """Billing cycle resets on the 21st. Before the 21st belongs to the previous cycle."""
-    now = datetime.now()
+    if now is None:
+        now = local_now()
     if now.day >= 21:
         return now.strftime('%Y-%m')
     first = now.replace(day=1)
@@ -764,7 +766,7 @@ def _scale_daily_entry(entry):
 
 def daily_window_for_user(uid, daily, *, days=30, today=None):
     """Return [(YYYY-MM-DD, scaled_total_bytes), ...] oldest-first for `days`."""
-    today = today or datetime.now().date()
+    today = today or local_now().date()
     out = []
     for i in reversed(range(days)):
         dk = (today - timedelta(days=i)).strftime('%Y-%m-%d')
@@ -816,7 +818,7 @@ def render_daily_usage(host, days=14):
     users = load_json(USERS_FILE, {})
     daily = load_json(USAGE_DAILY_FILE, {})
 
-    today = datetime.now().date()
+    today = local_now().date()
     today_key = today.strftime('%Y-%m-%d')
     window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
     weekday_labels = ['一', '二', '三', '四', '五', '六', '日']
