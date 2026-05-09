@@ -65,6 +65,8 @@ BASE_CSS_BYTES = (_STATIC_DIR / 'admin.css').read_bytes()
 BASE_CSS_ETAG = '"' + hashlib.sha1(BASE_CSS_BYTES).hexdigest()[:16] + '"'
 ADMIN_POLL_JS_BYTES = (_STATIC_DIR / 'admin_poll.js').read_bytes()
 ADMIN_POLL_JS_ETAG = '"' + hashlib.sha1(ADMIN_POLL_JS_BYTES).hexdigest()[:16] + '"'
+USAGE_JS_BYTES = (_STATIC_DIR / 'usage.js').read_bytes()
+USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
 
 
 def load_json(path, default):
@@ -1713,6 +1715,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/static/admin-poll.js':
             self._serve_static(ADMIN_POLL_JS_BYTES, ADMIN_POLL_JS_ETAG,
+                               'application/javascript; charset=utf-8', send_payload)
+            return
+
+        if path == '/static/usage.js':
+            self._serve_static(USAGE_JS_BYTES, USAGE_JS_ETAG,
                                'application/javascript; charset=utf-8', send_payload)
             return
 
