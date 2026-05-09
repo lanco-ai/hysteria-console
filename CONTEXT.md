@@ -23,6 +23,10 @@ _Aliases in legacy code:_ `scaled` (in function names like `scaled_usage_for_use
 
 **Iron rule**: never compare or arithmetically combine raw and displayed values. Code that does is a bug. Z-score anomaly math is in raw; quota threshold checks and all UI strings are in displayed; the boundary is a one-way `× DISPLAY_MULTIPLIER` step, applied at the *latest* possible moment. If the relay topology ever changes, `DISPLAY_MULTIPLIER` must be re-measured — it is not arbitrary.
 
+### Time-zone for bucket keys
+
+All time-bucket keys (daily `YYYY-MM-DD`, hourly `YYYY-MM-DDTHH`, cycle `YYYY-MM`) are generated from `timeutil.local_now()` — explicit `Asia/Shanghai`. See [ADR-0003](docs/adr/0003-explicit-shanghai-tz-for-time-buckets.md). Audit log timestamps keep using `datetime.utcnow().isoformat()+"Z"` — separate concern.
+
 ### Cycle and reset operations
 
 **Cycle rollover** (`周期翻页`):
