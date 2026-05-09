@@ -878,6 +878,22 @@ def _aggregate_stats(*, now, online):
     }
 
 
+def _build_usage_json_payload(*, now):
+    """Compose the /admin/usage.json payload."""
+    online = load_json(ONLINE_SNAPSHOT_FILE, {})
+    series = _load_hourly_totals(now=now)
+    grid = _load_heatmap_grid(now=now)
+    stats = _aggregate_stats(now=now, online=online)
+    top = _top_n_users(n=5, window_hours=24, now=now)
+    return {
+        "ts": now.isoformat(timespec="seconds"),
+        "stats": stats,
+        "hourly_totals": series,
+        "heatmap": grid,
+        "top_n": top,
+    }
+
+
 def daily_window_for_user(uid, daily, *, days=30, today=None):
     """Return [(YYYY-MM-DD, scaled_total_bytes), ...] oldest-first for `days`."""
     today = today or local_now().date()
@@ -1576,6 +1592,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             self.send_response_body(200, render_reset_logs(host), 'text/html; charset=utf-8', send_payload)
+            return
+
+        if path == '/admin/usage.json':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            payload = _build_usage_json_payload(now=local_now())
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False),
+                'application/json; charset=utf-8', send_payload,
+            )
             return
 
         if path == '/admin/daily':
