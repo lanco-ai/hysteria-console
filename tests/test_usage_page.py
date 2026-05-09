@@ -98,3 +98,26 @@ def test_user_detail_json_unknown_user_returns_none(tmp_path, monkeypatch):
     assert ss._build_user_json_payload("nobody", now=now) is None
 
 
+def test_user_detail_page_renders_for_known_user(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    hourly = {now.strftime("%Y-%m-%dT%H"): {"alice": {"tx": 1, "rx": 1, "total": 2}}}
+    _seed_state(tmp_path, monkeypatch,
+                users={"alice": {"metered": True, "monthly_quota_bytes": 1_000_000_000}},
+                hourly=hourly, online={"alice": 1})
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    out = ss.render_user_detail_page("alice", "test-host")
+    assert out is not None
+    assert "alice" in out
+    assert 'class="hourly-bars"' in out
+    assert 'class="heatmap"' in out
+    assert 'href="/admin/usage"' in out
+
+
+def test_user_detail_page_returns_none_for_unknown_user(tmp_path, monkeypatch):
+    _seed_state(tmp_path, monkeypatch, users={"alice": {}})
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    out = ss.render_user_detail_page("nobody", "test-host")
+    assert out is None
+
+

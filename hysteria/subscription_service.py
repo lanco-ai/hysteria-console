@@ -1158,6 +1158,65 @@ def render_usage_page(host):
                               subtitle=f'{host} · {LOCAL_TZ_LABEL}')
 
 
+def render_user_detail_page(uid, host):
+    """Per-user drill page for /admin/user/<uid>. Returns None if user unknown."""
+    from charts import hourly_bars_svg, weekday_hour_heatmap_svg
+
+    now = local_now()
+    payload = _build_user_json_payload(uid, now=now)
+    if payload is None:
+        return None
+
+    peak_hour = (max(payload["hourly_bars"], key=lambda s: s["bytes"])["hour"]
+                 if any(s["bytes"] for s in payload["hourly_bars"]) else None)
+    bars_svg = hourly_bars_svg(payload["hourly_bars"], peak_hour=peak_hour)
+    heat_svg = weekday_hour_heatmap_svg(payload["heatmap"], current_hour_iso=_hour_key(now))
+
+    badge = '<span class="badge yellow">按量</span>' if payload["metered"] else '<span class="badge gray">免计</span>'
+    quota_line = (f'{fmt_bytes(payload["cycle_used_bytes"])} / '
+                  f'{fmt_bytes(payload["cycle_quota_bytes"])}'
+                  if payload["cycle_quota_bytes"] else
+                  f'{fmt_bytes(payload["cycle_used_bytes"])} (无限)')
+
+    alert_html = "".join(
+        f'<div class="alert-row">{html.escape(a.get("ts", ""))} — '
+        f'{html.escape(a.get("kind", ""))}: {html.escape(a.get("details", ""))}</div>'
+        for a in payload["recent_alerts"]
+    ) or '<div class="empty">无近期告警</div>'
+
+    content = f'''<a class="back-link" href="/admin/usage">← 返回 /admin/usage</a>
+<h2 class="user-title">{html.escape(uid)} {badge}
+  <span class="small">{payload["online"]} / {payload["max_devices"]} 在线</span>
+</h2>
+
+<div class="grid grid-3">
+  <div class="card stat"><div class="k">本周期</div><div class="v">{quota_line}</div></div>
+  <div class="card stat"><div class="k">今日</div><div class="v">{fmt_bytes(payload["today_bytes"])}</div></div>
+  <div class="card stat"><div class="k">当小时</div><div class="v">{fmt_bytes(payload["current_hour_bytes"])}</div></div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">7 天小时柱</div>
+  <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">个人 7×24 热图</div>
+  <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">最近告警</div>
+  <div style="margin-top:10px;">{alert_html}</div>
+</div>
+
+<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
+<script src="/static/usage.js" defer></script>
+'''
+    return render_admin_shell('usage', f'{uid} · 用量画像', content,
+                              subtitle=f'{host} · {LOCAL_TZ_LABEL}')
+
+
 def _render_daily_table_collapsed(host):
     """Inline-render the legacy 14-day per-user table, no shell wrapping."""
     days = 14
@@ -1768,6 +1827,20 @@ class Handler(BaseHTTPRequestHandler):
                 200, json.dumps(payload, ensure_ascii=False),
                 'application/json; charset=utf-8', send_payload,
             )
+            return
+
+        if path.startswith('/admin/user/') and not path.endswith('.json'):
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            uid = path[len('/admin/user/'):]
+            out = render_user_detail_page(uid, host)
+            if out is None:
+                self.send_response_body(404, '<h1>404 — 用户不存在</h1>',
+                                        'text/html; charset=utf-8', send_payload)
+                return
+            self.send_response_body(200, out,
+                                    'text/html; charset=utf-8', send_payload)
             return
 
         if path.startswith('/admin/user/') and path.endswith('.json'):
