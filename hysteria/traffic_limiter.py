@@ -213,6 +213,27 @@ def accumulate_daily(traffic, now):
     save_json(USAGE_DAILY_FILE, daily)
 
 
+def accumulate_hourly(traffic, now):
+    """Mirror of accumulate_daily, bucketed at hour resolution.
+
+    Hour key format: 'YYYY-MM-DDTHH'. Pass a tz-aware `now` (project uses
+    timeutil.local_now()).
+    """
+    hour_key = now.strftime("%Y-%m-%dT%H")
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    hourly.setdefault(hour_key, {})
+    for uid, stat in traffic.items():
+        cur = normalize_usage_entry(hourly[hour_key].get(uid, 0))
+        tx = int(stat.get("tx", 0))
+        rx = int(stat.get("rx", 0))
+        cur["tx"] += tx
+        cur["rx"] += rx
+        cur["total"] += tx + rx
+        hourly[hour_key][uid] = cur
+    prune_hourly(hourly, now)
+    save_json(USAGE_HOURLY_FILE, hourly)
+
+
 def _fmt_bytes(n):
     n = float(max(0, int(n)))
     units = ['B', 'KB', 'MB', 'GB', 'TB']
