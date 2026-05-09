@@ -737,6 +737,7 @@ def _action_label(action):
 
 
 DAILY_RETENTION_DAYS = 30
+LOCAL_TZ_LABEL = "Asia/Shanghai · 滚动 7 天小时 / 30 天每日"
 
 
 def _scale_daily_entry(entry):
@@ -1029,6 +1030,97 @@ def render_daily_usage(host, days=14):
     return render_admin_shell('daily', '每日流量', content,
                               badge=f'最近 {days} 天',
                               subtitle=f'{host} · 滚动窗口 {DAILY_RETENTION_DAYS} 天')
+
+
+def render_usage_page(host):
+    """Replacement for render_daily_usage. Renders 4 stat cards + 168-bar chart
+    + 7×24 heatmap + Top-5 list + collapsed historical daily table."""
+    from charts import hourly_bars_svg, weekday_hour_heatmap_svg, mini_sparkline_svg
+
+    now = local_now()
+    payload = _build_usage_json_payload(now=now)
+    stats = payload["stats"]
+    series = payload["hourly_totals"]
+    grid = payload["heatmap"]
+    top = payload["top_n"]
+
+    peak_hour = max(series, key=lambda s: s["bytes"])["hour"] if any(s["bytes"] for s in series) else None
+    bars_svg = hourly_bars_svg(series, peak_hour=peak_hour)
+    heat_svg = weekday_hour_heatmap_svg(grid, current_hour_iso=_hour_key(now))
+
+    def _spark_to_pairs(arr):
+        return [("h", v) for v in arr]
+
+    top_rows = []
+    for u in top:
+        spark_html = mini_sparkline_svg(_spark_to_pairs(u["spark"]), height=14)
+        top_rows.append(
+            f'<a class="top-row" href="/admin/user/{html.escape(u["uid"])}">'
+            f'<span class="top-uid">{html.escape(u["uid"])} ↗</span>'
+            f'<span class="top-spark">{spark_html}</span>'
+            f'<span class="top-bytes">{fmt_bytes(u["last_24h_bytes"])}</span>'
+            f'</a>'
+        )
+    top_html = "".join(top_rows) or '<div class="empty">暂无数据</div>'
+
+    historical = _render_daily_table_collapsed(host)
+
+    content = f'''<div class="grid grid-4">
+  <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{fmt_bytes(stats["current_hour_bytes"])}</div><div class="small">{stats["online"]} 在线</div></div>
+  <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{fmt_bytes(stats["today_bytes"])}</div><div class="small">昨日 {fmt_bytes(stats["yesterday_bytes"])}</div></div>
+  <div class="card stat" data-stat="last_7d"><div class="k">近 7 天</div><div class="v">{fmt_bytes(stats["last_7d_bytes"])}</div><div class="small">日均 {fmt_bytes(stats["last_7d_bytes"] // 7)}</div></div>
+  <div class="card stat" data-stat="cycle"><div class="k">本周期</div><div class="v">{fmt_bytes(stats["cycle_bytes"])}</div><div class="small">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div></div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">过去 7 天 · 每小时</div>
+  <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
+</div>
+
+<div class="grid grid-2 mt-md">
+  <div class="card" style="padding:14px 18px;">
+    <div class="bold">7 天 × 24 小时 热图</div>
+    <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
+  </div>
+  <div class="card" style="padding:14px 0;">
+    <div class="bold" style="padding:0 18px;">Top 5 · 近 24 小时</div>
+    <div id="top-n-host" style="margin-top:10px;">{top_html}</div>
+  </div>
+</div>
+
+<details class="card mt-md" style="padding:8px 18px;">
+  <summary style="cursor:pointer;">历史每日明细（可展开）</summary>
+  <div style="margin-top:10px;">{historical}</div>
+</details>
+
+<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
+<script src="/static/usage.js" defer></script>
+'''
+    return render_admin_shell('usage', '流量分析', content,
+                              subtitle=f'{host} · {LOCAL_TZ_LABEL}')
+
+
+def _render_daily_table_collapsed(host):
+    """Inline-render the legacy 14-day per-user table, no shell wrapping."""
+    days = 14
+    users = load_json(USERS_FILE, {})
+    daily = load_json(USAGE_DAILY_FILE, {})
+    today = local_now().date()
+    window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
+
+    rows_html = []
+    for uid, _cfg in users.items():
+        cells = []
+        for dk in window:
+            tx, rx, tot = _scale_daily_entry((daily.get(dk) or {}).get(uid))
+            cells.append(f'<td>{fmt_bytes(tot) if tot else "—"}</td>')
+        rows_html.append(f'<tr><th>{html.escape(uid)}</th>{"".join(cells)}</tr>')
+
+    headers = "".join(f'<th>{dk[5:]}</th>' for dk in window)
+    return (f'<table class="table daily-table-collapsed">'
+            f'<thead><tr><th>用户</th>{headers}</tr></thead>'
+            f'<tbody>{"".join(rows_html) or "<tr><td colspan=15>暂无数据</td></tr>"}</tbody>'
+            f'</table>')
 
 
 def probe_cron_heartbeat():
@@ -1592,6 +1684,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             self.send_response_body(200, render_reset_logs(host), 'text/html; charset=utf-8', send_payload)
+            return
+
+        if path == '/admin/usage':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            self.send_response_body(
+                200, render_usage_page(host),
+                'text/html; charset=utf-8', send_payload,
+            )
             return
 
         if path == '/admin/usage.json':

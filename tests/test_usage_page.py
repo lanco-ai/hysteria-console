@@ -45,3 +45,17 @@ def test_build_usage_json_payload_schema(tmp_path, monkeypatch):
     assert all(len(r["hours"]) == 24 for r in payload["heatmap"])
     assert isinstance(payload["top_n"], list)
     assert all({"uid", "last_24h_bytes", "spark"} <= set(t.keys()) for t in payload["top_n"])
+
+
+def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    hourly = {now.strftime("%Y-%m-%dT%H"): {"alice": {"tx": 1, "rx": 1, "total": 2}}}
+    _seed_state(tmp_path, monkeypatch,
+                users={"alice": {"metered": True}}, hourly=hourly)
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    html_out = ss.render_usage_page("test-host")
+    assert 'class="hourly-bars"' in html_out
+    assert 'class="heatmap"' in html_out
+    assert 'class="spark"' in html_out
+    assert 'usage.js' in html_out
+    assert "<details" in html_out
