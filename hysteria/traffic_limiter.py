@@ -22,11 +22,13 @@ XRAY_API = "127.0.0.1:10085"
 USERS_FILE = "/root/hysteria/users.json"
 USAGE_FILE = "/root/hysteria/state/usage.json"
 USAGE_DAILY_FILE = "/root/hysteria/state/usage_daily.json"
+USAGE_HOURLY_FILE = "/root/hysteria/state/usage_hourly.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 RESET_STATE_FILE = "/root/hysteria/state/auto_reset_state.json"
 RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
 USAGE_LOCK_FILE = "/root/hysteria/state/usage.lock"
 DAILY_RETENTION_DAYS = 30
+HOURLY_RETENTION_HOURS = 168
 API_BASE = "http://127.0.0.1:25413"
 API_SECRET = "__HY_API_SECRET__"
 
