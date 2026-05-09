@@ -17,7 +17,7 @@ import urllib.request
 import alerts
 import user_compat
 import xray_config
-from display import fmt_bytes
+from display import DISPLAY_MULTIPLIER, fmt_bytes
 from timeutil import local_now
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -29,6 +29,8 @@ from urllib.parse import parse_qs, urlparse
 USERS_FILE = Path('/root/hysteria/users.json')
 USAGE_FILE = Path('/root/hysteria/state/usage.json')
 USAGE_DAILY_FILE = Path('/root/hysteria/state/usage_daily.json')
+USAGE_HOURLY_FILE = Path('/root/hysteria/state/usage_hourly.json')
+HOURLY_RETENTION_HOURS = 168
 ONLINE_FILE = Path('/root/hysteria/state/online.json')
 META_FILE = Path('/root/hysteria/subscription_meta.json')
 TEMPLATE_FILE = Path('/root/hysteria/template.yaml')
@@ -37,9 +39,6 @@ RESET_LOG_FILE = Path('/root/hysteria/state/usage_reset.log')
 USAGE_LOCK_FILE = Path('/root/hysteria/state/usage.lock')
 HY_API_BASE = 'http://127.0.0.1:25413'
 HY_API_SECRET = '__HY_API_SECRET__'
-
-
-DISPLAY_MULTIPLIER = 2.28
 
 
 def hy_kick(usernames):
@@ -753,6 +752,130 @@ def _scale_daily_entry(entry):
         tx, rx = 0, total
     m = DISPLAY_MULTIPLIER
     return int(tx * m), int(rx * m), int(total * m)
+
+
+def _hour_key(dt):
+    return dt.strftime("%Y-%m-%dT%H")
+
+
+def _entry_total(entry):
+    """Extract `total` from a per-user usage entry, tolerating int and dict shapes."""
+    if isinstance(entry, dict):
+        return int(entry.get("total", 0))
+    return int(entry or 0)
+
+
+def _load_hourly_totals(*, now):
+    """Return list of 168 {hour, bytes} entries (oldest first), bytes × DISPLAY_MULTIPLIER."""
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    out = []
+    for i in reversed(range(HOURLY_RETENTION_HOURS)):
+        h = now - timedelta(hours=i)
+        hk = _hour_key(h)
+        bucket = hourly.get(hk) or {}
+        raw_total = sum(_entry_total(v) for v in bucket.values())
+        out.append({"hour": hk, "bytes": int(raw_total * DISPLAY_MULTIPLIER)})
+    return out
+
+
+def _load_heatmap_grid(*, now):
+    """Return 7-row grid: [{date, hours: [24 ints]}, ...] oldest first.
+
+    Each cell value is post-DISPLAY_MULTIPLIER aggregate across all users for that hour.
+    """
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    today = now.date()
+    rows = []
+    for d in reversed(range(7)):
+        day = today - timedelta(days=d)
+        date_str = day.strftime("%Y-%m-%d")
+        hours = []
+        for hh in range(24):
+            hk = f"{date_str}T{hh:02d}"
+            bucket = hourly.get(hk) or {}
+            raw = sum(_entry_total(v) for v in bucket.values())
+            hours.append(int(raw * DISPLAY_MULTIPLIER))
+        rows.append({"date": date_str, "hours": hours})
+    return rows
+
+
+def _top_n_users(*, n=5, window_hours=24, now):
+    """Return top-N users by last-`window_hours` total bytes (post-DISPLAY_MULTIPLIER).
+
+    Each item: {uid, last_24h_bytes, spark}. `spark` is window_hours hourly ints.
+    Includes both metered and unmetered users.
+    """
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    users = load_json(USERS_FILE, {})
+
+    per_user_totals = {}
+    per_user_spark = {uid: [0] * window_hours for uid in users.keys()}
+    for i in reversed(range(window_hours)):
+        h = now - timedelta(hours=i)
+        bucket = hourly.get(_hour_key(h)) or {}
+        idx = window_hours - 1 - i
+        for uid in users.keys():
+            v = _entry_total(bucket.get(uid))
+            per_user_totals[uid] = per_user_totals.get(uid, 0) + v
+            per_user_spark[uid][idx] = int(v * DISPLAY_MULTIPLIER)
+
+    ranked = sorted(per_user_totals.items(), key=lambda kv: kv[1], reverse=True)
+    out = []
+    for uid, raw_total in ranked[:n]:
+        out.append({
+            "uid": uid,
+            "last_24h_bytes": int(raw_total * DISPLAY_MULTIPLIER),
+            "spark": per_user_spark[uid],
+        })
+    return out
+
+
+def _aggregate_stats(*, now, online):
+    """Return the 4 stat-card numbers + cycle context."""
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    daily = load_json(USAGE_DAILY_FILE, {})
+
+    today_str = now.strftime("%Y-%m-%d")
+    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    cur_bucket = hourly.get(_hour_key(now)) or {}
+    current_hour_raw = sum(_entry_total(v) for v in cur_bucket.values())
+
+    today_raw = 0
+    for hh in range(24):
+        b = hourly.get(f"{today_str}T{hh:02d}") or {}
+        today_raw += sum(_entry_total(v) for v in b.values())
+
+    yest_bucket = daily.get(yesterday_str) or {}
+    yesterday_raw = sum(_entry_total(v) for v in yest_bucket.values())
+
+    last_7d_raw = 0
+    for d in range(7):
+        dk = (now.date() - timedelta(days=d)).strftime("%Y-%m-%d")
+        last_7d_raw += sum(_entry_total(v) for v in (daily.get(dk) or {}).values())
+
+    usage = load_json(USAGE_FILE, {})
+    mk = month_key(now)
+    cycle_bucket = usage.get(mk) or {}
+    cycle_raw = sum(_entry_total(v) for v in cycle_bucket.values())
+
+    if now.day >= 21:
+        cycle_start = now.replace(day=21, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        prev_month_end = now.replace(day=1) - timedelta(days=1)
+        cycle_start = prev_month_end.replace(day=21, hour=0, minute=0, second=0, microsecond=0)
+    cycle_day = (now.date() - cycle_start.date()).days + 1
+
+    return {
+        "current_hour_bytes": int(current_hour_raw * DISPLAY_MULTIPLIER),
+        "today_bytes": int(today_raw * DISPLAY_MULTIPLIER),
+        "yesterday_bytes": int(yesterday_raw * DISPLAY_MULTIPLIER),
+        "last_7d_bytes": int(last_7d_raw * DISPLAY_MULTIPLIER),
+        "cycle_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
+        "cycle_day": cycle_day,
+        "cycle_total_days": 30,
+        "online": int(sum(1 for v in (online or {}).values() if int(v or 0) > 0)),
+    }
 
 
 def daily_window_for_user(uid, daily, *, days=30, today=None):
