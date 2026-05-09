@@ -781,3 +781,119 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .wrap { padding: 0 14px; margin: 18px auto; }
   .wrap.home-wrap { margin-top: 56px; }
 }
+
+/* ── /admin/usage ─ hourly-bars chart ─────────────────────── */
+.hourly-bars { display: block; width: 100%; height: auto; }
+.hourly-bars .bars .hourly-bar { fill: var(--info); }
+.hourly-bars .bars .hourly-bar.peak { fill: var(--danger); }
+.hourly-bars .day-separators line { stroke: var(--line); stroke-width: 1; }
+.hourly-bars .day-labels .day-label {
+  fill: var(--text-faint);
+  font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ── /admin/usage ─ 7×24 heatmap ──────────────────────────── */
+.heatmap { display: block; width: 100%; height: auto; }
+.heatmap .heat-cell { fill: var(--info); }
+.heatmap .heat-cell.future {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.heatmap .heat-date,
+.heatmap .heat-hour {
+  fill: var(--text-faint);
+  font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ── /admin/usage ─ Top-N list ────────────────────────────── */
+#top-n-host { display: flex; flex-direction: column; }
+.top-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--hairline);
+  text-decoration: none;
+  color: var(--text);
+}
+.top-row:first-child { border-top: 0; }
+.top-row:hover { background: var(--surface-hover); }
+.top-uid { color: var(--accent); font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.top-spark { display: inline-flex; align-items: center; min-width: 100px; }
+.top-spark .spark { width: 100px; height: 14px; }
+.top-bytes { color: var(--text-strong); font-variant-numeric: tabular-nums; }
+.empty { color: var(--text-faint); padding: 14px 18px; font-style: italic; }
+
+/* ── /admin/usage ─ collapsed historical daily table ──────── */
+details > summary { color: var(--text-muted); list-style: none; user-select: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: '▸ '; color: var(--text-faint); }
+details[open] > summary::before { content: '▾ '; }
+.daily-table-collapsed {
+  width: 100%;
+  border-collapse: collapse;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.daily-table-collapsed th,
+.daily-table-collapsed td {
+  padding: 5px 8px;
+  text-align: right;
+  border-bottom: 1px solid var(--hairline);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.daily-table-collapsed thead th {
+  color: var(--text-faint);
+  font-weight: normal;
+  border-bottom: 1px solid var(--line);
+}
+.daily-table-collapsed tbody th {
+  text-align: left;
+  color: var(--text);
+  font-weight: normal;
+}
+
+/* ── /admin/usage ─ hover tooltip ─────────────────────────── */
+.hover-tip {
+  pointer-events: none;
+  background: var(--surface-2);
+  color: var(--text-strong);
+  border: 1px solid var(--line-strong);
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  z-index: 50;
+  box-shadow: var(--shadow-md);
+}
+
+/* ── /admin/user/<uid> drill page ─────────────────────────── */
+.back-link {
+  display: inline-block;
+  color: var(--text-muted);
+  text-decoration: none;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-bottom: 10px;
+}
+.back-link:hover { color: var(--text-strong); }
+.user-title {
+  color: var(--text-strong);
+  font-size: 18px;
+  margin: 4px 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.user-title .small { color: var(--text-faint); font-size: 11px; font-weight: normal; }
+.alert-row {
+  padding: 7px 12px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-bottom: 4px;
+}

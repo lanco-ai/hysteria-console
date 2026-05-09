@@ -1219,8 +1219,12 @@ def render_user_detail_page(uid, host):
 
 
 def _render_daily_table_collapsed(host):
-    """Inline-render the legacy 14-day per-user table, no shell wrapping."""
-    days = 14
+    """Inline-render the per-user historical table, no shell wrapping.
+
+    Window matches DAILY_RETENTION_DAYS (currently 30) — the full retained range,
+    so the collapsed section shows everything we have on disk.
+    """
+    days = DAILY_RETENTION_DAYS
     users = load_json(USERS_FILE, {})
     daily = load_json(USAGE_DAILY_FILE, {})
     today = local_now().date()
@@ -1235,10 +1239,12 @@ def _render_daily_table_collapsed(host):
         rows_html.append(f'<tr><th>{html.escape(uid)}</th>{"".join(cells)}</tr>')
 
     headers = "".join(f'<th>{dk[5:]}</th>' for dk in window)
-    return (f'<table class="table daily-table-collapsed">'
+    return (f'<div class="scroll-x">'
+            f'<table class="table daily-table-collapsed">'
             f'<thead><tr><th>用户</th>{headers}</tr></thead>'
-            f'<tbody>{"".join(rows_html) or "<tr><td colspan=15>暂无数据</td></tr>"}</tbody>'
-            f'</table>')
+            f'<tbody>{"".join(rows_html) or f"<tr><td colspan={days + 1}>暂无数据</td></tr>"}</tbody>'
+            f'</table>'
+            f'</div>')
 
 
 def probe_cron_heartbeat():
