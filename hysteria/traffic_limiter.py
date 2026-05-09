@@ -189,6 +189,14 @@ def prune_daily(daily, today):
             del daily[k]
 
 
+def prune_hourly(hourly, now):
+    """Drop hour buckets older than HOURLY_RETENTION_HOURS - 1 hours back from `now`."""
+    cutoff = (now - timedelta(hours=HOURLY_RETENTION_HOURS - 1)).strftime("%Y-%m-%dT%H")
+    for k in list(hourly.keys()):
+        if k < cutoff:
+            del hourly[k]
+
+
 def accumulate_daily(traffic, now):
     day_key = now.strftime("%Y-%m-%d")
     daily = load_json(USAGE_DAILY_FILE, {})
