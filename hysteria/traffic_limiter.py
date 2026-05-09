@@ -333,6 +333,7 @@ def main():
 
         save_json(USAGE_FILE, usage)
         accumulate_daily(traffic, now)
+        accumulate_hourly(traffic, now)
 
     online = get("/online")
     save_json(ONLINE_SNAPSHOT_FILE, online)
