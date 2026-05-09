@@ -32,7 +32,6 @@ USAGE_DAILY_FILE = Path('/root/hysteria/state/usage_daily.json')
 USAGE_HOURLY_FILE = Path('/root/hysteria/state/usage_hourly.json')
 HOURLY_RETENTION_HOURS = 168
 ONLINE_FILE = Path('/root/hysteria/state/online.json')
-ONLINE_SNAPSHOT_FILE = Path('/root/hysteria/state/online.json')
 META_FILE = Path('/root/hysteria/subscription_meta.json')
 TEMPLATE_FILE = Path('/root/hysteria/template.yaml')
 SESSIONS_FILE = Path('/root/hysteria/state/panel_sessions.json')
@@ -882,7 +881,7 @@ def _aggregate_stats(*, now, online):
 
 def _build_usage_json_payload(*, now):
     """Compose the /admin/usage.json payload."""
-    online = load_json(ONLINE_SNAPSHOT_FILE, {})
+    online = load_json(ONLINE_FILE, {})
     series = _load_hourly_totals(now=now)
     grid = _load_heatmap_grid(now=now)
     stats = _aggregate_stats(now=now, online=online)
@@ -903,7 +902,7 @@ def _build_user_json_payload(uid, *, now):
         return None
     cfg = users[uid] or {}
 
-    online = load_json(ONLINE_SNAPSHOT_FILE, {})
+    online = load_json(ONLINE_FILE, {})
     hourly = load_json(USAGE_HOURLY_FILE, {})
 
     bars = []

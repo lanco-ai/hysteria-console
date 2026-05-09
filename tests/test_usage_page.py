@@ -16,7 +16,7 @@ def _seed_state(tmp_path, monkeypatch, *, users=None, hourly=None, daily=None,
     monkeypatch.setattr(ss, "USAGE_FILE", tmp_path / "usage.json", raising=False)
     monkeypatch.setattr(ss, "USAGE_DAILY_FILE", tmp_path / "usage_daily.json", raising=False)
     monkeypatch.setattr(ss, "USAGE_HOURLY_FILE", tmp_path / "usage_hourly.json", raising=False)
-    monkeypatch.setattr(ss, "ONLINE_SNAPSHOT_FILE", tmp_path / "online.json", raising=False)
+    monkeypatch.setattr(ss, "ONLINE_FILE", tmp_path / "online.json", raising=False)
     (tmp_path / "users.json").write_text(json.dumps(users or {}))
     (tmp_path / "usage.json").write_text(json.dumps(usage or {}))
     (tmp_path / "usage_daily.json").write_text(json.dumps(daily or {}))
