@@ -74,3 +74,27 @@ def test_admin_daily_redirects_to_usage_with_301(tmp_path, monkeypatch):
     ss._handle_legacy_daily_redirect(h)
     assert captured["status"] == 301
     assert captured["target"] == "/admin/usage"
+
+
+def test_user_detail_json_payload_schema(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    hourly = {now.strftime("%Y-%m-%dT%H"): {"alice": {"tx": 1, "rx": 1, "total": 2}}}
+    _seed_state(tmp_path, monkeypatch,
+                users={"alice": {"metered": True, "monthly_quota_bytes": 100_000_000_000}},
+                hourly=hourly, online={"alice": 1})
+    payload = ss._build_user_json_payload("alice", now=now)
+    assert payload["uid"] == "alice"
+    assert payload["metered"] is True
+    assert payload["online"] == 1
+    assert isinstance(payload["cycle_quota_bytes"], int)
+    assert len(payload["hourly_bars"]) == 168
+    assert len(payload["heatmap"]) == 7
+    assert "recent_alerts" in payload
+
+
+def test_user_detail_json_unknown_user_returns_none(tmp_path, monkeypatch):
+    _seed_state(tmp_path, monkeypatch, users={"alice": {}})
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    assert ss._build_user_json_payload("nobody", now=now) is None
+
+

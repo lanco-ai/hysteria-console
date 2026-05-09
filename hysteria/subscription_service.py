@@ -32,6 +32,7 @@ USAGE_DAILY_FILE = Path('/root/hysteria/state/usage_daily.json')
 USAGE_HOURLY_FILE = Path('/root/hysteria/state/usage_hourly.json')
 HOURLY_RETENTION_HOURS = 168
 ONLINE_FILE = Path('/root/hysteria/state/online.json')
+ONLINE_SNAPSHOT_FILE = Path('/root/hysteria/state/online.json')
 META_FILE = Path('/root/hysteria/subscription_meta.json')
 TEMPLATE_FILE = Path('/root/hysteria/template.yaml')
 SESSIONS_FILE = Path('/root/hysteria/state/panel_sessions.json')
@@ -895,6 +896,63 @@ def _build_usage_json_payload(*, now):
     }
 
 
+def _build_user_json_payload(uid, *, now):
+    """Compose the /admin/user/<uid>.json payload, or None if user unknown."""
+    users = load_json(USERS_FILE, {})
+    if uid not in users:
+        return None
+    cfg = users[uid] or {}
+
+    online = load_json(ONLINE_SNAPSHOT_FILE, {})
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+
+    bars = []
+    for i in reversed(range(HOURLY_RETENTION_HOURS)):
+        h = now - timedelta(hours=i)
+        hk = _hour_key(h)
+        v = _entry_total((hourly.get(hk) or {}).get(uid))
+        bars.append({"hour": hk, "bytes": int(v * DISPLAY_MULTIPLIER)})
+
+    heat_grid = []
+    today = now.date()
+    for d in reversed(range(7)):
+        day = today - timedelta(days=d)
+        date_str = day.strftime("%Y-%m-%d")
+        hours = []
+        for hh in range(24):
+            v = _entry_total((hourly.get(f"{date_str}T{hh:02d}") or {}).get(uid))
+            hours.append(int(v * DISPLAY_MULTIPLIER))
+        heat_grid.append({"date": date_str, "hours": hours})
+
+    usage = load_json(USAGE_FILE, {})
+    mk = month_key(now)
+    cycle_raw = _entry_total((usage.get(mk) or {}).get(uid))
+
+    today_str = today.strftime("%Y-%m-%d")
+    today_raw = sum(
+        _entry_total((hourly.get(f"{today_str}T{hh:02d}") or {}).get(uid))
+        for hh in range(24)
+    )
+    cur_raw = _entry_total((hourly.get(_hour_key(now)) or {}).get(uid))
+
+    recent_alerts = []
+
+    return {
+        "ts": now.isoformat(timespec="seconds"),
+        "uid": uid,
+        "metered": bool(cfg.get("metered", cfg.get("guest", False))),
+        "online": int(online.get(uid, 0) or 0),
+        "max_devices": int(cfg.get("max_devices", 2)),
+        "cycle_used_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
+        "cycle_quota_bytes": int(cfg.get("monthly_quota_bytes", 0) or 0),
+        "current_hour_bytes": int(cur_raw * DISPLAY_MULTIPLIER),
+        "today_bytes": int(today_raw * DISPLAY_MULTIPLIER),
+        "hourly_bars": bars,
+        "heatmap": heat_grid,
+        "recent_alerts": recent_alerts,
+    }
+
+
 def daily_window_for_user(uid, daily, *, days=30, today=None):
     """Return [(YYYY-MM-DD, scaled_total_bytes), ...] oldest-first for `days`."""
     today = today or local_now().date()
@@ -1706,6 +1764,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             payload = _build_usage_json_payload(now=local_now())
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False),
+                'application/json; charset=utf-8', send_payload,
+            )
+            return
+
+        if path.startswith('/admin/user/') and path.endswith('.json'):
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            uid = path[len('/admin/user/'):-len('.json')]
+            payload = _build_user_json_payload(uid, now=local_now())
+            if payload is None:
+                self.send_response_body(404, '{"error":"not found"}',
+                                        'application/json; charset=utf-8', send_payload)
+                return
             self.send_response_body(
                 200, json.dumps(payload, ensure_ascii=False),
                 'application/json; charset=utf-8', send_payload,
