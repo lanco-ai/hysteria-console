@@ -414,7 +414,7 @@ def back_to_admin(label='返回管理后台'):
 
 _SIDEBAR_NAV = [
     ('dashboard', '/admin', '总览', 'dashboard'),
-    ('daily', '/admin/daily', '每日流量', 'chart'),
+    ('usage', '/admin/usage', '流量分析', 'chart'),
     ('health', '/admin/health', '健康状态', 'pulse'),
     ('config', '/admin/config', '模板配置', 'config'),
     ('rules', '/admin/rules', '路由规则', 'rules'),
@@ -1504,6 +1504,11 @@ document.addEventListener('submit', function(ev){{
     return render_admin_shell('rules', '订阅路由规则', content, badge=f'{len(rules)} 条')
 
 
+def _handle_legacy_daily_redirect(handler):
+    """Permanent redirect from old /admin/daily to /admin/usage."""
+    handler.redirect("/admin/usage", status=301)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
@@ -1544,8 +1549,8 @@ class Handler(BaseHTTPRequestHandler):
         if send_payload:
             self.wfile.write(payload_bytes)
 
-    def redirect(self, to, cookie=None):
-        self.send_response(302)
+    def redirect(self, to, cookie=None, status=302):
+        self.send_response(status)
         self.send_header('Location', to)
         if cookie:
             self.send_header('Set-Cookie', cookie)
@@ -1708,14 +1713,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == '/admin/daily':
-            if not is_logged_in(self):
-                self.redirect('/login')
-                return
-            try:
-                days = int((q.get('days') or ['14'])[0])
-            except ValueError:
-                days = 14
-            self.send_response_body(200, render_daily_usage(host, days=days), 'text/html; charset=utf-8', send_payload)
+            _handle_legacy_daily_redirect(self)
             return
 
         if path == '/admin/health':

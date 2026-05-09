@@ -59,3 +59,18 @@ def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):
     assert 'class="spark"' in html_out
     assert 'usage.js' in html_out
     assert "<details" in html_out
+
+
+def test_admin_daily_redirects_to_usage_with_301(tmp_path, monkeypatch):
+    """The legacy /admin/daily route returns 301 → /admin/usage."""
+    captured = {}
+
+    class StubHandler:
+        def redirect(self, target, status=302):
+            captured["target"] = target
+            captured["status"] = status
+
+    h = StubHandler()
+    ss._handle_legacy_daily_redirect(h)
+    assert captured["status"] == 301
+    assert captured["target"] == "/admin/usage"
