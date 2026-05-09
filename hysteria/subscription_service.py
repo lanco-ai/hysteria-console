@@ -17,6 +17,7 @@ import urllib.request
 import alerts
 import user_compat
 import xray_config
+from display import fmt_bytes
 from timeutil import local_now
 from contextlib import contextmanager
 from datetime import datetime, timedelta
@@ -248,16 +249,6 @@ def build_yaml(username, auth_secret):
             text,
         )
     return text
-
-
-def fmt_bytes(num):
-    n = float(max(0, int(num)))
-    units = ['B', 'KB', 'MB', 'GB', 'TB']
-    idx = 0
-    while n >= 1024 and idx < len(units) - 1:
-        n /= 1024.0
-        idx += 1
-    return f"{n:.2f} {units[idx]}"
 
 
 def pct(used, total):
