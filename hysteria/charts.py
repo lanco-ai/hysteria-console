@@ -113,3 +113,72 @@ def hourly_bars_svg(series, *, peak_hour=None, height=120, bar_w=3, gap=1):
     return (f'<svg class="hourly-bars" viewBox="0 0 {width} {total_h}" '
             f'aria-label="过去 {n} 小时流量">'
             f'{sep_svg}{bar_svg}{label_svg}</svg>')
+
+
+def weekday_hour_heatmap_svg(grid, *, current_hour_iso=None,
+                             cell_w=20, cell_h=22, label_w=46):
+    """Render a 7×24 heatmap of bytes-per-hour-per-day.
+
+    Args:
+        grid: list of 7 {"date": "YYYY-MM-DD", "hours": [24 ints]}, oldest first.
+        current_hour_iso: optional "YYYY-MM-DDTHH"; cells in `grid[-1]` after this
+                          hour-of-day get class="heat-cell future".
+    """
+    rows = len(grid)
+    width = label_w + 24 * cell_w
+    height = rows * cell_h + 28
+
+    max_v = 0
+    for row in grid:
+        for v in row["hours"]:
+            if v > max_v:
+                max_v = v
+    if max_v <= 0:
+        max_v = 1
+
+    today_idx = rows - 1
+    cur_hour_of_day = None
+    if current_hour_iso and grid and current_hour_iso[:10] == grid[today_idx]["date"]:
+        try:
+            cur_hour_of_day = int(current_hour_iso[11:13])
+        except ValueError:
+            cur_hour_of_day = None
+
+    parts = []
+    for r, row in enumerate(grid):
+        y = r * cell_h + cell_h - 6
+        parts.append(
+            f'<text class="heat-date" x="{label_w - 6}" y="{y}" '
+            f'text-anchor="end">{row["date"][5:]}</text>'
+        )
+
+    for r, row in enumerate(grid):
+        y = r * cell_h + 1
+        for c, v in enumerate(row["hours"]):
+            x = label_w + c * cell_w
+            is_future = (r == today_idx
+                         and cur_hour_of_day is not None
+                         and c > cur_hour_of_day)
+            if is_future:
+                parts.append(
+                    f'<rect class="heat-cell future" x="{x}" y="{y}" '
+                    f'width="{cell_w - 1}" height="{cell_h - 2}"/>'
+                )
+            else:
+                op = 0.05 + 0.95 * (v / max_v)
+                parts.append(
+                    f'<rect class="heat-cell" x="{x}" y="{y}" '
+                    f'width="{cell_w - 1}" height="{cell_h - 2}" '
+                    f'opacity="{op:.2f}"/>'
+                )
+
+    for h in (0, 4, 8, 12, 16, 20, 23):
+        x = label_w + h * cell_w + cell_w / 2
+        ylab = rows * cell_h + 12
+        parts.append(
+            f'<text class="heat-hour" x="{x:.0f}" y="{ylab}" '
+            f'text-anchor="middle">{h}</text>'
+        )
+
+    return (f'<svg class="heatmap" viewBox="0 0 {width} {height}" '
+            f'aria-label="7 天小时热图">{"".join(parts)}</svg>')

@@ -68,3 +68,34 @@ def test_hourly_bars_svg_handles_all_zero_input():
     series = [{"hour": f"2026-05-08T{i:02d}", "bytes": 0} for i in range(24)]
     out = charts.hourly_bars_svg(series)
     assert "<rect" not in out
+
+
+def test_heatmap_svg_renders_7x24_cells():
+    grid = [{"date": f"2026-05-0{i+2}", "hours": [j * 1_000_000 for j in range(24)]}
+            for i in range(7)]
+    out = charts.weekday_hour_heatmap_svg(grid, current_hour_iso=None)
+    rects = re.findall(r"<rect ", out)
+    assert len(rects) == 7 * 24
+
+
+def test_heatmap_svg_dashes_future_cells_in_today_row():
+    today = "2026-05-08"
+    grid = [{"date": f"2026-05-0{i+2}", "hours": [0] * 24} for i in range(6)] + [
+        {"date": today, "hours": [1, 1, 1, 0, 0, 0] + [0] * 18}
+    ]
+    out = charts.weekday_hour_heatmap_svg(grid, current_hour_iso=f"{today}T02")
+    assert 'class="heat-cell future"' in out
+    assert out.count('class="heat-cell future"') == 21  # hours 3..23
+
+
+def test_heatmap_svg_intensity_proportional_to_value():
+    grid = [{"date": f"2026-05-0{i+2}", "hours": [j for j in range(24)]} for i in range(7)]
+    out = charts.weekday_hour_heatmap_svg(grid, current_hour_iso=None)
+    assert 'opacity="0.05"' in out or 'opacity="0.10"' in out
+    assert 'opacity="1.00"' in out or 'opacity="0.95"' in out
+
+
+def test_heatmap_svg_handles_all_zero_input():
+    grid = [{"date": f"2026-05-0{i+2}", "hours": [0] * 24} for i in range(7)]
+    out = charts.weekday_hour_heatmap_svg(grid, current_hour_iso=None)
+    assert 'class="heat-cell"' in out
