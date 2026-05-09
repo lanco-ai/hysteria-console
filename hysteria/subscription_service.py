@@ -776,41 +776,9 @@ def daily_window_for_user(uid, daily, *, days=30, today=None):
 
 
 def sparkline_svg(values, *, height=24):
-    """Render a series of (date, bytes) into a compact bar SVG.
-
-    Last entry carries the `today` class; zero-valued days render no bar.
-    Width/height come from the viewBox so the caller's CSS can size the SVG.
-
-    Output contract (relied on by the admin dashboard's polling JS):
-    - Outermost element is `<svg class="spark" ...>` — JS uses this class.
-    - Each non-empty bar is `<rect class="spark-bar [today]" ...>` — CSS uses these.
-    Changing these class names requires updating row_form's data-role="spark"
-    cell and the tick() handler in render_admin's <script> block.
-    """
-    n = len(values)
-    label = f'{n} 天趋势' if n else ''
-    if n == 0:
-        return f'<svg class="spark" viewBox="0 0 0 {height}" aria-hidden="true"></svg>'
-    max_v = max((v for _, v in values), default=0) or 1
-    bar_w = 3
-    gap = 1
-    width = n * bar_w + (n - 1) * gap
-    parts = []
-    for i, (dk, v) in enumerate(values):
-        if v <= 0:
-            continue
-        h = max(1, int(round(height * v / max_v)))
-        x = i * (bar_w + gap)
-        y = height - h
-        cls = 'spark-bar today' if i == n - 1 else 'spark-bar'
-        title = f'{dk}: {fmt_bytes(v)}'
-        parts.append(
-            f'<rect class="{cls}" x="{x}" y="{y}" width="{bar_w}" height="{h}">'
-            f'<title>{html.escape(title)}</title></rect>'
-        )
-    return (f'<svg class="spark" viewBox="0 0 {width} {height}" '
-            f'aria-label="{html.escape(label)}">'
-            f'{"".join(parts)}</svg>')
+    """Forwarder kept for backward compat; new code calls charts.mini_sparkline_svg."""
+    from charts import mini_sparkline_svg
+    return mini_sparkline_svg(values, height=height)
 
 
 def render_daily_usage(host, days=14):
