@@ -17,6 +17,8 @@ import urllib.request
 import alerts
 import user_compat
 import xray_config
+from display import DISPLAY_MULTIPLIER, fmt_bytes
+from timeutil import local_now
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
@@ -27,6 +29,8 @@ from urllib.parse import parse_qs, urlparse
 USERS_FILE = Path('/root/hysteria/users.json')
 USAGE_FILE = Path('/root/hysteria/state/usage.json')
 USAGE_DAILY_FILE = Path('/root/hysteria/state/usage_daily.json')
+USAGE_HOURLY_FILE = Path('/root/hysteria/state/usage_hourly.json')
+HOURLY_RETENTION_HOURS = 168
 ONLINE_FILE = Path('/root/hysteria/state/online.json')
 META_FILE = Path('/root/hysteria/subscription_meta.json')
 TEMPLATE_FILE = Path('/root/hysteria/template.yaml')
@@ -35,9 +39,6 @@ RESET_LOG_FILE = Path('/root/hysteria/state/usage_reset.log')
 USAGE_LOCK_FILE = Path('/root/hysteria/state/usage.lock')
 HY_API_BASE = 'http://127.0.0.1:25413'
 HY_API_SECRET = '__HY_API_SECRET__'
-
-
-DISPLAY_MULTIPLIER = 2.28
 
 
 def hy_kick(usernames):
@@ -64,6 +65,8 @@ BASE_CSS_BYTES = (_STATIC_DIR / 'admin.css').read_bytes()
 BASE_CSS_ETAG = '"' + hashlib.sha1(BASE_CSS_BYTES).hexdigest()[:16] + '"'
 ADMIN_POLL_JS_BYTES = (_STATIC_DIR / 'admin_poll.js').read_bytes()
 ADMIN_POLL_JS_ETAG = '"' + hashlib.sha1(ADMIN_POLL_JS_BYTES).hexdigest()[:16] + '"'
+USAGE_JS_BYTES = (_STATIC_DIR / 'usage.js').read_bytes()
+USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
 
 
 def load_json(path, default):
@@ -194,9 +197,10 @@ def migrate_admin_password():
         save_json(META_FILE, meta)
 
 
-def month_key():
+def month_key(now=None):
     """Billing cycle resets on the 21st. Before the 21st belongs to the previous cycle."""
-    now = datetime.now()
+    if now is None:
+        now = local_now()
     if now.day >= 21:
         return now.strftime('%Y-%m')
     first = now.replace(day=1)
@@ -246,16 +250,6 @@ def build_yaml(username, auth_secret):
             text,
         )
     return text
-
-
-def fmt_bytes(num):
-    n = float(max(0, int(num)))
-    units = ['B', 'KB', 'MB', 'GB', 'TB']
-    idx = 0
-    while n >= 1024 and idx < len(units) - 1:
-        n /= 1024.0
-        idx += 1
-    return f"{n:.2f} {units[idx]}"
 
 
 def pct(used, total):
@@ -422,7 +416,7 @@ def back_to_admin(label='返回管理后台'):
 
 _SIDEBAR_NAV = [
     ('dashboard', '/admin', '总览', 'dashboard'),
-    ('daily', '/admin/daily', '每日流量', 'chart'),
+    ('usage', '/admin/usage', '流量分析', 'chart'),
     ('health', '/admin/health', '健康状态', 'pulse'),
     ('config', '/admin/config', '模板配置', 'config'),
     ('rules', '/admin/rules', '路由规则', 'rules'),
@@ -745,6 +739,7 @@ def _action_label(action):
 
 
 DAILY_RETENTION_DAYS = 30
+LOCAL_TZ_LABEL = "Asia/Shanghai · 滚动 7 天小时 / 30 天每日"
 
 
 def _scale_daily_entry(entry):
@@ -762,9 +757,206 @@ def _scale_daily_entry(entry):
     return int(tx * m), int(rx * m), int(total * m)
 
 
+def _hour_key(dt):
+    return dt.strftime("%Y-%m-%dT%H")
+
+
+def _entry_total(entry):
+    """Extract `total` from a per-user usage entry, tolerating int and dict shapes."""
+    if isinstance(entry, dict):
+        return int(entry.get("total", 0))
+    return int(entry or 0)
+
+
+def _load_hourly_totals(*, now):
+    """Return list of 168 {hour, bytes} entries (oldest first), bytes × DISPLAY_MULTIPLIER."""
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    out = []
+    for i in reversed(range(HOURLY_RETENTION_HOURS)):
+        h = now - timedelta(hours=i)
+        hk = _hour_key(h)
+        bucket = hourly.get(hk) or {}
+        raw_total = sum(_entry_total(v) for v in bucket.values())
+        out.append({"hour": hk, "bytes": int(raw_total * DISPLAY_MULTIPLIER)})
+    return out
+
+
+def _load_heatmap_grid(*, now):
+    """Return 7-row grid: [{date, hours: [24 ints]}, ...] oldest first.
+
+    Each cell value is post-DISPLAY_MULTIPLIER aggregate across all users for that hour.
+    """
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    today = now.date()
+    rows = []
+    for d in reversed(range(7)):
+        day = today - timedelta(days=d)
+        date_str = day.strftime("%Y-%m-%d")
+        hours = []
+        for hh in range(24):
+            hk = f"{date_str}T{hh:02d}"
+            bucket = hourly.get(hk) or {}
+            raw = sum(_entry_total(v) for v in bucket.values())
+            hours.append(int(raw * DISPLAY_MULTIPLIER))
+        rows.append({"date": date_str, "hours": hours})
+    return rows
+
+
+def _top_n_users(*, n=5, window_hours=24, now):
+    """Return top-N users by last-`window_hours` total bytes (post-DISPLAY_MULTIPLIER).
+
+    Each item: {uid, last_24h_bytes, spark}. `spark` is window_hours hourly ints.
+    Includes both metered and unmetered users.
+    """
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    users = load_json(USERS_FILE, {})
+
+    per_user_totals = {}
+    per_user_spark = {uid: [0] * window_hours for uid in users.keys()}
+    for i in reversed(range(window_hours)):
+        h = now - timedelta(hours=i)
+        bucket = hourly.get(_hour_key(h)) or {}
+        idx = window_hours - 1 - i
+        for uid in users.keys():
+            v = _entry_total(bucket.get(uid))
+            per_user_totals[uid] = per_user_totals.get(uid, 0) + v
+            per_user_spark[uid][idx] = int(v * DISPLAY_MULTIPLIER)
+
+    ranked = sorted(per_user_totals.items(), key=lambda kv: kv[1], reverse=True)
+    out = []
+    for uid, raw_total in ranked[:n]:
+        out.append({
+            "uid": uid,
+            "last_24h_bytes": int(raw_total * DISPLAY_MULTIPLIER),
+            "spark": per_user_spark[uid],
+        })
+    return out
+
+
+def _aggregate_stats(*, now, online):
+    """Return the 4 stat-card numbers + cycle context."""
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    daily = load_json(USAGE_DAILY_FILE, {})
+
+    today_str = now.strftime("%Y-%m-%d")
+    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    cur_bucket = hourly.get(_hour_key(now)) or {}
+    current_hour_raw = sum(_entry_total(v) for v in cur_bucket.values())
+
+    today_raw = 0
+    for hh in range(24):
+        b = hourly.get(f"{today_str}T{hh:02d}") or {}
+        today_raw += sum(_entry_total(v) for v in b.values())
+
+    yest_bucket = daily.get(yesterday_str) or {}
+    yesterday_raw = sum(_entry_total(v) for v in yest_bucket.values())
+
+    last_7d_raw = 0
+    for d in range(7):
+        dk = (now.date() - timedelta(days=d)).strftime("%Y-%m-%d")
+        last_7d_raw += sum(_entry_total(v) for v in (daily.get(dk) or {}).values())
+
+    usage = load_json(USAGE_FILE, {})
+    mk = month_key(now)
+    cycle_bucket = usage.get(mk) or {}
+    cycle_raw = sum(_entry_total(v) for v in cycle_bucket.values())
+
+    if now.day >= 21:
+        cycle_start = now.replace(day=21, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        prev_month_end = now.replace(day=1) - timedelta(days=1)
+        cycle_start = prev_month_end.replace(day=21, hour=0, minute=0, second=0, microsecond=0)
+    cycle_day = (now.date() - cycle_start.date()).days + 1
+
+    return {
+        "current_hour_bytes": int(current_hour_raw * DISPLAY_MULTIPLIER),
+        "today_bytes": int(today_raw * DISPLAY_MULTIPLIER),
+        "yesterday_bytes": int(yesterday_raw * DISPLAY_MULTIPLIER),
+        "last_7d_bytes": int(last_7d_raw * DISPLAY_MULTIPLIER),
+        "cycle_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
+        "cycle_day": cycle_day,
+        "cycle_total_days": 30,
+        "online": int(sum(1 for v in (online or {}).values() if int(v or 0) > 0)),
+    }
+
+
+def _build_usage_json_payload(*, now):
+    """Compose the /admin/usage.json payload."""
+    online = load_json(ONLINE_FILE, {})
+    series = _load_hourly_totals(now=now)
+    grid = _load_heatmap_grid(now=now)
+    stats = _aggregate_stats(now=now, online=online)
+    top = _top_n_users(n=5, window_hours=24, now=now)
+    return {
+        "ts": now.isoformat(timespec="seconds"),
+        "stats": stats,
+        "hourly_totals": series,
+        "heatmap": grid,
+        "top_n": top,
+    }
+
+
+def _build_user_json_payload(uid, *, now):
+    """Compose the /admin/user/<uid>.json payload, or None if user unknown."""
+    users = load_json(USERS_FILE, {})
+    if uid not in users:
+        return None
+    cfg = users[uid] or {}
+
+    online = load_json(ONLINE_FILE, {})
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+
+    bars = []
+    for i in reversed(range(HOURLY_RETENTION_HOURS)):
+        h = now - timedelta(hours=i)
+        hk = _hour_key(h)
+        v = _entry_total((hourly.get(hk) or {}).get(uid))
+        bars.append({"hour": hk, "bytes": int(v * DISPLAY_MULTIPLIER)})
+
+    heat_grid = []
+    today = now.date()
+    for d in reversed(range(7)):
+        day = today - timedelta(days=d)
+        date_str = day.strftime("%Y-%m-%d")
+        hours = []
+        for hh in range(24):
+            v = _entry_total((hourly.get(f"{date_str}T{hh:02d}") or {}).get(uid))
+            hours.append(int(v * DISPLAY_MULTIPLIER))
+        heat_grid.append({"date": date_str, "hours": hours})
+
+    usage = load_json(USAGE_FILE, {})
+    mk = month_key(now)
+    cycle_raw = _entry_total((usage.get(mk) or {}).get(uid))
+
+    today_str = today.strftime("%Y-%m-%d")
+    today_raw = sum(
+        _entry_total((hourly.get(f"{today_str}T{hh:02d}") or {}).get(uid))
+        for hh in range(24)
+    )
+    cur_raw = _entry_total((hourly.get(_hour_key(now)) or {}).get(uid))
+
+    recent_alerts = []
+
+    return {
+        "ts": now.isoformat(timespec="seconds"),
+        "uid": uid,
+        "metered": bool(cfg.get("metered", cfg.get("guest", False))),
+        "online": int(online.get(uid, 0) or 0),
+        "max_devices": int(cfg.get("max_devices", 2)),
+        "cycle_used_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
+        "cycle_quota_bytes": int(cfg.get("monthly_quota_bytes", 0) or 0),
+        "current_hour_bytes": int(cur_raw * DISPLAY_MULTIPLIER),
+        "today_bytes": int(today_raw * DISPLAY_MULTIPLIER),
+        "hourly_bars": bars,
+        "heatmap": heat_grid,
+        "recent_alerts": recent_alerts,
+    }
+
+
 def daily_window_for_user(uid, daily, *, days=30, today=None):
     """Return [(YYYY-MM-DD, scaled_total_bytes), ...] oldest-first for `days`."""
-    today = today or datetime.now().date()
+    today = today or local_now().date()
     out = []
     for i in reversed(range(days)):
         dk = (today - timedelta(days=i)).strftime('%Y-%m-%d')
@@ -774,41 +966,9 @@ def daily_window_for_user(uid, daily, *, days=30, today=None):
 
 
 def sparkline_svg(values, *, height=24):
-    """Render a series of (date, bytes) into a compact bar SVG.
-
-    Last entry carries the `today` class; zero-valued days render no bar.
-    Width/height come from the viewBox so the caller's CSS can size the SVG.
-
-    Output contract (relied on by the admin dashboard's polling JS):
-    - Outermost element is `<svg class="spark" ...>` — JS uses this class.
-    - Each non-empty bar is `<rect class="spark-bar [today]" ...>` — CSS uses these.
-    Changing these class names requires updating row_form's data-role="spark"
-    cell and the tick() handler in render_admin's <script> block.
-    """
-    n = len(values)
-    label = f'{n} 天趋势' if n else ''
-    if n == 0:
-        return f'<svg class="spark" viewBox="0 0 0 {height}" aria-hidden="true"></svg>'
-    max_v = max((v for _, v in values), default=0) or 1
-    bar_w = 3
-    gap = 1
-    width = n * bar_w + (n - 1) * gap
-    parts = []
-    for i, (dk, v) in enumerate(values):
-        if v <= 0:
-            continue
-        h = max(1, int(round(height * v / max_v)))
-        x = i * (bar_w + gap)
-        y = height - h
-        cls = 'spark-bar today' if i == n - 1 else 'spark-bar'
-        title = f'{dk}: {fmt_bytes(v)}'
-        parts.append(
-            f'<rect class="{cls}" x="{x}" y="{y}" width="{bar_w}" height="{h}">'
-            f'<title>{html.escape(title)}</title></rect>'
-        )
-    return (f'<svg class="spark" viewBox="0 0 {width} {height}" '
-            f'aria-label="{html.escape(label)}">'
-            f'{"".join(parts)}</svg>')
+    """Forwarder kept for backward compat; new code calls charts.mini_sparkline_svg."""
+    from charts import mini_sparkline_svg
+    return mini_sparkline_svg(values, height=height)
 
 
 def render_daily_usage(host, days=14):
@@ -816,7 +976,7 @@ def render_daily_usage(host, days=14):
     users = load_json(USERS_FILE, {})
     daily = load_json(USAGE_DAILY_FILE, {})
 
-    today = datetime.now().date()
+    today = local_now().date()
     today_key = today.strftime('%Y-%m-%d')
     window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
     weekday_labels = ['一', '二', '三', '四', '五', '六', '日']
@@ -929,6 +1089,156 @@ def render_daily_usage(host, days=14):
     return render_admin_shell('daily', '每日流量', content,
                               badge=f'最近 {days} 天',
                               subtitle=f'{host} · 滚动窗口 {DAILY_RETENTION_DAYS} 天')
+
+
+def render_usage_page(host):
+    """Replacement for render_daily_usage. Renders 4 stat cards + 168-bar chart
+    + 7×24 heatmap + Top-5 list + collapsed historical daily table."""
+    from charts import hourly_bars_svg, weekday_hour_heatmap_svg, mini_sparkline_svg
+
+    now = local_now()
+    payload = _build_usage_json_payload(now=now)
+    stats = payload["stats"]
+    series = payload["hourly_totals"]
+    grid = payload["heatmap"]
+    top = payload["top_n"]
+
+    peak_hour = max(series, key=lambda s: s["bytes"])["hour"] if any(s["bytes"] for s in series) else None
+    bars_svg = hourly_bars_svg(series, peak_hour=peak_hour)
+    heat_svg = weekday_hour_heatmap_svg(grid, current_hour_iso=_hour_key(now))
+
+    def _spark_to_pairs(arr):
+        return [("h", v) for v in arr]
+
+    top_rows = []
+    for u in top:
+        spark_html = mini_sparkline_svg(_spark_to_pairs(u["spark"]), height=14)
+        top_rows.append(
+            f'<a class="top-row" href="/admin/user/{html.escape(u["uid"])}">'
+            f'<span class="top-uid">{html.escape(u["uid"])} ↗</span>'
+            f'<span class="top-spark">{spark_html}</span>'
+            f'<span class="top-bytes">{fmt_bytes(u["last_24h_bytes"])}</span>'
+            f'</a>'
+        )
+    top_html = "".join(top_rows) or '<div class="empty">暂无数据</div>'
+
+    historical = _render_daily_table_collapsed(host)
+
+    content = f'''<div class="grid grid-4">
+  <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{fmt_bytes(stats["current_hour_bytes"])}</div><div class="small">{stats["online"]} 在线</div></div>
+  <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{fmt_bytes(stats["today_bytes"])}</div><div class="small">昨日 {fmt_bytes(stats["yesterday_bytes"])}</div></div>
+  <div class="card stat" data-stat="last_7d"><div class="k">近 7 天</div><div class="v">{fmt_bytes(stats["last_7d_bytes"])}</div><div class="small">日均 {fmt_bytes(stats["last_7d_bytes"] // 7)}</div></div>
+  <div class="card stat" data-stat="cycle"><div class="k">本周期</div><div class="v">{fmt_bytes(stats["cycle_bytes"])}</div><div class="small">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div></div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">过去 7 天 · 每小时</div>
+  <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
+</div>
+
+<div class="grid grid-2 mt-md">
+  <div class="card" style="padding:14px 18px;">
+    <div class="bold">7 天 × 24 小时 热图</div>
+    <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
+  </div>
+  <div class="card" style="padding:14px 0;">
+    <div class="bold" style="padding:0 18px;">Top 5 · 近 24 小时</div>
+    <div id="top-n-host" style="margin-top:10px;">{top_html}</div>
+  </div>
+</div>
+
+<details class="card mt-md" style="padding:8px 18px;">
+  <summary style="cursor:pointer;">历史每日明细（可展开）</summary>
+  <div style="margin-top:10px;">{historical}</div>
+</details>
+
+<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
+<script src="/static/usage.js" defer></script>
+'''
+    return render_admin_shell('usage', '流量分析', content,
+                              subtitle=f'{host} · {LOCAL_TZ_LABEL}')
+
+
+def render_user_detail_page(uid, host):
+    """Per-user drill page for /admin/user/<uid>. Returns None if user unknown."""
+    from charts import hourly_bars_svg, weekday_hour_heatmap_svg
+
+    now = local_now()
+    payload = _build_user_json_payload(uid, now=now)
+    if payload is None:
+        return None
+
+    peak_hour = (max(payload["hourly_bars"], key=lambda s: s["bytes"])["hour"]
+                 if any(s["bytes"] for s in payload["hourly_bars"]) else None)
+    bars_svg = hourly_bars_svg(payload["hourly_bars"], peak_hour=peak_hour)
+    heat_svg = weekday_hour_heatmap_svg(payload["heatmap"], current_hour_iso=_hour_key(now))
+
+    badge = '<span class="badge yellow">按量</span>' if payload["metered"] else '<span class="badge gray">免计</span>'
+    quota_line = (f'{fmt_bytes(payload["cycle_used_bytes"])} / '
+                  f'{fmt_bytes(payload["cycle_quota_bytes"])}'
+                  if payload["cycle_quota_bytes"] else
+                  f'{fmt_bytes(payload["cycle_used_bytes"])} (无限)')
+
+    alert_html = "".join(
+        f'<div class="alert-row">{html.escape(a.get("ts", ""))} — '
+        f'{html.escape(a.get("kind", ""))}: {html.escape(a.get("details", ""))}</div>'
+        for a in payload["recent_alerts"]
+    ) or '<div class="empty">无近期告警</div>'
+
+    content = f'''<a class="back-link" href="/admin/usage">← 返回 /admin/usage</a>
+<h2 class="user-title">{html.escape(uid)} {badge}
+  <span class="small">{payload["online"]} / {payload["max_devices"]} 在线</span>
+</h2>
+
+<div class="grid grid-3">
+  <div class="card stat"><div class="k">本周期</div><div class="v">{quota_line}</div></div>
+  <div class="card stat"><div class="k">今日</div><div class="v">{fmt_bytes(payload["today_bytes"])}</div></div>
+  <div class="card stat"><div class="k">当小时</div><div class="v">{fmt_bytes(payload["current_hour_bytes"])}</div></div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">7 天小时柱</div>
+  <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">个人 7×24 热图</div>
+  <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
+</div>
+
+<div class="card mt-md" style="padding:14px 18px;">
+  <div class="bold">最近告警</div>
+  <div style="margin-top:10px;">{alert_html}</div>
+</div>
+
+<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
+<script src="/static/usage.js" defer></script>
+'''
+    return render_admin_shell('usage', f'{uid} · 用量画像', content,
+                              subtitle=f'{host} · {LOCAL_TZ_LABEL}')
+
+
+def _render_daily_table_collapsed(host):
+    """Inline-render the legacy 14-day per-user table, no shell wrapping."""
+    days = 14
+    users = load_json(USERS_FILE, {})
+    daily = load_json(USAGE_DAILY_FILE, {})
+    today = local_now().date()
+    window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
+
+    rows_html = []
+    for uid, _cfg in users.items():
+        cells = []
+        for dk in window:
+            tx, rx, tot = _scale_daily_entry((daily.get(dk) or {}).get(uid))
+            cells.append(f'<td>{fmt_bytes(tot) if tot else "—"}</td>')
+        rows_html.append(f'<tr><th>{html.escape(uid)}</th>{"".join(cells)}</tr>')
+
+    headers = "".join(f'<th>{dk[5:]}</th>' for dk in window)
+    return (f'<table class="table daily-table-collapsed">'
+            f'<thead><tr><th>用户</th>{headers}</tr></thead>'
+            f'<tbody>{"".join(rows_html) or "<tr><td colspan=15>暂无数据</td></tr>"}</tbody>'
+            f'</table>')
 
 
 def probe_cron_heartbeat():
@@ -1312,6 +1622,11 @@ document.addEventListener('submit', function(ev){{
     return render_admin_shell('rules', '订阅路由规则', content, badge=f'{len(rules)} 条')
 
 
+def _handle_legacy_daily_redirect(handler):
+    """Permanent redirect from old /admin/daily to /admin/usage."""
+    handler.redirect("/admin/usage", status=301)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
@@ -1352,8 +1667,8 @@ class Handler(BaseHTTPRequestHandler):
         if send_payload:
             self.wfile.write(payload_bytes)
 
-    def redirect(self, to, cookie=None):
-        self.send_response(302)
+    def redirect(self, to, cookie=None, status=302):
+        self.send_response(status)
         self.send_header('Location', to)
         if cookie:
             self.send_header('Set-Cookie', cookie)
@@ -1400,6 +1715,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/static/admin-poll.js':
             self._serve_static(ADMIN_POLL_JS_BYTES, ADMIN_POLL_JS_ETAG,
+                               'application/javascript; charset=utf-8', send_payload)
+            return
+
+        if path == '/static/usage.js':
+            self._serve_static(USAGE_JS_BYTES, USAGE_JS_ETAG,
                                'application/javascript; charset=utf-8', send_payload)
             return
 
@@ -1494,15 +1814,59 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response_body(200, render_reset_logs(host), 'text/html; charset=utf-8', send_payload)
             return
 
-        if path == '/admin/daily':
+        if path == '/admin/usage':
             if not is_logged_in(self):
                 self.redirect('/login')
                 return
-            try:
-                days = int((q.get('days') or ['14'])[0])
-            except ValueError:
-                days = 14
-            self.send_response_body(200, render_daily_usage(host, days=days), 'text/html; charset=utf-8', send_payload)
+            self.send_response_body(
+                200, render_usage_page(host),
+                'text/html; charset=utf-8', send_payload,
+            )
+            return
+
+        if path == '/admin/usage.json':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            payload = _build_usage_json_payload(now=local_now())
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False),
+                'application/json; charset=utf-8', send_payload,
+            )
+            return
+
+        if path.startswith('/admin/user/') and not path.endswith('.json'):
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            uid = path[len('/admin/user/'):]
+            out = render_user_detail_page(uid, host)
+            if out is None:
+                self.send_response_body(404, '<h1>404 — 用户不存在</h1>',
+                                        'text/html; charset=utf-8', send_payload)
+                return
+            self.send_response_body(200, out,
+                                    'text/html; charset=utf-8', send_payload)
+            return
+
+        if path.startswith('/admin/user/') and path.endswith('.json'):
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            uid = path[len('/admin/user/'):-len('.json')]
+            payload = _build_user_json_payload(uid, now=local_now())
+            if payload is None:
+                self.send_response_body(404, '{"error":"not found"}',
+                                        'application/json; charset=utf-8', send_payload)
+                return
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False),
+                'application/json; charset=utf-8', send_payload,
+            )
+            return
+
+        if path == '/admin/daily':
+            _handle_legacy_daily_redirect(self)
             return
 
         if path == '/admin/health':

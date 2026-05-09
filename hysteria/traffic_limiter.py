@@ -7,6 +7,7 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from display import DISPLAY_MULTIPLIER
+from timeutil import local_now
 
 import alerts as _alerts
 import anomaly as _anomaly
@@ -21,11 +22,13 @@ XRAY_API = "127.0.0.1:10085"
 USERS_FILE = "/root/hysteria/users.json"
 USAGE_FILE = "/root/hysteria/state/usage.json"
 USAGE_DAILY_FILE = "/root/hysteria/state/usage_daily.json"
+USAGE_HOURLY_FILE = "/root/hysteria/state/usage_hourly.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 RESET_STATE_FILE = "/root/hysteria/state/auto_reset_state.json"
 RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
 USAGE_LOCK_FILE = "/root/hysteria/state/usage.lock"
 DAILY_RETENTION_DAYS = 30
+HOURLY_RETENTION_HOURS = 168
 API_BASE = "http://127.0.0.1:25413"
 API_SECRET = "__HY_API_SECRET__"
 
@@ -186,6 +189,14 @@ def prune_daily(daily, today):
             del daily[k]
 
 
+def prune_hourly(hourly, now):
+    """Drop hour buckets older than HOURLY_RETENTION_HOURS - 1 hours back from `now`."""
+    cutoff = (now - timedelta(hours=HOURLY_RETENTION_HOURS - 1)).strftime("%Y-%m-%dT%H")
+    for k in list(hourly.keys()):
+        if k < cutoff:
+            del hourly[k]
+
+
 def accumulate_daily(traffic, now):
     day_key = now.strftime("%Y-%m-%d")
     daily = load_json(USAGE_DAILY_FILE, {})
@@ -200,6 +211,27 @@ def accumulate_daily(traffic, now):
         daily[day_key][uid] = cur
     prune_daily(daily, now.date())
     save_json(USAGE_DAILY_FILE, daily)
+
+
+def accumulate_hourly(traffic, now):
+    """Mirror of accumulate_daily, bucketed at hour resolution.
+
+    Hour key format: 'YYYY-MM-DDTHH'. Pass a tz-aware `now` (project uses
+    timeutil.local_now()).
+    """
+    hour_key = now.strftime("%Y-%m-%dT%H")
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    hourly.setdefault(hour_key, {})
+    for uid, stat in traffic.items():
+        cur = normalize_usage_entry(hourly[hour_key].get(uid, 0))
+        tx = int(stat.get("tx", 0))
+        rx = int(stat.get("rx", 0))
+        cur["tx"] += tx
+        cur["rx"] += rx
+        cur["total"] += tx + rx
+        hourly[hour_key][uid] = cur
+    prune_hourly(hourly, now)
+    save_json(USAGE_HOURLY_FILE, hourly)
 
 
 def _fmt_bytes(n):
@@ -279,7 +311,7 @@ def check_alerts(usage, users, online, now, month_key, *, _opener=None):
 
 def main():
     users = load_json(USERS_FILE, {})
-    now = datetime.now()
+    now = local_now()
     month_key = billing_month_key(now)
     traffic = get("/traffic?clear=1") or {}
     merge_traffic(traffic, get_xray_traffic())
@@ -301,6 +333,7 @@ def main():
 
         save_json(USAGE_FILE, usage)
         accumulate_daily(traffic, now)
+        accumulate_hourly(traffic, now)
 
     online = get("/online")
     save_json(ONLINE_SNAPSHOT_FILE, online)

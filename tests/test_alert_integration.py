@@ -106,3 +106,23 @@ def test_quota_does_not_refire_same_month(tmp_path, monkeypatch):
             users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
             online={}, now=today, month_key='2026-05', _opener=opener)
     assert len(sent) == 1
+
+
+def test_reset_paths_do_not_touch_hourly_data():
+    """Regression guard: manual-reset code paths must not modify usage_hourly.json
+    (per spec %6 + ADR-0001). The reset logic lives inline inside the request
+    handler dispatcher; this static check is cheaper than spinning the full HTTP
+    flow.
+    """
+    import re
+    src = (Path(__file__).resolve().parents[1] / "hysteria" / "subscription_service.py").read_text(encoding="utf-8")
+    blocks = re.findall(
+        r"if path == .{1}/admin/reset-usage[^.]*.{1}:[\s\S]+?(?=\n        if path ==|\n    def |\Z)",
+        src,
+    )
+    assert blocks, "could not locate reset handler blocks - test needs updating"
+    for b in blocks:
+        assert "USAGE_HOURLY_FILE" not in b, (
+            "reset handler references USAGE_HOURLY_FILE; "
+            "manual reset must leave hourly facts intact (spec section 6)"
+        )
