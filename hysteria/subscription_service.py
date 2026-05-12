@@ -936,9 +936,8 @@ def render_admin(host, base_url, flash=''):
     </form>
   </details>
 </div>
-<script>
 <script src="/static/admin-poll.js" defer></script>
-</script>'''
+'''
     return render_admin_shell('dashboard', '总览', content,
                               badge=f'{len(users)} 个用户',
                               subtitle=f'{host} · 计费周期 {mk}',
@@ -1092,14 +1091,35 @@ def _aggregate_stats(*, now, online):
 
 def _build_usage_json_payload(*, now):
     """Compose the /admin/usage.json payload."""
+    users = load_json(USERS_FILE, {})
     online = load_json(ONLINE_FILE, {})
+    daily = load_json(USAGE_DAILY_FILE, {})
     series = _load_hourly_totals(now=now)
     grid = _load_heatmap_grid(now=now)
     stats = _aggregate_stats(now=now, online=online)
     top = _top_n_users(n=5, window_hours=24, now=now)
+    user_list = []
+    total_used = 0
+    for u, cfg in users.items():
+        tx, rx, used = scaled_usage_for_user(u, daily=daily, now=now)
+        total = user_total_quota(cfg)
+        total_used += used
+        user_list.append({
+            'user': u,
+            'tx': tx,
+            'rx': rx,
+            'used': used,
+            'total': total,
+            'percent': pct(used, total),
+            'online': int(online.get(u, 0)),
+            # NOTE: spark_html mirrors row_form's spark cell — see row_form for the 3-place coupling note.
+            'spark_html': sparkline_svg(daily_window_for_user(u, daily, days=30)),
+        })
     return {
         "ts": now.isoformat(timespec="seconds"),
         "stats": stats,
+        "total_used": total_used,
+        "users": user_list,
         "hourly_totals": series,
         "heatmap": grid,
         "top_n": top,
@@ -1992,35 +2012,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response_body(200, render_admin(host, base_url, flash=flash), 'text/html; charset=utf-8', send_payload)
             return
 
-        if path == '/admin/usage.json':
-            if not is_logged_in(self):
-                self.send_response_body(403, '{"error":"unauthorized"}', 'application/json; charset=utf-8', send_payload)
-                return
-            users = load_json_cached(USERS_FILE, {})
-            online = load_json_cached(ONLINE_FILE, {})
-            daily = load_json_cached(USAGE_DAILY_FILE, {})
-            now = local_now()
-            user_list = []
-            total_used = 0
-            for u, cfg in users.items():
-                tx, rx, used = scaled_usage_for_user(u, daily=daily, now=now)
-                total = user_total_quota(cfg)
-                total_used += used
-                user_list.append({
-                    'user': u,
-                    'tx': tx,
-                    'rx': rx,
-                    'used': used,
-                    'total': total,
-                    'percent': pct(used, total),
-                    'online': int(online.get(u, 0)),
-                    # NOTE: spark_html mirrors row_form's spark cell — see row_form for the 3-place coupling note.
-                    'spark_html': sparkline_svg(daily_window_for_user(u, daily, days=30)),
-                })
-            payload = json.dumps({'total_used': total_used, 'users': user_list}, ensure_ascii=True)
-            self.send_response_body(200, payload, 'application/json; charset=utf-8', send_payload)
-            return
-
         if path == '/admin/logs':
             if not is_logged_in(self):
                 self.redirect('/login')
@@ -2159,6 +2150,7 @@ class Handler(BaseHTTPRequestHandler):
             cfg.pop('password', None)
             cfg['max_devices'] = max(1, max_devices)
             cfg['monthly_quota_bytes'] = max(1, quota_gb) * 1024 * 1024 * 1024
+            cfg['metered'] = guest
             cfg['guest'] = guest
             if not cfg.get('sub_token'):
                 cfg['sub_token'] = secrets.token_urlsafe(18)
@@ -2188,6 +2180,7 @@ class Handler(BaseHTTPRequestHandler):
             token = secrets.token_urlsafe(18) if (reset_token or not existing_token) else existing_token
             vless_uuid = str(existing.get('vless_uuid') or '').strip() or str(uuid.uuid4())
             entry = {
+                'metered': guest,
                 'guest': guest,
                 'max_devices': 2,
                 'monthly_quota_bytes': max(1, quota_gb) * 1024 * 1024 * 1024,
