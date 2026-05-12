@@ -198,10 +198,10 @@ def migrate_admin_password():
 
 
 def month_key(now=None):
-    """Billing cycle resets on the 21st. Before the 21st belongs to the previous cycle."""
+    """Billing cycle resets on the 12th. Before the 12th belongs to the previous cycle."""
     if now is None:
         now = local_now()
-    if now.day >= 21:
+    if now.day >= 12:
         return now.strftime('%Y-%m')
     first = now.replace(day=1)
     prev = first - timedelta(days=1)
@@ -862,11 +862,11 @@ def _aggregate_stats(*, now, online):
     cycle_bucket = usage.get(mk) or {}
     cycle_raw = sum(_entry_total(v) for v in cycle_bucket.values())
 
-    if now.day >= 21:
-        cycle_start = now.replace(day=21, hour=0, minute=0, second=0, microsecond=0)
+    if now.day >= 12:
+        cycle_start = now.replace(day=12, hour=0, minute=0, second=0, microsecond=0)
     else:
         prev_month_end = now.replace(day=1) - timedelta(days=1)
-        cycle_start = prev_month_end.replace(day=21, hour=0, minute=0, second=0, microsecond=0)
+        cycle_start = prev_month_end.replace(day=12, hour=0, minute=0, second=0, microsecond=0)
     cycle_day = (now.date() - cycle_start.date()).days + 1
 
     return {
