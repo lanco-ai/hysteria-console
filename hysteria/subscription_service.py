@@ -207,10 +207,13 @@ def migrate_admin_password():
 
 
 SETTLEMENT_DAY_DEFAULT = 12
+CYCLE_LENGTH_DAYS_DEFAULT = 30
+CYCLE_LENGTH_MIN = 1
+CYCLE_LENGTH_MAX = 90
 
 
 def get_settlement_day():
-    """Day-of-month when the billing cycle rolls over. Editable via /admin/settlement-day."""
+    """Day-of-month when the billing cycle rolls over. Editable via /admin/cycle-config."""
     try:
         v = int((load_json(META_FILE, {}) or {}).get('settlement_day', SETTLEMENT_DAY_DEFAULT))
     except (TypeError, ValueError):
@@ -218,18 +221,74 @@ def get_settlement_day():
     return max(1, min(28, v))
 
 
-def cycle_start_for(now, day=None):
-    """Datetime at 00:00 local of the most recent settlement-day on/before `now`."""
-    d = int(day if day is not None else get_settlement_day())
-    if now.day >= d:
-        return now.replace(day=d, hour=0, minute=0, second=0, microsecond=0)
+def get_cycle_length_days():
+    """Length of one billing cycle, in days. Editable via /admin/cycle-config.
+    Cycles roll exactly every N days from `cycle_anchor_date` (or, if absent,
+    from the most recent settlement_day on/before today)."""
+    try:
+        v = int((load_json(META_FILE, {}) or {}).get('cycle_length_days', CYCLE_LENGTH_DAYS_DEFAULT))
+    except (TypeError, ValueError):
+        return CYCLE_LENGTH_DAYS_DEFAULT
+    return max(CYCLE_LENGTH_MIN, min(CYCLE_LENGTH_MAX, v))
+
+
+def _settlement_anchor_date(now, settlement_day):
+    """Most recent date with day-of-month == settlement_day, on/before now.date().
+    Falls back through prev month / Feb edge cases."""
+    if now.day >= settlement_day:
+        return now.date().replace(day=settlement_day)
     prev_month_end = now.replace(day=1) - timedelta(days=1)
-    return prev_month_end.replace(day=d, hour=0, minute=0, second=0, microsecond=0)
+    return prev_month_end.date().replace(day=settlement_day)
+
+
+def get_cycle_anchor_date(now=None):
+    """The anchor date (a settlement day in the past or today) that all N-day
+    cycle blocks count from. Read from META_FILE if persisted, else derive
+    from the current settlement_day. Storing the anchor keeps cycle boundaries
+    stable across the inevitable jump that would otherwise happen each month
+    when settlement_day recurs (e.g. with cycle_length=15, the most-recent-
+    settlement-day-of-month anchor would skip cycles)."""
+    if now is None:
+        now = local_now()
+    meta = load_json(META_FILE, {}) or {}
+    raw = meta.get('cycle_anchor_date')
+    if raw:
+        try:
+            return datetime.strptime(str(raw), '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            pass
+    return _settlement_anchor_date(now, get_settlement_day())
+
+
+def cycle_start_for(now, day=None, length=None, anchor=None):
+    """Datetime at 00:00 local of the current cycle's start.
+
+    For cycle_length_days==30 (default) the result matches the pre-existing
+    calendar-month behaviour as long as the anchor is the most recent
+    settlement_day. For shorter/longer N, cycles roll exactly every N days
+    from the anchor — they intentionally do not re-align to calendar months."""
+    if anchor is None:
+        if day is None:
+            anchor = get_cycle_anchor_date(now)
+        else:
+            anchor = _settlement_anchor_date(now, int(day))
+    N = int(length) if length is not None else get_cycle_length_days()
+    today = now.date()
+    if today < anchor:
+        # `now` is before the anchor (operator just changed settings forward in
+        # time); treat the anchor as the current cycle's start.
+        start_date = anchor
+    else:
+        offset_days = (today - anchor).days
+        start_date = anchor + timedelta(days=(offset_days // N) * N)
+    return datetime.combine(start_date, datetime.min.time(), tzinfo=now.tzinfo)
 
 
 def month_key(now=None):
-    """Cycle key (YYYY-MM) of the cycle whose start day is `settlement_day`.
-    Before the settlement day, traffic belongs to the previous cycle."""
+    """Legacy cycle key (YYYY-MM) used as a dict key in usage.json. Cycle reads
+    are now derived from usage_daily.json (see _cycle_days), so this key only
+    needs to round-trip with traffic_limiter.billing_month_key; it does not
+    drive the displayed cycle range."""
     if now is None:
         now = local_now()
     d = get_settlement_day()
@@ -241,12 +300,15 @@ def month_key(now=None):
 
 
 def _cycle_days(now):
-    """List of YYYY-MM-DD date keys covered by the current cycle, oldest first."""
+    """List of YYYY-MM-DD date keys covered by the current cycle, oldest first.
+    Capped at today (future days in a cycle aren't displayed/summed)."""
     start = cycle_start_for(now).date()
+    end = start + timedelta(days=get_cycle_length_days() - 1)
     today = now.date()
+    last = min(end, today)
     out = []
     d = start
-    while d <= today:
+    while d <= last:
         out.append(d.strftime('%Y-%m-%d'))
         d += timedelta(days=1)
     return out
@@ -600,6 +662,7 @@ def flash_text(msg):
         'user empty': '用户名不能为空',
         'user_exists_use_reset_token': '用户已存在，请勾选”若用户已存在则重置订阅令牌”后再创建',
         'settlement_invalid': '结算日无效（请输入 1–28 之间的整数）',
+        'cycle_length_invalid': f'周期长度无效（请输入 {CYCLE_LENGTH_MIN}–{CYCLE_LENGTH_MAX} 之间的整数）',
     }
     return maps.get(msg, msg)
 
@@ -799,15 +862,20 @@ def render_admin(host, base_url, flash=''):
     daily = load_json(USAGE_DAILY_FILE, {})
     total_used = sum(scaled_usage_for_user(u, daily=daily, now=now)[2] for u in users)
     settlement_day = get_settlement_day()
-    cycle_start = cycle_start_for(now, day=settlement_day)
-    cycle_end = (cycle_start + timedelta(days=30)) - timedelta(days=1)
+    cycle_length = get_cycle_length_days()
+    cycle_start = cycle_start_for(now)
+    cycle_end = cycle_start + timedelta(days=cycle_length - 1)
     cycle_day = (now.date() - cycle_start.date()).days + 1
-    cycle_range = f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")} · 第 {cycle_day}/30 天'
+    cycle_range = f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")} · 第 {cycle_day}/{cycle_length} 天'
     settle_form = (
-        f'<form method="post" action="/admin/settlement-day" class="inline-form-row" style="margin:0;">'
+        f'<form method="post" action="/admin/cycle-config" class="inline-form-row" style="margin:0;">'
         f'<label class="small" style="margin-right:6px;">结算日</label>'
         f'<input name="day" type="number" min="1" max="28" value="{settlement_day}" '
         f'style="width:60px;margin-right:6px;" required>'
+        f'<label class="small" style="margin-right:6px;">周期</label>'
+        f'<input name="length" type="number" min="{CYCLE_LENGTH_MIN}" max="{CYCLE_LENGTH_MAX}" '
+        f'value="{cycle_length}" style="width:60px;margin-right:2px;" required>'
+        f'<span class="small" style="margin-right:6px;">天</span>'
         f'<button class="btn ghost btn-sm" type="submit">保存</button>'
         f'</form>'
     )
@@ -817,7 +885,7 @@ def render_admin(host, base_url, flash=''):
     content = f'''{alert}
 <div class="grid grid-3">
   <div class="card stat"><div class="k">本周期总流量</div><div class="v big" id="total-used">{fmt_bytes(total_used)}</div><div class="small">{html.escape(cycle_range)}</div><div class="accent-bar"></div></div>
-  <div class="card stat"><div class="k">计费周期</div><div class="v">{mk}</div><div class="small">每月 {settlement_day} 日结算</div></div>
+  <div class="card stat"><div class="k">计费周期</div><div class="v">{mk}</div><div class="small">每 {cycle_length} 天结算 · 第 {settlement_day} 日</div></div>
   <div class="card stat">
     <div class="k">快速操作</div>
     <form method="post" action="/admin/reset-usage-all" data-action="reset-all" style="margin:6px 0 0;">
@@ -989,6 +1057,7 @@ def _aggregate_stats(*, now, online):
 
     cycle_start = cycle_start_for(now)
     cycle_day = (now.date() - cycle_start.date()).days + 1
+    cycle_total_days = get_cycle_length_days()
 
     return {
         "current_hour_bytes": int(current_hour_raw * DISPLAY_MULTIPLIER),
@@ -997,7 +1066,7 @@ def _aggregate_stats(*, now, online):
         "last_7d_bytes": int(last_7d_raw * DISPLAY_MULTIPLIER),
         "cycle_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
         "cycle_day": cycle_day,
-        "cycle_total_days": 30,
+        "cycle_total_days": cycle_total_days,
         "online": int(sum(1 for v in (online or {}).values() if int(v or 0) > 0)),
     }
 
@@ -2117,7 +2186,7 @@ class Handler(BaseHTTPRequestHandler):
             self.redirect('/admin?msg=created+' + username)
             return
 
-        if path == '/admin/settlement-day':
+        if path in ('/admin/cycle-config', '/admin/settlement-day'):
             if not is_logged_in(self):
                 self.redirect('/login')
                 return
@@ -2129,8 +2198,25 @@ class Handler(BaseHTTPRequestHandler):
             if day < 1 or day > 28:
                 self.redirect('/admin?msg=err:settlement_invalid')
                 return
+            raw_len = (form.get('length') or [''])[0].strip()
+            length = None
+            if raw_len:
+                try:
+                    length = int(raw_len)
+                except (ValueError, TypeError):
+                    self.redirect('/admin?msg=err:cycle_length_invalid')
+                    return
+                if length < CYCLE_LENGTH_MIN or length > CYCLE_LENGTH_MAX:
+                    self.redirect('/admin?msg=err:cycle_length_invalid')
+                    return
             meta = load_json(META_FILE, {})
             meta['settlement_day'] = day
+            if length is not None:
+                meta['cycle_length_days'] = length
+            # Re-anchor the cycle calendar so subsequent N-day blocks start
+            # cleanly from the latest settlement_day (avoids the cycle "jumping"
+            # mid-period after a config change).
+            meta['cycle_anchor_date'] = _settlement_anchor_date(local_now(), day).strftime('%Y-%m-%d')
             save_json(META_FILE, meta)
             self.redirect(f'/admin?msg=settlement+{day}')
             return

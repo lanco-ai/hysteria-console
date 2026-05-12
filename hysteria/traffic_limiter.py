@@ -29,6 +29,9 @@ RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
 USAGE_LOCK_FILE = "/root/hysteria/state/usage.lock"
 META_FILE = "/root/hysteria/subscription_meta.json"
 SETTLEMENT_DAY_DEFAULT = 12
+CYCLE_LENGTH_DAYS_DEFAULT = 30
+CYCLE_LENGTH_MIN = 1
+CYCLE_LENGTH_MAX = 90
 DAILY_RETENTION_DAYS = 30
 HOURLY_RETENTION_HOURS = 168
 API_BASE = "http://127.0.0.1:25413"
@@ -44,12 +47,42 @@ def load_json(path, default):
 
 
 def get_settlement_day():
-    """Day-of-month when the billing cycle rolls over. Editable via /admin/settlement-day."""
+    """Day-of-month when the billing cycle rolls over. Editable via /admin/cycle-config."""
     try:
         v = int((load_json(META_FILE, {}) or {}).get("settlement_day", SETTLEMENT_DAY_DEFAULT))
     except (TypeError, ValueError):
         return SETTLEMENT_DAY_DEFAULT
     return max(1, min(28, v))
+
+
+def get_cycle_length_days():
+    """Length of one billing cycle, in days. Mirrors subscription_service.get_cycle_length_days."""
+    try:
+        v = int((load_json(META_FILE, {}) or {}).get("cycle_length_days", CYCLE_LENGTH_DAYS_DEFAULT))
+    except (TypeError, ValueError):
+        return CYCLE_LENGTH_DAYS_DEFAULT
+    return max(CYCLE_LENGTH_MIN, min(CYCLE_LENGTH_MAX, v))
+
+
+def _settlement_anchor_date(now, settlement_day):
+    """Most recent date with day-of-month == settlement_day, on/before now."""
+    if now.day >= settlement_day:
+        return now.date().replace(day=settlement_day)
+    prev_month_end = now.replace(day=1) - timedelta(days=1)
+    return prev_month_end.date().replace(day=settlement_day)
+
+
+def get_cycle_anchor_date(now):
+    """Persisted anchor date (the cycle calendar's origin). Falls back to the
+    most recent settlement_day on/before now if not yet stored."""
+    meta = load_json(META_FILE, {}) or {}
+    raw = meta.get("cycle_anchor_date")
+    if raw:
+        try:
+            return datetime.strptime(str(raw), "%Y-%m-%d").date()
+        except (TypeError, ValueError):
+            pass
+    return _settlement_anchor_date(now, get_settlement_day())
 
 
 def save_json(path, data):
@@ -126,21 +159,30 @@ def billing_month_key(now, day=None):
     return prev.strftime("%Y-%m")
 
 
-def cycle_days(now, day=None):
-    """List of YYYY-MM-DD date keys in the current cycle, oldest first."""
-    from datetime import timedelta as _td
-    d = int(day if day is not None else get_settlement_day())
-    if now.day >= d:
-        start = now.replace(day=d, hour=0, minute=0, second=0, microsecond=0).date()
-    else:
-        prev_month_end = now.replace(day=1) - _td(days=1)
-        start = prev_month_end.replace(day=d, hour=0, minute=0, second=0, microsecond=0).date()
+def cycle_days(now, day=None, length=None, anchor=None):
+    """List of YYYY-MM-DD date keys in the current cycle, oldest first.
+
+    Uses fixed-N-day rolling blocks anchored at `anchor` (defaults to the
+    persisted `cycle_anchor_date`, or to the most recent settlement_day on/
+    before now if not set)."""
+    if anchor is None:
+        if day is None:
+            anchor = get_cycle_anchor_date(now)
+        else:
+            anchor = _settlement_anchor_date(now, int(day))
+    N = int(length) if length is not None else get_cycle_length_days()
     today = now.date()
+    if today < anchor:
+        start = anchor
+    else:
+        offset_days = (today - anchor).days
+        start = anchor + timedelta(days=(offset_days // N) * N)
+    end = min(start + timedelta(days=N - 1), today)
     out = []
     cur = start
-    while cur <= today:
+    while cur <= end:
         out.append(cur.strftime("%Y-%m-%d"))
-        cur += _td(days=1)
+        cur += timedelta(days=1)
     return out
 
 
@@ -403,7 +445,7 @@ def main():
         quota = int(cfg.get("monthly_quota_bytes", 0))
         if quota <= 0:
             continue
-        used = cycle_used_raw_for(uid, daily_for_kick, now=now, day=settle_day)
+        used = cycle_used_raw_for(uid, daily_for_kick, now=now)
         if used * DISPLAY_MULTIPLIER >= quota and int(online.get(uid, 0)) > 0:
             to_kick.append(uid)
 
