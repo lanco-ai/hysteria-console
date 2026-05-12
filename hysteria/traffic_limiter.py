@@ -97,9 +97,9 @@ def post(path, obj):
 
 
 def billing_month_key(now):
-    """Billing cycle resets on the 21st. Before the 21st belongs to the previous cycle.
+    """Billing cycle resets on the 12th. Before the 12th belongs to the previous cycle.
     Must match subscription_service.month_key() / auth_backend month logic."""
-    if now.day >= 21:
+    if now.day >= 12:
         return now.strftime("%Y-%m")
     prev = now.replace(day=1) - timedelta(days=1)
     return prev.strftime("%Y-%m")
@@ -116,7 +116,7 @@ def normalize_usage_entry(entry):
 
 
 def maybe_reset_all_usage_on_day_21(now, users, usage, month):
-    if now.day != 21:
+    if now.day != 12:
         return
     state = load_json(RESET_STATE_FILE, {})
     if state.get("last_reset_month") == month:

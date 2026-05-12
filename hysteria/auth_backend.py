@@ -87,7 +87,7 @@ def main():
 
     if user_compat.is_metered(u):
         now = datetime.now()
-        if now.day >= 21:
+        if now.day >= 12:
             month_key = now.strftime("%Y-%m")
         else:
             from datetime import timedelta
