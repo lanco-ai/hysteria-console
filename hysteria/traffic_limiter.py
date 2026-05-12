@@ -35,7 +35,26 @@ CYCLE_LENGTH_MAX = 90
 DAILY_RETENTION_DAYS = 30
 HOURLY_RETENTION_HOURS = 168
 API_BASE = "http://127.0.0.1:25413"
-API_SECRET = "__HY_API_SECRET__"
+API_SECRET_FILE = "/root/hysteria/api_secret"
+API_SECRET_PLACEHOLDER = "__HY_API_SECRET__"
+API_SECRET_FALLBACK = "__HY_API_SECRET__"
+
+
+def get_api_secret():
+    """Read the hysteria API auth secret from a file (single-line, mode 600).
+    Falls back to the module-level placeholder for legacy installs that still
+    rely on deploy.sh's sed substitution. The file-based path means `git pull`
+    of just the .py sources can't accidentally overwrite a deployed secret
+    with the literal placeholder string (which is what triggered HTTP 401
+    crashes in the cron tick — see PR #11)."""
+    try:
+        with open(API_SECRET_FILE, "r", encoding="utf-8") as f:
+            v = f.read().strip()
+        if v and v != API_SECRET_PLACEHOLDER:
+            return v
+    except OSError:
+        pass
+    return API_SECRET_FALLBACK
 
 
 def load_json(path, default):
@@ -135,7 +154,7 @@ def get(path):
     try:
         req = urllib.request.Request(
             f"{API_BASE}{path}",
-            headers={"Authorization": API_SECRET},
+            headers={"Authorization": get_api_secret()},
             method="GET",
         )
         with urllib.request.urlopen(req, timeout=3) as resp:
@@ -154,7 +173,7 @@ def post(path, obj):
         req = urllib.request.Request(
             f"{API_BASE}{path}",
             data=body,
-            headers={"Authorization": API_SECRET, "Content-Type": "application/json"},
+            headers={"Authorization": get_api_secret(), "Content-Type": "application/json"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=3):
