@@ -91,7 +91,7 @@ render "$REPO_DIR/hysteria/clash-default.yaml.tpl" "$HY_DIR/template.yaml"
 
 log "Rendering xray config.json..."
 render "$REPO_DIR/xray/config.json.tpl" "$XRAY_ETC/config.json"
-chmod 600 "$XRAY_ETC/config.json"
+chmod 644 "$XRAY_ETC/config.json"
 
 # ---------- 6. Initial users.json ----------
 if [[ ! -f "$HY_DIR/users.json" ]]; then

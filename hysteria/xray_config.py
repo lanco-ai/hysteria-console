@@ -44,6 +44,7 @@ def _load_config(path):
 
 def _save_config(path, cfg):
     path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    path.chmod(0o644)
 
 
 def sync_user(username, vless_uuid, *, path=None):
