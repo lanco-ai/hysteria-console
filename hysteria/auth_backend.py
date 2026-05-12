@@ -11,6 +11,7 @@ import user_compat
 
 USERS_FILE = "/root/hysteria/users.json"
 USAGE_FILE = "/root/hysteria/state/usage.json"
+USAGE_DAILY_FILE = "/root/hysteria/state/usage_daily.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 META_FILE = "/root/hysteria/subscription_meta.json"
 SETTLEMENT_DAY_DEFAULT = 12
@@ -94,13 +95,20 @@ def main():
         except (TypeError, ValueError):
             settle_day = SETTLEMENT_DAY_DEFAULT
         settle_day = max(1, min(28, settle_day))
+        from datetime import timedelta
         if now.day >= settle_day:
-            month_key = now.strftime("%Y-%m")
+            cycle_start_date = now.replace(day=settle_day).date()
         else:
-            from datetime import timedelta
-            month_key = (now.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
-        usage = load_json(USAGE_FILE, {})
-        used = usage_total(usage.get(month_key, {}).get(username, 0))
+            prev_month_end = now.replace(day=1) - timedelta(days=1)
+            cycle_start_date = prev_month_end.replace(day=settle_day).date()
+        daily = load_json(USAGE_DAILY_FILE, {})
+        used = 0
+        d = cycle_start_date
+        today = now.date()
+        while d <= today:
+            entry = (daily.get(d.strftime("%Y-%m-%d")) or {}).get(username)
+            used += usage_total(entry)
+            d += timedelta(days=1)
         quota = int(u.get("monthly_quota_bytes", 0))
         if quota > 0 and used >= quota:
             sys.exit(1)

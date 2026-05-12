@@ -72,18 +72,20 @@ def test_anomaly_fires_once_per_day(tmp_path, monkeypatch):
 
 
 def test_quota_80_fires_when_crossed(tmp_path, monkeypatch):
-    today = datetime(2026, 5, 5)
+    today = datetime(2026, 5, 15)  # day >= settlement_day(12) -> cycle is "2026-05"
     quota = 30 * GiB
     # Aim for 90% of quota after scaling, regardless of DISPLAY_MULTIPLIER value.
     raw = int(0.90 * quota / tl._DM)
+    daily_with_quota = {today.strftime('%Y-%m-%d'):
+                        {'alice': {'tx': 0, 'rx': raw, 'total': raw}}}
     sent, opener, _ = _setup(
-        tmp_path, daily={},
-        usage={'2026-05': {'alice': {'tx': 0, 'rx': raw, 'total': raw}}},
+        tmp_path, daily=daily_with_quota,
+        usage={},
         users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
         online={}, monkeypatch=monkeypatch,
         alerts_cfg={'webhook': {'url': 'https://example.invalid/'}})
     tl.check_alerts(
-        usage={'2026-05': {'alice': {'tx': 0, 'rx': raw, 'total': raw}}},
+        usage={},
         users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
         online={}, now=today, month_key='2026-05', _opener=opener)
     assert len(sent) == 1
@@ -91,29 +93,35 @@ def test_quota_80_fires_when_crossed(tmp_path, monkeypatch):
 
 
 def test_quota_does_not_refire_same_month(tmp_path, monkeypatch):
-    today = datetime(2026, 5, 5)
+    today = datetime(2026, 5, 15)
     quota = 30 * GiB
     raw = int(0.90 * quota / tl._DM)
+    daily_with_quota = {today.strftime('%Y-%m-%d'):
+                        {'alice': {'tx': 0, 'rx': raw, 'total': raw}}}
     sent, opener, _ = _setup(
-        tmp_path, daily={},
-        usage={'2026-05': {'alice': {'tx': 0, 'rx': raw, 'total': raw}}},
+        tmp_path, daily=daily_with_quota,
+        usage={},
         users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
         online={}, monkeypatch=monkeypatch,
         alerts_cfg={'webhook': {'url': 'https://example.invalid/'}})
     for _ in range(3):
         tl.check_alerts(
-            usage={'2026-05': {'alice': {'tx': 0, 'rx': raw, 'total': raw}}},
+            usage={},
             users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
             online={}, now=today, month_key='2026-05', _opener=opener)
     assert len(sent) == 1
 
 
-def test_reset_paths_do_not_touch_hourly_data():
-    """Regression guard: manual-reset code paths must not modify usage_hourly.json
-    (per spec %6 + ADR-0001). The reset logic lives inline inside the request
-    handler dispatcher; this static check is cheaper than spinning the full HTTP
-    flow.
-    """
+def test_reset_paths_clear_cycle_daily_hourly_for_user():
+    """Manual reset must clear the user's daily + hourly entries within the
+    current cycle so that `本周期`, `今日`, and `当小时` all read 0 immediately
+    after a reset.
+
+    Background: the original spec section 6 kept hourly intact for audit. That
+    was abandoned once 本周期 was rewired to derive from usage_daily.json (to
+    enforce `本周期 >= 今日 >= 当小时`): keeping hourly intact would leave
+    `当小时` showing pre-reset traffic against a 0 cycle, which is the bug
+    operators were hitting. Reset logs preserve before-values for audit."""
     import re
     src = (Path(__file__).resolve().parents[1] / "hysteria" / "subscription_service.py").read_text(encoding="utf-8")
     blocks = re.findall(
@@ -122,7 +130,7 @@ def test_reset_paths_do_not_touch_hourly_data():
     )
     assert blocks, "could not locate reset handler blocks - test needs updating"
     for b in blocks:
-        assert "USAGE_HOURLY_FILE" not in b, (
-            "reset handler references USAGE_HOURLY_FILE; "
-            "manual reset must leave hourly facts intact (spec section 6)"
+        assert "_zero_cycle_daily_hourly_for" in b, (
+            "reset handler must call _zero_cycle_daily_hourly_for so that "
+            "post-reset display (cycle/today/current-hour) all read 0"
         )
