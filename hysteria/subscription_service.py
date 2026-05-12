@@ -197,11 +197,34 @@ def migrate_admin_password():
         save_json(META_FILE, meta)
 
 
+SETTLEMENT_DAY_DEFAULT = 12
+
+
+def get_settlement_day():
+    """Day-of-month when the billing cycle rolls over. Editable via /admin/settlement-day."""
+    try:
+        v = int((load_json(META_FILE, {}) or {}).get('settlement_day', SETTLEMENT_DAY_DEFAULT))
+    except (TypeError, ValueError):
+        return SETTLEMENT_DAY_DEFAULT
+    return max(1, min(28, v))
+
+
+def cycle_start_for(now, day=None):
+    """Datetime at 00:00 local of the most recent settlement-day on/before `now`."""
+    d = int(day if day is not None else get_settlement_day())
+    if now.day >= d:
+        return now.replace(day=d, hour=0, minute=0, second=0, microsecond=0)
+    prev_month_end = now.replace(day=1) - timedelta(days=1)
+    return prev_month_end.replace(day=d, hour=0, minute=0, second=0, microsecond=0)
+
+
 def month_key(now=None):
-    """Billing cycle resets on the 12th. Before the 12th belongs to the previous cycle."""
+    """Cycle key (YYYY-MM) of the cycle whose start day is `settlement_day`.
+    Before the settlement day, traffic belongs to the previous cycle."""
     if now is None:
         now = local_now()
-    if now.day >= 12:
+    d = get_settlement_day()
+    if now.day >= d:
         return now.strftime('%Y-%m')
     first = now.replace(day=1)
     prev = first - timedelta(days=1)
@@ -475,6 +498,8 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
 def flash_text(msg):
     if not msg:
         return ''
+    if msg.startswith('err:'):
+        msg = msg[4:]
     if msg == 'login success':
         return '登录成功'
     if msg.startswith('updated '):
@@ -487,10 +512,13 @@ def flash_text(msg):
         return '已清除全部用户本月已用流量'
     if msg.startswith('deleted '):
         return f'已删除用户：{msg.split(" ", 1)[1]}'
+    if msg.startswith('settlement '):
+        return f'已更新结算日：每月 {msg.split(" ", 1)[1]} 日'
     maps = {
         'user not found': '用户不存在',
         'user empty': '用户名不能为空',
         'user_exists_use_reset_token': '用户已存在，请勾选”若用户已存在则重置订阅令牌”后再创建',
+        'settlement_invalid': '结算日无效（请输入 1–28 之间的整数）',
     }
     return maps.get(msg, msg)
 
@@ -685,20 +713,35 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None):
 def render_admin(host, base_url, flash=''):
     users = load_json(USERS_FILE, {})
     online = load_json(ONLINE_FILE, {})
-    usage_month = load_json(USAGE_FILE, {}).get(month_key(), {})
+    now = local_now()
+    mk = month_key(now)
+    usage_month = load_json(USAGE_FILE, {}).get(mk, {})
     daily = load_json(USAGE_DAILY_FILE, {})
     total_used = sum(scaled_usage_for_user(u, usage_month)[2] for u in users)
+    settlement_day = get_settlement_day()
+    cycle_start = cycle_start_for(now, day=settlement_day)
+    cycle_end = (cycle_start + timedelta(days=30)) - timedelta(days=1)
+    cycle_day = (now.date() - cycle_start.date()).days + 1
+    cycle_range = f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")} · 第 {cycle_day}/30 天'
+    settle_form = (
+        f'<form method="post" action="/admin/settlement-day" class="inline-form-row" style="margin:0;">'
+        f'<label class="small" style="margin-right:6px;">结算日</label>'
+        f'<input name="day" type="number" min="1" max="28" value="{settlement_day}" '
+        f'style="width:60px;margin-right:6px;" required>'
+        f'<button class="btn ghost btn-sm" type="submit">保存</button>'
+        f'</form>'
+    )
     alert = render_alert(flash_text(flash))
     rows = ''.join(row_form(u, cfg, online, host, base_url, usage_month, daily) for u, cfg in users.items()) \
         or '<tr><td colspan="5" class="empty">暂无用户，使用下方表单创建第一个用户</td></tr>'
     content = f'''{alert}
 <div class="grid grid-3">
-  <div class="card stat"><div class="k">本月总流量</div><div class="v big" id="total-used">{fmt_bytes(total_used)}</div><div class="accent-bar"></div></div>
-  <div class="card stat"><div class="k">统计月份</div><div class="v">{month_key()}</div></div>
+  <div class="card stat"><div class="k">本周期总流量</div><div class="v big" id="total-used">{fmt_bytes(total_used)}</div><div class="small">{html.escape(cycle_range)}</div><div class="accent-bar"></div></div>
+  <div class="card stat"><div class="k">计费周期</div><div class="v">{mk}</div><div class="small">每月 {settlement_day} 日结算</div></div>
   <div class="card stat">
     <div class="k">快速操作</div>
     <form method="post" action="/admin/reset-usage-all" data-action="reset-all" style="margin:6px 0 0;">
-      <button class="btn secondary btn-sm" type="submit">一键清空本月已用</button>
+      <button class="btn secondary btn-sm" type="submit">一键清空本周期已用</button>
     </form>
   </div>
 </div>
@@ -731,7 +774,8 @@ def render_admin(host, base_url, flash=''):
 </script>'''
     return render_admin_shell('dashboard', '总览', content,
                               badge=f'{len(users)} 个用户',
-                              subtitle=f'{host} · 计费月份 {month_key()}')
+                              subtitle=f'{host} · 计费周期 {mk}',
+                              topbar_extra=settle_form)
 
 
 def _action_label(action):
@@ -862,11 +906,7 @@ def _aggregate_stats(*, now, online):
     cycle_bucket = usage.get(mk) or {}
     cycle_raw = sum(_entry_total(v) for v in cycle_bucket.values())
 
-    if now.day >= 12:
-        cycle_start = now.replace(day=12, hour=0, minute=0, second=0, microsecond=0)
-    else:
-        prev_month_end = now.replace(day=1) - timedelta(days=1)
-        cycle_start = prev_month_end.replace(day=12, hour=0, minute=0, second=0, microsecond=0)
+    cycle_start = cycle_start_for(now)
     cycle_day = (now.date() - cycle_start.date()).days + 1
 
     return {
@@ -1995,6 +2035,24 @@ class Handler(BaseHTTPRequestHandler):
             if xray_config.sync_user(username, vless_uuid):
                 xray_config.reload_async()
             self.redirect('/admin?msg=created+' + username)
+            return
+
+        if path == '/admin/settlement-day':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            try:
+                day = int((form.get('day') or [''])[0])
+            except (ValueError, TypeError):
+                self.redirect('/admin?msg=err:settlement_invalid')
+                return
+            if day < 1 or day > 28:
+                self.redirect('/admin?msg=err:settlement_invalid')
+                return
+            meta = load_json(META_FILE, {})
+            meta['settlement_day'] = day
+            save_json(META_FILE, meta)
+            self.redirect(f'/admin?msg=settlement+{day}')
             return
 
         if path == '/admin/reset-usage':

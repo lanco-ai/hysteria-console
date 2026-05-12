@@ -12,6 +12,8 @@ import user_compat
 USERS_FILE = "/root/hysteria/users.json"
 USAGE_FILE = "/root/hysteria/state/usage.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
+META_FILE = "/root/hysteria/subscription_meta.json"
+SETTLEMENT_DAY_DEFAULT = 12
 API_BASE = "http://127.0.0.1:25413"
 API_SECRET = "__HY_API_SECRET__"
 
@@ -87,7 +89,12 @@ def main():
 
     if user_compat.is_metered(u):
         now = datetime.now()
-        if now.day >= 12:
+        try:
+            settle_day = int((load_json(META_FILE, {}) or {}).get("settlement_day", SETTLEMENT_DAY_DEFAULT))
+        except (TypeError, ValueError):
+            settle_day = SETTLEMENT_DAY_DEFAULT
+        settle_day = max(1, min(28, settle_day))
+        if now.day >= settle_day:
             month_key = now.strftime("%Y-%m")
         else:
             from datetime import timedelta
