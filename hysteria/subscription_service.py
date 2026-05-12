@@ -38,7 +38,26 @@ SESSIONS_FILE = Path('/root/hysteria/state/panel_sessions.json')
 RESET_LOG_FILE = Path('/root/hysteria/state/usage_reset.log')
 USAGE_LOCK_FILE = Path('/root/hysteria/state/usage.lock')
 HY_API_BASE = 'http://127.0.0.1:25413'
-HY_API_SECRET = '__HY_API_SECRET__'
+HY_API_SECRET_FILE = '/root/hysteria/api_secret'
+HY_API_SECRET_PLACEHOLDER = '__HY_API_SECRET__'
+HY_API_SECRET_FALLBACK = '__HY_API_SECRET__'
+
+
+def get_hy_api_secret():
+    """Read the hysteria API auth secret at runtime from /root/hysteria/api_secret.
+    Falls back to the (possibly sed-substituted) module-level constant so existing
+    deploys keep working without re-rendering. Reading at request time means
+    a deploy that updates only the secret file takes effect immediately, and
+    a `git pull` that resets the source file to the literal placeholder no
+    longer causes 401s in the cron tick."""
+    try:
+        with open(HY_API_SECRET_FILE, 'r', encoding='utf-8') as f:
+            v = f.read().strip()
+        if v and v != HY_API_SECRET_PLACEHOLDER:
+            return v
+    except OSError:
+        pass
+    return HY_API_SECRET_FALLBACK
 
 
 def hy_kick(usernames):
@@ -50,7 +69,7 @@ def hy_kick(usernames):
         req = urllib.request.Request(
             f'{HY_API_BASE}/kick',
             data=body,
-            headers={'Authorization': HY_API_SECRET, 'Content-Type': 'application/json'},
+            headers={'Authorization': get_hy_api_secret(), 'Content-Type': 'application/json'},
             method='POST',
         )
         with urllib.request.urlopen(req, timeout=3):

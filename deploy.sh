@@ -72,6 +72,15 @@ render() {
 
 install -d -m 755 "$HY_DIR" "$HY_DIR/state" "$XRAY_ETC"
 
+# Runtime secret file — read at module load by the three .py services. Means a
+# later `git pull` of the source files can't accidentally overwrite a deployed
+# secret with the literal placeholder string and break the API auth header.
+log "Writing $HY_DIR/api_secret"
+umask 077
+printf '%s\n' "$HY_API_SECRET" > "$HY_DIR/api_secret"
+chmod 600 "$HY_DIR/api_secret"
+umask 022
+
 log "Rendering hysteria config and sources..."
 render "$REPO_DIR/hysteria/config.yaml.tpl"          "$HY_DIR/config.yaml"
 render "$REPO_DIR/hysteria/auth_backend.py"          "$HY_DIR/auth_backend.py"

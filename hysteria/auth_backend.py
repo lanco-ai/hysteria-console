@@ -19,7 +19,23 @@ CYCLE_LENGTH_DAYS_DEFAULT = 30
 CYCLE_LENGTH_MIN = 1
 CYCLE_LENGTH_MAX = 90
 API_BASE = "http://127.0.0.1:25413"
-API_SECRET = "__HY_API_SECRET__"
+API_SECRET_FILE = "/root/hysteria/api_secret"
+API_SECRET_PLACEHOLDER = "__HY_API_SECRET__"
+API_SECRET_FALLBACK = "__HY_API_SECRET__"
+
+
+def get_api_secret():
+    """Same contract as traffic_limiter.get_api_secret. auth_backend is invoked
+    by hysteria-server as an external CLI hook on every connection, so this
+    intentionally has no non-stdlib imports."""
+    try:
+        with open(API_SECRET_FILE, "r", encoding="utf-8") as f:
+            v = f.read().strip()
+        if v and v != API_SECRET_PLACEHOLDER:
+            return v
+    except OSError:
+        pass
+    return API_SECRET_FALLBACK
 
 
 def load_json(path, default):
@@ -61,7 +77,7 @@ def verify_password_hash(password, encoded):
 def get_online_counts():
     req = urllib.request.Request(
         f"{API_BASE}/online",
-        headers={"Authorization": API_SECRET},
+        headers={"Authorization": get_api_secret()},
         method="GET",
     )
     try:

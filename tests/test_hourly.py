@@ -28,6 +28,34 @@ def test_post_swallows_api_failure_and_returns_false(monkeypatch, capsys):
     assert "hysteria POST" in captured.err
 
 
+def test_get_api_secret_reads_file_over_placeholder(tmp_path, monkeypatch):
+    """A deployed secret file takes precedence over the in-source placeholder
+    so a `git pull` of just the .py source can't accidentally drop the deployed
+    secret back to the literal `__HY_API_SECRET__` string (which caused HTTP
+    401 crashes in the cron tick — see PR #11)."""
+    secret_path = tmp_path / "api_secret"
+    secret_path.write_text("real-secret-from-deploy\n")
+    monkeypatch.setattr(tl, "API_SECRET_FILE", str(secret_path), raising=False)
+    assert tl.get_api_secret() == "real-secret-from-deploy"
+
+
+def test_get_api_secret_falls_back_when_file_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(tl, "API_SECRET_FILE", str(tmp_path / "missing"), raising=False)
+    monkeypatch.setattr(tl, "API_SECRET_FALLBACK", "fallback-from-sed", raising=False)
+    assert tl.get_api_secret() == "fallback-from-sed"
+
+
+def test_get_api_secret_ignores_unrendered_placeholder(tmp_path, monkeypatch):
+    """If the file contains the literal placeholder (e.g. someone wrote the
+    template instead of the rendered value), treat it as 'not configured' and
+    use the fallback."""
+    secret_path = tmp_path / "api_secret"
+    secret_path.write_text(tl.API_SECRET_PLACEHOLDER + "\n")
+    monkeypatch.setattr(tl, "API_SECRET_FILE", str(secret_path), raising=False)
+    monkeypatch.setattr(tl, "API_SECRET_FALLBACK", "fallback", raising=False)
+    assert tl.get_api_secret() == "fallback"
+
+
 def _make_hourly(now, n_hours):
     """Build a dict with n_hours hour keys ending at `now`."""
     out = {}
