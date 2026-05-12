@@ -200,6 +200,86 @@ def test_zero_cycle_daily_hourly_clears_user_within_cycle(tmp_path, monkeypatch)
     assert hourly_after["2026-05-12T00"]["bob"]["total"] == 5
 
 
+def _seed_meta(tmp_path, monkeypatch, **meta):
+    """Repoint META_FILE at tmp_path and write the given fields."""
+    path = tmp_path / "subscription_meta.json"
+    monkeypatch.setattr(ss, "META_FILE", path, raising=False)
+    path.write_text(json.dumps(meta))
+
+
+def test_fixed_15_day_cycle_rolls_independently_of_calendar(tmp_path, monkeypatch):
+    """With cycle_length_days=15 and anchor=2026-05-12, the cycle rolls in
+    pure 15-day blocks: 5/12-5/26, 5/27-6/10, 6/11-6/25, ..."""
+    _seed_meta(tmp_path, monkeypatch,
+               settlement_day=12, cycle_length_days=15, cycle_anchor_date="2026-05-12")
+
+    def cycle_for(day):
+        now = datetime(2026, 5, day, 10, tzinfo=SH) if day <= 31 else datetime(2026, 6, day - 31, 10, tzinfo=SH)
+        return ss.cycle_start_for(now).date(), ss._cycle_days(now)
+
+    s, days = cycle_for(14)  # mid first block
+    assert s.isoformat() == "2026-05-12"
+    assert days[0] == "2026-05-12" and days[-1] == "2026-05-14"
+
+    s, _ = cycle_for(27)  # day 1 of second block
+    assert s.isoformat() == "2026-05-27"
+
+    s, _ = cycle_for(32)  # = 2026-06-01, still in second block
+    assert s.isoformat() == "2026-05-27"
+
+    s, _ = cycle_for(41)  # = 2026-06-10, last day of second block
+    assert s.isoformat() == "2026-05-27"
+
+    s, _ = cycle_for(42)  # = 2026-06-11, day 1 of third block
+    assert s.isoformat() == "2026-06-11"
+
+
+def test_default_30_day_cycle_unchanged_when_meta_empty(tmp_path, monkeypatch):
+    """No META override: default cycle_length=30, anchor derived from
+    settlement_day=12 (most recent). Today 2026-05-14 -> anchor 2026-05-12,
+    cycle 2026-05-12 .. 2026-06-10."""
+    _seed_meta(tmp_path, monkeypatch)  # empty meta
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    assert ss.cycle_start_for(now).date().isoformat() == "2026-05-12"
+    days = ss._cycle_days(now)
+    assert days[0] == "2026-05-12"
+    assert days[-1] == "2026-05-14"  # capped at today
+    assert ss.get_cycle_length_days() == 30
+
+
+def test_cycle_length_clamped_to_supported_range(tmp_path, monkeypatch):
+    _seed_meta(tmp_path, monkeypatch, cycle_length_days=999)
+    assert ss.get_cycle_length_days() == ss.CYCLE_LENGTH_MAX
+    _seed_meta(tmp_path, monkeypatch, cycle_length_days=0)
+    assert ss.get_cycle_length_days() == ss.CYCLE_LENGTH_MIN
+    _seed_meta(tmp_path, monkeypatch, cycle_length_days="abc")
+    assert ss.get_cycle_length_days() == ss.CYCLE_LENGTH_DAYS_DEFAULT
+
+
+def test_aggregate_stats_reports_configured_cycle_length(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_state(tmp_path, monkeypatch, users={"alice": {}}, daily={})
+    _seed_meta(tmp_path, monkeypatch,
+               settlement_day=12, cycle_length_days=7, cycle_anchor_date="2026-05-12")
+    stats = ss._aggregate_stats(now=now, online={})
+    assert stats["cycle_total_days"] == 7
+
+
+def test_admin_form_includes_cycle_length(tmp_path, monkeypatch):
+    """The /admin topbar form must expose both 结算日 and 周期 inputs and POST
+    to /admin/cycle-config so a single submit updates the cycle calendar."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_state(tmp_path, monkeypatch, users={})
+    _seed_meta(tmp_path, monkeypatch,
+               settlement_day=12, cycle_length_days=21, cycle_anchor_date="2026-05-12")
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    out = ss.render_admin("test-host", "http://test-host")
+    assert "/admin/cycle-config" in out, "form must target the new endpoint"
+    assert 'name="day"' in out
+    assert 'name="length"' in out
+    assert 'value="21"' in out, "current cycle_length should be pre-filled"
+
+
 def test_save_json_is_atomic_against_crash(tmp_path, monkeypatch):
     """A failing serialize must not leave the target file truncated. Atomic-rename
     means the original survives intact and load_json doesn't fall back to {}."""
