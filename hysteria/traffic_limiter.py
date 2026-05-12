@@ -53,9 +53,17 @@ def get_settlement_day():
 
 
 def save_json(path, data):
+    """Atomic write: serialize to a sibling temp file, fsync, then rename.
+    Prevents truncated state files — load_json silently returns `{}` on parse
+    errors, which has caused cycle/reset state to be lost across the boundary
+    of an interrupted oneshot tick."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=True, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 @contextmanager
@@ -116,6 +124,38 @@ def billing_month_key(now, day=None):
         return now.strftime("%Y-%m")
     prev = now.replace(day=1) - timedelta(days=1)
     return prev.strftime("%Y-%m")
+
+
+def cycle_days(now, day=None):
+    """List of YYYY-MM-DD date keys in the current cycle, oldest first."""
+    from datetime import timedelta as _td
+    d = int(day if day is not None else get_settlement_day())
+    if now.day >= d:
+        start = now.replace(day=d, hour=0, minute=0, second=0, microsecond=0).date()
+    else:
+        prev_month_end = now.replace(day=1) - _td(days=1)
+        start = prev_month_end.replace(day=d, hour=0, minute=0, second=0, microsecond=0).date()
+    today = now.date()
+    out = []
+    cur = start
+    while cur <= today:
+        out.append(cur.strftime("%Y-%m-%d"))
+        cur += _td(days=1)
+    return out
+
+
+def cycle_used_raw_for(uid, daily, *, now, day=None):
+    """Per-user raw cycle bytes derived from usage_daily.json. Single source
+    of truth for both display and quota enforcement, so the kick check and the
+    /admin UI agree."""
+    total = 0
+    for dk in cycle_days(now, day=day):
+        entry = (daily.get(dk) or {}).get(uid)
+        if isinstance(entry, dict):
+            total += int(entry.get("total", 0))
+        else:
+            total += int(entry or 0)
+    return total
 
 
 def normalize_usage_entry(entry):
@@ -278,17 +318,11 @@ def check_alerts(usage, users, online, now, month_key, *, _opener=None):
     z_threshold = float(cfg.get('anomaly_z_threshold', _alerts.DEFAULT_Z_THRESHOLD))
     min_bytes = int(cfg.get('anomaly_min_bytes', _alerts.DEFAULT_MIN_BYTES))
 
-    month_usage = (usage or {}).get(month_key, {})
-
     for uid, user_cfg in (users or {}).items():
         # ---- quota crossings ----
         quota = int((user_cfg or {}).get('monthly_quota_bytes', 0) or 0)
         if user_compat.is_metered(user_cfg) and quota > 0:
-            entry = month_usage.get(uid, 0)
-            if isinstance(entry, dict):
-                raw_total = int(entry.get('total', 0))
-            else:
-                raw_total = int(entry or 0)
+            raw_total = cycle_used_raw_for(uid, daily, now=now)
             scaled = int(raw_total * _DM)
             pct = scaled * 100.0 / quota
             if pct >= 100 and not _alerts.already_alerted(state, 'quota_100', uid, month_key):
@@ -361,6 +395,7 @@ def main():
         import sys
         print(f"alerts: skipped due to error: {e}", file=sys.stderr)
 
+    daily_for_kick = load_json(USAGE_DAILY_FILE, {})
     to_kick = []
     for uid, cfg in users.items():
         if not user_compat.is_metered(cfg):
@@ -368,7 +403,7 @@ def main():
         quota = int(cfg.get("monthly_quota_bytes", 0))
         if quota <= 0:
             continue
-        used = normalize_usage_entry(usage[month_key].get(uid, 0))["total"]
+        used = cycle_used_raw_for(uid, daily_for_kick, now=now, day=settle_day)
         if used * DISPLAY_MULTIPLIER >= quota and int(online.get(uid, 0)) > 0:
             to_kick.append(uid)
 

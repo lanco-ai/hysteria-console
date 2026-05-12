@@ -96,8 +96,17 @@ def load_json_cached(path, default, ttl=2.0):
 
 
 def save_json(path, data):
+    """Atomic write: serialize to a sibling temp file, fsync, then rename. Prevents
+    truncated state files (which the readers fall back to `{}` on, silently losing
+    the cycle/state tracking)."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=True, indent=2) + "\n", encoding='utf-8')
+    payload = json.dumps(data, ensure_ascii=True, indent=2) + "\n"
+    tmp = path.with_name(path.name + '.tmp')
+    with tmp.open('w', encoding='utf-8') as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
 
 
 @contextmanager
@@ -231,21 +240,93 @@ def month_key(now=None):
     return prev.strftime('%Y-%m')
 
 
-def usage_for_user(username, usage_month=None):
-    if usage_month is None:
-        usage_month = load_json(USAGE_FILE, {}).get(month_key(), {})
-    current = usage_month.get(username, 0)
-    if isinstance(current, dict):
-        tx = int(current.get('tx', 0))
-        rx = int(current.get('rx', 0))
-        total = int(current.get('total', tx + rx))
-        return tx, rx, total
-    total = int(current or 0)
-    return 0, total, total
+def _cycle_days(now):
+    """List of YYYY-MM-DD date keys covered by the current cycle, oldest first."""
+    start = cycle_start_for(now).date()
+    today = now.date()
+    out = []
+    d = start
+    while d <= today:
+        out.append(d.strftime('%Y-%m-%d'))
+        d += timedelta(days=1)
+    return out
 
 
-def scaled_usage_for_user(username, usage_month=None):
-    tx, rx, total = usage_for_user(username, usage_month)
+def _zero_cycle_daily_hourly_for(uids, *, now):
+    """Zero each user's daily/hourly entries within the current cycle. Caller
+    must hold usage_lock. Keeps the cycle-bucket reset in usage.json consistent
+    with usage_daily.json/usage_hourly.json, so post-reset displays read 0
+    instead of the pre-reset accumulated values."""
+    uids = list(uids)
+    if not uids:
+        return
+    days = set(_cycle_days(now))
+    cycle_start = cycle_start_for(now)
+    hour_cutoff = cycle_start.strftime('%Y-%m-%dT%H')
+
+    daily = load_json(USAGE_DAILY_FILE, {})
+    changed_daily = False
+    for dk in list(daily.keys()):
+        if dk not in days:
+            continue
+        bucket = daily.get(dk) or {}
+        for uid in uids:
+            if uid in bucket:
+                bucket[uid] = {'tx': 0, 'rx': 0, 'total': 0}
+                changed_daily = True
+    if changed_daily:
+        save_json(USAGE_DAILY_FILE, daily)
+
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    changed_hourly = False
+    for hk in list(hourly.keys()):
+        if hk < hour_cutoff:
+            continue
+        bucket = hourly.get(hk) or {}
+        for uid in uids:
+            if uid in bucket:
+                bucket[uid] = {'tx': 0, 'rx': 0, 'total': 0}
+                changed_hourly = True
+    if changed_hourly:
+        save_json(USAGE_HOURLY_FILE, hourly)
+
+
+def _cycle_raw_for_user(uid, daily, *, now):
+    """Per-user raw cycle bytes derived from usage_daily.json. Returns (tx, rx, total).
+
+    Daily is the canonical fine-grained source: `today`/`current hour` cards already
+    read from daily/hourly, so deriving `cycle` from daily guarantees
+    `cycle >= today >= current_hour` and avoids drift against the cycle bucket
+    in `usage.json`, which is a separately-accumulated counter that can fall
+    behind on file corruption, partial writes, or stale state."""
+    tx = rx = total = 0
+    for dk in _cycle_days(now):
+        entry = (daily.get(dk) or {}).get(uid)
+        if isinstance(entry, dict):
+            etx = int(entry.get('tx', 0))
+            erx = int(entry.get('rx', 0))
+            tx += etx
+            rx += erx
+            total += int(entry.get('total', etx + erx))
+        else:
+            total += int(entry or 0)
+    return tx, rx, total
+
+
+def usage_for_user(username, usage_month=None, *, daily=None, now=None):
+    """Per-user cycle raw bytes (tx, rx, total).
+
+    The `usage_month` positional argument is kept for backward compat with
+    legacy call sites that read the cycle bucket from usage.json; it is now
+    ignored. Cycle value is always derived from usage_daily.json summed across
+    days in the current cycle — see _cycle_raw_for_user for why."""
+    if daily is None:
+        daily = load_json(USAGE_DAILY_FILE, {})
+    return _cycle_raw_for_user(username, daily, now=now or local_now())
+
+
+def scaled_usage_for_user(username, usage_month=None, *, daily=None, now=None):
+    tx, rx, total = usage_for_user(username, usage_month, daily=daily, now=now)
     m = DISPLAY_MULTIPLIER
     return int(tx * m), int(rx * m), int(total * m)
 
@@ -633,8 +714,8 @@ document.getElementById('copy-sub-btn').addEventListener('click', function() {{
     return html_page(f'{user} 用户面板', body)
 
 
-def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None):
-    tx, rx, used = scaled_usage_for_user(user, usage_month)
+def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, now=None):
+    tx, rx, used = scaled_usage_for_user(user, daily=daily, now=now)
     spark_cell = ''
     # NOTE: 30-day sparkline is rendered in 3 places — keep them in sync:
     # (1) here in row_form (initial page); (2) sparkline_svg() emits class="spark";
@@ -715,9 +796,8 @@ def render_admin(host, base_url, flash=''):
     online = load_json(ONLINE_FILE, {})
     now = local_now()
     mk = month_key(now)
-    usage_month = load_json(USAGE_FILE, {}).get(mk, {})
     daily = load_json(USAGE_DAILY_FILE, {})
-    total_used = sum(scaled_usage_for_user(u, usage_month)[2] for u in users)
+    total_used = sum(scaled_usage_for_user(u, daily=daily, now=now)[2] for u in users)
     settlement_day = get_settlement_day()
     cycle_start = cycle_start_for(now, day=settlement_day)
     cycle_end = (cycle_start + timedelta(days=30)) - timedelta(days=1)
@@ -732,7 +812,7 @@ def render_admin(host, base_url, flash=''):
         f'</form>'
     )
     alert = render_alert(flash_text(flash))
-    rows = ''.join(row_form(u, cfg, online, host, base_url, usage_month, daily) for u, cfg in users.items()) \
+    rows = ''.join(row_form(u, cfg, online, host, base_url, daily=daily, now=now) for u, cfg in users.items()) \
         or '<tr><td colspan="5" class="empty">暂无用户，使用下方表单创建第一个用户</td></tr>'
     content = f'''{alert}
 <div class="grid grid-3">
@@ -901,10 +981,11 @@ def _aggregate_stats(*, now, online):
         dk = (now.date() - timedelta(days=d)).strftime("%Y-%m-%d")
         last_7d_raw += sum(_entry_total(v) for v in (daily.get(dk) or {}).values())
 
-    usage = load_json(USAGE_FILE, {})
-    mk = month_key(now)
-    cycle_bucket = usage.get(mk) or {}
-    cycle_raw = sum(_entry_total(v) for v in cycle_bucket.values())
+    cycle_raw = sum(
+        _entry_total(v)
+        for dk in _cycle_days(now)
+        for v in (daily.get(dk) or {}).values()
+    )
 
     cycle_start = cycle_start_for(now)
     cycle_day = (now.date() - cycle_start.date()).days + 1
@@ -965,9 +1046,8 @@ def _build_user_json_payload(uid, *, now):
             hours.append(int(v * DISPLAY_MULTIPLIER))
         heat_grid.append({"date": date_str, "hours": hours})
 
-    usage = load_json(USAGE_FILE, {})
-    mk = month_key(now)
-    cycle_raw = _entry_total((usage.get(mk) or {}).get(uid))
+    daily = load_json(USAGE_DAILY_FILE, {})
+    _tx, _rx, cycle_raw = _cycle_raw_for_user(uid, daily, now=now)
 
     today_str = today.strftime("%Y-%m-%d")
     today_raw = sum(
@@ -1830,12 +1910,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             users = load_json_cached(USERS_FILE, {})
             online = load_json_cached(ONLINE_FILE, {})
-            usage_month = load_json_cached(USAGE_FILE, {}).get(month_key(), {})
             daily = load_json_cached(USAGE_DAILY_FILE, {})
+            now = local_now()
             user_list = []
             total_used = 0
             for u, cfg in users.items():
-                tx, rx, used = scaled_usage_for_user(u, usage_month)
+                tx, rx, used = scaled_usage_for_user(u, daily=daily, now=now)
                 total = user_total_quota(cfg)
                 total_used += used
                 user_list.append({
@@ -2065,14 +2145,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/admin?msg=user+not+found')
                 return
             with usage_lock():
+                now = local_now()
                 usage = load_json(USAGE_FILE, {})
-                mk = month_key()
+                mk = month_key(now)
                 usage.setdefault(mk, {})
-                tx, rx, total = usage_for_user(username, usage[mk])
+                tx, rx, total = usage_for_user(username, now=now)
                 before = {'tx': tx, 'rx': rx, 'total': total}
                 usage[mk][username] = {'tx': 0, 'rx': 0, 'total': 0}
                 after = {'tx': 0, 'rx': 0, 'total': 0}
                 save_json(USAGE_FILE, usage)
+                _zero_cycle_daily_hourly_for([username], now=now)
                 # Clear quota alert dedup so subsequent crossings re-fire (ADR-0001).
                 alert_state = alerts.load_state()
                 alerts.clear_quota_dedup_for(alert_state, [username])
@@ -2086,16 +2168,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             with usage_lock():
+                now = local_now()
                 usage = load_json(USAGE_FILE, {})
-                mk = month_key()
+                mk = month_key(now)
                 usage.setdefault(mk, {})
                 before_all = {}
                 users = load_json(USERS_FILE, {})
                 for username in users.keys():
-                    tx, rx, total = usage_for_user(username, usage[mk])
+                    tx, rx, total = usage_for_user(username, now=now)
                     before_all[username] = {'tx': tx, 'rx': rx, 'total': total}
                     usage[mk][username] = {'tx': 0, 'rx': 0, 'total': 0}
                 save_json(USAGE_FILE, usage)
+                _zero_cycle_daily_hourly_for(list(users.keys()), now=now)
                 # Clear quota alert dedup for all users (ADR-0001).
                 alert_state = alerts.load_state()
                 alerts.clear_quota_dedup_for(alert_state, list(users.keys()))
