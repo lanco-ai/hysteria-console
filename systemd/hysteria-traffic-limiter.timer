@@ -1,9 +1,10 @@
 [Unit]
-Description=Run Hysteria Traffic Limiter every minute
+Description=Run Hysteria Traffic Limiter every 5 seconds
 
 [Timer]
 OnBootSec=30s
-OnUnitActiveSec=60s
+OnUnitActiveSec=5s
+AccuracySec=1s
 Unit=hysteria-traffic-limiter.service
 
 [Install]
