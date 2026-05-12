@@ -127,25 +127,42 @@ def append_reset_log(actor, action, target, before, after, mk):
 
 
 def get(path):
-    req = urllib.request.Request(
-        f"{API_BASE}{path}",
-        headers={"Authorization": API_SECRET},
-        method="GET",
-    )
-    with urllib.request.urlopen(req, timeout=3) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    """GET a hysteria API endpoint. Returns parsed JSON, or None on any failure
+    (timeout, refused, parse error, etc.). The previous behavior of letting the
+    exception propagate would crash the whole oneshot tick on any transient API
+    hiccup, freezing usage stats until hysteria recovered AND someone noticed
+    that systemd had been silently re-running a failing service."""
+    try:
+        req = urllib.request.Request(
+            f"{API_BASE}{path}",
+            headers={"Authorization": API_SECRET},
+            method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        import sys
+        print(f"hysteria GET {path} failed: {e}", file=sys.stderr)
+        return None
 
 
 def post(path, obj):
-    body = json.dumps(obj).encode("utf-8")
-    req = urllib.request.Request(
-        f"{API_BASE}{path}",
-        data=body,
-        headers={"Authorization": API_SECRET, "Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=3):
-        return
+    """POST to a hysteria API endpoint. Returns True on success, False on any
+    failure. Same rationale as `get()`."""
+    try:
+        body = json.dumps(obj).encode("utf-8")
+        req = urllib.request.Request(
+            f"{API_BASE}{path}",
+            data=body,
+            headers={"Authorization": API_SECRET, "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=3):
+            return True
+    except Exception as e:
+        import sys
+        print(f"hysteria POST {path} failed: {e}", file=sys.stderr)
+        return False
 
 
 def billing_month_key(now, day=None):
@@ -406,8 +423,14 @@ def main():
     now = local_now()
     settle_day = get_settlement_day()
     month_key = billing_month_key(now, day=settle_day)
+    # Either source returning None / {} is fine — we accumulate whatever
+    # delta we got and try the other source again next tick. The previous
+    # implementation let exceptions propagate, which silently froze stats
+    # for the entire window of any hysteria/xray hiccup.
     traffic = get("/traffic?clear=1") or {}
-    merge_traffic(traffic, get_xray_traffic())
+    xray_delta = get_xray_traffic()
+    if xray_delta:
+        merge_traffic(traffic, xray_delta)
     with usage_lock():
         usage = load_json(USAGE_FILE, {})
         usage.setdefault(month_key, {})
@@ -428,7 +451,7 @@ def main():
         accumulate_daily(traffic, now)
         accumulate_hourly(traffic, now)
 
-    online = get("/online")
+    online = get("/online") or {}
     save_json(ONLINE_SNAPSHOT_FILE, online)
 
     try:
