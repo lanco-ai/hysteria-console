@@ -27,6 +27,8 @@ ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 RESET_STATE_FILE = "/root/hysteria/state/auto_reset_state.json"
 RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
 USAGE_LOCK_FILE = "/root/hysteria/state/usage.lock"
+META_FILE = "/root/hysteria/subscription_meta.json"
+SETTLEMENT_DAY_DEFAULT = 12
 DAILY_RETENTION_DAYS = 30
 HOURLY_RETENTION_HOURS = 168
 API_BASE = "http://127.0.0.1:25413"
@@ -39,6 +41,15 @@ def load_json(path, default):
             return json.load(f)
     except Exception:
         return default
+
+
+def get_settlement_day():
+    """Day-of-month when the billing cycle rolls over. Editable via /admin/settlement-day."""
+    try:
+        v = int((load_json(META_FILE, {}) or {}).get("settlement_day", SETTLEMENT_DAY_DEFAULT))
+    except (TypeError, ValueError):
+        return SETTLEMENT_DAY_DEFAULT
+    return max(1, min(28, v))
 
 
 def save_json(path, data):
@@ -96,10 +107,12 @@ def post(path, obj):
         return
 
 
-def billing_month_key(now):
-    """Billing cycle resets on the 12th. Before the 12th belongs to the previous cycle.
-    Must match subscription_service.month_key() / auth_backend month logic."""
-    if now.day >= 12:
+def billing_month_key(now, day=None):
+    """Cycle key (YYYY-MM) keyed on the settlement day. Before the settlement day,
+    traffic belongs to the previous cycle. Must match subscription_service.month_key()
+    / auth_backend month logic."""
+    d = int(day if day is not None else get_settlement_day())
+    if now.day >= d:
         return now.strftime("%Y-%m")
     prev = now.replace(day=1) - timedelta(days=1)
     return prev.strftime("%Y-%m")
@@ -115,8 +128,11 @@ def normalize_usage_entry(entry):
     return {"tx": 0, "rx": total, "total": total}
 
 
-def maybe_reset_all_usage_on_day_21(now, users, usage, month):
-    if now.day != 12:
+def maybe_reset_all_usage_on_day_21(now, users, usage, month, day=None):
+    """Once-per-cycle zeroing of usage on the settlement day. Idempotent across
+    multiple cron ticks via auto_reset_state.last_reset_month."""
+    d = int(day if day is not None else get_settlement_day())
+    if now.day != d:
         return
     state = load_json(RESET_STATE_FILE, {})
     if state.get("last_reset_month") == month:
@@ -312,13 +328,14 @@ def check_alerts(usage, users, online, now, month_key, *, _opener=None):
 def main():
     users = load_json(USERS_FILE, {})
     now = local_now()
-    month_key = billing_month_key(now)
+    settle_day = get_settlement_day()
+    month_key = billing_month_key(now, day=settle_day)
     traffic = get("/traffic?clear=1") or {}
     merge_traffic(traffic, get_xray_traffic())
     with usage_lock():
         usage = load_json(USAGE_FILE, {})
         usage.setdefault(month_key, {})
-        maybe_reset_all_usage_on_day_21(now, users, usage, month_key)
+        maybe_reset_all_usage_on_day_21(now, users, usage, month_key, day=settle_day)
         usage = load_json(USAGE_FILE, {})
         usage.setdefault(month_key, {})
 
