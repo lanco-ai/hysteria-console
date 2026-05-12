@@ -481,18 +481,30 @@ def main():
 
     daily_for_kick = load_json(USAGE_DAILY_FILE, {})
     to_kick = []
+    xray_changed = False
     for uid, cfg in users.items():
+        vless_uuid = str((cfg or {}).get("vless_uuid") or "").strip()
         if not user_compat.is_metered(cfg):
+            if vless_uuid:
+                xray_changed = xray_config.sync_user(uid, vless_uuid) or xray_changed
             continue
         quota = int(cfg.get("monthly_quota_bytes", 0))
         if quota <= 0:
+            if vless_uuid:
+                xray_changed = xray_config.sync_user(uid, vless_uuid) or xray_changed
             continue
         used = cycle_used_raw_for(uid, daily_for_kick, now=now)
-        if used * DISPLAY_MULTIPLIER >= quota and int(online.get(uid, 0)) > 0:
-            to_kick.append(uid)
+        if used * DISPLAY_MULTIPLIER >= quota:
+            if int(online.get(uid, 0)) > 0:
+                to_kick.append(uid)
+            xray_changed = xray_config.remove_user(uid) or xray_changed
+        elif vless_uuid:
+            xray_changed = xray_config.sync_user(uid, vless_uuid) or xray_changed
 
     if to_kick:
         post("/kick", to_kick)
+    if xray_changed:
+        xray_config.reload_async()
 
 
 if __name__ == "__main__":

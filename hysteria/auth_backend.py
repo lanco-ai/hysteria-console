@@ -7,6 +7,7 @@ import sys
 import urllib.request
 from datetime import datetime
 
+from display import DISPLAY_MULTIPLIER
 import user_compat
 
 USERS_FILE = "/root/hysteria/users.json"
@@ -149,7 +150,7 @@ def main():
             used += usage_total(entry)
             d += timedelta(days=1)
         quota = int(u.get("monthly_quota_bytes", 0))
-        if quota > 0 and used >= quota:
+        if quota > 0 and int(used * DISPLAY_MULTIPLIER) >= quota:
             sys.exit(1)
 
         max_devices = int(u.get("max_devices", 0))
