@@ -1,9 +1,31 @@
 from datetime import datetime, timedelta
+import urllib.request
 from zoneinfo import ZoneInfo
 
 import traffic_limiter as tl
 
 SH = ZoneInfo("Asia/Shanghai")
+
+
+def test_get_swallows_api_failure_and_returns_none(monkeypatch, capsys):
+    """A hysteria API hiccup must not crash the cron tick. Before this fix, an
+    uncaught URLError froze usage stats until someone manually noticed the
+    oneshot service was failing every minute."""
+    def boom(*a, **kw):
+        raise urllib.error.URLError("connection refused")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    assert tl.get("/traffic?clear=1") is None
+    captured = capsys.readouterr()
+    assert "hysteria GET" in captured.err
+
+
+def test_post_swallows_api_failure_and_returns_false(monkeypatch, capsys):
+    def boom(*a, **kw):
+        raise urllib.error.URLError("timeout")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    assert tl.post("/kick", ["alice"]) is False
+    captured = capsys.readouterr()
+    assert "hysteria POST" in captured.err
 
 
 def _make_hourly(now, n_hours):
