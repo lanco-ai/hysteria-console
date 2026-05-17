@@ -34,7 +34,7 @@ done
 log "Installing OS packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
-apt-get install -y curl openssl iptables ca-certificates python3 nginx >/dev/null
+apt-get install -y curl openssl iptables ca-certificates python3 nginx qrencode >/dev/null
 
 # ---------- 3. Install hysteria binary ----------
 if ! command -v hysteria >/dev/null 2>&1; then

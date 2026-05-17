@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import csv
 import html
 import base64
 import hashlib
 import hmac
+import io
 import json
 import fcntl
 import os
@@ -711,6 +713,35 @@ def render_login(host, msg=''):
     return html_page('管理员登录', body)
 
 
+def render_qr_svg(text, *, _runner=None):
+    """Return an inline SVG QR code for `text`, or '' if qrencode is unavailable.
+
+    Shells out to the qrencode CLI (libqrencode), installed via apt by
+    deploy.sh. The SVG is sized via CSS in the caller, not the SVG attrs,
+    so it scales cleanly on phone vs. laptop screens.
+
+    Failures are silent: a missing binary or non-zero exit yields '' and the
+    panel just doesn't show the QR card. We don't want a render bug to take
+    down the whole panel.
+    """
+    if not text:
+        return ''
+    runner = _runner if _runner is not None else subprocess.check_output
+    try:
+        out = runner(
+            ['qrencode', '-t', 'SVG', '-o', '-', '-l', 'L', '-m', '1', '--', text],
+            timeout=2,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError, OSError):
+        return ''
+    svg = out.decode('utf-8', errors='replace')
+    # Strip the XML prolog and DOCTYPE so the SVG inlines cleanly into HTML.
+    svg = re.sub(r'<\?xml[^>]*\?>\s*', '', svg)
+    svg = re.sub(r'<!DOCTYPE[^>]*>\s*', '', svg)
+    return svg
+
+
 def render_user_panel(host, base_url, user, token, cfg):
     tx, rx, used = scaled_usage_for_user(user)
     total = user_total_quota(cfg)
@@ -723,6 +754,14 @@ def render_user_panel(host, base_url, user, token, cfg):
     sub_http = f'{base_url}{sub_path}'
     panel_http = f'{base_url}{panel_path}'
     max_devices_n = int(cfg.get('max_devices', 0) or 0)
+    qr_svg = render_qr_svg(sub_http)
+    qr_block = ''
+    if qr_svg:
+        qr_block = f'''<div class="card mt-md qr-card">
+  <div class="k">订阅二维码</div>
+  <div class="small">用客户端 App 扫码即可导入（Clash / 小火箭 等）</div>
+  <div class="qr-wrap">{qr_svg}</div>
+</div>'''
     body = f'''<div class="wrap">
 <div class="nav">
   <div class="row gap-sm">
@@ -762,9 +801,15 @@ def render_user_panel(host, base_url, user, token, cfg):
     <div class="copy-mono"><code>{html.escape(panel_http)}</code></div>
     <div class="row mt-md">
       <a class="btn secondary" href="/">{icon("back")}<span>返回首页</span></a>
+      <form method="post" action="/panel/{html.escape(user)}/rotate-token" data-action="rotate-token" class="inline-form-row">
+        <input type="hidden" name="token" value="{html.escape(token)}">
+        <button class="btn danger-btn btn-sm" type="submit">重置 Token</button>
+      </form>
     </div>
+    <div class="small mt-sm faint">重置后旧链接立即失效，需用新链接重新订阅。</div>
   </div>
 </div>
+{qr_block}
 </div>
 <script>
 document.getElementById('copy-sub-btn').addEventListener('click', function() {{
@@ -778,6 +823,12 @@ document.getElementById('copy-sub-btn').addEventListener('click', function() {{
     btn.disabled = true;
     setTimeout(function() {{ label.textContent = prev; btn.disabled = false; }}, 1400);
   }}).catch(function() {{ alert('复制失败，请手动复制'); }});
+}});
+document.addEventListener('submit', function(ev) {{
+  var f = ev.target;
+  if (f && f.dataset && f.dataset.action === 'rotate-token') {{
+    if (!confirm('确认重置订阅 Token？旧链接将立即失效。')) ev.preventDefault();
+  }}
 }});
 </script>'''
     return html_page(f'{user} 用户面板', body)
@@ -897,12 +948,26 @@ def render_admin(host, base_url, flash=''):
     <form method="post" action="/admin/reset-usage-all" data-action="reset-all" style="margin:6px 0 0;">
       <button class="btn secondary btn-sm" type="submit">一键清空本周期已用</button>
     </form>
+    <div class="row gap-sm mt-sm">
+      <a class="btn ghost btn-sm" href="/admin/usage.csv?window=cycle">导出本周期 CSV</a>
+      <a class="btn ghost btn-sm" href="/admin/usage.csv?window=30d">导出 30 天 CSV</a>
+    </div>
   </div>
 </div>
 <div class="card mt-md scroll-x" style="padding:0;overflow:hidden;">
-  <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
+  <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap;">
     <div class="bold">用户列表</div>
-    <div class="small">实时刷新 · 每 5 秒</div>
+    <div class="row gap-sm" style="flex:1;justify-content:flex-end;flex-wrap:wrap;">
+      <input id="user-filter" type="search" placeholder="搜索用户名…" autocomplete="off"
+             class="user-filter-input" style="min-width:180px;max-width:260px;">
+      <div class="row gap-sm filter-chips" role="group" aria-label="状态筛选">
+        <button type="button" class="chip active" data-filter="all">全部</button>
+        <button type="button" class="chip" data-filter="online">在线</button>
+        <button type="button" class="chip" data-filter="over">超 90%</button>
+      </div>
+      <div class="small" id="filter-count" style="min-width:64px;text-align:right;">{len(users)} 个用户</div>
+      <div class="small faint">实时 · 5 s</div>
+    </div>
   </div>
   <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>30 天趋势</th><th>本月用量</th><th>操作</th><th style="padding-right:18px;">链接</th></tr></thead><tbody>{rows}</tbody></table>
 </div>
@@ -1097,6 +1162,41 @@ def _aggregate_stats(*, now, online):
         "cycle_total_days": cycle_total_days,
         "online": int(sum(1 for v in (online or {}).values() if int(v or 0) > 0)),
     }
+
+
+def _build_usage_csv(*, now, window='cycle'):
+    """Return CSV body: per-user per-day usage rows for the requested window.
+
+    Columns: date, user, tx_bytes, rx_bytes, total_bytes, displayed_bytes.
+    `tx/rx/total_bytes` are raw (application-level) bytes from usage_daily.json;
+    `displayed_bytes` is total * DISPLAY_MULTIPLIER (what the user is billed for).
+    Window: 'cycle' = current billing cycle days; '30d' = last 30 calendar days.
+    """
+    daily = load_json(USAGE_DAILY_FILE, {})
+    if window == '30d':
+        today = now.date()
+        days = [(today - timedelta(days=i)).strftime('%Y-%m-%d')
+                for i in range(DAILY_RETENTION_DAYS - 1, -1, -1)]
+    else:
+        days = _cycle_days(now)
+
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator='\n')
+    w.writerow(['date', 'user', 'tx_bytes', 'rx_bytes', 'total_bytes', 'displayed_bytes'])
+    for dk in days:
+        bucket = daily.get(dk) or {}
+        for uid, entry in sorted(bucket.items()):
+            if isinstance(entry, dict):
+                tx = int(entry.get('tx', 0))
+                rx = int(entry.get('rx', 0))
+                total = int(entry.get('total', tx + rx))
+            else:
+                tx = 0
+                rx = int(entry or 0)
+                total = rx
+            displayed = int(total * DISPLAY_MULTIPLIER)
+            w.writerow([dk, uid, tx, rx, total, displayed])
+    return buf.getvalue()
 
 
 def _build_usage_json_payload(*, now):
@@ -2050,6 +2150,21 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == '/admin/usage.csv':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            window = (q.get('window') or ['cycle'])[0]
+            now = local_now()
+            body = _build_usage_csv(now=now, window=window)
+            filename = f'usage-{window}-{now.strftime("%Y%m%d")}.csv'
+            self.send_response_body(
+                200, body,
+                'text/csv; charset=utf-8', send_payload,
+                extra_headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+            )
+            return
+
         if path.startswith('/admin/user/') and not path.endswith('.json'):
             if not is_logged_in(self):
                 self.redirect('/login')
@@ -2121,6 +2236,27 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         form = self.parse_form()
         meta = ensure_meta()
+
+        if path.startswith('/panel/') and path.endswith('/rotate-token'):
+            # User self-service: rotate sub_token. Auth is the current token
+            # itself (passed in the form), so a compromised link can be
+            # invalidated without admin involvement. Path is structured to
+            # avoid colliding with the GET handler for /panel/<user>.
+            user = path[len('/panel/'):-len('/rotate-token')]
+            posted = (form.get('token') or [''])[0]
+            cfg = check_user_token(user, posted)
+            if not cfg:
+                self.send_response_body(403, '无权限访问')
+                return
+            new_token = secrets.token_urlsafe(18)
+            users = load_json(USERS_FILE, {})
+            if user not in users:
+                self.send_response_body(404, '用户不存在')
+                return
+            users[user]['sub_token'] = new_token
+            save_json(USERS_FILE, users)
+            self.redirect(f'/panel/{user}?token={new_token}')
+            return
 
         if path == '/login':
             ip = self.client_address[0] if self.client_address else ''

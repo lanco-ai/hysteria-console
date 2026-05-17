@@ -897,3 +897,48 @@ details[open] > summary::before { content: '▾ '; }
   font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
   margin-bottom: 4px;
 }
+
+/* ── User-table filter (admin dashboard) ──────────────────── */
+.user-filter-input {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.12s;
+}
+.user-filter-input:focus { border-color: var(--accent); }
+.filter-chips .chip {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.filter-chips .chip:hover { color: var(--text); border-color: var(--text-muted); }
+.filter-chips .chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+}
+tr.hidden { display: none; }
+
+/* ── User panel QR card ───────────────────────────────────── */
+.qr-card .qr-wrap {
+  margin-top: 12px;
+  padding: 16px;
+  background: #fff;
+  border-radius: var(--radius-sm);
+  display: flex;
+  justify-content: center;
+}
+.qr-card .qr-wrap svg {
+  width: min(220px, 60vw);
+  height: auto;
+  display: block;
+}
