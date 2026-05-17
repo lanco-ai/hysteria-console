@@ -15,10 +15,39 @@
       detail: tr.querySelector('[data-role="detail"]'),
       spark: tr.querySelector('[data-role="spark"]'),
       lastUsed: -1, lastOnline: -1, lastPercent: -1, lastSpark: '',
+      online_n: 0, percent_n: 0,
     });
   });
   var totalEl = document.getElementById('total-used');
   var lastTotal = -1;
+
+  // Client-side filter: name substring + status chip. Pure DOM, no extra requests.
+  var filterInput = document.getElementById('user-filter');
+  var countEl = document.getElementById('filter-count');
+  var activeChip = 'all';
+  function applyFilter(){
+    var q = (filterInput && filterInput.value || '').trim().toLowerCase();
+    var shown = 0;
+    index.forEach(function(row, name){
+      var nameOk = !q || name.toLowerCase().indexOf(q) !== -1;
+      var statusOk = true;
+      if (activeChip === 'online') statusOk = row.online_n > 0;
+      else if (activeChip === 'over') statusOk = row.percent_n >= 90;
+      var visible = nameOk && statusOk;
+      if (row.tr.classList.contains('hidden') !== !visible) row.tr.classList.toggle('hidden', !visible);
+      if (visible) shown++;
+    });
+    if (countEl) countEl.textContent = shown + ' / ' + index.size + ' 个';
+  }
+  if (filterInput) filterInput.addEventListener('input', applyFilter);
+  document.querySelectorAll('.filter-chips .chip').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      document.querySelectorAll('.filter-chips .chip').forEach(function(b){ b.classList.remove('active'); });
+      btn.classList.add('active');
+      activeChip = btn.dataset.filter || 'all';
+      applyFilter();
+    });
+  });
 
   var timer = null;
   var inflight = false;
@@ -30,22 +59,29 @@
       if(!r.ok) return;
       var d=await r.json();
       if (d.total_used !== lastTotal) { setText(totalEl, fmt(d.total_used)); lastTotal = d.total_used; }
+      var statusChanged = false;
       (d.users||[]).forEach(function(u){
         var row = index.get(u.user);
         if (!row) return;
         if (u.online !== row.lastOnline) { setText(row.online, String(u.online)); row.lastOnline = u.online; }
+        if (u.online !== row.online_n) { row.online_n = u.online; statusChanged = true; }
         if (u.used !== row.lastUsed) { setText(row.used, fmt(u.used)); row.lastUsed = u.used; }
         if (u.percent !== row.lastPercent) {
           setStyle(row.bar, 'width', u.percent.toFixed(1)+'%');
           setClass(row.bar, 'danger', u.percent >= 90);
           setText(row.detail, u.percent.toFixed(1)+'% · ↑'+fmt(u.tx)+' ↓'+fmt(u.rx));
           row.lastPercent = u.percent;
+          row.percent_n = u.percent;
+          statusChanged = true;
         }
         if (u.spark_html && u.spark_html !== row.lastSpark) {
           if (row.spark) row.spark.innerHTML = u.spark_html;
           row.lastSpark = u.spark_html;
         }
       });
+      // Re-apply filter if any status-relevant field changed (and a status
+      // chip is active, so the membership might shift).
+      if (statusChanged && activeChip !== 'all') applyFilter();
     } catch(e){} finally { inflight = false; }
   }
   function start(){ if (!timer) { tick(); timer = setInterval(tick, 5000); } }
