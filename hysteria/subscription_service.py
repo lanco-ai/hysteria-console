@@ -18,7 +18,7 @@ import alerts
 import user_compat
 import xray_config
 from display import DISPLAY_MULTIPLIER, fmt_bytes
-from timeutil import local_now
+from timeutil import billing_cycle_key, local_now
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
@@ -93,25 +93,6 @@ def load_json(path, default):
         return json.loads(path.read_text(encoding='utf-8'))
     except Exception:
         return default
-
-
-_JSON_CACHE = {}
-
-
-def load_json_cached(path, default, ttl=2.0):
-    """Cache JSON file reads keyed on (path, mtime). Cleared automatically when the file mtime changes."""
-    try:
-        mt = path.stat().st_mtime
-    except OSError:
-        return default
-    key = str(path)
-    now = time.monotonic()
-    hit = _JSON_CACHE.get(key)
-    if hit and hit[0] == mt and (now - hit[1]) < ttl:
-        return hit[2]
-    data = load_json(path, default)
-    _JSON_CACHE[key] = (mt, now, data)
-    return data
 
 
 def save_json(path, data):
@@ -310,12 +291,7 @@ def month_key(now=None):
     drive the displayed cycle range."""
     if now is None:
         now = local_now()
-    d = get_settlement_day()
-    if now.day >= d:
-        return now.strftime('%Y-%m')
-    first = now.replace(day=1)
-    prev = first - timedelta(days=1)
-    return prev.strftime('%Y-%m')
+    return billing_cycle_key(now, get_settlement_day())
 
 
 def _cycle_days(now):
@@ -457,19 +433,30 @@ def verify_secret(plain, stored_hash):
 
 
 # In-memory login failure tracker: {ip: [timestamp, ...]}
+# Bounded so an attacker rotating through many source IPs can't grow this
+# dict without limit; entries are also dropped when their timestamp list
+# decays to empty so cleanly-decayed IPs don't linger as zero-cost ghosts.
 _login_failures: dict = {}
 _LOGIN_MAX = 3        # max failures
 _LOGIN_WINDOW = 3600  # seconds (1 hour)
+_LOGIN_FAILURES_MAX_IPS = 1024
 
 
 def _is_rate_limited(ip):
     now = time.time()
     times = [t for t in _login_failures.get(ip, []) if now - t < _LOGIN_WINDOW]
-    _login_failures[ip] = times
+    if times:
+        _login_failures[ip] = times
+    else:
+        _login_failures.pop(ip, None)
     return len(times) >= _LOGIN_MAX
 
 
 def _record_failure(ip):
+    if ip not in _login_failures and len(_login_failures) >= _LOGIN_FAILURES_MAX_IPS:
+        # Dicts preserve insertion order; evict the oldest tracked IP.
+        oldest = next(iter(_login_failures))
+        _login_failures.pop(oldest, None)
     _login_failures.setdefault(ip, []).append(time.time())
 
 
@@ -1017,28 +1004,51 @@ def _top_n_users(*, n=5, window_hours=24, now):
 
     Each item: {uid, last_24h_bytes, spark}. `spark` is window_hours hourly ints.
     Includes both metered and unmetered users.
+
+    Allocation note: the previous implementation pre-allocated a window_hours-int
+    spark list for *every* user in users.json on every call (called from the
+    5-second admin/usage.json poll). This version computes totals first, picks
+    the winners, and only then builds spark arrays for the N selected users —
+    cuts the transient allocation to ~5% of the previous version when there
+    are many users.
     """
     hourly = load_json(USAGE_HOURLY_FILE, {})
     users = load_json(USERS_FILE, {})
+    known_users = set(users.keys())
 
-    per_user_totals = {}
-    per_user_spark = {uid: [0] * window_hours for uid in users.keys()}
+    buckets = []
     for i in reversed(range(window_hours)):
         h = now - timedelta(hours=i)
-        bucket = hourly.get(_hour_key(h)) or {}
-        idx = window_hours - 1 - i
-        for uid in users.keys():
-            v = _entry_total(bucket.get(uid))
-            per_user_totals[uid] = per_user_totals.get(uid, 0) + v
-            per_user_spark[uid][idx] = int(v * DISPLAY_MULTIPLIER)
+        buckets.append(hourly.get(_hour_key(h)) or {})
+
+    per_user_totals = {}
+    for bucket in buckets:
+        for uid, entry in bucket.items():
+            if uid not in known_users:
+                continue  # skip ghost entries from deleted users
+            per_user_totals[uid] = per_user_totals.get(uid, 0) + _entry_total(entry)
+    # Ensure users with zero traffic in the window can still appear as
+    # zero-total entries when there are fewer than n users with traffic.
+    for uid in known_users:
+        per_user_totals.setdefault(uid, 0)
 
     ranked = sorted(per_user_totals.items(), key=lambda kv: kv[1], reverse=True)
+    selected = ranked[:n]
+    top_uids = [uid for uid, _ in selected]
+    top_set = set(top_uids)
+
+    spark = {uid: [0] * window_hours for uid in top_uids}
+    for idx, bucket in enumerate(buckets):
+        for uid, entry in bucket.items():
+            if uid in top_set:
+                spark[uid][idx] = int(_entry_total(entry) * DISPLAY_MULTIPLIER)
+
     out = []
-    for uid, raw_total in ranked[:n]:
+    for uid, raw_total in selected:
         out.append({
             "uid": uid,
             "last_24h_bytes": int(raw_total * DISPLAY_MULTIPLIER),
-            "spark": per_user_spark[uid],
+            "spark": spark[uid],
         })
     return out
 

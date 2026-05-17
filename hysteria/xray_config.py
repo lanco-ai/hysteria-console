@@ -12,6 +12,7 @@ inbound ports leaves the user reachable on one and rejected on the other, with
 no obvious error.
 """
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -43,18 +44,24 @@ def _load_config(path):
 
 
 def _save_config(path, cfg):
-    path.write_text(json.dumps(cfg, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    """Atomic write: serialize to a sibling temp file, fsync, then rename.
+    A naked write_text() can leave config.json truncated if the process is
+    killed mid-write — xray then refuses to start, taking both inbounds with it.
+    """
+    payload = json.dumps(cfg, indent=2, ensure_ascii=False) + '\n'
+    tmp = path.with_name(path.name + '.tmp')
+    with tmp.open('w', encoding='utf-8') as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
     path.chmod(0o644)
 
 
-def sync_user(username, vless_uuid, *, path=None):
-    """Ensure `username` is present in every vless inbound under both ports
-    with the given uuid. Returns True if the config file was modified.
+def _apply_sync(cfg, username, vless_uuid):
+    """Mutate `cfg` so `username` is present on both inbounds with `vless_uuid`.
+    Returns True if anything was changed.
     """
-    p = Path(path) if path else CONFIG_FILE
-    cfg = _load_config(p)
-    if cfg is None:
-        return False
     changed = False
     for ib in cfg.get('inbounds') or []:
         if ib.get('protocol') != 'vless':
@@ -72,6 +79,33 @@ def sync_user(username, vless_uuid, *, path=None):
             existing['id'] = vless_uuid
             existing['flow'] = 'xtls-rprx-vision'
             changed = True
+    return changed
+
+
+def _apply_remove(cfg, username):
+    """Mutate `cfg` to drop `username` from both inbounds. Returns True if changed."""
+    targets = {email_for(port, username) for port in INBOUND_PORTS}
+    changed = False
+    for ib in cfg.get('inbounds') or []:
+        if ib.get('protocol') != 'vless':
+            continue
+        clients = ib.get('settings', {}).get('clients') or []
+        kept = [c for c in clients if c.get('email') not in targets]
+        if len(kept) != len(clients):
+            ib['settings']['clients'] = kept
+            changed = True
+    return changed
+
+
+def sync_user(username, vless_uuid, *, path=None):
+    """Ensure `username` is present in every vless inbound under both ports
+    with the given uuid. Returns True if the config file was modified.
+    """
+    p = Path(path) if path else CONFIG_FILE
+    cfg = _load_config(p)
+    if cfg is None:
+        return False
+    changed = _apply_sync(cfg, username, vless_uuid)
     if changed:
         _save_config(p, cfg)
     return changed
@@ -85,16 +119,35 @@ def remove_user(username, *, path=None):
     cfg = _load_config(p)
     if cfg is None:
         return False
-    targets = {email_for(port, username) for port in INBOUND_PORTS}
+    changed = _apply_remove(cfg, username)
+    if changed:
+        _save_config(p, cfg)
+    return changed
+
+
+def apply_user_plan(plan, *, path=None):
+    """Batch-apply a `{username: vless_uuid_or_None}` plan with one read + one write.
+
+    The cron tick used to call sync_user / remove_user once per user, each of
+    which re-read and re-parsed the full xray config — O(N) full-file reads
+    every 5 s. This helper folds them into a single load and a single (atomic)
+    save, only writing when something actually changed. None / empty uuid means
+    'remove the user from both inbounds'.
+    Returns True if the config file was modified.
+    """
+    if not plan:
+        return False
+    p = Path(path) if path else CONFIG_FILE
+    cfg = _load_config(p)
+    if cfg is None:
+        return False
     changed = False
-    for ib in cfg.get('inbounds') or []:
-        if ib.get('protocol') != 'vless':
-            continue
-        clients = ib.get('settings', {}).get('clients') or []
-        kept = [c for c in clients if c.get('email') not in targets]
-        if len(kept) != len(clients):
-            ib['settings']['clients'] = kept
-            changed = True
+    for username, vless_uuid in plan.items():
+        uid = str(vless_uuid or '').strip()
+        if uid:
+            changed = _apply_sync(cfg, username, uid) or changed
+        else:
+            changed = _apply_remove(cfg, username) or changed
     if changed:
         _save_config(p, cfg)
     return changed

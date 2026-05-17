@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -57,9 +58,18 @@ def load_state(path=None):
 
 
 def save_state(state, path=None):
+    """Atomic write: tmp file + fsync + rename. A truncated alert_state.json
+    silently resets dedup, which floods the channel with duplicate alerts on
+    the next quota crossing."""
     p = Path(path) if path is not None else STATE_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(state, ensure_ascii=True, indent=2), encoding='utf-8')
+    payload = json.dumps(state, ensure_ascii=True, indent=2)
+    tmp = p.with_name(p.name + '.tmp')
+    with tmp.open('w', encoding='utf-8') as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, p)
 
 
 def already_alerted(state, kind, user, key):

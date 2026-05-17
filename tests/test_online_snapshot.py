@@ -50,6 +50,7 @@ def _run_main_with_get(monkeypatch, get_results):
     import xray_config
     monkeypatch.setattr(xray_config, "sync_user", lambda *a, **k: False, raising=False)
     monkeypatch.setattr(xray_config, "remove_user", lambda *a, **k: False, raising=False)
+    monkeypatch.setattr(xray_config, "apply_user_plan", lambda *a, **k: False, raising=False)
     monkeypatch.setattr(xray_config, "reload_async", lambda: None, raising=False)
 
     tl.main()

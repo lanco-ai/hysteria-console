@@ -7,7 +7,7 @@ import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from display import DISPLAY_MULTIPLIER
-from timeutil import local_now
+from timeutil import billing_cycle_key, local_now
 
 import alerts as _alerts
 import anomaly as _anomaly
@@ -185,14 +185,10 @@ def post(path, obj):
 
 
 def billing_month_key(now, day=None):
-    """Cycle key (YYYY-MM) keyed on the settlement day. Before the settlement day,
-    traffic belongs to the previous cycle. Must match subscription_service.month_key()
-    / auth_backend month logic."""
+    """Thin wrapper around timeutil.billing_cycle_key — shared with
+    subscription_service.month_key so the two can never drift apart."""
     d = int(day if day is not None else get_settlement_day())
-    if now.day >= d:
-        return now.strftime("%Y-%m")
-    prev = now.replace(day=1) - timedelta(days=1)
-    return prev.strftime("%Y-%m")
+    return billing_cycle_key(now, d)
 
 
 def cycle_days(now, day=None, length=None, anchor=None):
@@ -332,6 +328,8 @@ def prune_hourly(hourly, now):
 
 
 def accumulate_daily(traffic, now):
+    """Returns the post-write daily dict so the caller can reuse it for
+    cycle-quota math without re-reading the file we just persisted."""
     day_key = now.strftime("%Y-%m-%d")
     daily = load_json(USAGE_DAILY_FILE, {})
     daily.setdefault(day_key, {})
@@ -345,6 +343,7 @@ def accumulate_daily(traffic, now):
         daily[day_key][uid] = cur
     prune_daily(daily, now.date())
     save_json(USAGE_DAILY_FILE, daily)
+    return daily
 
 
 def accumulate_hourly(traffic, now):
@@ -378,8 +377,11 @@ def _fmt_bytes(n):
     return f"{n:.2f} {units[i]}"
 
 
-def check_alerts(usage, users, online, now, month_key, *, _opener=None):
+def check_alerts(users, now, month_key, *, daily=None, _opener=None):
     """Detect quota crossings and daily anomalies, dispatch alerts, persist dedup state.
+
+    `daily` may be passed in to reuse the in-memory dict from accumulate_daily
+    and skip a redundant disk read; if None the file is loaded.
 
     Wrapped in a top-level try/except by the caller; this function may itself
     raise on filesystem errors but those should never break the kick path.
@@ -389,7 +391,8 @@ def check_alerts(usage, users, online, now, month_key, *, _opener=None):
         return  # nothing configured → nothing to send
 
     state = _alerts.load_state()
-    daily = load_json(USAGE_DAILY_FILE, {})
+    if daily is None:
+        daily = load_json(USAGE_DAILY_FILE, {})
     today_date = now.date()
 
     today_key = today_date.strftime('%Y-%m-%d')
@@ -453,8 +456,9 @@ def main():
     with usage_lock():
         usage = load_json(USAGE_FILE, {})
         usage.setdefault(month_key, {})
+        # maybe_reset writes through save_json then we continue mutating the
+        # same in-memory dict — no need to reload from disk.
         maybe_reset_all_usage_on_day_21(now, users, usage, month_key, day=settle_day)
-        usage = load_json(USAGE_FILE, {})
         usage.setdefault(month_key, {})
 
         for uid, stat in traffic.items():
@@ -467,7 +471,7 @@ def main():
             usage[month_key][uid] = cur
 
         save_json(USAGE_FILE, usage)
-        accumulate_daily(traffic, now)
+        daily = accumulate_daily(traffic, now)
         accumulate_hourly(traffic, now)
 
     online_resp = get("/online")
@@ -483,36 +487,36 @@ def main():
         save_json(ONLINE_SNAPSHOT_FILE, online)
 
     try:
-        check_alerts(usage, users, online, now, month_key)
+        check_alerts(users, now, month_key, daily=daily)
     except Exception as e:
         import sys
         print(f"alerts: skipped due to error: {e}", file=sys.stderr)
 
-    daily_for_kick = load_json(USAGE_DAILY_FILE, {})
+    # Build one plan covering every user, then apply it with a single
+    # read+write of xray/config.json. The previous loop called sync_user /
+    # remove_user once per user, each of which re-parsed the full config —
+    # O(N) full-file reads every 5 s.
     to_kick = []
-    xray_changed = False
+    xray_plan = {}
     for uid, cfg in users.items():
         vless_uuid = str((cfg or {}).get("vless_uuid") or "").strip()
-        if not user_compat.is_metered(cfg):
+        metered = user_compat.is_metered(cfg)
+        quota = int((cfg or {}).get("monthly_quota_bytes", 0))
+        if not metered or quota <= 0:
             if vless_uuid:
-                xray_changed = xray_config.sync_user(uid, vless_uuid) or xray_changed
+                xray_plan[uid] = vless_uuid
             continue
-        quota = int(cfg.get("monthly_quota_bytes", 0))
-        if quota <= 0:
-            if vless_uuid:
-                xray_changed = xray_config.sync_user(uid, vless_uuid) or xray_changed
-            continue
-        used = cycle_used_raw_for(uid, daily_for_kick, now=now)
-        if used * DISPLAY_MULTIPLIER >= quota:
+        used = cycle_used_raw_for(uid, daily, now=now)
+        if used * _DM >= quota:
             if int(online.get(uid, 0)) > 0:
                 to_kick.append(uid)
-            xray_changed = xray_config.remove_user(uid) or xray_changed
+            xray_plan[uid] = None  # remove from both inbounds
         elif vless_uuid:
-            xray_changed = xray_config.sync_user(uid, vless_uuid) or xray_changed
+            xray_plan[uid] = vless_uuid
 
     if to_kick:
         post("/kick", to_kick)
-    if xray_changed:
+    if xray_config.apply_user_plan(xray_plan):
         xray_config.reload_async()
 
 

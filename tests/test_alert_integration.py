@@ -47,7 +47,7 @@ def test_no_op_when_alerts_config_missing(tmp_path, monkeypatch):
         daily[d] = {'alice': {'tx': 0, 'rx': GiB, 'total': GiB}}
     sent, opener, _ = _setup(tmp_path, daily=daily, usage={}, users={'alice': {}},
                              online={}, monkeypatch=monkeypatch, alerts_cfg=None)
-    tl.check_alerts(usage={}, users={'alice': {}}, online={}, now=today,
+    tl.check_alerts(users={'alice': {}}, now=today,
                     month_key='2026-05', _opener=opener)
     assert sent == []
 
@@ -63,10 +63,10 @@ def test_anomaly_fires_once_per_day(tmp_path, monkeypatch):
         tmp_path, daily=daily, usage={}, users={'alice': {}}, online={},
         monkeypatch=monkeypatch,
         alerts_cfg={'webhook': {'url': 'https://example.invalid/'}})
-    tl.check_alerts(usage={}, users={'alice': {}}, online={}, now=today,
+    tl.check_alerts(users={'alice': {}}, now=today,
                     month_key='2026-05', _opener=opener)
     assert len(sent) == 1, 'anomaly must fire on first tick'
-    tl.check_alerts(usage={}, users={'alice': {}}, online={}, now=today,
+    tl.check_alerts(users={'alice': {}}, now=today,
                     month_key='2026-05', _opener=opener)
     assert len(sent) == 1, 'second tick same day must NOT re-fire'
 
@@ -85,9 +85,8 @@ def test_quota_80_fires_when_crossed(tmp_path, monkeypatch):
         online={}, monkeypatch=monkeypatch,
         alerts_cfg={'webhook': {'url': 'https://example.invalid/'}})
     tl.check_alerts(
-        usage={},
         users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
-        online={}, now=today, month_key='2026-05', _opener=opener)
+        now=today, month_key='2026-05', _opener=opener)
     assert len(sent) == 1
     assert b'quota_80' in sent[0]['body']
 
@@ -106,9 +105,8 @@ def test_quota_does_not_refire_same_month(tmp_path, monkeypatch):
         alerts_cfg={'webhook': {'url': 'https://example.invalid/'}})
     for _ in range(3):
         tl.check_alerts(
-            usage={},
             users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
-            online={}, now=today, month_key='2026-05', _opener=opener)
+            now=today, month_key='2026-05', _opener=opener)
     assert len(sent) == 1
 
 
