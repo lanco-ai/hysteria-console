@@ -18,7 +18,7 @@ import alerts
 import user_compat
 import xray_config
 from display import DISPLAY_MULTIPLIER, fmt_bytes
-from timeutil import local_now
+from timeutil import billing_cycle_key, local_now
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
@@ -310,12 +310,7 @@ def month_key(now=None):
     drive the displayed cycle range."""
     if now is None:
         now = local_now()
-    d = get_settlement_day()
-    if now.day >= d:
-        return now.strftime('%Y-%m')
-    first = now.replace(day=1)
-    prev = first - timedelta(days=1)
-    return prev.strftime('%Y-%m')
+    return billing_cycle_key(now, get_settlement_day())
 
 
 def _cycle_days(now):
