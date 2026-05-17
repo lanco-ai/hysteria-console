@@ -470,8 +470,17 @@ def main():
         accumulate_daily(traffic, now)
         accumulate_hourly(traffic, now)
 
-    online = get("/online") or {}
-    save_json(ONLINE_SNAPSHOT_FILE, online)
+    online_resp = get("/online")
+    if online_resp is None:
+        # Transient API failure: keep the previous snapshot rather than wiping
+        # it to {}. Overwriting on every hiccup made every UI surface (admin
+        # row, user panel card, health card, /admin/usage.json poll) flash
+        # "0 online" until the next successful tick — the "online device
+        # display is often incorrect" symptom operators were seeing.
+        online = load_json(ONLINE_SNAPSHOT_FILE, {})
+    else:
+        online = online_resp
+        save_json(ONLINE_SNAPSHOT_FILE, online)
 
     try:
         check_alerts(usage, users, online, now, month_key)
