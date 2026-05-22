@@ -10,17 +10,19 @@ SH = ZoneInfo("Asia/Shanghai")
 
 
 def _seed_state(tmp_path, monkeypatch, *, users=None, hourly=None, daily=None,
-                usage=None, online=None):
+                usage=None, online=None, preserved=None):
     """Repoint all state files at tmp_path and pre-fill them."""
     monkeypatch.setattr(ss, "USERS_FILE", tmp_path / "users.json", raising=False)
     monkeypatch.setattr(ss, "USAGE_FILE", tmp_path / "usage.json", raising=False)
     monkeypatch.setattr(ss, "USAGE_DAILY_FILE", tmp_path / "usage_daily.json", raising=False)
     monkeypatch.setattr(ss, "USAGE_HOURLY_FILE", tmp_path / "usage_hourly.json", raising=False)
+    monkeypatch.setattr(ss, "USAGE_PRESERVED_FILE", tmp_path / "usage_preserved.json", raising=False)
     monkeypatch.setattr(ss, "ONLINE_FILE", tmp_path / "online.json", raising=False)
     (tmp_path / "users.json").write_text(json.dumps(users or {}))
     (tmp_path / "usage.json").write_text(json.dumps(usage or {}))
     (tmp_path / "usage_daily.json").write_text(json.dumps(daily or {}))
     (tmp_path / "usage_hourly.json").write_text(json.dumps(hourly or {}))
+    (tmp_path / "usage_preserved.json").write_text(json.dumps(preserved or {}))
     (tmp_path / "online.json").write_text(json.dumps(online or {}))
 
 
@@ -278,6 +280,87 @@ def test_admin_form_includes_cycle_length(tmp_path, monkeypatch):
     assert 'name="day"' in out
     assert 'name="length"' in out
     assert 'value="21"' in out, "current cycle_length should be pre-filled"
+
+
+def test_refresh_zeroes_user_but_keeps_server_total(tmp_path, monkeypatch):
+    """`add_preserved_for_user` + `_zero_cycle_daily_hourly_for` together model the
+    refresh-traffic flow: the per-user cycle counter drops to 0 (so the user
+    regains quota) while the dashboard's '本周期总流量' stays put."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)  # within cycle anchored 2026-05-12
+    daily = {
+        "2026-05-12": {"alice": {"tx": 0, "rx": 1_000_000_000, "total": 1_000_000_000},
+                       "bob": {"tx": 0, "rx": 500_000_000, "total": 500_000_000}},
+        "2026-05-13": {"alice": {"tx": 0, "rx": 2_000_000_000, "total": 2_000_000_000}},
+    }
+    hourly = {"2026-05-12T00": {"alice": {"tx": 0, "rx": 50, "total": 50}}}
+    _seed_state(tmp_path, monkeypatch,
+                users={"alice": {"metered": True, "monthly_quota_bytes": 5_000_000_000},
+                       "bob": {"metered": True, "monthly_quota_bytes": 5_000_000_000}},
+                daily=daily, hourly=hourly)
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+
+    before_total = ss._build_usage_json_payload(now=now)["total_used"]
+    before_cycle = ss._aggregate_stats(now=now, online={})["cycle_bytes"]
+    assert before_total > 0 and before_cycle > 0
+
+    # Refresh alice: bank her cycle bytes then zero her per-user counters.
+    tx, rx, total = ss.usage_for_user("alice", now=now)
+    assert total == 3_000_000_000
+    ss.add_preserved_for_user("alice", tx, rx, total, now=now)
+    ss._zero_cycle_daily_hourly_for(["alice"], now=now)
+
+    payload_after = ss._build_usage_json_payload(now=now)
+    stats_after = ss._aggregate_stats(now=now, online={})
+
+    # Alice's per-user counter is now 0 (quota restored).
+    alice_after = next(u for u in payload_after["users"] if u["user"] == "alice")
+    assert alice_after["used"] == 0
+    # Server total/cycle stays at the pre-refresh value (within the multiplier).
+    assert payload_after["total_used"] == before_total
+    assert stats_after["cycle_bytes"] == before_cycle
+
+
+def test_refresh_then_new_usage_accumulates_on_top_of_preserved(tmp_path, monkeypatch):
+    """Bytes earned after a refresh stack on top of the preserved bucket, so a
+    user who keeps using the service continues to grow the server total."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_state(tmp_path, monkeypatch,
+                users={"alice": {"metered": True, "monthly_quota_bytes": 5_000_000_000}},
+                preserved={"2026-05-12": {"alice": {"tx": 0, "rx": 1_000_000_000, "total": 1_000_000_000}}},
+                daily={"2026-05-14": {"alice": {"tx": 0, "rx": 200_000_000, "total": 200_000_000}}})
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    stats = ss._aggregate_stats(now=now, online={})
+    expected_raw = 1_000_000_000 + 200_000_000
+    assert stats["cycle_bytes"] == int(expected_raw * ss.DISPLAY_MULTIPLIER)
+
+
+def test_preserved_bucket_is_cycle_scoped_and_gcs_old_keys(tmp_path, monkeypatch):
+    """Preserved bytes are a display adjustment scoped to one cycle. Old cycle
+    keys must be dropped on write so the file doesn't grow without bound."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_state(tmp_path, monkeypatch, users={"alice": {}},
+                preserved={"2026-04-12": {"alice": {"tx": 0, "rx": 999, "total": 999}}})
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    # Old cycle's preserved bytes do not bleed into the current cycle's total.
+    assert ss.preserved_raw_for_cycle(now=now) == 0
+    # Writing to the current cycle GCs the older key.
+    ss.add_preserved_for_user("alice", 0, 100, 100, now=now)
+    data = json.loads((tmp_path / "usage_preserved.json").read_text())
+    assert "2026-04-12" not in data
+    assert data["2026-05-12"]["alice"]["total"] == 100
+
+
+def test_refresh_usage_button_renders_in_admin(tmp_path, monkeypatch):
+    """The user row exposes both '清流量' (subtracts from server total) and
+    '刷新流量' (preserves server total) so operators can pick the right semantics."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_state(tmp_path, monkeypatch,
+                users={"alice": {"metered": True, "monthly_quota_bytes": 1_000_000_000}})
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    out = ss.render_admin("test-host", "http://test-host")
+    assert 'action="/admin/reset-usage"' in out
+    assert 'action="/admin/refresh-usage"' in out
+    assert '刷新流量' in out
 
 
 def test_save_json_is_atomic_against_crash(tmp_path, monkeypatch):
