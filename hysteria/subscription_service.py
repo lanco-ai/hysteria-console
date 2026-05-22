@@ -32,6 +32,7 @@ USERS_FILE = Path('/root/hysteria/users.json')
 USAGE_FILE = Path('/root/hysteria/state/usage.json')
 USAGE_DAILY_FILE = Path('/root/hysteria/state/usage_daily.json')
 USAGE_HOURLY_FILE = Path('/root/hysteria/state/usage_hourly.json')
+USAGE_PRESERVED_FILE = Path('/root/hysteria/state/usage_preserved.json')
 HOURLY_RETENTION_HOURS = 168
 ONLINE_FILE = Path('/root/hysteria/state/online.json')
 META_FILE = Path('/root/hysteria/subscription_meta.json')
@@ -350,6 +351,50 @@ def _zero_cycle_daily_hourly_for(uids, *, now):
         save_json(USAGE_HOURLY_FILE, hourly)
 
 
+def _cycle_preserve_key(now):
+    return cycle_start_for(now).date().isoformat()
+
+
+def preserved_raw_for_cycle(*, now):
+    """Sum of raw bytes preserved (refreshed-not-cleared) for the current cycle.
+    Used so 'refresh traffic' can zero a user's counter without shrinking the
+    server's '本周期总流量' display."""
+    data = load_json(USAGE_PRESERVED_FILE, {})
+    bucket = data.get(_cycle_preserve_key(now)) or {}
+    total = 0
+    for v in bucket.values():
+        if isinstance(v, dict):
+            total += int(v.get('total', 0))
+        else:
+            total += int(v or 0)
+    return total
+
+
+def add_preserved_for_user(username, tx, rx, total, *, now):
+    """Record `total` raw bytes against `username` under the current cycle's
+    preserved bucket, additive across repeated refreshes. Caller holds usage_lock."""
+    if total <= 0:
+        return
+    data = load_json(USAGE_PRESERVED_FILE, {})
+    key = _cycle_preserve_key(now)
+    bucket = data.setdefault(key, {})
+    cur = bucket.get(username) or {}
+    if not isinstance(cur, dict):
+        cur = {'tx': 0, 'rx': 0, 'total': int(cur or 0)}
+    bucket[username] = {
+        'tx': int(cur.get('tx', 0)) + int(tx),
+        'rx': int(cur.get('rx', 0)) + int(rx),
+        'total': int(cur.get('total', 0)) + int(total),
+    }
+    # GC: drop cycle keys older than the current one. Preserved bytes are a
+    # display-only adjustment scoped to "this cycle" — past-cycle entries would
+    # otherwise grow without bound across months.
+    for k in list(data.keys()):
+        if k < key:
+            data.pop(k, None)
+    save_json(USAGE_PRESERVED_FILE, data)
+
+
 def _cycle_raw_for_user(uid, daily, *, now):
     """Per-user raw cycle bytes derived from usage_daily.json. Returns (tx, rx, total).
 
@@ -661,6 +706,8 @@ def flash_text(msg):
         return f'已清除用户本月已用流量：{msg.split(" ", 2)[2]}'
     if msg == 'reset usage all':
         return '已清除全部用户本月已用流量'
+    if msg.startswith('refresh usage '):
+        return f'已刷新用户本月已用流量（服务器总流量不变）：{msg.split(" ", 2)[2]}'
     if msg.startswith('deleted '):
         return f'已删除用户：{msg.split(" ", 1)[1]}'
     if msg.startswith('settlement '):
@@ -890,7 +937,11 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
 <div class="row gap-sm mt-sm">
   <form method="post" action="/admin/reset-usage" class="inline-form-row">
     <input type="hidden" name="user" value="{user_esc}">
-    <button class="btn ghost btn-sm" type="submit">清流量</button>
+    <button class="btn ghost btn-sm" type="submit" title="清空该用户已用流量，且从服务器总流量中扣除">清流量</button>
+  </form>
+  <form method="post" action="/admin/refresh-usage" class="inline-form-row">
+    <input type="hidden" name="user" value="{user_esc}">
+    <button class="btn ghost btn-sm" type="submit" title="清空该用户已用流量，但保留在服务器总流量中">刷新流量</button>
   </form>
   <form method="post" action="/admin/delete" class="inline-form-row" data-action="delete-user">
     <input type="hidden" name="user" value="{user_esc}">
@@ -918,6 +969,7 @@ def render_admin(host, base_url, flash=''):
     mk = month_key(now)
     daily = load_json(USAGE_DAILY_FILE, {})
     total_used = sum(scaled_usage_for_user(u, daily=daily, now=now)[2] for u in users)
+    total_used += int(preserved_raw_for_cycle(now=now) * DISPLAY_MULTIPLIER)
     settlement_day = get_settlement_day()
     cycle_length = get_cycle_length_days()
     cycle_start = cycle_start_for(now)
@@ -997,7 +1049,11 @@ def render_admin(host, base_url, flash=''):
 
 
 def _action_label(action):
-    return {'reset_usage_user': '清除用户流量', 'reset_usage_all': '清空全部流量'}.get(action, action)
+    return {
+        'reset_usage_user': '清除用户流量',
+        'reset_usage_all': '清空全部流量',
+        'refresh_usage_user': '刷新用户流量（保留总计）',
+    }.get(action, action)
 
 
 DAILY_RETENTION_DAYS = 30
@@ -1147,6 +1203,7 @@ def _aggregate_stats(*, now, online):
         for dk in _cycle_days(now)
         for v in (daily.get(dk) or {}).values()
     )
+    cycle_raw += preserved_raw_for_cycle(now=now)
 
     cycle_start = cycle_start_for(now)
     cycle_day = (now.date() - cycle_start.date()).days + 1
@@ -1225,6 +1282,7 @@ def _build_usage_json_payload(*, now):
             # NOTE: spark_html mirrors row_form's spark cell — see row_form for the 3-place coupling note.
             'spark_html': sparkline_svg(daily_window_for_user(u, daily, days=30)),
         })
+    total_used += int(preserved_raw_for_cycle(now=now) * DISPLAY_MULTIPLIER)
     return {
         "ts": now.isoformat(timespec="seconds"),
         "stats": stats,
@@ -2405,6 +2463,36 @@ class Handler(BaseHTTPRequestHandler):
                 alerts.save_state(alert_state)
             self.write_reset_log(self.get_admin_actor(), 'reset_usage_user', username, before, after)
             self.redirect('/admin?msg=reset+usage+' + username)
+            return
+
+        if path == '/admin/refresh-usage':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            username = (form.get('user') or [''])[0].strip()
+            users = load_json(USERS_FILE, {})
+            if username not in users:
+                self.redirect('/admin?msg=user+not+found')
+                return
+            with usage_lock():
+                now = local_now()
+                usage = load_json(USAGE_FILE, {})
+                mk = month_key(now)
+                usage.setdefault(mk, {})
+                tx, rx, total = usage_for_user(username, now=now)
+                before = {'tx': tx, 'rx': rx, 'total': total}
+                # Bank the cleared bytes into the preserved bucket so the
+                # dashboard's '本周期总流量' stays put after this refresh.
+                add_preserved_for_user(username, tx, rx, total, now=now)
+                usage[mk][username] = {'tx': 0, 'rx': 0, 'total': 0}
+                after = {'tx': 0, 'rx': 0, 'total': 0}
+                save_json(USAGE_FILE, usage)
+                _zero_cycle_daily_hourly_for([username], now=now)
+                alert_state = alerts.load_state()
+                alerts.clear_quota_dedup_for(alert_state, [username])
+                alerts.save_state(alert_state)
+            self.write_reset_log(self.get_admin_actor(), 'refresh_usage_user', username, before, after)
+            self.redirect('/admin?msg=refresh+usage+' + username)
             return
 
         if path == '/admin/reset-usage-all':
