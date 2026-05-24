@@ -47,6 +47,14 @@ def test_build_usage_json_payload_schema(tmp_path, monkeypatch):
     assert all(len(r["hours"]) == 24 for r in payload["heatmap"])
     assert isinstance(payload["top_n"], list)
     assert all({"uid", "last_24h_bytes", "spark"} <= set(t.keys()) for t in payload["top_n"])
+    assert "total_used" in payload
+    assert payload["users"][0]["user"] == "alice"
+    assert {"tx", "rx", "used", "total", "percent", "online", "spark_html"} <= set(payload["users"][0])
+
+
+def test_usage_json_route_is_not_shadowed_by_legacy_handler():
+    src = Path(ss.__file__).read_text(encoding="utf-8")
+    assert src.count("if path == '/admin/usage.json':") == 1
 
 
 def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):

@@ -57,3 +57,19 @@ def test_admin_render_includes_sparkline_column(tmp_path, monkeypatch):
     assert '30 天趋势' in out or '趋势' in out
     # SVG present in the row
     assert 'class="spark"' in out
+
+
+def test_admin_render_loads_poll_script_as_external_script(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json', raising=False)
+    monkeypatch.setattr(ss, 'USAGE_FILE', tmp_path / 'usage.json', raising=False)
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json', raising=False)
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json', raising=False)
+
+    (tmp_path / 'users.json').write_text('{}')
+    (tmp_path / 'usage.json').write_text('{}')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+
+    out = ss.render_admin('panel.example.com', 'http://panel.example.com')
+    assert '<script src="/static/admin-poll.js" defer></script>' in out
+    assert '<script>\n<script src="/static/admin-poll.js" defer></script>' not in out
