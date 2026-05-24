@@ -4,6 +4,7 @@
 *.pem
 users.json
 subscription_meta.json
+admin_initial_password.txt
 state/
 __pycache__/
 *.pyc

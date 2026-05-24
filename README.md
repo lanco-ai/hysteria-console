@@ -89,7 +89,7 @@ sudo ./deploy.sh
 
 After deploy:
 
-- **Admin** — `http://<server>/admin` — log in at `/login`. The admin password is **not** set via a first-visit form. On first deploy, write `admin_pass` (plaintext) into `subscription_meta.json`; on the next start it is migrated to a salted PBKDF2 `admin_pass_hash` and the plaintext is removed. If no password is configured, one is auto-randomized into the hash (so you must set `admin_pass` yourself or rotate it later). Rotate the password any time from `/admin/settings` — that also signs out all other sessions while keeping you logged in on the current device.
+- **Admin** — `http://<server>/admin` — log in at `/login`. The admin password is **not** set via a first-visit form. On first deploy, write `admin_pass` (plaintext) into `subscription_meta.json`; on the next start it is migrated to a salted PBKDF2 `admin_pass_hash` and the plaintext is removed. If no password is configured, a random one is generated and written to a root-only file `admin_initial_password.txt` (next to `subscription_meta.json`, mode 0600) so you can read it, log in, and rotate it — then delete the file. Rotate the password any time from `/admin/settings` — that also signs out all other sessions while keeping you logged in on the current device.
 - **Add a user** from the panel → instant subscription URL `http://<host>/sub/<name>?token=<token>`.
 - **Per-user actions** — each row can edit the plan, reset/refresh usage, **rotate the subscription token** (instantly invalidate a leaked link), **suspend/resume** (disable without deleting: reject new connections, pull the xray inbound, and drop live sessions), and delete.
 - **User panel** — `http://<server>/panel/<user>?token=<token>` — per-user usage + device stats, with a quota-reset countdown, a 30-day usage trend, one-click copy for the subscription/panel links, and live usage refresh every 10s (paused while the tab is hidden).
@@ -97,7 +97,7 @@ After deploy:
 - **Route rules** — add / remove / re-order proxy/direct/reject rules; live diff against the template.
 - **Reset log** — full audit trail of every traffic-reset action.
 - **Settings** — `http://<server>/admin/settings` — change the admin password in-browser (verifies the current password, then stores a fresh PBKDF2 hash). Changing it signs out every existing session and re-issues a session cookie for the current device.
-- **Health** — alongside the 6 status cards, a "send test alert" button verifies the Telegram / webhook channels in `alerts.json`. The webhook URL is operator-supplied (admin-equivalent trust) and is fetched synchronously, with no URL allowlisting.
+- **Health** — alongside the 6 status cards, a "send test alert" button verifies the Telegram / webhook channels in `alerts.json`. It is dispatched on a background thread (non-blocking); the webhook URL is operator-supplied (admin-equivalent trust) with no URL allowlisting, so confirm delivery at the receiver.
 
 The panel polls `/admin/usage.json` every 5s, automatically pauses when the tab is hidden, and uses an in-memory row index so it doesn't re-query the DOM on each tick.
 

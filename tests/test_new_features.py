@@ -617,3 +617,71 @@ def test_settings_note_mentions_session_signout(tmp_path, monkeypatch):
 
 def test_username_invalid_flash_text_renders_chinese():
     assert ss.flash_text('username_invalid').startswith('用户名只能包含')
+
+
+# ----- I: deferred-finding fixes (#10 initial password, #12 async test-alert)
+
+def test_ensure_meta_writes_initial_password_file_when_none_set(tmp_path, monkeypatch):
+    """On a fresh deploy (no admin_pass / admin_pass_hash) ensure_meta auto-
+    generates a password AND drops it in a root-only file matching the hash."""
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'subscription_meta.json')
+    meta = ss.ensure_meta()
+    assert meta.get('admin_pass_hash'), 'a hash must be set'
+    pw_file = tmp_path / 'admin_initial_password.txt'
+    assert pw_file.exists(), 'initial password file must be written'
+    body = pw_file.read_text(encoding='utf-8')
+    # Last non-comment line is user:password
+    line = [l for l in body.splitlines() if l and not l.startswith('#')][-1]
+    user, _, password = line.partition(':')
+    assert user == meta.get('admin_user', 'admin')
+    assert ss.verify_secret(password, meta['admin_pass_hash']), 'file password must match stored hash'
+
+
+def test_ensure_meta_initial_password_file_is_owner_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'subscription_meta.json')
+    ss.ensure_meta()
+    pw_file = tmp_path / 'admin_initial_password.txt'
+    import stat as _stat
+    mode = _stat.S_IMODE(pw_file.stat().st_mode)
+    assert mode == 0o600, f'expected 0600, got {oct(mode)}'
+
+
+def test_ensure_meta_does_not_overwrite_or_write_file_when_password_exists(tmp_path, monkeypatch):
+    """If a password is already configured, no random one is generated and no
+    hint file is created (idempotent / no clobber of operator's password)."""
+    meta_path = tmp_path / 'subscription_meta.json'
+    monkeypatch.setattr(ss, 'META_FILE', meta_path)
+    existing_hash = ss.hash_secret('operator-chosen-pass')
+    meta_path.write_text(json.dumps(
+        {'admin_user': 'admin', 'admin_pass_hash': existing_hash, 'admin_token': 't'}))
+    meta = ss.ensure_meta()
+    assert meta['admin_pass_hash'] == existing_hash, 'must not overwrite existing password'
+    assert not (tmp_path / 'admin_initial_password.txt').exists()
+
+
+def test_fire_test_alert_dispatches_on_background_thread(monkeypatch):
+    """#12: the test-alert is dispatched off the request thread; verify the
+    dispatch call actually runs with the test event, deterministically."""
+    import threading as _t
+    import alerts as _alerts
+    done = _t.Event()
+    captured = {}
+
+    def fake_dispatch(event, *, config=None):
+        captured['event'] = event
+        captured['config'] = config
+        done.set()
+
+    monkeypatch.setattr(_alerts, 'dispatch', fake_dispatch)
+    cfg = {'telegram': {'bot_token': 'B', 'chat_id': '1'}}
+    thread = ss._fire_test_alert(cfg, 'admin')
+    assert done.wait(2.0), 'background dispatch did not run'
+    thread.join(2.0)
+    assert captured['event']['kind'] == 'test'
+    assert captured['event']['user'] == 'admin'
+    assert captured['config'] is cfg
+
+
+def test_health_flash_reports_dispatched_not_guaranteed_sent(tmp_path, monkeypatch):
+    out = ss.render_health('host', flash='alert dispatched')
+    assert '后台发送' in out

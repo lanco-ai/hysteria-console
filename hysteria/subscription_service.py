@@ -12,6 +12,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 import urllib.request
@@ -197,6 +198,31 @@ def migrate_plaintext_passwords():
         save_json(USERS_FILE, users)
 
 
+def _write_initial_admin_password(user, password):
+    """Persist an auto-generated initial admin password to a root-only file so
+    the operator can retrieve it on a fresh deploy, log in, then rotate it via
+    /admin/settings. Best-effort: a write failure must not block meta init.
+    Path follows META_FILE so tests (which repoint META_FILE) stay isolated."""
+    try:
+        path = Path(META_FILE).parent / 'admin_initial_password.txt'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, (
+                f"# hy2 auto-generated initial admin password.\n"
+                f"# Log in at /admin (user: {user}), rotate it at /admin/settings, then delete this file.\n"
+                f"{user}:{password}\n"
+            ).encode('utf-8'))
+        finally:
+            os.close(fd)
+        try:
+            os.chmod(str(path), 0o600)
+        except OSError:
+            pass
+    except OSError:
+        pass
+
+
 def ensure_meta():
     meta = load_json(META_FILE, {})
     changed = False
@@ -207,7 +233,9 @@ def ensure_meta():
         meta['admin_user'] = 'admin'
         changed = True
     if not meta.get('admin_pass') and not meta.get('admin_pass_hash'):
-        meta['admin_pass_hash'] = hash_secret(secrets.token_urlsafe(12))
+        initial = secrets.token_urlsafe(12)
+        meta['admin_pass_hash'] = hash_secret(initial)
+        _write_initial_admin_password(meta.get('admin_user', 'admin'), initial)
         changed = True
     if changed:
         save_json(META_FILE, meta)
@@ -1864,10 +1892,27 @@ def _health_card(title, probe_result):
             f'</div>')
 
 
+def _fire_test_alert(cfg, actor):
+    """Dispatch a synthetic alert on a background daemon thread so a slow or
+    unreachable channel never blocks the admin request thread. SSRF note: the
+    webhook URL is operator-supplied (admin-equivalent trust); no allowlisting
+    by design. Returns the started thread (handy for tests)."""
+    event = {
+        'kind': 'test',
+        'user': actor or 'admin',
+        'details': {'note': '来自管理面板的测试告警'},
+    }
+    t = threading.Thread(
+        target=alerts.dispatch, args=(event,), kwargs={'config': cfg}, daemon=True,
+    )
+    t.start()
+    return t
+
+
 _HEALTH_FLASH = {
+    'alert dispatched': '测试告警已在后台发送，请在接收端确认是否收到',
     'alert sent': '测试告警已发送，请在接收端确认',
     'alert_no_channels': '未配置告警通道（缺少 alerts.json 或其中的 telegram/webhook）',
-    'alert_failed': '测试告警发送失败',
 }
 
 
@@ -2770,22 +2815,15 @@ class Handler(BaseHTTPRequestHandler):
             if not is_logged_in(self):
                 self.redirect('/login')
                 return
-            # SSRF note: the webhook URL is operator-supplied (admin-equivalent
-            # trust) and dispatched synchronously by design; no allowlisting.
             cfg = alerts.load_config()
             if not isinstance(cfg, dict) or not (cfg.get('telegram') or cfg.get('webhook')):
                 self.redirect('/admin/health?msg=err:alert_no_channels')
                 return
-            event = {
-                'kind': 'test',
-                'user': self.get_admin_actor() or 'admin',
-                'details': {'note': '来自管理面板的测试告警'},
-            }
-            result = alerts.dispatch(event, config=cfg)  # never raises; swallows transport errors
-            if isinstance(result, dict) and result.get('failed'):
-                self.redirect('/admin/health?msg=err:alert_failed')
-                return
-            self.redirect('/admin/health?msg=alert+sent')
+            # Fire on a background thread; we redirect immediately rather than
+            # block the request on outbound HTTP. Delivery is confirmed at the
+            # receiver, so we report "dispatched" rather than guaranteed-sent.
+            _fire_test_alert(cfg, self.get_admin_actor())
+            self.redirect('/admin/health?msg=alert+dispatched')
             return
 
         if path == '/admin/rotate-token':
