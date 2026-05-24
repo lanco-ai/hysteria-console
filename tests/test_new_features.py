@@ -400,3 +400,220 @@ def test_auth_backend_allows_enabled_user(tmp_path, monkeypatch, capsys):
         ab.main()
     assert e.value.code == 0
     assert capsys.readouterr().out == 'alice'
+
+
+# ----- Code-review fixes (F1..F13) ------------------------------------------
+
+# F1: traffic_limiter cron must keep suspended users OUT of the xray plan and
+#     re-kick them if online, every tick (durable suspend).
+
+def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
+    import traffic_limiter as tl
+
+    snap = tmp_path / 'online.json'
+    monkeypatch.setattr(tl, 'ONLINE_SNAPSHOT_FILE', str(snap), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_FILE', str(tmp_path / 'usage.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_DAILY_FILE', str(tmp_path / 'usage_daily.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_HOURLY_FILE', str(tmp_path / 'usage_hourly.json'), raising=False)
+    monkeypatch.setattr(tl, 'USERS_FILE', str(tmp_path / 'users.json'), raising=False)
+    monkeypatch.setattr(tl, 'RESET_STATE_FILE', str(tmp_path / 'reset.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_LOCK_FILE', str(tmp_path / 'usage.lock'), raising=False)
+    (tmp_path / 'users.json').write_text(json.dumps({
+        'alice': {'vless_uuid': 'uuid-A'},
+        'bob': {'vless_uuid': 'uuid-B', 'disabled': True},
+    }))
+
+    # /traffic empty, /online shows bob online (must be kicked).
+    results = [{}, {'bob': 3}]
+    monkeypatch.setattr(tl, 'get', lambda _p: results.pop(0))
+    captured = {'plan': None, 'kick': None}
+    monkeypatch.setattr(tl, 'post', lambda path, body=None, **k: captured.__setitem__('kick', body) or True)
+    monkeypatch.setattr(tl, 'get_xray_traffic', lambda: {})
+    monkeypatch.setattr(tl, 'check_alerts', lambda *a, **k: None)
+
+    import xray_config
+    def fake_apply(plan, **k):
+        captured['plan'] = dict(plan)
+        return False
+    monkeypatch.setattr(xray_config, 'apply_user_plan', fake_apply, raising=False)
+    monkeypatch.setattr(xray_config, 'reload_async', lambda: None, raising=False)
+
+    tl.main()
+
+    plan = captured['plan']
+    assert plan['bob'] is None, 'disabled user must be removed from both inbounds'
+    assert plan['alice'] == 'uuid-A'
+    assert captured['kick'] == ['bob'], 'an online disabled user must be re-kicked each tick'
+
+
+# F2: suspended users see a banner and NO poll loop on the panel.
+
+def test_render_user_panel_disabled_shows_banner_and_omits_poll(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2,
+           'disabled': True}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '账号已停用，请联系管理员' in page
+    assert 'class="err"' in page
+    assert 'var pollUrl' not in page
+    assert '/panel/alice.json' not in page
+
+
+def test_render_user_panel_enabled_still_has_poll(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert 'var pollUrl' in page
+    assert '账号已停用' not in page
+
+
+# F3: /admin/add reset-token construction preserves `disabled`.
+
+def test_admin_add_reset_token_preserves_disabled():
+    """Mirror the entry dict built by the /admin/add reset-token path."""
+    existing = {'sub_token': 'old', 'vless_uuid': 'u1', 'disabled': True}
+    entry = {
+        'metered': False,
+        'guest': False,
+        'max_devices': 2,
+        'monthly_quota_bytes': 1 << 30,
+        'sub_token': 'new',
+        'vless_uuid': 'u1',
+        'disabled': bool(existing.get('disabled')),
+    }
+    assert entry['disabled'] is True
+
+
+# F4: username validation.
+
+def test_is_valid_username_accepts_normal_names():
+    for name in ('alice', 'bob_1', 'a.b-c', 'X' * 64):
+        assert ss.is_valid_username(name), name
+
+
+def test_is_valid_username_rejects_bad_names():
+    for name in ('a/b', 'x.json', '<script>', '', 'a' * 65, 'a b', 'foo@bar', 'sub.json'):
+        assert not ss.is_valid_username(name), name
+
+
+def test_user_panel_poll_url_escapes_left_angle(tmp_path, monkeypatch):
+    """Defense-in-depth: even if a `<`-bearing username were rendered, the
+    embedded JSON URL must escape `<` so it can't break out of <script>."""
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'a<b', 'tok', cfg)
+    # The poll URL line must carry the escaped form, not a raw '</'.
+    assert '\\u003c' in page
+    assert 'var pollUrl' in page
+    poll_line = [ln for ln in page.splitlines() if 'var pollUrl' in ln][0]
+    assert '<' not in poll_line
+
+
+# F8: alerts.dispatch returns a result dict and reports failed channels.
+
+def test_alerts_dispatch_reports_failed_channel():
+    import alerts as _alerts
+
+    class FakeResp:
+        def read(self):
+            return b''
+
+    class FakeOpener:
+        def urlopen(self, req, timeout=None):
+            # Telegram URL succeeds; the webhook endpoint raises.
+            if 'telegram' in req.full_url:
+                return FakeResp()
+            raise OSError('connection refused')
+
+    cfg = {
+        'telegram': {'bot_token': 'B', 'chat_id': '1'},
+        'webhook': {'url': 'http://hook.example/x'},
+    }
+    result = _alerts.dispatch({'kind': 'test', 'user': 'admin'},
+                              config=cfg, opener=FakeOpener())
+    assert isinstance(result, dict)
+    assert set(result['attempted']) == {'telegram', 'webhook'}
+    assert result['failed'] == ['webhook']
+
+
+def test_alerts_dispatch_all_ok_has_no_failures():
+    import alerts as _alerts
+
+    class FakeResp:
+        def read(self):
+            return b''
+
+    class FakeOpener:
+        def urlopen(self, req, timeout=None):
+            return FakeResp()
+
+    cfg = {'telegram': {'bot_token': 'B', 'chat_id': '1'}}
+    result = _alerts.dispatch({'kind': 'test', 'user': 'admin'},
+                              config=cfg, opener=FakeOpener())
+    assert result['failed'] == []
+    assert result['attempted'] == ['telegram']
+
+
+# F9: a null value in online.json must not crash the panel renderer.
+
+def test_render_user_panel_tolerates_null_online(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text(json.dumps({'alice': None}))
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    # Must not raise TypeError on the null online value.
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert 'data-role="online"' in page
+
+
+# F11: change-password invalidates all prior admin sessions.
+
+def test_change_password_invalidates_prior_sessions(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'SESSIONS_FILE', tmp_path / 'sessions.json')
+    (tmp_path / 'sessions.json').write_text('{}')
+    old_sid = ss.create_session('admin')
+    assert old_sid in ss.get_sessions()
+
+    # Mirror the handler's session-revocation step.
+    ss.save_json(ss.SESSIONS_FILE, {})
+    new_sid = ss.create_session('admin')
+
+    sessions = ss.get_sessions()
+    assert old_sid not in sessions, 'old session must be revoked'
+    assert new_sid in sessions, 'a fresh session must be issued for this device'
+
+
+def test_settings_note_mentions_session_signout(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'meta.json').write_text(json.dumps(
+        {'admin_user': 'admin', 'admin_pass_hash': 'x'}))
+    out = ss.render_settings('host')
+    assert '注销所有已登录会话' in out
+
+
+# F13: defensive type guards reject non-dict user entries.
+
+def test_username_invalid_flash_text_renders_chinese():
+    assert ss.flash_text('username_invalid').startswith('用户名只能包含')

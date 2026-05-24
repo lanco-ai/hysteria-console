@@ -123,6 +123,20 @@ def usage_lock():
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
+_USERNAME_RE = re.compile(r'^[A-Za-z0-9_.-]{1,64}$')
+
+
+def is_valid_username(name):
+    """A creatable username: 1-64 chars of [A-Za-z0-9_.-], not ending in
+    `.json`. The `.json` exclusion avoids route-extraction ambiguity with
+    `/panel/<user>.json`; the charset blocks path/HTML-injection sinks."""
+    if not name or not _USERNAME_RE.match(name):
+        return False
+    if name.endswith('.json'):
+        return False
+    return True
+
+
 def parse_int_field(raw, default, min_value, max_value):
     try:
         value = int(str(raw).strip())
@@ -724,6 +738,7 @@ def flash_text(msg):
         'user not found': '用户不存在',
         'user empty': '用户名不能为空',
         'user_exists_use_reset_token': '用户已存在，请勾选”若用户已存在则重置订阅令牌”后再创建',
+        'username_invalid': '用户名只能包含字母、数字、点、下划线、连字符，且不能以 .json 结尾',
         'settlement_invalid': '结算日无效（请输入 1–28 之间的整数）',
         'cycle_length_invalid': f'周期长度无效（请输入 {CYCLE_LENGTH_MIN}–{CYCLE_LENGTH_MAX} 之间的整数）',
     }
@@ -837,7 +852,7 @@ def render_user_panel(host, base_url, user, token, cfg):
     tx, rx, used = scaled_usage_for_user(user, daily=daily, now=now)
     total = user_total_quota(cfg)
     remain = max(total - used, 0) if total > 0 else -1
-    online = int(load_json(ONLINE_FILE, {}).get(user, 0))
+    online = int(load_json(ONLINE_FILE, {}).get(user, 0) or 0)
     percent = pct(used, total)
     cls = 'danger' if percent >= 90 else ''
     reset_date, days_left, cycle_len = _cycle_reset_info(now)
@@ -848,6 +863,8 @@ def render_user_panel(host, base_url, user, token, cfg):
     sub_http = f'{base_url}{sub_path}'
     panel_http = f'{base_url}{panel_path}'
     max_devices_n = int(cfg.get('max_devices', 0) or 0)
+    is_disabled = bool(cfg.get('disabled'))
+    disabled_banner = '<div class="err">账号已停用，请联系管理员</div>' if is_disabled else ''
     qr_svg = render_qr_svg(sub_http)
     qr_block = ''
     if qr_svg:
@@ -856,7 +873,53 @@ def render_user_panel(host, base_url, user, token, cfg):
   <div class="small">用客户端 App 扫码即可导入（Clash / 小火箭 等）</div>
   <div class="qr-wrap">{qr_svg}</div>
 </div>'''
+    # Suspended accounts get a 403 from /panel/<user>.json, so don't emit the
+    # live-refresh loop (it would just spam '刷新失败'). The embedded URL escapes
+    # '<' so a malicious username can't break out of the <script> element.
+    poll_url_js = json.dumps(json_path).replace('<', '\\u003c')
+    poll_js = '' if is_disabled else f'''  var pollUrl = {poll_url_js};
+  var statusEl = document.querySelector('[data-role="poll-status"]');
+  function fmtBytes(n) {{
+    var v = Math.max(0, Number(n) || 0);
+    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+    while (v >= 1024 && i < u.length - 1) {{ v /= 1024; i++; }}
+    return v.toFixed(2) + ' ' + u[i];
+  }}
+  function setRole(role, txt) {{
+    var el = document.querySelector('[data-role="' + role + '"]');
+    if (el && txt !== undefined) el.textContent = txt;
+  }}
+  function stamp() {{
+    return new Date().toLocaleTimeString([], {{ hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }});
+  }}
+  var timer = null, inflight = false;
+  function tick() {{
+    if (inflight) return;
+    inflight = true;
+    fetch(pollUrl, {{ credentials: 'same-origin' }})
+      .then(function(r) {{ return r.ok ? r.json() : null; }})
+      .catch(function() {{ return null; }})
+      .then(function(d) {{
+        if (!d) {{ if (statusEl) statusEl.textContent = '刷新失败'; return; }}
+        setRole('used', fmtBytes(d.used_bytes));
+        setRole('remain', fmtBytes(d.remain_bytes));
+        setRole('online', d.online);
+        var p = Number(d.percent);
+        setRole('percent', p.toFixed(2) + '%');
+        setRole('txrx', '上传 ' + fmtBytes(d.tx_bytes) + ' · 下载 ' + fmtBytes(d.rx_bytes));
+        var bar = document.querySelector('[data-role="bar"]');
+        if (bar) {{ bar.style.width = p.toFixed(2) + '%'; bar.classList.toggle('danger', p >= 90); }}
+        if (statusEl) statusEl.textContent = '更新于 ' + stamp();
+      }})
+      .finally(function() {{ inflight = false; }});
+  }}
+  function start() {{ if (!timer) {{ tick(); timer = setInterval(tick, 10000); }} }}
+  function stop() {{ if (timer) {{ clearInterval(timer); timer = null; }} }}
+  document.addEventListener('visibilitychange', function() {{ if (document.hidden) stop(); else start(); }});
+  window.addEventListener('pagehide', stop);
+  start();'''
     body = f'''<div class="wrap">
+{disabled_banner}
 <div class="nav">
   <div class="row gap-sm">
     <span class="app-logo">H</span>
@@ -937,47 +1000,7 @@ def render_user_panel(host, base_url, user, token, cfg):
       if (!confirm('确认重置订阅 Token？旧链接将立即失效。')) ev.preventDefault();
     }}
   }});
-  var pollUrl = {json.dumps(json_path)};
-  var statusEl = document.querySelector('[data-role="poll-status"]');
-  function fmtBytes(n) {{
-    var v = Math.max(0, Number(n) || 0);
-    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
-    while (v >= 1024 && i < u.length - 1) {{ v /= 1024; i++; }}
-    return v.toFixed(2) + ' ' + u[i];
-  }}
-  function setRole(role, txt) {{
-    var el = document.querySelector('[data-role="' + role + '"]');
-    if (el && txt !== undefined) el.textContent = txt;
-  }}
-  function stamp() {{
-    return new Date().toLocaleTimeString([], {{ hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }});
-  }}
-  var timer = null, inflight = false;
-  function tick() {{
-    if (inflight) return;
-    inflight = true;
-    fetch(pollUrl, {{ credentials: 'same-origin' }})
-      .then(function(r) {{ return r.ok ? r.json() : null; }})
-      .catch(function() {{ return null; }})
-      .then(function(d) {{
-        if (!d) {{ if (statusEl) statusEl.textContent = '刷新失败'; return; }}
-        setRole('used', fmtBytes(d.used_bytes));
-        setRole('remain', fmtBytes(d.remain_bytes));
-        setRole('online', d.online);
-        var p = Number(d.percent);
-        setRole('percent', p.toFixed(2) + '%');
-        setRole('txrx', '上传 ' + fmtBytes(d.tx_bytes) + ' · 下载 ' + fmtBytes(d.rx_bytes));
-        var bar = document.querySelector('[data-role="bar"]');
-        if (bar) {{ bar.style.width = p.toFixed(2) + '%'; bar.classList.toggle('danger', p >= 90); }}
-        if (statusEl) statusEl.textContent = '更新于 ' + stamp();
-      }})
-      .finally(function() {{ inflight = false; }});
-  }}
-  function start() {{ if (!timer) {{ tick(); timer = setInterval(tick, 10000); }} }}
-  function stop() {{ if (timer) {{ clearInterval(timer); timer = null; }} }}
-  document.addEventListener('visibilitychange', function() {{ if (document.hidden) stop(); else start(); }});
-  window.addEventListener('pagehide', stop);
-  start();
+{poll_js}
 }})();
 </script>'''
     return html_page(f'{user} 用户面板', body)
@@ -1894,7 +1917,7 @@ def render_settings(host, flash=''):
     <label class="mt-sm">确认新密码</label><input name="confirm" type="password" minlength="8" required>
     <button class="btn mt-md" type="submit">更新密码</button>
   </form>
-  <div class="small mt-sm faint">更新后当前会话仍然有效，下次登录请使用新密码。</div>
+  <div class="small mt-sm faint">更新后将注销所有已登录会话（其它设备需重新登录），但本设备会保持登录。</div>
 </div>'''
     return render_admin_shell('settings', '设置', content, badge=host)
 
@@ -2321,6 +2344,9 @@ class Handler(BaseHTTPRequestHandler):
             if not cfg:
                 self.send_response_body(403, '无权限访问', send_body=send_payload)
                 return
+            if cfg.get('disabled'):
+                self.send_response_body(403, '账号已停用，请联系管理员', send_body=send_payload)
+                return
             yml = build_yaml(user, str(cfg.get('sub_token') or ''))
             tx, rx, used = scaled_usage_for_user(user)
             total = user_total_quota(cfg)
@@ -2343,6 +2369,10 @@ class Handler(BaseHTTPRequestHandler):
             cfg = check_user_token(user, token)
             if not cfg:
                 self.send_response_body(403, '{"error":"forbidden"}',
+                                        'application/json; charset=utf-8', send_payload)
+                return
+            if cfg.get('disabled'):
+                self.send_response_body(403, '{"error":"disabled"}',
                                         'application/json; charset=utf-8', send_payload)
                 return
             payload = _build_panel_json_payload(user, cfg, now=local_now())
@@ -2505,12 +2535,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response_body(403, '无权限访问')
                 return
             new_token = secrets.token_urlsafe(18)
-            users = load_json(USERS_FILE, {})
-            if user not in users:
-                self.send_response_body(404, '用户不存在')
-                return
-            users[user]['sub_token'] = new_token
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if not isinstance(users.get(user), dict):
+                    self.send_response_body(404, '用户不存在')
+                    return
+                users[user]['sub_token'] = new_token
+                save_json(USERS_FILE, users)
+            # Drop any live hysteria session on the old token (= password) so a
+            # compromised link can't keep transferring after rotation. Done
+            # outside the file lock to avoid holding it across network I/O.
+            hy_kick([user])
             self.redirect(f'/panel/{user}?token={new_token}')
             return
 
@@ -2538,26 +2573,27 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
-            users = load_json(USERS_FILE, {})
-            if username not in users:
-                self.redirect('/admin?msg=user+not+found')
-                return
-            cfg = users[username]
             new_password = (form.get('password') or [''])[0].strip()
             max_devices = parse_int_field((form.get('max_devices') or ['2'])[0], 2, 1, 100)
             quota_gb = parse_int_field((form.get('quota_gb') or ['150'])[0], 150, 1, 10240)
             guest = 'guest' in form
-            if new_password:
-                cfg['password_hash'] = hash_secret(new_password)
-            cfg.pop('password', None)
-            cfg['max_devices'] = max(1, max_devices)
-            cfg['monthly_quota_bytes'] = max(1, quota_gb) * 1024 * 1024 * 1024
-            cfg['metered'] = guest
-            cfg['guest'] = guest
-            if not cfg.get('sub_token'):
-                cfg['sub_token'] = secrets.token_urlsafe(18)
-            users[username] = cfg
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                cfg = users[username]
+                if new_password:
+                    cfg['password_hash'] = hash_secret(new_password)
+                cfg.pop('password', None)
+                cfg['max_devices'] = max(1, max_devices)
+                cfg['monthly_quota_bytes'] = max(1, quota_gb) * 1024 * 1024 * 1024
+                cfg['metered'] = guest
+                cfg['guest'] = guest
+                if not cfg.get('sub_token'):
+                    cfg['sub_token'] = secrets.token_urlsafe(18)
+                users[username] = cfg
+                save_json(USERS_FILE, users)
             self.redirect('/admin?msg=updated+' + username)
             return
 
@@ -2570,32 +2606,39 @@ class Handler(BaseHTTPRequestHandler):
             quota_gb = parse_int_field((form.get('quota_gb') or ['150'])[0], 150, 1, 10240)
             guest = 'guest' in form
             reset_token = 'reset_token' in form
-            users = load_json(USERS_FILE, {})
             if not username:
                 self.redirect('/admin?msg=user+empty')
                 return
-            if username in users and not reset_token:
-                self.redirect('/admin?msg=user_exists_use_reset_token')
+            if not is_valid_username(username):
+                self.redirect('/admin?msg=err:username_invalid')
                 return
-            existing = users.get(username, {})
-            existing_token = existing.get('sub_token')
-            token = secrets.token_urlsafe(18) if (reset_token or not existing_token) else existing_token
-            vless_uuid = str(existing.get('vless_uuid') or '').strip() or str(uuid.uuid4())
-            entry = {
-                'metered': guest,
-                'guest': guest,
-                'max_devices': 2,
-                'monthly_quota_bytes': max(1, quota_gb) * 1024 * 1024 * 1024,
-                'sub_token': token,
-                'vless_uuid': vless_uuid,
-            }
-            if password:
-                entry['password_hash'] = hash_secret(password)
-            elif existing.get('password_hash'):
-                entry['password_hash'] = existing.get('password_hash')
-            users[username] = entry
-            save_json(USERS_FILE, users)
-            if xray_config.sync_user(username, vless_uuid):
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username in users and not reset_token:
+                    self.redirect('/admin?msg=user_exists_use_reset_token')
+                    return
+                existing = users.get(username, {})
+                existing_token = existing.get('sub_token')
+                token = secrets.token_urlsafe(18) if (reset_token or not existing_token) else existing_token
+                vless_uuid = str(existing.get('vless_uuid') or '').strip() or str(uuid.uuid4())
+                entry = {
+                    'metered': guest,
+                    'guest': guest,
+                    'max_devices': 2,
+                    'monthly_quota_bytes': max(1, quota_gb) * 1024 * 1024 * 1024,
+                    'sub_token': token,
+                    'vless_uuid': vless_uuid,
+                    'disabled': bool(existing.get('disabled')),
+                }
+                if password:
+                    entry['password_hash'] = hash_secret(password)
+                elif existing.get('password_hash'):
+                    entry['password_hash'] = existing.get('password_hash')
+                users[username] = entry
+                save_json(USERS_FILE, users)
+            # Re-syncing a suspended user back into xray would undo the suspend.
+            # xray I/O runs outside the file lock.
+            if not entry['disabled'] and xray_config.sync_user(username, vless_uuid):
                 xray_config.reload_async()
             self.redirect('/admin?msg=created+' + username)
             return
@@ -2714,13 +2757,21 @@ class Handler(BaseHTTPRequestHandler):
             meta_now['admin_pass_hash'] = hash_secret(new)
             meta_now.pop('admin_pass', None)
             save_json(META_FILE, meta_now)
-            self.redirect('/admin/settings?msg=password+changed')
+            # Revoke ALL existing admin sessions (a stolen sid is now dead),
+            # then mint a fresh session for this device so the admin stays
+            # logged in here. Mirrors the /login success cookie pattern.
+            save_json(SESSIONS_FILE, {})
+            sid = create_session('admin')
+            self.redirect('/admin/settings?msg=password+changed',
+                          cookie=f'sid={sid}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; SameSite=Lax')
             return
 
         if path == '/admin/test-alert':
             if not is_logged_in(self):
                 self.redirect('/login')
                 return
+            # SSRF note: the webhook URL is operator-supplied (admin-equivalent
+            # trust) and dispatched synchronously by design; no allowlisting.
             cfg = alerts.load_config()
             if not isinstance(cfg, dict) or not (cfg.get('telegram') or cfg.get('webhook')):
                 self.redirect('/admin/health?msg=err:alert_no_channels')
@@ -2730,7 +2781,10 @@ class Handler(BaseHTTPRequestHandler):
                 'user': self.get_admin_actor() or 'admin',
                 'details': {'note': '来自管理面板的测试告警'},
             }
-            alerts.dispatch(event, config=cfg)  # never raises; swallows transport errors
+            result = alerts.dispatch(event, config=cfg)  # never raises; swallows transport errors
+            if isinstance(result, dict) and result.get('failed'):
+                self.redirect('/admin/health?msg=err:alert_failed')
+                return
             self.redirect('/admin/health?msg=alert+sent')
             return
 
@@ -2739,12 +2793,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
-            users = load_json(USERS_FILE, {})
-            if username not in users:
-                self.redirect('/admin?msg=user+not+found')
-                return
-            users[username]['sub_token'] = secrets.token_urlsafe(18)
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                if not isinstance(users.get(username), dict):
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                users[username]['sub_token'] = secrets.token_urlsafe(18)
+                save_json(USERS_FILE, users)
+            # Drop any live hysteria session on the old token (= password) so a
+            # connected attacker is forced off. Done outside the file lock.
+            hy_kick([username])
             self.write_reset_log(self.get_admin_actor(), 'rotate_token', username, {}, {})
             self.redirect('/admin?msg=rotated+' + username)
             return
@@ -2754,13 +2815,19 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
-            users = load_json(USERS_FILE, {})
-            if username not in users:
-                self.redirect('/admin?msg=user+not+found')
-                return
-            disable = not bool(users[username].get('disabled'))
-            users[username]['disabled'] = disable
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                if not isinstance(users.get(username), dict):
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                disable = not bool(users[username].get('disabled'))
+                users[username]['disabled'] = disable
+                vless_uuid = str(users[username].get('vless_uuid') or '').strip()
+                save_json(USERS_FILE, users)
+            # xray + hysteria side-effects run outside the file lock.
             if disable:
                 # xray VLESS authenticates by UUID at the xray layer (not via
                 # auth_backend), so disabling must also pull the user's xray
@@ -2771,7 +2838,6 @@ class Handler(BaseHTTPRequestHandler):
                 self.write_reset_log(self.get_admin_actor(), 'disable_user', username, {}, {})
                 self.redirect('/admin?msg=disabled+' + username)
             else:
-                vless_uuid = str(users[username].get('vless_uuid') or '').strip()
                 if vless_uuid and xray_config.sync_user(username, vless_uuid):
                     xray_config.reload_async()
                 self.write_reset_log(self.get_admin_actor(), 'enable_user', username, {}, {})
@@ -2814,12 +2880,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
-            users = load_json(USERS_FILE, {})
-            if username not in users:
-                self.redirect('/admin?msg=user+not+found')
-                return
-            del users[username]
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                del users[username]
+                save_json(USERS_FILE, users)
+            # xray + hysteria side-effects run outside the file lock.
             hy_kick([username])
             if xray_config.remove_user(username):
                 xray_config.reload_async()
