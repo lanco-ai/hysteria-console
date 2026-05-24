@@ -110,12 +110,16 @@
     if (!btn) return;
     ev.preventDefault();
     var text = btn.dataset.copy || '';
-    if (!text || !navigator.clipboard) return;
+    function manualCopy(){
+      if (window.prompt) window.prompt('自动复制不可用，请手动复制下面的链接', text);
+    }
+    if (!text) return;
+    if (!navigator.clipboard) { manualCopy(); return; }
     navigator.clipboard.writeText(text).then(function() {
       btn.classList.add('copied');
       var prev = btn.getAttribute('title') || '';
       btn.setAttribute('title', '已复制 ✓');
       setTimeout(function() { btn.classList.remove('copied'); btn.setAttribute('title', prev); }, 1200);
-    });
+    }).catch(manualCopy);
   });
 })();

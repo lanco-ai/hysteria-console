@@ -222,6 +222,14 @@ svg[viewBox="0 0 24 24"] { width: 16px; height: 16px; flex: 0 0 auto; stroke-wid
   letter-spacing: 0;
 }
 .topbar-actions { display: flex; align-items: center; gap: 8px; }
+.poll-status {
+  min-width: 92px;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.poll-status.is-live { border-color: var(--ok); color: var(--ok); }
+.poll-status.is-paused { border-color: var(--warn); color: var(--warn); }
+.poll-status.is-error { border-color: var(--danger); color: var(--danger); }
 .content { padding: 22px 22px 64px; max-width: 1280px; width: 100%; margin: 0 auto; }
 
 /* mobile sidebar toggle */

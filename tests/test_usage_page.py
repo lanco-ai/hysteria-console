@@ -69,6 +69,8 @@ def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):
     assert 'class="spark"' in html_out
     assert 'usage.js' in html_out
     assert "<details" in html_out
+    assert 'id="usage-refresh-now"' in html_out
+    assert 'data-role="poll-status"' in html_out
 
 
 def test_admin_daily_redirects_to_usage_with_301(tmp_path, monkeypatch):
@@ -121,6 +123,8 @@ def test_user_detail_page_renders_for_known_user(tmp_path, monkeypatch):
     assert 'class="hourly-bars"' in out
     assert 'class="heatmap"' in out
     assert 'href="/admin/usage"' in out
+    assert 'id="usage-refresh-now"' in out
+    assert 'data-role="poll-status"' in out
 
 
 def test_user_detail_page_returns_none_for_unknown_user(tmp_path, monkeypatch):

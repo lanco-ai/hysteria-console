@@ -13,6 +13,8 @@
   })();
 
   var tip = document.getElementById("usage-hover-tip");
+  var refreshBtn = document.getElementById("usage-refresh-now");
+  var pollStatus = document.querySelector('[data-role="poll-status"]');
 
   function fmtBytes(n) {
     if (!n) return "0 B";
@@ -48,23 +50,67 @@
     if (el && txt !== undefined) el.textContent = txt;
   }
 
+  function setPollStatus(text, cls) {
+    if (!pollStatus) return;
+    pollStatus.textContent = text;
+    pollStatus.classList.remove("is-live", "is-paused", "is-error");
+    if (cls) pollStatus.classList.add(cls);
+  }
+
+  function stamp() {
+    return new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
   // Initial hover wiring
   var bars = document.querySelectorAll("svg.hourly-bars");
   for (var i = 0; i < bars.length; i++) attachHover(bars[i]);
 
   // Polling
-  setInterval(function () {
+  var timer = null;
+  var inflight = false;
+  function tick() {
+    if (inflight) return;
+    inflight = true;
+    if (refreshBtn) refreshBtn.disabled = true;
+    setPollStatus("刷新中", "is-live");
     fetch(pollUrl, { credentials: "same-origin" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })
       .then(function (data) {
-        if (!data) return;
+        if (!data) {
+          setPollStatus("刷新失败", "is-error");
+          return;
+        }
         if (data.stats) {
           setText("[data-stat=current_hour] .v", fmtBytes(data.stats.current_hour_bytes));
           setText("[data-stat=today] .v", fmtBytes(data.stats.today_bytes));
           setText("[data-stat=last_7d] .v", fmtBytes(data.stats.last_7d_bytes));
           setText("[data-stat=cycle] .v", fmtBytes(data.stats.cycle_bytes));
         }
+        setPollStatus("更新 " + stamp(), "is-live");
+      })
+      .finally(function () {
+        inflight = false;
+        if (refreshBtn) refreshBtn.disabled = false;
       });
-  }, 5000);
+  }
+  function start() {
+    if (!timer) {
+      tick();
+      timer = setInterval(tick, 5000);
+    }
+  }
+  function stop() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    setPollStatus("已暂停", "is-paused");
+  }
+  if (refreshBtn) refreshBtn.addEventListener("click", tick);
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) stop(); else start();
+  });
+  window.addEventListener("pagehide", stop);
+  start();
 })();

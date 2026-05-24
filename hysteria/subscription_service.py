@@ -1519,6 +1519,10 @@ def render_usage_page(host):
     top_html = "".join(top_rows) or '<div class="empty">暂无数据</div>'
 
     historical = _render_daily_table_collapsed(host)
+    poll_controls = (
+        '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
+        '<span class="badge poll-status" data-role="poll-status">已加载</span>'
+    )
 
     content = f'''<div class="grid grid-4">
   <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{fmt_bytes(stats["current_hour_bytes"])}</div><div class="small">{stats["online"]} 在线</div></div>
@@ -1552,7 +1556,8 @@ def render_usage_page(host):
 <script src="/static/usage.js" defer></script>
 '''
     return render_admin_shell('usage', '流量分析', content,
-                              subtitle=f'{host} · {LOCAL_TZ_LABEL}')
+                              subtitle=f'{host} · {LOCAL_TZ_LABEL}',
+                              topbar_extra=poll_controls)
 
 
 def render_user_detail_page(uid, host):
@@ -1580,6 +1585,10 @@ def render_user_detail_page(uid, host):
         f'{html.escape(a.get("kind", ""))}: {html.escape(a.get("details", ""))}</div>'
         for a in payload["recent_alerts"]
     ) or '<div class="empty">无近期告警</div>'
+    poll_controls = (
+        '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
+        '<span class="badge poll-status" data-role="poll-status">已加载</span>'
+    )
 
     content = f'''<a class="back-link" href="/admin/usage">← 返回 /admin/usage</a>
 <h2 class="user-title">{html.escape(uid)} {badge}
@@ -1611,7 +1620,8 @@ def render_user_detail_page(uid, host):
 <script src="/static/usage.js" defer></script>
 '''
     return render_admin_shell('usage', f'{uid} · 用量画像', content,
-                              subtitle=f'{host} · {LOCAL_TZ_LABEL}')
+                              subtitle=f'{host} · {LOCAL_TZ_LABEL}',
+                              topbar_extra=poll_controls)
 
 
 def _render_daily_table_collapsed(host):
