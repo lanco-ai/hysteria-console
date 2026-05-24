@@ -109,27 +109,33 @@ def format_message(event):
         z = details.get('z', 0.0)
         return (f"⚠️ {user} 今日 {details.get('today_human','?')} "
                 f"(基线 {details.get('mean_human','?')}, z={z:.1f})")
+    if kind == 'test':
+        return f"✅ 测试告警 · 来自管理面板（{user}）"
     return f"{kind}: {user}"
 
 
 def _post_telegram(cfg, message, *, opener):
+    """Return True on a successful POST, False on transport failure."""
     bot = cfg.get('bot_token')
     chat = cfg.get('chat_id')
     if not bot or not chat:
-        return
+        return False
     url = f'https://api.telegram.org/bot{bot}/sendMessage'
     body = urllib.parse.urlencode({'chat_id': chat, 'text': message}).encode('utf-8')
     req = urllib.request.Request(url, data=body, method='POST')
     try:
         opener.urlopen(req, timeout=5).read()
+        return True
     except (urllib.error.URLError, OSError) as e:
         log.warning('telegram alert failed: %s', e)
+        return False
 
 
 def _post_webhook(cfg, event, *, opener):
+    """Return True on a successful POST, False on transport failure."""
     url = cfg.get('url')
     if not url:
-        return
+        return False
     body = json.dumps(event, ensure_ascii=True).encode('utf-8')
     headers = {'Content-Type': 'application/json'}
     secret = cfg.get('secret')
@@ -139,21 +145,34 @@ def _post_webhook(cfg, event, *, opener):
     req = urllib.request.Request(url, data=body, method='POST', headers=headers)
     try:
         opener.urlopen(req, timeout=5).read()
+        return True
     except (urllib.error.URLError, OSError) as e:
         log.warning('webhook alert failed: %s', e)
+        return False
 
 
 def dispatch(event, *, config=None, opener=None):
-    """Fire `event` to every configured channel. Never raises."""
+    """Fire `event` to every configured channel. Never raises.
+
+    Returns a result dict `{'attempted': [...], 'failed': [...]}` naming the
+    channels that were tried and those whose transport failed. Cron callers
+    ignore the return value, so this stays backward compatible.
+    """
+    result = {'attempted': [], 'failed': []}
     try:
         cfg = config if config is not None else load_config()
         if not isinstance(cfg, dict):
-            return
+            return result
         transport = opener if opener is not None else urllib.request
         msg = format_message(event)
         if cfg.get('telegram'):
-            _post_telegram(cfg['telegram'], msg, opener=transport)
+            result['attempted'].append('telegram')
+            if not _post_telegram(cfg['telegram'], msg, opener=transport):
+                result['failed'].append('telegram')
         if cfg.get('webhook'):
-            _post_webhook(cfg['webhook'], event, opener=transport)
+            result['attempted'].append('webhook')
+            if not _post_webhook(cfg['webhook'], event, opener=transport):
+                result['failed'].append('webhook')
     except Exception as e:
         log.exception('dispatch failed unexpectedly: %s', e)
+    return result

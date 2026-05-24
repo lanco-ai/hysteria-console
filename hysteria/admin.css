@@ -711,6 +711,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   font-size: 10.5px;
   padding: 1px 7px;
 }
+.badge.badge-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+  font-size: 10.5px;
+  padding: 1px 7px;
+}
 
 /* card section header */
 .card-head {
@@ -748,6 +755,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .spark-bar { fill: var(--text-muted); }
 .spark-bar.today { fill: var(--accent); }
 .spark-cell { padding-top: 14px; padding-bottom: 14px; min-width: 130px; }
+.panel-trend { padding-top: 8px; }
+.panel-trend svg.spark { width: 100%; height: 56px; }
 
 /* ── Daily traffic table ──────────────────────────────────── */
 .daily-table th, .daily-table td { white-space: nowrap; }

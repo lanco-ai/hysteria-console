@@ -12,12 +12,16 @@ they don't require a real qrencode binary or a real HTTP listener.
 import csv as _csv
 import io
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import subscription_service as ss
+
+SH = ZoneInfo("Asia/Shanghai")
 
 
 # ----- A: QR helper ---------------------------------------------------------
@@ -217,3 +221,467 @@ def test_user_panel_renders_rotate_token_form_with_current_token(tmp_path, monke
     assert '/panel/alice/rotate-token' in page
     assert 'data-action="rotate-token"' in page
     assert 'value="tokABC"' in page
+
+
+# ----- G: User-panel UX (reset countdown, trend, copy, live refresh) --------
+
+def _seed_panel(tmp_path, monkeypatch, *, daily=None, online=None, meta=None):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text(json.dumps(daily or {}))
+    (tmp_path / 'online.json').write_text(json.dumps(online or {}))
+    (tmp_path / 'meta.json').write_text(json.dumps(meta or {}))
+
+
+_CYCLE_META = {'settlement_day': 12, 'cycle_length_days': 30,
+               'cycle_anchor_date': '2026-05-12'}
+
+
+def test_user_panel_shows_quota_reset_countdown(tmp_path, monkeypatch):
+    """Cycle 2026-05-12 .. 06-10 resets on 06-11; viewed 05-14 -> 28 days left."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '本周期 30 天' in page
+    assert '重置于 2026-06-11' in page
+    assert '还剩 28 天' in page
+
+
+def test_user_panel_shows_30day_usage_trend(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    daily = {'2026-05-13': {'alice': {'tx': 0, 'rx': 1_000_000, 'total': 1_000_000}}}
+    _seed_panel(tmp_path, monkeypatch, daily=daily, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '近 30 天用量趋势' in page
+    assert 'panel-trend' in page
+    assert 'class="spark"' in page
+
+
+def test_user_panel_has_copy_buttons_for_both_links(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert 'data-copy="http://h/sub/alice?token=tok"' in page
+    assert 'data-copy="http://h/panel/alice?token=tok"' in page
+
+
+def test_user_panel_wires_live_refresh_poll(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '/panel/alice.json?token=tok' in page
+    for role in ('used', 'remain', 'online', 'percent', 'bar', 'txrx', 'poll-status'):
+        assert f'data-role="{role}"' in page
+
+
+def test_build_panel_json_payload_schema_and_values(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    daily = {'2026-05-14': {'alice': {'tx': 0, 'rx': 1_000_000, 'total': 1_000_000}}}
+    _seed_panel(tmp_path, monkeypatch, daily=daily, online={'alice': 1}, meta=_CYCLE_META)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 10_000_000_000, 'max_devices': 2}
+    payload = ss._build_panel_json_payload('alice', cfg, now=now)
+    assert set(payload) == {'ts', 'used_bytes', 'total_bytes', 'remain_bytes',
+                            'tx_bytes', 'rx_bytes', 'online', 'percent'}
+    assert payload['used_bytes'] == int(1_000_000 * ss.DISPLAY_MULTIPLIER)
+    assert payload['total_bytes'] == 10_000_000_000
+    assert payload['remain_bytes'] == payload['total_bytes'] - payload['used_bytes']
+    assert payload['online'] == 1
+    assert 0 <= payload['percent'] <= 100
+
+
+def test_panel_json_payload_unmetered_remain_is_negative(tmp_path, monkeypatch):
+    """No quota set -> remain sentinel -1 (unlimited) and percent pinned to 0."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    cfg = {'sub_token': 'tok', 'max_devices': 0}
+    payload = ss._build_panel_json_payload('alice', cfg, now=now)
+    assert payload['total_bytes'] == 0
+    assert payload['remain_bytes'] == -1
+    assert payload['percent'] == 0.0
+
+
+# ----- H: Admin — change password / rotate token / test alert / suspend -----
+
+def test_settings_page_has_change_password_form(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'meta.json').write_text(json.dumps(
+        {'admin_user': 'admin', 'admin_pass_hash': 'x'}))
+    out = ss.render_settings('host')
+    assert 'action="/admin/change-password"' in out
+    assert 'name="current"' in out
+    assert 'name="new"' in out
+    assert 'name="confirm"' in out
+
+
+def test_settings_page_renders_flash_messages(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'meta.json').write_text(json.dumps(
+        {'admin_user': 'admin', 'admin_pass_hash': 'x'}))
+    assert '管理员密码已更新' in ss.render_settings('host', flash='password changed')
+    assert '当前密码不正确' in ss.render_settings('host', flash='err:password_wrong')
+
+
+def test_settings_appears_in_sidebar_nav():
+    assert any(key == 'settings' and href == '/admin/settings'
+               for key, href, _label, _icon in ss._SIDEBAR_NAV)
+
+
+def test_health_page_has_test_alert_button_and_flash():
+    out = ss.render_health('host', flash='alert sent')
+    assert 'action="/admin/test-alert"' in out
+    assert '发送测试告警' in out
+    assert '测试告警已发送' in out
+    assert '未配置告警通道' in ss.render_health('host', flash='err:alert_no_channels')
+
+
+def test_admin_row_has_rotate_and_suspend_for_enabled_user(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    cfg = {'sub_token': 't', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    row = ss.row_form('alice', cfg, {}, 'host', 'http://host')
+    assert 'action="/admin/rotate-token"' in row
+    assert 'action="/admin/toggle-user"' in row
+    assert '>暂停</button>' in row
+    assert 'data-action="disable-user"' in row
+    assert '已停用' not in row
+
+
+def test_admin_row_shows_enable_button_and_badge_for_disabled_user(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    cfg = {'sub_token': 't', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2, 'disabled': True}
+    row = ss.row_form('alice', cfg, {}, 'host', 'http://host')
+    assert '>启用</button>' in row
+    assert 'badge-danger' in row and '已停用' in row
+    # Enabling is harmless, so it must NOT carry the disable confirm hook.
+    assert 'data-action="disable-user"' not in row
+
+
+def test_admin_poll_js_confirms_destructive_admin_actions():
+    text = (Path(ss.__file__).resolve().parent / 'admin_poll.js').read_text(encoding='utf-8')
+    assert "f.dataset.action==='rotate-user-token'" in text
+    assert "f.dataset.action==='disable-user'" in text
+
+
+def test_alerts_test_kind_has_friendly_message():
+    import alerts
+    msg = alerts.format_message({'kind': 'test', 'user': 'admin'})
+    assert '测试告警' in msg
+
+
+def test_auth_backend_rejects_disabled_user(tmp_path, monkeypatch):
+    import auth_backend as ab
+    (tmp_path / 'users.json').write_text(json.dumps(
+        {'alice': {'sub_token': 'SECRET', 'disabled': True}}))
+    monkeypatch.setattr(ab, 'USERS_FILE', str(tmp_path / 'users.json'))
+    monkeypatch.setattr(sys, 'argv', ['auth_backend.py', 'hysteria', 'alice:SECRET'])
+    with pytest.raises(SystemExit) as e:
+        ab.main()
+    assert e.value.code == 1
+
+
+def test_auth_backend_allows_enabled_user(tmp_path, monkeypatch, capsys):
+    import auth_backend as ab
+    (tmp_path / 'users.json').write_text(json.dumps(
+        {'alice': {'sub_token': 'SECRET'}}))  # not disabled, not metered
+    monkeypatch.setattr(ab, 'USERS_FILE', str(tmp_path / 'users.json'))
+    monkeypatch.setattr(sys, 'argv', ['auth_backend.py', 'hysteria', 'alice:SECRET'])
+    with pytest.raises(SystemExit) as e:
+        ab.main()
+    assert e.value.code == 0
+    assert capsys.readouterr().out == 'alice'
+
+
+# ----- Code-review fixes (F1..F13) ------------------------------------------
+
+# F1: traffic_limiter cron must keep suspended users OUT of the xray plan and
+#     re-kick them if online, every tick (durable suspend).
+
+def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
+    import traffic_limiter as tl
+
+    snap = tmp_path / 'online.json'
+    monkeypatch.setattr(tl, 'ONLINE_SNAPSHOT_FILE', str(snap), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_FILE', str(tmp_path / 'usage.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_DAILY_FILE', str(tmp_path / 'usage_daily.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_HOURLY_FILE', str(tmp_path / 'usage_hourly.json'), raising=False)
+    monkeypatch.setattr(tl, 'USERS_FILE', str(tmp_path / 'users.json'), raising=False)
+    monkeypatch.setattr(tl, 'RESET_STATE_FILE', str(tmp_path / 'reset.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_LOCK_FILE', str(tmp_path / 'usage.lock'), raising=False)
+    (tmp_path / 'users.json').write_text(json.dumps({
+        'alice': {'vless_uuid': 'uuid-A'},
+        'bob': {'vless_uuid': 'uuid-B', 'disabled': True},
+    }))
+
+    # /traffic empty, /online shows bob online (must be kicked).
+    results = [{}, {'bob': 3}]
+    monkeypatch.setattr(tl, 'get', lambda _p: results.pop(0))
+    captured = {'plan': None, 'kick': None}
+    monkeypatch.setattr(tl, 'post', lambda path, body=None, **k: captured.__setitem__('kick', body) or True)
+    monkeypatch.setattr(tl, 'get_xray_traffic', lambda: {})
+    monkeypatch.setattr(tl, 'check_alerts', lambda *a, **k: None)
+
+    import xray_config
+    def fake_apply(plan, **k):
+        captured['plan'] = dict(plan)
+        return False
+    monkeypatch.setattr(xray_config, 'apply_user_plan', fake_apply, raising=False)
+    monkeypatch.setattr(xray_config, 'reload_async', lambda: None, raising=False)
+
+    tl.main()
+
+    plan = captured['plan']
+    assert plan['bob'] is None, 'disabled user must be removed from both inbounds'
+    assert plan['alice'] == 'uuid-A'
+    assert captured['kick'] == ['bob'], 'an online disabled user must be re-kicked each tick'
+
+
+# F2: suspended users see a banner and NO poll loop on the panel.
+
+def test_render_user_panel_disabled_shows_banner_and_omits_poll(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2,
+           'disabled': True}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '账号已停用，请联系管理员' in page
+    assert 'class="err"' in page
+    assert 'var pollUrl' not in page
+    assert '/panel/alice.json' not in page
+
+
+def test_render_user_panel_enabled_still_has_poll(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert 'var pollUrl' in page
+    assert '账号已停用' not in page
+
+
+# F3: /admin/add reset-token construction preserves `disabled`.
+
+def test_admin_add_reset_token_preserves_disabled():
+    """Mirror the entry dict built by the /admin/add reset-token path."""
+    existing = {'sub_token': 'old', 'vless_uuid': 'u1', 'disabled': True}
+    entry = {
+        'metered': False,
+        'guest': False,
+        'max_devices': 2,
+        'monthly_quota_bytes': 1 << 30,
+        'sub_token': 'new',
+        'vless_uuid': 'u1',
+        'disabled': bool(existing.get('disabled')),
+    }
+    assert entry['disabled'] is True
+
+
+# F4: username validation.
+
+def test_is_valid_username_accepts_normal_names():
+    for name in ('alice', 'bob_1', 'a.b-c', 'X' * 64):
+        assert ss.is_valid_username(name), name
+
+
+def test_is_valid_username_rejects_bad_names():
+    for name in ('a/b', 'x.json', '<script>', '', 'a' * 65, 'a b', 'foo@bar', 'sub.json'):
+        assert not ss.is_valid_username(name), name
+
+
+def test_user_panel_poll_url_escapes_left_angle(tmp_path, monkeypatch):
+    """Defense-in-depth: even if a `<`-bearing username were rendered, the
+    embedded JSON URL must escape `<` so it can't break out of <script>."""
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'a<b', 'tok', cfg)
+    # The poll URL line must carry the escaped form, not a raw '</'.
+    assert '\\u003c' in page
+    assert 'var pollUrl' in page
+    poll_line = [ln for ln in page.splitlines() if 'var pollUrl' in ln][0]
+    assert '<' not in poll_line
+
+
+# F8: alerts.dispatch returns a result dict and reports failed channels.
+
+def test_alerts_dispatch_reports_failed_channel():
+    import alerts as _alerts
+
+    class FakeResp:
+        def read(self):
+            return b''
+
+    class FakeOpener:
+        def urlopen(self, req, timeout=None):
+            # Telegram URL succeeds; the webhook endpoint raises.
+            if 'telegram' in req.full_url:
+                return FakeResp()
+            raise OSError('connection refused')
+
+    cfg = {
+        'telegram': {'bot_token': 'B', 'chat_id': '1'},
+        'webhook': {'url': 'http://hook.example/x'},
+    }
+    result = _alerts.dispatch({'kind': 'test', 'user': 'admin'},
+                              config=cfg, opener=FakeOpener())
+    assert isinstance(result, dict)
+    assert set(result['attempted']) == {'telegram', 'webhook'}
+    assert result['failed'] == ['webhook']
+
+
+def test_alerts_dispatch_all_ok_has_no_failures():
+    import alerts as _alerts
+
+    class FakeResp:
+        def read(self):
+            return b''
+
+    class FakeOpener:
+        def urlopen(self, req, timeout=None):
+            return FakeResp()
+
+    cfg = {'telegram': {'bot_token': 'B', 'chat_id': '1'}}
+    result = _alerts.dispatch({'kind': 'test', 'user': 'admin'},
+                              config=cfg, opener=FakeOpener())
+    assert result['failed'] == []
+    assert result['attempted'] == ['telegram']
+
+
+# F9: a null value in online.json must not crash the panel renderer.
+
+def test_render_user_panel_tolerates_null_online(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text(json.dumps({'alice': None}))
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    # Must not raise TypeError on the null online value.
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert 'data-role="online"' in page
+
+
+# F11: change-password invalidates all prior admin sessions.
+
+def test_change_password_invalidates_prior_sessions(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'SESSIONS_FILE', tmp_path / 'sessions.json')
+    (tmp_path / 'sessions.json').write_text('{}')
+    old_sid = ss.create_session('admin')
+    assert old_sid in ss.get_sessions()
+
+    # Mirror the handler's session-revocation step.
+    ss.save_json(ss.SESSIONS_FILE, {})
+    new_sid = ss.create_session('admin')
+
+    sessions = ss.get_sessions()
+    assert old_sid not in sessions, 'old session must be revoked'
+    assert new_sid in sessions, 'a fresh session must be issued for this device'
+
+
+def test_settings_note_mentions_session_signout(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'meta.json').write_text(json.dumps(
+        {'admin_user': 'admin', 'admin_pass_hash': 'x'}))
+    out = ss.render_settings('host')
+    assert '注销所有已登录会话' in out
+
+
+# F13: defensive type guards reject non-dict user entries.
+
+def test_username_invalid_flash_text_renders_chinese():
+    assert ss.flash_text('username_invalid').startswith('用户名只能包含')
+
+
+# ----- I: deferred-finding fixes (#10 initial password, #12 async test-alert)
+
+def test_ensure_meta_writes_initial_password_file_when_none_set(tmp_path, monkeypatch):
+    """On a fresh deploy (no admin_pass / admin_pass_hash) ensure_meta auto-
+    generates a password AND drops it in a root-only file matching the hash."""
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'subscription_meta.json')
+    meta = ss.ensure_meta()
+    assert meta.get('admin_pass_hash'), 'a hash must be set'
+    pw_file = tmp_path / 'admin_initial_password.txt'
+    assert pw_file.exists(), 'initial password file must be written'
+    body = pw_file.read_text(encoding='utf-8')
+    # Last non-comment line is user:password
+    line = [l for l in body.splitlines() if l and not l.startswith('#')][-1]
+    user, _, password = line.partition(':')
+    assert user == meta.get('admin_user', 'admin')
+    assert ss.verify_secret(password, meta['admin_pass_hash']), 'file password must match stored hash'
+
+
+def test_ensure_meta_initial_password_file_is_owner_only(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'subscription_meta.json')
+    ss.ensure_meta()
+    pw_file = tmp_path / 'admin_initial_password.txt'
+    import stat as _stat
+    mode = _stat.S_IMODE(pw_file.stat().st_mode)
+    assert mode == 0o600, f'expected 0600, got {oct(mode)}'
+
+
+def test_ensure_meta_does_not_overwrite_or_write_file_when_password_exists(tmp_path, monkeypatch):
+    """If a password is already configured, no random one is generated and no
+    hint file is created (idempotent / no clobber of operator's password)."""
+    meta_path = tmp_path / 'subscription_meta.json'
+    monkeypatch.setattr(ss, 'META_FILE', meta_path)
+    existing_hash = ss.hash_secret('operator-chosen-pass')
+    meta_path.write_text(json.dumps(
+        {'admin_user': 'admin', 'admin_pass_hash': existing_hash, 'admin_token': 't'}))
+    meta = ss.ensure_meta()
+    assert meta['admin_pass_hash'] == existing_hash, 'must not overwrite existing password'
+    assert not (tmp_path / 'admin_initial_password.txt').exists()
+
+
+def test_fire_test_alert_dispatches_on_background_thread(monkeypatch):
+    """#12: the test-alert is dispatched off the request thread; verify the
+    dispatch call actually runs with the test event, deterministically."""
+    import threading as _t
+    import alerts as _alerts
+    done = _t.Event()
+    captured = {}
+
+    def fake_dispatch(event, *, config=None):
+        captured['event'] = event
+        captured['config'] = config
+        done.set()
+
+    monkeypatch.setattr(_alerts, 'dispatch', fake_dispatch)
+    cfg = {'telegram': {'bot_token': 'B', 'chat_id': '1'}}
+    thread = ss._fire_test_alert(cfg, 'admin')
+    assert done.wait(2.0), 'background dispatch did not run'
+    thread.join(2.0)
+    assert captured['event']['kind'] == 'test'
+    assert captured['event']['user'] == 'admin'
+    assert captured['config'] is cfg
+
+
+def test_health_flash_reports_dispatched_not_guaranteed_sent(tmp_path, monkeypatch):
+    out = ss.render_health('host', flash='alert dispatched')
+    assert '后台发送' in out

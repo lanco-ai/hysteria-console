@@ -499,6 +499,14 @@ def main():
     to_kick = []
     xray_plan = {}
     for uid, cfg in users.items():
+        if (cfg or {}).get("disabled"):
+            # Durable suspend: every tick force-removes the user from xray and
+            # re-kicks any live hysteria session, so suspension survives across
+            # cron ticks (hy_kick from the admin handler is one-shot/best-effort).
+            xray_plan[uid] = None  # ensure removed from both inbounds
+            if int(online.get(uid, 0) or 0) > 0:
+                to_kick.append(uid)
+            continue
         vless_uuid = str((cfg or {}).get("vless_uuid") or "").strip()
         metered = user_compat.is_metered(cfg)
         quota = int((cfg or {}).get("monthly_quota_bytes", 0))

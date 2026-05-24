@@ -12,6 +12,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 import urllib.request
@@ -123,6 +124,20 @@ def usage_lock():
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
+_USERNAME_RE = re.compile(r'^[A-Za-z0-9_.-]{1,64}$')
+
+
+def is_valid_username(name):
+    """A creatable username: 1-64 chars of [A-Za-z0-9_.-], not ending in
+    `.json`. The `.json` exclusion avoids route-extraction ambiguity with
+    `/panel/<user>.json`; the charset blocks path/HTML-injection sinks."""
+    if not name or not _USERNAME_RE.match(name):
+        return False
+    if name.endswith('.json'):
+        return False
+    return True
+
+
 def parse_int_field(raw, default, min_value, max_value):
     try:
         value = int(str(raw).strip())
@@ -183,6 +198,31 @@ def migrate_plaintext_passwords():
         save_json(USERS_FILE, users)
 
 
+def _write_initial_admin_password(user, password):
+    """Persist an auto-generated initial admin password to a root-only file so
+    the operator can retrieve it on a fresh deploy, log in, then rotate it via
+    /admin/settings. Best-effort: a write failure must not block meta init.
+    Path follows META_FILE so tests (which repoint META_FILE) stay isolated."""
+    try:
+        path = Path(META_FILE).parent / 'admin_initial_password.txt'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, (
+                f"# hy2 auto-generated initial admin password.\n"
+                f"# Log in at /admin (user: {user}), rotate it at /admin/settings, then delete this file.\n"
+                f"{user}:{password}\n"
+            ).encode('utf-8'))
+        finally:
+            os.close(fd)
+        try:
+            os.chmod(str(path), 0o600)
+        except OSError:
+            pass
+    except OSError:
+        pass
+
+
 def ensure_meta():
     meta = load_json(META_FILE, {})
     changed = False
@@ -193,7 +233,9 @@ def ensure_meta():
         meta['admin_user'] = 'admin'
         changed = True
     if not meta.get('admin_pass') and not meta.get('admin_pass_hash'):
-        meta['admin_pass_hash'] = hash_secret(secrets.token_urlsafe(12))
+        initial = secrets.token_urlsafe(12)
+        meta['admin_pass_hash'] = hash_secret(initial)
+        _write_initial_admin_password(meta.get('admin_user', 'admin'), initial)
         changed = True
     if changed:
         save_json(META_FILE, meta)
@@ -599,6 +641,7 @@ _ICONS = {
     'back': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>',
     'chart': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="11"/><line x1="3" y1="20" x2="21" y2="20"/></svg>',
     'pulse': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    'lock': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
 }
 
 
@@ -640,6 +683,7 @@ _SIDEBAR_NAV = [
     ('config', '/admin/config', '模板配置', 'config'),
     ('rules', '/admin/rules', '路由规则', 'rules'),
     ('logs', '/admin/logs', '清零日志', 'logs'),
+    ('settings', '/admin/settings', '设置', 'lock'),
 ]
 
 
@@ -710,12 +754,19 @@ def flash_text(msg):
         return f'已刷新用户本月已用流量（服务器总流量不变）：{msg.split(" ", 2)[2]}'
     if msg.startswith('deleted '):
         return f'已删除用户：{msg.split(" ", 1)[1]}'
+    if msg.startswith('rotated '):
+        return f'已重置订阅令牌（旧链接已失效）：{msg.split(" ", 1)[1]}'
+    if msg.startswith('disabled '):
+        return f'已停用用户（已断开连接）：{msg.split(" ", 1)[1]}'
+    if msg.startswith('enabled '):
+        return f'已启用用户：{msg.split(" ", 1)[1]}'
     if msg.startswith('settlement '):
         return f'已更新结算日：每月 {msg.split(" ", 1)[1]} 日'
     maps = {
         'user not found': '用户不存在',
         'user empty': '用户名不能为空',
         'user_exists_use_reset_token': '用户已存在，请勾选”若用户已存在则重置订阅令牌”后再创建',
+        'username_invalid': '用户名只能包含字母、数字、点、下划线、连字符，且不能以 .json 结尾',
         'settlement_invalid': '结算日无效（请输入 1–28 之间的整数）',
         'cycle_length_invalid': f'周期长度无效（请输入 {CYCLE_LENGTH_MIN}–{CYCLE_LENGTH_MAX} 之间的整数）',
     }
@@ -789,18 +840,59 @@ def render_qr_svg(text, *, _runner=None):
     return svg
 
 
-def render_user_panel(host, base_url, user, token, cfg):
-    tx, rx, used = scaled_usage_for_user(user)
+def _cycle_reset_info(now=None):
+    """Return (next_reset_date_str, days_left, cycle_length_days) for the panel
+    quota-reset countdown. days_left is at least 1 — today is always strictly
+    before the next cycle boundary."""
+    if now is None:
+        now = local_now()
+    cycle_len = get_cycle_length_days()
+    next_reset = (cycle_start_for(now) + timedelta(days=cycle_len)).date()
+    days_left = max((next_reset - now.date()).days, 0)
+    return next_reset.strftime('%Y-%m-%d'), days_left, cycle_len
+
+
+def _build_panel_json_payload(user, cfg, *, now=None):
+    """Live-refresh payload for the end-user panel (/panel/<user>.json).
+    Mirrors the at-load values render_user_panel computes, in displayed bytes."""
+    if now is None:
+        now = local_now()
+    daily = load_json(USAGE_DAILY_FILE, {})
+    tx, rx, used = scaled_usage_for_user(user, daily=daily, now=now)
     total = user_total_quota(cfg)
     remain = max(total - used, 0) if total > 0 else -1
-    online = int(load_json(ONLINE_FILE, {}).get(user, 0))
+    online = int(load_json(ONLINE_FILE, {}).get(user, 0) or 0)
+    return {
+        'ts': now.isoformat(timespec='seconds'),
+        'used_bytes': int(used),
+        'total_bytes': int(total),
+        'remain_bytes': int(remain),
+        'tx_bytes': int(tx),
+        'rx_bytes': int(rx),
+        'online': online,
+        'percent': round(pct(used, total), 2),
+    }
+
+
+def render_user_panel(host, base_url, user, token, cfg):
+    now = local_now()
+    daily = load_json(USAGE_DAILY_FILE, {})
+    tx, rx, used = scaled_usage_for_user(user, daily=daily, now=now)
+    total = user_total_quota(cfg)
+    remain = max(total - used, 0) if total > 0 else -1
+    online = int(load_json(ONLINE_FILE, {}).get(user, 0) or 0)
     percent = pct(used, total)
     cls = 'danger' if percent >= 90 else ''
+    reset_date, days_left, cycle_len = _cycle_reset_info(now)
+    spark = sparkline_svg(daily_window_for_user(user, daily, days=30, today=now.date()))
     sub_path = f'/sub/{user}?token={token}'
     panel_path = f'/panel/{user}?token={token}'
+    json_path = f'/panel/{user}.json?token={token}'
     sub_http = f'{base_url}{sub_path}'
     panel_http = f'{base_url}{panel_path}'
     max_devices_n = int(cfg.get('max_devices', 0) or 0)
+    is_disabled = bool(cfg.get('disabled'))
+    disabled_banner = '<div class="err">账号已停用，请联系管理员</div>' if is_disabled else ''
     qr_svg = render_qr_svg(sub_http)
     qr_block = ''
     if qr_svg:
@@ -809,7 +901,53 @@ def render_user_panel(host, base_url, user, token, cfg):
   <div class="small">用客户端 App 扫码即可导入（Clash / 小火箭 等）</div>
   <div class="qr-wrap">{qr_svg}</div>
 </div>'''
+    # Suspended accounts get a 403 from /panel/<user>.json, so don't emit the
+    # live-refresh loop (it would just spam '刷新失败'). The embedded URL escapes
+    # '<' so a malicious username can't break out of the <script> element.
+    poll_url_js = json.dumps(json_path).replace('<', '\\u003c')
+    poll_js = '' if is_disabled else f'''  var pollUrl = {poll_url_js};
+  var statusEl = document.querySelector('[data-role="poll-status"]');
+  function fmtBytes(n) {{
+    var v = Math.max(0, Number(n) || 0);
+    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+    while (v >= 1024 && i < u.length - 1) {{ v /= 1024; i++; }}
+    return v.toFixed(2) + ' ' + u[i];
+  }}
+  function setRole(role, txt) {{
+    var el = document.querySelector('[data-role="' + role + '"]');
+    if (el && txt !== undefined) el.textContent = txt;
+  }}
+  function stamp() {{
+    return new Date().toLocaleTimeString([], {{ hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }});
+  }}
+  var timer = null, inflight = false;
+  function tick() {{
+    if (inflight) return;
+    inflight = true;
+    fetch(pollUrl, {{ credentials: 'same-origin' }})
+      .then(function(r) {{ return r.ok ? r.json() : null; }})
+      .catch(function() {{ return null; }})
+      .then(function(d) {{
+        if (!d) {{ if (statusEl) statusEl.textContent = '刷新失败'; return; }}
+        setRole('used', fmtBytes(d.used_bytes));
+        setRole('remain', fmtBytes(d.remain_bytes));
+        setRole('online', d.online);
+        var p = Number(d.percent);
+        setRole('percent', p.toFixed(2) + '%');
+        setRole('txrx', '上传 ' + fmtBytes(d.tx_bytes) + ' · 下载 ' + fmtBytes(d.rx_bytes));
+        var bar = document.querySelector('[data-role="bar"]');
+        if (bar) {{ bar.style.width = p.toFixed(2) + '%'; bar.classList.toggle('danger', p >= 90); }}
+        if (statusEl) statusEl.textContent = '更新于 ' + stamp();
+      }})
+      .finally(function() {{ inflight = false; }});
+  }}
+  function start() {{ if (!timer) {{ tick(); timer = setInterval(tick, 10000); }} }}
+  function stop() {{ if (timer) {{ clearInterval(timer); timer = null; }} }}
+  document.addEventListener('visibilitychange', function() {{ if (document.hidden) stop(); else start(); }});
+  window.addEventListener('pagehide', stop);
+  start();'''
     body = f'''<div class="wrap">
+{disabled_banner}
 <div class="nav">
   <div class="row gap-sm">
     <span class="app-logo">H</span>
@@ -818,28 +956,36 @@ def render_user_panel(host, base_url, user, token, cfg):
       <div class="small">{html.escape(user)}</div>
     </div>
   </div>
-  <span class="badge">{html.escape(host)}</span>
+  <div style="text-align:right;">
+    <span class="badge">{html.escape(host)}</span>
+    <div class="small faint" data-role="poll-status" style="margin-top:4px;">实时刷新中…</div>
+  </div>
 </div>
 <div class="grid grid-4">
-  <div class="card stat"><div class="k">本月已用</div><div class="v big">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
+  <div class="card stat"><div class="k">本月已用</div><div class="v big" data-role="used">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
   <div class="card stat"><div class="k">总流量</div><div class="v">{fmt_bytes(total)}</div></div>
-  <div class="card stat"><div class="k">剩余流量</div><div class="v">{fmt_bytes(remain)}</div></div>
-  <div class="card stat"><div class="k">在线设备</div><div class="v">{online} <span class="faint" style="font-size:14px;font-weight:500;">/ {max_devices_n}</span></div></div>
+  <div class="card stat"><div class="k">剩余流量</div><div class="v" data-role="remain">{fmt_bytes(remain)}</div></div>
+  <div class="card stat"><div class="k">在线设备</div><div class="v"><span data-role="online">{online}</span> <span class="faint" style="font-size:14px;font-weight:500;">/ {max_devices_n}</span></div></div>
 </div>
 <div class="card mt-md">
   <div class="row" style="justify-content:space-between;margin-bottom:10px;">
     <div class="k" style="margin:0;">流量进度</div>
-    <div class="bold" style="font-variant-numeric:tabular-nums;">{percent:.2f}%</div>
+    <div class="bold" style="font-variant-numeric:tabular-nums;" data-role="percent">{percent:.2f}%</div>
   </div>
-  <div class="bar"><div class="fill {cls}" style="width:{percent:.2f}%"></div></div>
-  <div class="small mt-sm">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
+  <div class="bar"><div class="fill {cls}" data-role="bar" style="width:{percent:.2f}%"></div></div>
+  <div class="small mt-sm" data-role="txrx">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
+  <div class="small mt-sm faint">本周期 {cycle_len} 天 · 重置于 {reset_date} · 还剩 {days_left} 天</div>
+</div>
+<div class="card mt-md">
+  <div class="k">近 30 天用量趋势</div>
+  <div class="panel-trend">{spark}</div>
 </div>
 <div class="grid grid-2 mt-md">
   <div class="card">
     <div class="k">订阅链接</div>
     <div class="copy-mono"><code id="sub">{html.escape(sub_http)}</code></div>
     <div class="row mt-md">
-      <button class="btn" id="copy-sub-btn" type="button">{icon("copy")}<span>复制链接</span></button>
+      <button class="btn" type="button" data-copy="{html.escape(sub_http)}">{icon("copy")}<span>复制链接</span></button>
       <a class="btn secondary" href="{html.escape(sub_path)}">{icon("open")}<span>打开订阅</span></a>
     </div>
   </div>
@@ -847,7 +993,8 @@ def render_user_panel(host, base_url, user, token, cfg):
     <div class="k">当前面板链接</div>
     <div class="copy-mono"><code>{html.escape(panel_http)}</code></div>
     <div class="row mt-md">
-      <a class="btn secondary" href="/">{icon("back")}<span>返回首页</span></a>
+      <button class="btn secondary" type="button" data-copy="{html.escape(panel_http)}">{icon("copy")}<span>复制链接</span></button>
+      <a class="btn ghost btn-sm" href="/">{icon("back")}<span>返回首页</span></a>
       <form method="post" action="/panel/{html.escape(user)}/rotate-token" data-action="rotate-token" class="inline-form-row">
         <input type="hidden" name="token" value="{html.escape(token)}">
         <button class="btn danger-btn btn-sm" type="submit">重置 Token</button>
@@ -859,24 +1006,30 @@ def render_user_panel(host, base_url, user, token, cfg):
 {qr_block}
 </div>
 <script>
-document.getElementById('copy-sub-btn').addEventListener('click', function() {{
-  var btn = this;
-  var text = document.getElementById('sub').textContent;
-  if (!navigator.clipboard) {{ alert('当前环境不支持自动复制，请手动选中链接复制'); return; }}
-  navigator.clipboard.writeText(text).then(function() {{
+(function() {{
+  function flashCopied(btn) {{
     var label = btn.querySelector('span');
-    var prev = label.textContent;
-    label.textContent = '已复制 ✓';
+    var prev = label ? label.textContent : '';
+    if (label) label.textContent = '已复制 ✓';
     btn.disabled = true;
-    setTimeout(function() {{ label.textContent = prev; btn.disabled = false; }}, 1400);
-  }}).catch(function() {{ alert('复制失败，请手动复制'); }});
-}});
-document.addEventListener('submit', function(ev) {{
-  var f = ev.target;
-  if (f && f.dataset && f.dataset.action === 'rotate-token') {{
-    if (!confirm('确认重置订阅 Token？旧链接将立即失效。')) ev.preventDefault();
+    setTimeout(function() {{ if (label) label.textContent = prev; btn.disabled = false; }}, 1400);
   }}
-}});
+  document.addEventListener('click', function(ev) {{
+    var btn = ev.target.closest ? ev.target.closest('[data-copy]') : null;
+    if (!btn) return;
+    var text = btn.getAttribute('data-copy');
+    if (!navigator.clipboard) {{ alert('当前环境不支持自动复制，请手动选中链接复制'); return; }}
+    navigator.clipboard.writeText(text).then(function() {{ flashCopied(btn); }})
+      .catch(function() {{ alert('复制失败，请手动复制'); }});
+  }});
+  document.addEventListener('submit', function(ev) {{
+    var f = ev.target;
+    if (f && f.dataset && f.dataset.action === 'rotate-token') {{
+      if (!confirm('确认重置订阅 Token？旧链接将立即失效。')) ev.preventDefault();
+    }}
+  }});
+{poll_js}
+}})();
 </script>'''
     return html_page(f'{user} 用户面板', body)
 
@@ -901,14 +1054,28 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     bar_w = f'{percent:.1f}'
     user_esc = html.escape(user)
     guest_badge = '<span class="badge badge-info">访客</span>' if metered else ''
+    disabled = bool(cfg.get('disabled'))
+    disabled_badge = '<span class="badge badge-danger">已停用</span>' if disabled else ''
     guest_preview = ' · 访客' if metered else ''
     summary_preview = f'<span class="summary-preview">{quota_gb or 150} GB · {max_devices or 2} 设备{guest_preview}</span>'
+    if disabled:
+        toggle_form = (
+            '<form method="post" action="/admin/toggle-user" class="inline-form-row">'
+            f'<input type="hidden" name="user" value="{user_esc}">'
+            '<button class="btn ghost btn-sm" type="submit" title="恢复该用户的连接权限">启用</button></form>'
+        )
+    else:
+        toggle_form = (
+            '<form method="post" action="/admin/toggle-user" class="inline-form-row" data-action="disable-user">'
+            f'<input type="hidden" name="user" value="{user_esc}">'
+            '<button class="btn ghost btn-sm" type="submit" title="临时停用：拒绝新连接并断开现有会话，不删除用户">暂停</button></form>'
+        )
     return f'''<tr data-user="{user_esc}">
 <td>
   <div class="row gap-sm" style="flex-wrap:nowrap;">
     <div class="user-avatar">{html.escape(user[:1].upper())}</div>
     <div style="min-width:0;">
-      <div class="bold">{user_esc} {guest_badge}</div>
+      <div class="bold">{user_esc} {guest_badge}{disabled_badge}</div>
       <div class="small">在线 <span data-role="online">{online.get(user, 0)}</span> / {max_devices} 设备</div>
     </div>
   </div>
@@ -943,6 +1110,11 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     <input type="hidden" name="user" value="{user_esc}">
     <button class="btn ghost btn-sm" type="submit" title="清空该用户已用流量，但保留在服务器总流量中">刷新流量</button>
   </form>
+  <form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token">
+    <input type="hidden" name="user" value="{user_esc}">
+    <button class="btn ghost btn-sm" type="submit" title="重置该用户订阅令牌，旧订阅/面板链接立即失效">重置订阅</button>
+  </form>
+  {toggle_form}
   <form method="post" action="/admin/delete" class="inline-form-row" data-action="delete-user">
     <input type="hidden" name="user" value="{user_esc}">
     <button class="btn danger-btn btn-sm" type="submit">删除</button>
@@ -1053,6 +1225,9 @@ def _action_label(action):
         'reset_usage_user': '清除用户流量',
         'reset_usage_all': '清空全部流量',
         'refresh_usage_user': '刷新用户流量（保留总计）',
+        'rotate_token': '重置订阅令牌',
+        'disable_user': '停用用户',
+        'enable_user': '启用用户',
     }.get(action, action)
 
 
@@ -1717,7 +1892,32 @@ def _health_card(title, probe_result):
             f'</div>')
 
 
-def render_health(host):
+def _fire_test_alert(cfg, actor):
+    """Dispatch a synthetic alert on a background daemon thread so a slow or
+    unreachable channel never blocks the admin request thread. SSRF note: the
+    webhook URL is operator-supplied (admin-equivalent trust); no allowlisting
+    by design. Returns the started thread (handy for tests)."""
+    event = {
+        'kind': 'test',
+        'user': actor or 'admin',
+        'details': {'note': '来自管理面板的测试告警'},
+    }
+    t = threading.Thread(
+        target=alerts.dispatch, args=(event,), kwargs={'config': cfg}, daemon=True,
+    )
+    t.start()
+    return t
+
+
+_HEALTH_FLASH = {
+    'alert dispatched': '测试告警已在后台发送，请在接收端确认是否收到',
+    'alert sent': '测试告警已发送，请在接收端确认',
+    'alert_no_channels': '未配置告警通道（缺少 alerts.json 或其中的 telegram/webhook）',
+}
+
+
+def render_health(host, flash=''):
+    alert = render_prefixed_alert(flash, _HEALTH_FLASH)
     cards = [
         _health_card('cron 心跳', probe_cron_heartbeat()),
         _health_card('hysteria', probe_systemd('hysteria-server.service')),
@@ -1727,11 +1927,44 @@ def render_health(host):
         _health_card('在线用户', probe_online()),
     ]
     content = (
-        '<div class="grid grid-3">' + ''.join(cards) + '</div>'
+        alert
+        + '<div class="grid grid-3">' + ''.join(cards) + '</div>'
         '<meta http-equiv="refresh" content="30">'
     )
+    test_btn = ('<form method="post" action="/admin/test-alert" class="inline-form-row">'
+                '<button class="btn secondary btn-sm" type="submit">发送测试告警</button></form>')
     return render_admin_shell('health', '健康状态', content,
-                              badge=host, subtitle='30 秒自动刷新')
+                              badge=host, subtitle='30 秒自动刷新',
+                              topbar_extra=test_btn)
+
+
+_SETTINGS_FLASH = {
+    'password changed': '管理员密码已更新',
+    'password_wrong': '当前密码不正确',
+    'password_mismatch': '两次输入的新密码不一致',
+    'password_short': '新密码至少 8 位',
+}
+
+
+def render_settings(host, flash=''):
+    meta = ensure_meta()
+    admin_user = html.escape(str(meta.get('admin_user', 'admin')))
+    alert = render_prefixed_alert(flash, _SETTINGS_FLASH)
+    content = f'''{alert}
+<div class="card mb-md">
+  <div class="small">管理员账号：<code>{admin_user}</code></div>
+</div>
+<div class="card" style="max-width:520px;">
+  <div class="k">修改管理员密码</div>
+  <form method="post" action="/admin/change-password" class="inline-form" autocomplete="off">
+    <label>当前密码</label><input name="current" type="password" required>
+    <label class="mt-sm">新密码（至少 8 位）</label><input name="new" type="password" minlength="8" required>
+    <label class="mt-sm">确认新密码</label><input name="confirm" type="password" minlength="8" required>
+    <button class="btn mt-md" type="submit">更新密码</button>
+  </form>
+  <div class="small mt-sm faint">更新后将注销所有已登录会话（其它设备需重新登录），但本设备会保持登录。</div>
+</div>'''
+    return render_admin_shell('settings', '设置', content, badge=host)
 
 
 def render_reset_logs(host, limit=300):
@@ -2156,6 +2389,9 @@ class Handler(BaseHTTPRequestHandler):
             if not cfg:
                 self.send_response_body(403, '无权限访问', send_body=send_payload)
                 return
+            if cfg.get('disabled'):
+                self.send_response_body(403, '账号已停用，请联系管理员', send_body=send_payload)
+                return
             yml = build_yaml(user, str(cfg.get('sub_token') or ''))
             tx, rx, used = scaled_usage_for_user(user)
             total = user_total_quota(cfg)
@@ -2170,6 +2406,23 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if send_payload:
                 self.wfile.write(payload)
+            return
+
+        if path.startswith('/panel/') and path.endswith('.json'):
+            user = path[len('/panel/'):-len('.json')]
+            token = (q.get('token') or [''])[0]
+            cfg = check_user_token(user, token)
+            if not cfg:
+                self.send_response_body(403, '{"error":"forbidden"}',
+                                        'application/json; charset=utf-8', send_payload)
+                return
+            if cfg.get('disabled'):
+                self.send_response_body(403, '{"error":"disabled"}',
+                                        'application/json; charset=utf-8', send_payload)
+                return
+            payload = _build_panel_json_payload(user, cfg, now=local_now())
+            self.send_response_body(200, json.dumps(payload),
+                                    'application/json; charset=utf-8', send_payload)
             return
 
         if path.startswith('/panel/'):
@@ -2271,7 +2524,17 @@ class Handler(BaseHTTPRequestHandler):
             if not is_logged_in(self):
                 self.redirect('/login')
                 return
-            self.send_response_body(200, render_health(host),
+            flash = (q.get('msg') or [''])[0]
+            self.send_response_body(200, render_health(host, flash=flash),
+                                    'text/html; charset=utf-8', send_payload)
+            return
+
+        if path == '/admin/settings':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            flash = (q.get('msg') or [''])[0]
+            self.send_response_body(200, render_settings(host, flash=flash),
                                     'text/html; charset=utf-8', send_payload)
             return
 
@@ -2317,12 +2580,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response_body(403, '无权限访问')
                 return
             new_token = secrets.token_urlsafe(18)
-            users = load_json(USERS_FILE, {})
-            if user not in users:
-                self.send_response_body(404, '用户不存在')
-                return
-            users[user]['sub_token'] = new_token
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if not isinstance(users.get(user), dict):
+                    self.send_response_body(404, '用户不存在')
+                    return
+                users[user]['sub_token'] = new_token
+                save_json(USERS_FILE, users)
+            # Drop any live hysteria session on the old token (= password) so a
+            # compromised link can't keep transferring after rotation. Done
+            # outside the file lock to avoid holding it across network I/O.
+            hy_kick([user])
             self.redirect(f'/panel/{user}?token={new_token}')
             return
 
@@ -2350,26 +2618,27 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
-            users = load_json(USERS_FILE, {})
-            if username not in users:
-                self.redirect('/admin?msg=user+not+found')
-                return
-            cfg = users[username]
             new_password = (form.get('password') or [''])[0].strip()
             max_devices = parse_int_field((form.get('max_devices') or ['2'])[0], 2, 1, 100)
             quota_gb = parse_int_field((form.get('quota_gb') or ['150'])[0], 150, 1, 10240)
             guest = 'guest' in form
-            if new_password:
-                cfg['password_hash'] = hash_secret(new_password)
-            cfg.pop('password', None)
-            cfg['max_devices'] = max(1, max_devices)
-            cfg['monthly_quota_bytes'] = max(1, quota_gb) * 1024 * 1024 * 1024
-            cfg['metered'] = guest
-            cfg['guest'] = guest
-            if not cfg.get('sub_token'):
-                cfg['sub_token'] = secrets.token_urlsafe(18)
-            users[username] = cfg
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                cfg = users[username]
+                if new_password:
+                    cfg['password_hash'] = hash_secret(new_password)
+                cfg.pop('password', None)
+                cfg['max_devices'] = max(1, max_devices)
+                cfg['monthly_quota_bytes'] = max(1, quota_gb) * 1024 * 1024 * 1024
+                cfg['metered'] = guest
+                cfg['guest'] = guest
+                if not cfg.get('sub_token'):
+                    cfg['sub_token'] = secrets.token_urlsafe(18)
+                users[username] = cfg
+                save_json(USERS_FILE, users)
             self.redirect('/admin?msg=updated+' + username)
             return
 
@@ -2382,32 +2651,39 @@ class Handler(BaseHTTPRequestHandler):
             quota_gb = parse_int_field((form.get('quota_gb') or ['150'])[0], 150, 1, 10240)
             guest = 'guest' in form
             reset_token = 'reset_token' in form
-            users = load_json(USERS_FILE, {})
             if not username:
                 self.redirect('/admin?msg=user+empty')
                 return
-            if username in users and not reset_token:
-                self.redirect('/admin?msg=user_exists_use_reset_token')
+            if not is_valid_username(username):
+                self.redirect('/admin?msg=err:username_invalid')
                 return
-            existing = users.get(username, {})
-            existing_token = existing.get('sub_token')
-            token = secrets.token_urlsafe(18) if (reset_token or not existing_token) else existing_token
-            vless_uuid = str(existing.get('vless_uuid') or '').strip() or str(uuid.uuid4())
-            entry = {
-                'metered': guest,
-                'guest': guest,
-                'max_devices': 2,
-                'monthly_quota_bytes': max(1, quota_gb) * 1024 * 1024 * 1024,
-                'sub_token': token,
-                'vless_uuid': vless_uuid,
-            }
-            if password:
-                entry['password_hash'] = hash_secret(password)
-            elif existing.get('password_hash'):
-                entry['password_hash'] = existing.get('password_hash')
-            users[username] = entry
-            save_json(USERS_FILE, users)
-            if xray_config.sync_user(username, vless_uuid):
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username in users and not reset_token:
+                    self.redirect('/admin?msg=user_exists_use_reset_token')
+                    return
+                existing = users.get(username, {})
+                existing_token = existing.get('sub_token')
+                token = secrets.token_urlsafe(18) if (reset_token or not existing_token) else existing_token
+                vless_uuid = str(existing.get('vless_uuid') or '').strip() or str(uuid.uuid4())
+                entry = {
+                    'metered': guest,
+                    'guest': guest,
+                    'max_devices': 2,
+                    'monthly_quota_bytes': max(1, quota_gb) * 1024 * 1024 * 1024,
+                    'sub_token': token,
+                    'vless_uuid': vless_uuid,
+                    'disabled': bool(existing.get('disabled')),
+                }
+                if password:
+                    entry['password_hash'] = hash_secret(password)
+                elif existing.get('password_hash'):
+                    entry['password_hash'] = existing.get('password_hash')
+                users[username] = entry
+                save_json(USERS_FILE, users)
+            # Re-syncing a suspended user back into xray would undo the suspend.
+            # xray I/O runs outside the file lock.
+            if not entry['disabled'] and xray_config.sync_user(username, vless_uuid):
                 xray_config.reload_async()
             self.redirect('/admin?msg=created+' + username)
             return
@@ -2505,6 +2781,107 @@ class Handler(BaseHTTPRequestHandler):
             self.redirect('/admin?msg=refresh+usage+' + username)
             return
 
+        if path == '/admin/change-password':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            current = (form.get('current') or [''])[0]
+            new = (form.get('new') or [''])[0]
+            confirm = (form.get('confirm') or [''])[0]
+            stored_hash = str(meta.get('admin_pass_hash') or '')
+            if not (stored_hash and verify_secret(current, stored_hash)):
+                self.redirect('/admin/settings?msg=err:password_wrong')
+                return
+            if len(new) < 8:
+                self.redirect('/admin/settings?msg=err:password_short')
+                return
+            if new != confirm:
+                self.redirect('/admin/settings?msg=err:password_mismatch')
+                return
+            meta_now = load_json(META_FILE, {})
+            meta_now['admin_pass_hash'] = hash_secret(new)
+            meta_now.pop('admin_pass', None)
+            save_json(META_FILE, meta_now)
+            # Revoke ALL existing admin sessions (a stolen sid is now dead),
+            # then mint a fresh session for this device so the admin stays
+            # logged in here. Mirrors the /login success cookie pattern.
+            save_json(SESSIONS_FILE, {})
+            sid = create_session('admin')
+            self.redirect('/admin/settings?msg=password+changed',
+                          cookie=f'sid={sid}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; SameSite=Lax')
+            return
+
+        if path == '/admin/test-alert':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            cfg = alerts.load_config()
+            if not isinstance(cfg, dict) or not (cfg.get('telegram') or cfg.get('webhook')):
+                self.redirect('/admin/health?msg=err:alert_no_channels')
+                return
+            # Fire on a background thread; we redirect immediately rather than
+            # block the request on outbound HTTP. Delivery is confirmed at the
+            # receiver, so we report "dispatched" rather than guaranteed-sent.
+            _fire_test_alert(cfg, self.get_admin_actor())
+            self.redirect('/admin/health?msg=alert+dispatched')
+            return
+
+        if path == '/admin/rotate-token':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            username = (form.get('user') or [''])[0].strip()
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                if not isinstance(users.get(username), dict):
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                users[username]['sub_token'] = secrets.token_urlsafe(18)
+                save_json(USERS_FILE, users)
+            # Drop any live hysteria session on the old token (= password) so a
+            # connected attacker is forced off. Done outside the file lock.
+            hy_kick([username])
+            self.write_reset_log(self.get_admin_actor(), 'rotate_token', username, {}, {})
+            self.redirect('/admin?msg=rotated+' + username)
+            return
+
+        if path == '/admin/toggle-user':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            username = (form.get('user') or [''])[0].strip()
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                if not isinstance(users.get(username), dict):
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                disable = not bool(users[username].get('disabled'))
+                users[username]['disabled'] = disable
+                vless_uuid = str(users[username].get('vless_uuid') or '').strip()
+                save_json(USERS_FILE, users)
+            # xray + hysteria side-effects run outside the file lock.
+            if disable:
+                # xray VLESS authenticates by UUID at the xray layer (not via
+                # auth_backend), so disabling must also pull the user's xray
+                # client entry; then drop any live hysteria sessions.
+                if xray_config.remove_user(username):
+                    xray_config.reload_async()
+                hy_kick([username])
+                self.write_reset_log(self.get_admin_actor(), 'disable_user', username, {}, {})
+                self.redirect('/admin?msg=disabled+' + username)
+            else:
+                if vless_uuid and xray_config.sync_user(username, vless_uuid):
+                    xray_config.reload_async()
+                self.write_reset_log(self.get_admin_actor(), 'enable_user', username, {}, {})
+                self.redirect('/admin?msg=enabled+' + username)
+            return
+
         if path == '/admin/reset-usage-all':
             if not is_logged_in(self):
                 self.redirect('/login')
@@ -2541,12 +2918,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
-            users = load_json(USERS_FILE, {})
-            if username not in users:
-                self.redirect('/admin?msg=user+not+found')
-                return
-            del users[username]
-            save_json(USERS_FILE, users)
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect('/admin?msg=user+not+found')
+                    return
+                del users[username]
+                save_json(USERS_FILE, users)
+            # xray + hysteria side-effects run outside the file lock.
             hy_kick([username])
             if xray_config.remove_user(username):
                 xray_config.reload_async()
