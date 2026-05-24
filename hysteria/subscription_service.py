@@ -599,6 +599,7 @@ _ICONS = {
     'back': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>',
     'chart': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="14"/><line x1="12" y1="20" x2="12" y2="8"/><line x1="18" y1="20" x2="18" y2="11"/><line x1="3" y1="20" x2="21" y2="20"/></svg>',
     'pulse': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+    'lock': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
 }
 
 
@@ -640,6 +641,7 @@ _SIDEBAR_NAV = [
     ('config', '/admin/config', '模板配置', 'config'),
     ('rules', '/admin/rules', '路由规则', 'rules'),
     ('logs', '/admin/logs', '清零日志', 'logs'),
+    ('settings', '/admin/settings', '设置', 'lock'),
 ]
 
 
@@ -710,6 +712,12 @@ def flash_text(msg):
         return f'已刷新用户本月已用流量（服务器总流量不变）：{msg.split(" ", 2)[2]}'
     if msg.startswith('deleted '):
         return f'已删除用户：{msg.split(" ", 1)[1]}'
+    if msg.startswith('rotated '):
+        return f'已重置订阅令牌（旧链接已失效）：{msg.split(" ", 1)[1]}'
+    if msg.startswith('disabled '):
+        return f'已停用用户（已断开连接）：{msg.split(" ", 1)[1]}'
+    if msg.startswith('enabled '):
+        return f'已启用用户：{msg.split(" ", 1)[1]}'
     if msg.startswith('settlement '):
         return f'已更新结算日：每月 {msg.split(" ", 1)[1]} 日'
     maps = {
@@ -995,14 +1003,28 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     bar_w = f'{percent:.1f}'
     user_esc = html.escape(user)
     guest_badge = '<span class="badge badge-info">访客</span>' if metered else ''
+    disabled = bool(cfg.get('disabled'))
+    disabled_badge = '<span class="badge badge-danger">已停用</span>' if disabled else ''
     guest_preview = ' · 访客' if metered else ''
     summary_preview = f'<span class="summary-preview">{quota_gb or 150} GB · {max_devices or 2} 设备{guest_preview}</span>'
+    if disabled:
+        toggle_form = (
+            '<form method="post" action="/admin/toggle-user" class="inline-form-row">'
+            f'<input type="hidden" name="user" value="{user_esc}">'
+            '<button class="btn ghost btn-sm" type="submit" title="恢复该用户的连接权限">启用</button></form>'
+        )
+    else:
+        toggle_form = (
+            '<form method="post" action="/admin/toggle-user" class="inline-form-row" data-action="disable-user">'
+            f'<input type="hidden" name="user" value="{user_esc}">'
+            '<button class="btn ghost btn-sm" type="submit" title="临时停用：拒绝新连接并断开现有会话，不删除用户">暂停</button></form>'
+        )
     return f'''<tr data-user="{user_esc}">
 <td>
   <div class="row gap-sm" style="flex-wrap:nowrap;">
     <div class="user-avatar">{html.escape(user[:1].upper())}</div>
     <div style="min-width:0;">
-      <div class="bold">{user_esc} {guest_badge}</div>
+      <div class="bold">{user_esc} {guest_badge}{disabled_badge}</div>
       <div class="small">在线 <span data-role="online">{online.get(user, 0)}</span> / {max_devices} 设备</div>
     </div>
   </div>
@@ -1037,6 +1059,11 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     <input type="hidden" name="user" value="{user_esc}">
     <button class="btn ghost btn-sm" type="submit" title="清空该用户已用流量，但保留在服务器总流量中">刷新流量</button>
   </form>
+  <form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token">
+    <input type="hidden" name="user" value="{user_esc}">
+    <button class="btn ghost btn-sm" type="submit" title="重置该用户订阅令牌，旧订阅/面板链接立即失效">重置订阅</button>
+  </form>
+  {toggle_form}
   <form method="post" action="/admin/delete" class="inline-form-row" data-action="delete-user">
     <input type="hidden" name="user" value="{user_esc}">
     <button class="btn danger-btn btn-sm" type="submit">删除</button>
@@ -1147,6 +1174,9 @@ def _action_label(action):
         'reset_usage_user': '清除用户流量',
         'reset_usage_all': '清空全部流量',
         'refresh_usage_user': '刷新用户流量（保留总计）',
+        'rotate_token': '重置订阅令牌',
+        'disable_user': '停用用户',
+        'enable_user': '启用用户',
     }.get(action, action)
 
 
@@ -1811,7 +1841,15 @@ def _health_card(title, probe_result):
             f'</div>')
 
 
-def render_health(host):
+_HEALTH_FLASH = {
+    'alert sent': '测试告警已发送，请在接收端确认',
+    'alert_no_channels': '未配置告警通道（缺少 alerts.json 或其中的 telegram/webhook）',
+    'alert_failed': '测试告警发送失败',
+}
+
+
+def render_health(host, flash=''):
+    alert = render_prefixed_alert(flash, _HEALTH_FLASH)
     cards = [
         _health_card('cron 心跳', probe_cron_heartbeat()),
         _health_card('hysteria', probe_systemd('hysteria-server.service')),
@@ -1821,11 +1859,44 @@ def render_health(host):
         _health_card('在线用户', probe_online()),
     ]
     content = (
-        '<div class="grid grid-3">' + ''.join(cards) + '</div>'
+        alert
+        + '<div class="grid grid-3">' + ''.join(cards) + '</div>'
         '<meta http-equiv="refresh" content="30">'
     )
+    test_btn = ('<form method="post" action="/admin/test-alert" class="inline-form-row">'
+                '<button class="btn secondary btn-sm" type="submit">发送测试告警</button></form>')
     return render_admin_shell('health', '健康状态', content,
-                              badge=host, subtitle='30 秒自动刷新')
+                              badge=host, subtitle='30 秒自动刷新',
+                              topbar_extra=test_btn)
+
+
+_SETTINGS_FLASH = {
+    'password changed': '管理员密码已更新',
+    'password_wrong': '当前密码不正确',
+    'password_mismatch': '两次输入的新密码不一致',
+    'password_short': '新密码至少 8 位',
+}
+
+
+def render_settings(host, flash=''):
+    meta = ensure_meta()
+    admin_user = html.escape(str(meta.get('admin_user', 'admin')))
+    alert = render_prefixed_alert(flash, _SETTINGS_FLASH)
+    content = f'''{alert}
+<div class="card mb-md">
+  <div class="small">管理员账号：<code>{admin_user}</code></div>
+</div>
+<div class="card" style="max-width:520px;">
+  <div class="k">修改管理员密码</div>
+  <form method="post" action="/admin/change-password" class="inline-form" autocomplete="off">
+    <label>当前密码</label><input name="current" type="password" required>
+    <label class="mt-sm">新密码（至少 8 位）</label><input name="new" type="password" minlength="8" required>
+    <label class="mt-sm">确认新密码</label><input name="confirm" type="password" minlength="8" required>
+    <button class="btn mt-md" type="submit">更新密码</button>
+  </form>
+  <div class="small mt-sm faint">更新后当前会话仍然有效，下次登录请使用新密码。</div>
+</div>'''
+    return render_admin_shell('settings', '设置', content, badge=host)
 
 
 def render_reset_logs(host, limit=300):
@@ -2378,7 +2449,17 @@ class Handler(BaseHTTPRequestHandler):
             if not is_logged_in(self):
                 self.redirect('/login')
                 return
-            self.send_response_body(200, render_health(host),
+            flash = (q.get('msg') or [''])[0]
+            self.send_response_body(200, render_health(host, flash=flash),
+                                    'text/html; charset=utf-8', send_payload)
+            return
+
+        if path == '/admin/settings':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            flash = (q.get('msg') or [''])[0]
+            self.send_response_body(200, render_settings(host, flash=flash),
                                     'text/html; charset=utf-8', send_payload)
             return
 
@@ -2610,6 +2691,91 @@ class Handler(BaseHTTPRequestHandler):
                 alerts.save_state(alert_state)
             self.write_reset_log(self.get_admin_actor(), 'refresh_usage_user', username, before, after)
             self.redirect('/admin?msg=refresh+usage+' + username)
+            return
+
+        if path == '/admin/change-password':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            current = (form.get('current') or [''])[0]
+            new = (form.get('new') or [''])[0]
+            confirm = (form.get('confirm') or [''])[0]
+            stored_hash = str(meta.get('admin_pass_hash') or '')
+            if not (stored_hash and verify_secret(current, stored_hash)):
+                self.redirect('/admin/settings?msg=err:password_wrong')
+                return
+            if len(new) < 8:
+                self.redirect('/admin/settings?msg=err:password_short')
+                return
+            if new != confirm:
+                self.redirect('/admin/settings?msg=err:password_mismatch')
+                return
+            meta_now = load_json(META_FILE, {})
+            meta_now['admin_pass_hash'] = hash_secret(new)
+            meta_now.pop('admin_pass', None)
+            save_json(META_FILE, meta_now)
+            self.redirect('/admin/settings?msg=password+changed')
+            return
+
+        if path == '/admin/test-alert':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            cfg = alerts.load_config()
+            if not isinstance(cfg, dict) or not (cfg.get('telegram') or cfg.get('webhook')):
+                self.redirect('/admin/health?msg=err:alert_no_channels')
+                return
+            event = {
+                'kind': 'test',
+                'user': self.get_admin_actor() or 'admin',
+                'details': {'note': '来自管理面板的测试告警'},
+            }
+            alerts.dispatch(event, config=cfg)  # never raises; swallows transport errors
+            self.redirect('/admin/health?msg=alert+sent')
+            return
+
+        if path == '/admin/rotate-token':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            username = (form.get('user') or [''])[0].strip()
+            users = load_json(USERS_FILE, {})
+            if username not in users:
+                self.redirect('/admin?msg=user+not+found')
+                return
+            users[username]['sub_token'] = secrets.token_urlsafe(18)
+            save_json(USERS_FILE, users)
+            self.write_reset_log(self.get_admin_actor(), 'rotate_token', username, {}, {})
+            self.redirect('/admin?msg=rotated+' + username)
+            return
+
+        if path == '/admin/toggle-user':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            username = (form.get('user') or [''])[0].strip()
+            users = load_json(USERS_FILE, {})
+            if username not in users:
+                self.redirect('/admin?msg=user+not+found')
+                return
+            disable = not bool(users[username].get('disabled'))
+            users[username]['disabled'] = disable
+            save_json(USERS_FILE, users)
+            if disable:
+                # xray VLESS authenticates by UUID at the xray layer (not via
+                # auth_backend), so disabling must also pull the user's xray
+                # client entry; then drop any live hysteria sessions.
+                if xray_config.remove_user(username):
+                    xray_config.reload_async()
+                hy_kick([username])
+                self.write_reset_log(self.get_admin_actor(), 'disable_user', username, {}, {})
+                self.redirect('/admin?msg=disabled+' + username)
+            else:
+                vless_uuid = str(users[username].get('vless_uuid') or '').strip()
+                if vless_uuid and xray_config.sync_user(username, vless_uuid):
+                    xray_config.reload_async()
+                self.write_reset_log(self.get_admin_actor(), 'enable_user', username, {}, {})
+                self.redirect('/admin?msg=enabled+' + username)
             return
 
         if path == '/admin/reset-usage-all':

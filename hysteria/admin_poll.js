@@ -98,6 +98,12 @@
     if(f.dataset.action==='delete-user'){
       var name=(f.closest('tr')||{}).dataset && f.closest('tr').dataset.user || '';
       if(!confirm('确认删除用户 '+name+'？此操作不可撤销。')) ev.preventDefault();
+    } else if(f.dataset.action==='rotate-user-token'){
+      var rn=(f.closest('tr')||{}).dataset && f.closest('tr').dataset.user || '';
+      if(!confirm('确认重置用户 '+rn+' 的订阅令牌？旧订阅/面板链接将立即失效。')) ev.preventDefault();
+    } else if(f.dataset.action==='disable-user'){
+      var dn=(f.closest('tr')||{}).dataset && f.closest('tr').dataset.user || '';
+      if(!confirm('确认停用用户 '+dn+'？将拒绝新连接并断开其现有会话。')) ev.preventDefault();
     } else if(f.dataset.action==='reset-all'){
       if(!confirm('确认清空全部用户本月已用流量？')) ev.preventDefault();
     } else if(f.dataset.action==='delete-rule'){

@@ -711,6 +711,13 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   font-size: 10.5px;
   padding: 1px 7px;
 }
+.badge.badge-danger {
+  background: transparent;
+  border-color: var(--danger);
+  color: var(--danger);
+  font-size: 10.5px;
+  padding: 1px 7px;
+}
 
 /* card section header */
 .card-head {

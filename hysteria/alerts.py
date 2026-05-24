@@ -109,6 +109,8 @@ def format_message(event):
         z = details.get('z', 0.0)
         return (f"⚠️ {user} 今日 {details.get('today_human','?')} "
                 f"(基线 {details.get('mean_human','?')}, z={z:.1f})")
+    if kind == 'test':
+        return f"✅ 测试告警 · 来自管理面板（{user}）"
     return f"{kind}: {user}"
 
 

@@ -101,6 +101,8 @@ def main():
     u = users.get(username)
     if not u:
         sys.exit(1)
+    if u.get("disabled"):
+        sys.exit(1)
     token = str(u.get("sub_token") or "")
     ok = bool(token) and hmac.compare_digest(password, token)
     if not ok and u.get("password_hash"):

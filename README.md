@@ -91,10 +91,13 @@ After deploy:
 
 - **Admin** — `http://<server>/admin` — set the admin password on first visit (stored hashed in `subscription_meta.json`).
 - **Add a user** from the panel → instant subscription URL `http://<host>/sub/<name>?token=<token>`.
+- **Per-user actions** — each row can edit the plan, reset/refresh usage, **rotate the subscription token** (instantly invalidate a leaked link), **suspend/resume** (disable without deleting: reject new connections, pull the xray inbound, and drop live sessions), and delete.
 - **User panel** — `http://<server>/panel/<user>?token=<token>` — per-user usage + device stats, with a quota-reset countdown, a 30-day usage trend, one-click copy for the subscription/panel links, and live usage refresh every 10s (paused while the tab is hidden).
 - **Template config** — edit the shared Clash YAML template inline (JSON view, validation, format/collapse).
 - **Route rules** — add / remove / re-order proxy/direct/reject rules; live diff against the template.
 - **Reset log** — full audit trail of every traffic-reset action.
+- **Settings** — `http://<server>/admin/settings` — change the admin password in-browser (verifies the current password, then stores a fresh PBKDF2 hash).
+- **Health** — alongside the 6 status cards, a "send test alert" button verifies the Telegram / webhook channels in `alerts.json`.
 
 The panel polls `/admin/usage.json` every 5s, automatically pauses when the tab is hidden, and uses an in-memory row index so it doesn't re-query the DOM on each tick.
 
