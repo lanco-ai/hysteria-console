@@ -789,15 +789,54 @@ def render_qr_svg(text, *, _runner=None):
     return svg
 
 
+def _cycle_reset_info(now=None):
+    """Return (next_reset_date_str, days_left, cycle_length_days) for the panel
+    quota-reset countdown. days_left is at least 1 — today is always strictly
+    before the next cycle boundary."""
+    if now is None:
+        now = local_now()
+    cycle_len = get_cycle_length_days()
+    next_reset = (cycle_start_for(now) + timedelta(days=cycle_len)).date()
+    days_left = max((next_reset - now.date()).days, 0)
+    return next_reset.strftime('%Y-%m-%d'), days_left, cycle_len
+
+
+def _build_panel_json_payload(user, cfg, *, now=None):
+    """Live-refresh payload for the end-user panel (/panel/<user>.json).
+    Mirrors the at-load values render_user_panel computes, in displayed bytes."""
+    if now is None:
+        now = local_now()
+    daily = load_json(USAGE_DAILY_FILE, {})
+    tx, rx, used = scaled_usage_for_user(user, daily=daily, now=now)
+    total = user_total_quota(cfg)
+    remain = max(total - used, 0) if total > 0 else -1
+    online = int(load_json(ONLINE_FILE, {}).get(user, 0) or 0)
+    return {
+        'ts': now.isoformat(timespec='seconds'),
+        'used_bytes': int(used),
+        'total_bytes': int(total),
+        'remain_bytes': int(remain),
+        'tx_bytes': int(tx),
+        'rx_bytes': int(rx),
+        'online': online,
+        'percent': round(pct(used, total), 2),
+    }
+
+
 def render_user_panel(host, base_url, user, token, cfg):
-    tx, rx, used = scaled_usage_for_user(user)
+    now = local_now()
+    daily = load_json(USAGE_DAILY_FILE, {})
+    tx, rx, used = scaled_usage_for_user(user, daily=daily, now=now)
     total = user_total_quota(cfg)
     remain = max(total - used, 0) if total > 0 else -1
     online = int(load_json(ONLINE_FILE, {}).get(user, 0))
     percent = pct(used, total)
     cls = 'danger' if percent >= 90 else ''
+    reset_date, days_left, cycle_len = _cycle_reset_info(now)
+    spark = sparkline_svg(daily_window_for_user(user, daily, days=30, today=now.date()))
     sub_path = f'/sub/{user}?token={token}'
     panel_path = f'/panel/{user}?token={token}'
+    json_path = f'/panel/{user}.json?token={token}'
     sub_http = f'{base_url}{sub_path}'
     panel_http = f'{base_url}{panel_path}'
     max_devices_n = int(cfg.get('max_devices', 0) or 0)
@@ -818,28 +857,36 @@ def render_user_panel(host, base_url, user, token, cfg):
       <div class="small">{html.escape(user)}</div>
     </div>
   </div>
-  <span class="badge">{html.escape(host)}</span>
+  <div style="text-align:right;">
+    <span class="badge">{html.escape(host)}</span>
+    <div class="small faint" data-role="poll-status" style="margin-top:4px;">实时刷新中…</div>
+  </div>
 </div>
 <div class="grid grid-4">
-  <div class="card stat"><div class="k">本月已用</div><div class="v big">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
+  <div class="card stat"><div class="k">本月已用</div><div class="v big" data-role="used">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
   <div class="card stat"><div class="k">总流量</div><div class="v">{fmt_bytes(total)}</div></div>
-  <div class="card stat"><div class="k">剩余流量</div><div class="v">{fmt_bytes(remain)}</div></div>
-  <div class="card stat"><div class="k">在线设备</div><div class="v">{online} <span class="faint" style="font-size:14px;font-weight:500;">/ {max_devices_n}</span></div></div>
+  <div class="card stat"><div class="k">剩余流量</div><div class="v" data-role="remain">{fmt_bytes(remain)}</div></div>
+  <div class="card stat"><div class="k">在线设备</div><div class="v"><span data-role="online">{online}</span> <span class="faint" style="font-size:14px;font-weight:500;">/ {max_devices_n}</span></div></div>
 </div>
 <div class="card mt-md">
   <div class="row" style="justify-content:space-between;margin-bottom:10px;">
     <div class="k" style="margin:0;">流量进度</div>
-    <div class="bold" style="font-variant-numeric:tabular-nums;">{percent:.2f}%</div>
+    <div class="bold" style="font-variant-numeric:tabular-nums;" data-role="percent">{percent:.2f}%</div>
   </div>
-  <div class="bar"><div class="fill {cls}" style="width:{percent:.2f}%"></div></div>
-  <div class="small mt-sm">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
+  <div class="bar"><div class="fill {cls}" data-role="bar" style="width:{percent:.2f}%"></div></div>
+  <div class="small mt-sm" data-role="txrx">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
+  <div class="small mt-sm faint">本周期 {cycle_len} 天 · 重置于 {reset_date} · 还剩 {days_left} 天</div>
+</div>
+<div class="card mt-md">
+  <div class="k">近 30 天用量趋势</div>
+  <div class="panel-trend">{spark}</div>
 </div>
 <div class="grid grid-2 mt-md">
   <div class="card">
     <div class="k">订阅链接</div>
     <div class="copy-mono"><code id="sub">{html.escape(sub_http)}</code></div>
     <div class="row mt-md">
-      <button class="btn" id="copy-sub-btn" type="button">{icon("copy")}<span>复制链接</span></button>
+      <button class="btn" type="button" data-copy="{html.escape(sub_http)}">{icon("copy")}<span>复制链接</span></button>
       <a class="btn secondary" href="{html.escape(sub_path)}">{icon("open")}<span>打开订阅</span></a>
     </div>
   </div>
@@ -847,7 +894,8 @@ def render_user_panel(host, base_url, user, token, cfg):
     <div class="k">当前面板链接</div>
     <div class="copy-mono"><code>{html.escape(panel_http)}</code></div>
     <div class="row mt-md">
-      <a class="btn secondary" href="/">{icon("back")}<span>返回首页</span></a>
+      <button class="btn secondary" type="button" data-copy="{html.escape(panel_http)}">{icon("copy")}<span>复制链接</span></button>
+      <a class="btn ghost btn-sm" href="/">{icon("back")}<span>返回首页</span></a>
       <form method="post" action="/panel/{html.escape(user)}/rotate-token" data-action="rotate-token" class="inline-form-row">
         <input type="hidden" name="token" value="{html.escape(token)}">
         <button class="btn danger-btn btn-sm" type="submit">重置 Token</button>
@@ -859,24 +907,70 @@ def render_user_panel(host, base_url, user, token, cfg):
 {qr_block}
 </div>
 <script>
-document.getElementById('copy-sub-btn').addEventListener('click', function() {{
-  var btn = this;
-  var text = document.getElementById('sub').textContent;
-  if (!navigator.clipboard) {{ alert('当前环境不支持自动复制，请手动选中链接复制'); return; }}
-  navigator.clipboard.writeText(text).then(function() {{
+(function() {{
+  function flashCopied(btn) {{
     var label = btn.querySelector('span');
-    var prev = label.textContent;
-    label.textContent = '已复制 ✓';
+    var prev = label ? label.textContent : '';
+    if (label) label.textContent = '已复制 ✓';
     btn.disabled = true;
-    setTimeout(function() {{ label.textContent = prev; btn.disabled = false; }}, 1400);
-  }}).catch(function() {{ alert('复制失败，请手动复制'); }});
-}});
-document.addEventListener('submit', function(ev) {{
-  var f = ev.target;
-  if (f && f.dataset && f.dataset.action === 'rotate-token') {{
-    if (!confirm('确认重置订阅 Token？旧链接将立即失效。')) ev.preventDefault();
+    setTimeout(function() {{ if (label) label.textContent = prev; btn.disabled = false; }}, 1400);
   }}
-}});
+  document.addEventListener('click', function(ev) {{
+    var btn = ev.target.closest ? ev.target.closest('[data-copy]') : null;
+    if (!btn) return;
+    var text = btn.getAttribute('data-copy');
+    if (!navigator.clipboard) {{ alert('当前环境不支持自动复制，请手动选中链接复制'); return; }}
+    navigator.clipboard.writeText(text).then(function() {{ flashCopied(btn); }})
+      .catch(function() {{ alert('复制失败，请手动复制'); }});
+  }});
+  document.addEventListener('submit', function(ev) {{
+    var f = ev.target;
+    if (f && f.dataset && f.dataset.action === 'rotate-token') {{
+      if (!confirm('确认重置订阅 Token？旧链接将立即失效。')) ev.preventDefault();
+    }}
+  }});
+  var pollUrl = {json.dumps(json_path)};
+  var statusEl = document.querySelector('[data-role="poll-status"]');
+  function fmtBytes(n) {{
+    var v = Math.max(0, Number(n) || 0);
+    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
+    while (v >= 1024 && i < u.length - 1) {{ v /= 1024; i++; }}
+    return v.toFixed(2) + ' ' + u[i];
+  }}
+  function setRole(role, txt) {{
+    var el = document.querySelector('[data-role="' + role + '"]');
+    if (el && txt !== undefined) el.textContent = txt;
+  }}
+  function stamp() {{
+    return new Date().toLocaleTimeString([], {{ hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }});
+  }}
+  var timer = null, inflight = false;
+  function tick() {{
+    if (inflight) return;
+    inflight = true;
+    fetch(pollUrl, {{ credentials: 'same-origin' }})
+      .then(function(r) {{ return r.ok ? r.json() : null; }})
+      .catch(function() {{ return null; }})
+      .then(function(d) {{
+        if (!d) {{ if (statusEl) statusEl.textContent = '刷新失败'; return; }}
+        setRole('used', fmtBytes(d.used_bytes));
+        setRole('remain', fmtBytes(d.remain_bytes));
+        setRole('online', d.online);
+        var p = Number(d.percent);
+        setRole('percent', p.toFixed(2) + '%');
+        setRole('txrx', '上传 ' + fmtBytes(d.tx_bytes) + ' · 下载 ' + fmtBytes(d.rx_bytes));
+        var bar = document.querySelector('[data-role="bar"]');
+        if (bar) {{ bar.style.width = p.toFixed(2) + '%'; bar.classList.toggle('danger', p >= 90); }}
+        if (statusEl) statusEl.textContent = '更新于 ' + stamp();
+      }})
+      .finally(function() {{ inflight = false; }});
+  }}
+  function start() {{ if (!timer) {{ tick(); timer = setInterval(tick, 10000); }} }}
+  function stop() {{ if (timer) {{ clearInterval(timer); timer = null; }} }}
+  document.addEventListener('visibilitychange', function() {{ if (document.hidden) stop(); else start(); }});
+  window.addEventListener('pagehide', stop);
+  start();
+}})();
 </script>'''
     return html_page(f'{user} 用户面板', body)
 
@@ -2170,6 +2264,19 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if send_payload:
                 self.wfile.write(payload)
+            return
+
+        if path.startswith('/panel/') and path.endswith('.json'):
+            user = path[len('/panel/'):-len('.json')]
+            token = (q.get('token') or [''])[0]
+            cfg = check_user_token(user, token)
+            if not cfg:
+                self.send_response_body(403, '{"error":"forbidden"}',
+                                        'application/json; charset=utf-8', send_payload)
+                return
+            payload = _build_panel_json_payload(user, cfg, now=local_now())
+            self.send_response_body(200, json.dumps(payload),
+                                    'application/json; charset=utf-8', send_payload)
             return
 
         if path.startswith('/panel/'):

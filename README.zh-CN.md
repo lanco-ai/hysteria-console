@@ -91,7 +91,7 @@ sudo ./deploy.sh
 
 - **管理后台** —— `http://<server>/admin` —— 首次访问会让你设置管理员密码（哈希后存到 `subscription_meta.json`）。
 - **创建用户** —— 在面板里点一下，立即得到订阅链接 `http://<host>/sub/<name>?token=<token>`。
-- **用户面板** —— `http://<server>/panel/<user>?token=<token>` —— 单用户的流量与设备统计。
+- **用户面板** —— `http://<server>/panel/<user>?token=<token>` —— 单用户的流量与设备统计，含配额重置倒计时、近 30 天用量趋势、订阅/面板链接一键复制，并每 10 秒自动刷新用量（标签页隐藏时暂停）。
 - **模板配置** —— 在线编辑全局 Clash YAML 模板（JSON 视图，带语法校验、格式化、折叠/展开）。
 - **路由规则** —— 增删改 proxy/direct/reject 规则，与模板实时同步。
 - **清零日志** —— 每一次流量清零的完整审计记录。

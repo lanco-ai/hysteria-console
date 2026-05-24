@@ -14,10 +14,13 @@ import io
 import json
 from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import subscription_service as ss
+
+SH = ZoneInfo("Asia/Shanghai")
 
 
 # ----- A: QR helper ---------------------------------------------------------
@@ -217,3 +220,90 @@ def test_user_panel_renders_rotate_token_form_with_current_token(tmp_path, monke
     assert '/panel/alice/rotate-token' in page
     assert 'data-action="rotate-token"' in page
     assert 'value="tokABC"' in page
+
+
+# ----- G: User-panel UX (reset countdown, trend, copy, live refresh) --------
+
+def _seed_panel(tmp_path, monkeypatch, *, daily=None, online=None, meta=None):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text(json.dumps(daily or {}))
+    (tmp_path / 'online.json').write_text(json.dumps(online or {}))
+    (tmp_path / 'meta.json').write_text(json.dumps(meta or {}))
+
+
+_CYCLE_META = {'settlement_day': 12, 'cycle_length_days': 30,
+               'cycle_anchor_date': '2026-05-12'}
+
+
+def test_user_panel_shows_quota_reset_countdown(tmp_path, monkeypatch):
+    """Cycle 2026-05-12 .. 06-10 resets on 06-11; viewed 05-14 -> 28 days left."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '本周期 30 天' in page
+    assert '重置于 2026-06-11' in page
+    assert '还剩 28 天' in page
+
+
+def test_user_panel_shows_30day_usage_trend(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    daily = {'2026-05-13': {'alice': {'tx': 0, 'rx': 1_000_000, 'total': 1_000_000}}}
+    _seed_panel(tmp_path, monkeypatch, daily=daily, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '近 30 天用量趋势' in page
+    assert 'panel-trend' in page
+    assert 'class="spark"' in page
+
+
+def test_user_panel_has_copy_buttons_for_both_links(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert 'data-copy="http://h/sub/alice?token=tok"' in page
+    assert 'data-copy="http://h/panel/alice?token=tok"' in page
+
+
+def test_user_panel_wires_live_refresh_poll(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '/panel/alice.json?token=tok' in page
+    for role in ('used', 'remain', 'online', 'percent', 'bar', 'txrx', 'poll-status'):
+        assert f'data-role="{role}"' in page
+
+
+def test_build_panel_json_payload_schema_and_values(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    daily = {'2026-05-14': {'alice': {'tx': 0, 'rx': 1_000_000, 'total': 1_000_000}}}
+    _seed_panel(tmp_path, monkeypatch, daily=daily, online={'alice': 1}, meta=_CYCLE_META)
+    cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 10_000_000_000, 'max_devices': 2}
+    payload = ss._build_panel_json_payload('alice', cfg, now=now)
+    assert set(payload) == {'ts', 'used_bytes', 'total_bytes', 'remain_bytes',
+                            'tx_bytes', 'rx_bytes', 'online', 'percent'}
+    assert payload['used_bytes'] == int(1_000_000 * ss.DISPLAY_MULTIPLIER)
+    assert payload['total_bytes'] == 10_000_000_000
+    assert payload['remain_bytes'] == payload['total_bytes'] - payload['used_bytes']
+    assert payload['online'] == 1
+    assert 0 <= payload['percent'] <= 100
+
+
+def test_panel_json_payload_unmetered_remain_is_negative(tmp_path, monkeypatch):
+    """No quota set -> remain sentinel -1 (unlimited) and percent pinned to 0."""
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
+    cfg = {'sub_token': 'tok', 'max_devices': 0}
+    payload = ss._build_panel_json_payload('alice', cfg, now=now)
+    assert payload['total_bytes'] == 0
+    assert payload['remain_bytes'] == -1
+    assert payload['percent'] == 0.0

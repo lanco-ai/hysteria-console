@@ -91,7 +91,7 @@ After deploy:
 
 - **Admin** — `http://<server>/admin` — set the admin password on first visit (stored hashed in `subscription_meta.json`).
 - **Add a user** from the panel → instant subscription URL `http://<host>/sub/<name>?token=<token>`.
-- **User panel** — `http://<server>/panel/<user>?token=<token>` — usage + device stats per user.
+- **User panel** — `http://<server>/panel/<user>?token=<token>` — per-user usage + device stats, with a quota-reset countdown, a 30-day usage trend, one-click copy for the subscription/panel links, and live usage refresh every 10s (paused while the tab is hidden).
 - **Template config** — edit the shared Clash YAML template inline (JSON view, validation, format/collapse).
 - **Route rules** — add / remove / re-order proxy/direct/reject rules; live diff against the template.
 - **Reset log** — full audit trail of every traffic-reset action.
