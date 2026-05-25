@@ -1,0 +1,12 @@
+[Unit]
+Description=Clamp TCP MSS for Xray Reality ports
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hysteria-tcp-mss.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

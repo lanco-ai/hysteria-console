@@ -141,6 +141,25 @@ fi
 
 # ---------- 8. Port hopping script ----------
 install -m 755 "$REPO_DIR/scripts/hysteria-porthop.sh" /usr/local/sbin/hysteria-porthop.sh
+install -m 755 "$REPO_DIR/scripts/hysteria-tcp-mss.sh" /usr/local/sbin/hysteria-tcp-mss.sh
+
+# ---------- 8b. Network tuning ----------
+log "Installing network tuning..."
+cat >/etc/sysctl.d/99-hysteria-udp.conf <<'SYSCTL'
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.rmem_default = 1048576
+net.core.wmem_default = 1048576
+net.core.netdev_max_backlog = 16384
+net.ipv4.udp_rmem_min = 8192
+net.ipv4.udp_wmem_min = 8192
+net.ipv4.tcp_mtu_probing = 1
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+SYSCTL
+modprobe tcp_bbr 2>/dev/null || true
+printf 'tcp_bbr\n' >/etc/modules-load.d/tcp-bbr.conf
+sysctl --system >/dev/null
 
 # ---------- 9. nginx reverse proxy for the admin panel ----------
 # The subscription service only listens on 127.0.0.1:8081; nginx on :80 fronts it.
@@ -160,6 +179,7 @@ install -m 644 "$REPO_DIR/systemd/hysteria-subscription.service"     "$SYSTEMD_D
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.service"  "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.timer"    "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-porthop.service"          "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/hysteria-tcp-mss.service"          "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/tuic-server.service"               "$SYSTEMD_DIR/"
 
 systemctl daemon-reload
@@ -167,6 +187,7 @@ systemctl daemon-reload
 # ---------- 11. Enable + start ----------
 log "Enabling and starting services..."
 systemctl enable --now hysteria-porthop.service
+systemctl enable --now hysteria-tcp-mss.service
 systemctl enable --now hysteria-server.service
 systemctl enable --now hysteria-subscription.service
 systemctl enable --now hysteria-traffic-limiter.timer
@@ -175,7 +196,7 @@ systemctl enable --now tuic-server.service
 
 sleep 1
 log "Status:"
-for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer xray tuic-server; do
+for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer hysteria-tcp-mss xray tuic-server; do
   printf '  %-40s %s\n' "$u" "$(systemctl is-active "$u" || true)"
 done
 
