@@ -67,6 +67,22 @@ proxies:
       type: udp
       hopInterval: 30s
 
+  - name: 🇺🇸 美国 UDP TUIC
+    type: tuic
+    server: __HY_SERVER_HOST__
+    port: 9443
+    uuid: 00000000-0000-0000-0000-000000000000
+    password: TUIC_PASSWORD_PLACEHOLDER
+    alpn:
+      - h3
+    disable-sni: true
+    reduce-rtt: true
+    request-timeout: 8000
+    udp-relay-mode: native
+    congestion-controller: bbr
+    skip-cert-verify: true
+    udp: true
+
   - name: 🇺🇸 美国 TCP (VLESS+REALITY)
     type: vless
     server: __HY_SERVER_HOST__
@@ -106,6 +122,7 @@ proxy-groups:
     proxies:
       - 🔄 自动选择
       - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
       - 🇺🇸 美国 TCP (VLESS+REALITY)
       - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
       - DIRECT
@@ -114,6 +131,7 @@ proxy-groups:
     type: fallback
     proxies:
       - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
       - 🇺🇸 美国 TCP (VLESS+REALITY)
       - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
     url: https://www.gstatic.com/generate_204

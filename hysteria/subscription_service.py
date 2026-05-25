@@ -18,6 +18,7 @@ import uuid
 import urllib.request
 
 import alerts
+import tuic_config
 import user_compat
 import xray_config
 from display import DISPLAY_MULTIPLIER, fmt_bytes
@@ -497,6 +498,11 @@ def build_yaml(username, auth_secret):
         text = re.sub(
             r'(?m)^(\s*uuid:\s*).*$',
             lambda m: f'{m.group(1)}{vless_uuid}',
+            text,
+        )
+        text = re.sub(
+            r'(?m)^(\s*password:\s*)TUIC_PASSWORD_PLACEHOLDER\s*$',
+            lambda m: f'{m.group(1)}{username}:{auth_secret}',
             text,
         )
     return text
@@ -2590,6 +2596,8 @@ class Handler(BaseHTTPRequestHandler):
             # Drop any live hysteria session on the old token (= password) so a
             # compromised link can't keep transferring after rotation. Done
             # outside the file lock to avoid holding it across network I/O.
+            if tuic_config.sync_all(users=users):
+                tuic_config.reload_async()
             hy_kick([user])
             self.redirect(f'/panel/{user}?token={new_token}')
             return
@@ -2639,6 +2647,8 @@ class Handler(BaseHTTPRequestHandler):
                     cfg['sub_token'] = secrets.token_urlsafe(18)
                 users[username] = cfg
                 save_json(USERS_FILE, users)
+            if tuic_config.sync_all(users=users):
+                tuic_config.reload_async()
             self.redirect('/admin?msg=updated+' + username)
             return
 
@@ -2682,9 +2692,11 @@ class Handler(BaseHTTPRequestHandler):
                 users[username] = entry
                 save_json(USERS_FILE, users)
             # Re-syncing a suspended user back into xray would undo the suspend.
-            # xray I/O runs outside the file lock.
+            # xray/tuic I/O runs outside the file lock.
             if not entry['disabled'] and xray_config.sync_user(username, vless_uuid):
                 xray_config.reload_async()
+            if tuic_config.sync_all(users=users):
+                tuic_config.reload_async()
             self.redirect('/admin?msg=created+' + username)
             return
 
@@ -2843,6 +2855,8 @@ class Handler(BaseHTTPRequestHandler):
                 save_json(USERS_FILE, users)
             # Drop any live hysteria session on the old token (= password) so a
             # connected attacker is forced off. Done outside the file lock.
+            if tuic_config.sync_all(users=users):
+                tuic_config.reload_async()
             hy_kick([username])
             self.write_reset_log(self.get_admin_actor(), 'rotate_token', username, {}, {})
             self.redirect('/admin?msg=rotated+' + username)
@@ -2865,19 +2879,23 @@ class Handler(BaseHTTPRequestHandler):
                 users[username]['disabled'] = disable
                 vless_uuid = str(users[username].get('vless_uuid') or '').strip()
                 save_json(USERS_FILE, users)
-            # xray + hysteria side-effects run outside the file lock.
+            # xray + tuic + hysteria side-effects run outside the file lock.
             if disable:
                 # xray VLESS authenticates by UUID at the xray layer (not via
                 # auth_backend), so disabling must also pull the user's xray
-                # client entry; then drop any live hysteria sessions.
+                # client entry; TUIC has the same static-user-map property.
                 if xray_config.remove_user(username):
                     xray_config.reload_async()
+                if tuic_config.sync_all(users=users):
+                    tuic_config.reload_async()
                 hy_kick([username])
                 self.write_reset_log(self.get_admin_actor(), 'disable_user', username, {}, {})
                 self.redirect('/admin?msg=disabled+' + username)
             else:
                 if vless_uuid and xray_config.sync_user(username, vless_uuid):
                     xray_config.reload_async()
+                if tuic_config.sync_all(users=users):
+                    tuic_config.reload_async()
                 self.write_reset_log(self.get_admin_actor(), 'enable_user', username, {}, {})
                 self.redirect('/admin?msg=enabled+' + username)
             return

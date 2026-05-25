@@ -55,6 +55,20 @@ else
   log "xray already installed: $(xray version 2>/dev/null | head -1 || true)"
 fi
 
+# ---------- 4b. Install TUIC server binary ----------
+if ! command -v tuic-server >/dev/null 2>&1; then
+  log "Installing tuic-server..."
+  tmpdir="$(mktemp -d)"
+  tuic_url="https://github.com/tuic-protocol/tuic/releases/download/tuic-server-1.0.0/tuic-server-1.0.0-x86_64-unknown-linux-gnu"
+  curl -fL "$tuic_url" -o "$tmpdir/tuic-server"
+  curl -fL "$tuic_url.sha256sum" -o "$tmpdir/tuic-server.sha256sum"
+  (cd "$tmpdir" && sed 's/tuic-server-1.0.0-x86_64-unknown-linux-gnu/tuic-server/' tuic-server.sha256sum | sha256sum -c -)
+  install -m 755 "$tmpdir/tuic-server" /usr/local/bin/tuic-server
+  rm -rf "$tmpdir"
+else
+  log "tuic-server already installed: $(tuic-server --version 2>/dev/null || true)"
+fi
+
 # ---------- 5. Render templates ----------
 render() {
   # render <src_template> <dest>
@@ -89,6 +103,7 @@ render "$REPO_DIR/hysteria/traffic_limiter.py"       "$HY_DIR/traffic_limiter.py
 render "$REPO_DIR/hysteria/alerts.py"                "$HY_DIR/alerts.py"
 render "$REPO_DIR/hysteria/anomaly.py"               "$HY_DIR/anomaly.py"
 render "$REPO_DIR/hysteria/xray_config.py"           "$HY_DIR/xray_config.py"
+render "$REPO_DIR/hysteria/tuic_config.py"           "$HY_DIR/tuic_config.py"
 render "$REPO_DIR/hysteria/user_compat.py"           "$HY_DIR/user_compat.py"
 render "$REPO_DIR/hysteria/display.py"               "$HY_DIR/display.py"
 render "$REPO_DIR/hysteria/timeutil.py"              "$HY_DIR/timeutil.py"
@@ -111,6 +126,9 @@ if [[ ! -f "$HY_DIR/users.json" ]]; then
   echo '{}' > "$HY_DIR/users.json"
   chmod 600 "$HY_DIR/users.json"
 fi
+
+log "Rendering tuic user map → $HY_DIR/tuic.json"
+PYTHONPATH="$HY_DIR" python3 -c 'import tuic_config; tuic_config.sync_all()'
 
 # ---------- 7. Self-signed TLS cert ----------
 if [[ ! -f "$HY_DIR/server.crt" || ! -f "$HY_DIR/server.key" ]]; then
@@ -142,6 +160,7 @@ install -m 644 "$REPO_DIR/systemd/hysteria-subscription.service"     "$SYSTEMD_D
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.service"  "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.timer"    "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-porthop.service"          "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/tuic-server.service"               "$SYSTEMD_DIR/"
 
 systemctl daemon-reload
 
@@ -152,10 +171,11 @@ systemctl enable --now hysteria-server.service
 systemctl enable --now hysteria-subscription.service
 systemctl enable --now hysteria-traffic-limiter.timer
 systemctl enable --now xray.service
+systemctl enable --now tuic-server.service
 
 sleep 1
 log "Status:"
-for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer xray; do
+for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer xray tuic-server; do
   printf '  %-40s %s\n' "$u" "$(systemctl is-active "$u" || true)"
 done
 

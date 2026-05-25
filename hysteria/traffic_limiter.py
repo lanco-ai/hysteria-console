@@ -11,6 +11,7 @@ from timeutil import billing_cycle_key, local_now
 
 import alerts as _alerts
 import anomaly as _anomaly
+import tuic_config
 import user_compat
 import xray_config
 
@@ -526,6 +527,8 @@ def main():
         post("/kick", to_kick)
     if xray_config.apply_user_plan(xray_plan):
         xray_config.reload_async()
+    if tuic_config.sync_user_plan(users, xray_plan):
+        tuic_config.reload_async()
 
 
 if __name__ == "__main__":
