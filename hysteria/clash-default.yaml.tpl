@@ -31,6 +31,33 @@ dns:
     - 119.29.29.29
 
   nameserver-policy:
+    '+.github.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.githubusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.githubassets.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.github.io':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.githubapp.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.github.dev':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.ghcr.io':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.githubcopilot.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.github-cloud.s3.amazonaws.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
     '+.steamcontent.com':
       - 223.5.5.5
       - 119.29.29.29
@@ -120,6 +147,7 @@ proxy-groups:
   - name: 🚀 节点选择
     type: select
     proxies:
+      - ⚡ GitHub 加速
       - 🔄 自动选择
       - 🇺🇸 美国 UDP (端口跳跃)
       - 🇺🇸 美国 UDP TUIC
@@ -137,6 +165,18 @@ proxy-groups:
     url: https://www.gstatic.com/generate_204
     interval: 30
     timeout: 5000
+
+  - name: ⚡ GitHub 加速
+    type: url-test
+    proxies:
+      - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
+      - 🇺🇸 美国 TCP (VLESS+REALITY)
+      - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
+    url: https://github.com/favicon.ico
+    interval: 120
+    timeout: 5000
+    tolerance: 100
 
 # 5. 规则集（每天自动更新）
 rule-providers:
@@ -205,6 +245,15 @@ rule-providers:
 
 # 6. 规则
 rules:
+  - 'DOMAIN-SUFFIX,github.com,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,github.io,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,githubusercontent.com,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,githubassets.com,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,githubapp.com,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,github.dev,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,ghcr.io,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,githubcopilot.com,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,github-cloud.s3.amazonaws.com,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,steamcontent.com,DIRECT'
   - 'DOMAIN-SUFFIX,steamserver.net,DIRECT'
   - 'DOMAIN-SUFFIX,steampowered.com,🚀 节点选择'
