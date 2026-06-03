@@ -102,7 +102,7 @@ def main():
     u = users.get(username)
     if not u:
         sys.exit(1)
-    if u.get("disabled"):
+    if user_compat.is_inactive(u, today=local_now().date()):
         sys.exit(1)
     token = str(u.get("sub_token") or "")
     ok = bool(token) and hmac.compare_digest(password, token)
@@ -119,7 +119,7 @@ def main():
             usage_total((daily.get(day_key) or {}).get(username))
             for day_key in cycle_util.cycle_days(now, meta=meta)
         )
-        quota = int(u.get("monthly_quota_bytes", 0))
+        quota = user_compat.total_quota_bytes(u)
         if quota > 0 and int(used * DISPLAY_MULTIPLIER) >= quota:
             sys.exit(1)
 

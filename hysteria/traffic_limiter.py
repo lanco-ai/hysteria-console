@@ -358,7 +358,7 @@ def check_alerts(users, now, month_key, *, daily=None, _opener=None):
 
     for uid, user_cfg in (users or {}).items():
         # ---- quota crossings ----
-        quota = int((user_cfg or {}).get('monthly_quota_bytes', 0) or 0)
+        quota = user_compat.total_quota_bytes(user_cfg)
         if user_compat.is_metered(user_cfg) and quota > 0:
             raw_total = cycle_used_raw_for(uid, daily, now=now)
             scaled = int(raw_total * _DM)
@@ -381,18 +381,40 @@ def check_alerts(users, now, month_key, *, daily=None, _opener=None):
                 _alerts.mark_alerted(state, 'quota_80', uid, month_key)
 
         # ---- anomaly ----
-        if _alerts.already_alerted(state, 'anomaly', uid, today_key):
-            continue
-        hit = _anomaly.detect(uid, daily, today_date,
-                              z_threshold=z_threshold, min_bytes=min_bytes)
-        if hit is not None:
-            _alerts.dispatch({
-                'kind': 'anomaly', 'user': uid,
-                'details': {'today_human': _fmt_bytes(int(hit['today'] * _DM)),
-                            'mean_human': _fmt_bytes(int(hit['mean'] * _DM)),
-                            'z': hit['z']},
-            }, config=cfg, opener=_opener)
-            _alerts.mark_alerted(state, 'anomaly', uid, today_key)
+        if not _alerts.already_alerted(state, 'anomaly', uid, today_key):
+            hit = _anomaly.detect(uid, daily, today_date,
+                                  z_threshold=z_threshold, min_bytes=min_bytes)
+            if hit is not None:
+                _alerts.dispatch({
+                    'kind': 'anomaly', 'user': uid,
+                    'details': {'today_human': _fmt_bytes(int(hit['today'] * _DM)),
+                                'mean_human': _fmt_bytes(int(hit['mean'] * _DM)),
+                                'z': hit['z']},
+                }, config=cfg, opener=_opener)
+                _alerts.mark_alerted(state, 'anomaly', uid, today_key)
+
+        # ---- expiry reminders ----
+        expiry = user_compat.expiry_date(user_cfg)
+        if expiry is not None:
+            days_left = (expiry - today_date).days
+            try:
+                warn_days = int(cfg.get('expiry_warn_days', 3) or 3)
+            except (TypeError, ValueError):
+                warn_days = 3
+            warn_days = max(0, min(30, warn_days))
+            key = expiry.isoformat()
+            if days_left < 0 and not _alerts.already_alerted(state, 'expiry_expired', uid, key):
+                _alerts.dispatch({
+                    'kind': 'expiry_expired', 'user': uid,
+                    'details': {'expires_at': key},
+                }, config=cfg, opener=_opener)
+                _alerts.mark_alerted(state, 'expiry_expired', uid, key)
+            elif 0 <= days_left <= warn_days and not _alerts.already_alerted(state, 'expiry_soon', uid, key):
+                _alerts.dispatch({
+                    'kind': 'expiry_soon', 'user': uid,
+                    'details': {'expires_at': key, 'days_left': days_left},
+                }, config=cfg, opener=_opener)
+                _alerts.mark_alerted(state, 'expiry_soon', uid, key)
 
     _alerts.save_state(state)
 
@@ -456,17 +478,17 @@ def main():
     to_kick = []
     xray_plan = {}
     for uid, cfg in users.items():
-        if (cfg or {}).get("disabled"):
+        if user_compat.is_inactive(cfg, today=now.date()):
             # Durable suspend: every tick force-removes the user from xray and
             # re-kicks any live hysteria session, so suspension survives across
-            # cron ticks (hy_kick from the admin handler is one-shot/best-effort).
+            # cron ticks. Expired users use the same durable removal path.
             xray_plan[uid] = None  # ensure removed from both inbounds
             if int(online.get(uid, 0) or 0) > 0:
                 to_kick.append(uid)
             continue
         vless_uuid = str((cfg or {}).get("vless_uuid") or "").strip()
         metered = user_compat.is_metered(cfg)
-        quota = int((cfg or {}).get("monthly_quota_bytes", 0))
+        quota = user_compat.total_quota_bytes(cfg)
         if not metered or quota <= 0:
             if vless_uuid:
                 xray_plan[uid] = vless_uuid

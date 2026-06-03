@@ -99,7 +99,7 @@ After deploy:
 
 - **Admin** — `http://<server>/admin` — log in at `/login`. The admin password is **not** set via a first-visit form. On first deploy, write `admin_pass` (plaintext) into `subscription_meta.json`; on the next start it is migrated to a salted PBKDF2 `admin_pass_hash` and the plaintext is removed. If no password is configured, a random one is generated and written to a root-only file `admin_initial_password.txt` (next to `subscription_meta.json`, mode 0600) so you can read it, log in, and rotate it — then delete the file. Rotate the password any time from `/admin/settings` — that also signs out all other sessions while keeping you logged in on the current device.
 - **Add a user** from the panel → instant subscription URL `http://<host>/sub/<name>?token=<token>`.
-- **Per-user actions** — each row can edit the plan, reset/refresh usage, **rotate the subscription token** (instantly invalidate a leaked link), **suspend/resume** (disable without deleting: reject new connections, pull the xray inbound, and drop live sessions), and delete.
+- **Per-user actions** — each row can edit the plan, set an expiry date, add extra quota, keep an operator note, reset/refresh usage, **rotate the subscription token** (instantly invalidate a leaked link), **suspend/resume** (disable without deleting: reject new connections, pull the xray inbound, and drop live sessions), and delete. Expired users are rejected by auth and removed from static Xray/TUIC plans until renewed.
 - **User panel** — `http://<server>/panel/<user>?token=<token>` — per-user usage + device stats, with a quota-reset countdown, a 30-day usage trend, one-click copy for the subscription/panel links, and live usage refresh every 10s (paused while the tab is hidden).
 - **Template config** — edit the shared Clash YAML template inline (JSON view, validation, format/collapse).
 - **Route rules** — add / remove / re-order proxy/direct/reject rules; live diff against the template.
@@ -195,6 +195,7 @@ Drop a `/root/hysteria/alerts.json` (chmod 600) to enable Telegram / webhook ale
 
 - 80% / 100% quota crossings → one push per user per billing month
 - Daily total exceeding `z_threshold` σ above the trailing 7-day mean → one push per user per day
+- Expiry reminders → one push when a user is within `expiry_warn_days` (default 3) of `expires_at`, plus one push after expiry
 - Webhook payloads are HMAC-SHA256 signed via `X-Hy2-Signature: sha256=<hex>` when `secret` is set
 
 If the file is absent, the dispatcher is a no-op. Live infra heartbeat at `/admin/health` (6 cards: cron pulse / hysteria / xray / disk / TLS cert / online users, auto-refreshes every 30s).

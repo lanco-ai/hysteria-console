@@ -22,7 +22,7 @@ DEFAULT_MIN_BYTES = 1 << 30
 
 log = logging.getLogger('hy2.alerts')
 
-_STATE_KEYS = ('quota_80', 'quota_100', 'anomaly')
+_STATE_KEYS = ('quota_80', 'quota_100', 'anomaly', 'expiry_soon', 'expiry_expired')
 
 
 def load_config(path=None):
@@ -109,6 +109,11 @@ def format_message(event):
         z = details.get('z', 0.0)
         return (f"⚠️ {user} 今日 {details.get('today_human','?')} "
                 f"(基线 {details.get('mean_human','?')}, z={z:.1f})")
+    if kind == 'expiry_soon':
+        return (f"⏳ {user} 将于 {details.get('expires_at','?')} 到期 "
+                f"· 剩余 {details.get('days_left','?')} 天")
+    if kind == 'expiry_expired':
+        return f"⛔ {user} 已于 {details.get('expires_at','?')} 到期"
     if kind == 'test':
         return f"✅ 测试告警 · 来自管理面板（{user}）"
     return f"{kind}: {user}"

@@ -148,6 +148,21 @@ def parse_int_field(raw, default, min_value, max_value):
     return max(min_value, min(max_value, value))
 
 
+def parse_date_field(raw):
+    raw = str(raw or '').strip()
+    if not raw:
+        return ''
+    try:
+        datetime.strptime(raw, '%Y-%m-%d')
+    except ValueError:
+        return ''
+    return raw
+
+
+def parse_note_field(raw):
+    return str(raw or '').strip()[:200]
+
+
 def sanitize_host(raw_host):
     return http_utils.sanitize_host(raw_host)
 
@@ -424,7 +439,35 @@ def scaled_usage_for_user(username, usage_month=None, *, daily=None, now=None):
 
 
 def user_total_quota(user_cfg):
-    return int(user_cfg.get('monthly_quota_bytes', 0) or 0)
+    return user_compat.total_quota_bytes(user_cfg)
+
+
+def base_quota_bytes(user_cfg):
+    return int((user_cfg or {}).get('monthly_quota_bytes', 0) or 0)
+
+
+def quota_extra_gb(user_cfg):
+    return int(round(user_compat.quota_extra_bytes(user_cfg) / 1024 / 1024 / 1024))
+
+
+def user_expiry_state(user_cfg, *, today=None):
+    today = today or local_now().date()
+    exp = user_compat.expiry_date(user_cfg)
+    if exp is None:
+        return {'expires_at': '', 'expired': False, 'days_left': None, 'label': '不限期'}
+    days_left = (exp - today).days
+    if days_left < 0:
+        label = f'已过期 {abs(days_left)} 天'
+    elif days_left == 0:
+        label = '今日到期'
+    else:
+        label = f'{days_left} 天后到期'
+    return {
+        'expires_at': exp.strftime('%Y-%m-%d'),
+        'expired': days_left < 0,
+        'days_left': days_left,
+        'label': label,
+    }
 
 
 def build_yaml(username, auth_secret):
@@ -859,7 +902,13 @@ def render_user_panel(host, base_url, user, token, cfg):
     panel_http = f'{base_url}{panel_path}'
     max_devices_n = int(cfg.get('max_devices', 0) or 0)
     is_disabled = bool(cfg.get('disabled'))
-    disabled_banner = '<div class="err">账号已停用，请联系管理员</div>' if is_disabled else ''
+    expiry = user_expiry_state(cfg, today=now.date())
+    is_expired = bool(expiry['expired'])
+    disabled_banner = ''
+    if is_disabled:
+        disabled_banner = '<div class="err">账号已停用，请联系管理员</div>'
+    elif is_expired:
+        disabled_banner = '<div class="err">账号已到期，请联系管理员续费</div>'
     qr_svg = render_qr_svg(sub_http)
     qr_block = ''
     if qr_svg:
@@ -872,7 +921,7 @@ def render_user_panel(host, base_url, user, token, cfg):
     # live-refresh loop (it would just spam '刷新失败'). The embedded URL escapes
     # '<' so a malicious username can't break out of the <script> element.
     poll_url_js = json.dumps(json_path).replace('<', '\\u003c')
-    poll_js = '' if is_disabled else f'''  var pollUrl = {poll_url_js};
+    poll_js = '' if (is_disabled or is_expired) else f'''  var pollUrl = {poll_url_js};
   var statusEl = document.querySelector('[data-role="poll-status"]');
   function fmtBytes(n) {{
     var v = Math.max(0, Number(n) || 0);
@@ -941,7 +990,7 @@ def render_user_panel(host, base_url, user, token, cfg):
   </div>
   <div class="bar"><div class="fill {cls}" data-role="bar" style="width:{percent:.2f}%"></div></div>
   <div class="small mt-sm" data-role="txrx">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
-  <div class="small mt-sm faint">本周期 {cycle_len} 天 · 重置于 {reset_date} · 还剩 {days_left} 天</div>
+  <div class="small mt-sm faint">本周期 {cycle_len} 天 · 重置于 {reset_date} · 还剩 {days_left} 天 · 有效期 {html.escape(expiry["label"])}</div>
 </div>
 <div class="card mt-md">
   <div class="k">近 30 天用量趋势</div>
@@ -1011,11 +1060,19 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
         spark_cell = f'<td class="spark-cell" data-role="spark">{sparkline_svg(daily_window_for_user(user, daily, days=30))}</td>'
     total = user_total_quota(cfg)
     max_devices = int(cfg.get('max_devices', 0) or 0)
-    quota_gb = int(round(total / 1024 / 1024 / 1024)) if total > 0 else 0
+    base_gb = int(round(base_quota_bytes(cfg) / 1024 / 1024 / 1024)) if base_quota_bytes(cfg) > 0 else 0
+    extra_gb = quota_extra_gb(cfg)
     panel = f'{base_url}/panel/{user}?token={cfg.get("sub_token", "")}'
     sub_http = f'{base_url}/sub/{user}?token={cfg.get("sub_token", "")}'
     metered = user_compat.is_metered(cfg)
     guest_checked = 'checked' if metered else ''
+    expiry = user_expiry_state(cfg, today=(now or local_now()).date())
+    expires_at = expiry['expires_at']
+    expired_badge = '<span class="badge badge-danger">已过期</span>' if expiry['expired'] else ''
+    expires_preview = f' · {expiry["label"]}' if expires_at else ''
+    extra_preview = f' · 加量 {extra_gb} GB' if extra_gb else ''
+    note = str(cfg.get('note') or '')
+    note_preview = f'<div class="small faint">{html.escape(note)}</div>' if note else ''
     percent = pct(used, total)
     bar_cls = 'danger' if percent >= 90 else ''
     bar_w = f'{percent:.1f}'
@@ -1024,7 +1081,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     disabled = bool(cfg.get('disabled'))
     disabled_badge = '<span class="badge badge-danger">已停用</span>' if disabled else ''
     guest_preview = ' · 访客' if metered else ''
-    summary_preview = f'<span class="summary-preview">{quota_gb or 150} GB · {max_devices or 2} 设备{guest_preview}</span>'
+    summary_preview = f'<span class="summary-preview">{base_gb or 150} GB{extra_preview} · {max_devices or 2} 设备{guest_preview}{expires_preview}</span>'
     if disabled:
         toggle_form = (
             '<form method="post" action="/admin/toggle-user" class="inline-form-row">'
@@ -1042,8 +1099,9 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
   <div class="row gap-sm" style="flex-wrap:nowrap;">
     <div class="user-avatar">{html.escape(user[:1].upper())}</div>
     <div style="min-width:0;">
-      <div class="bold">{user_esc} {guest_badge}{disabled_badge}</div>
+      <div class="bold">{user_esc} {guest_badge}{disabled_badge}{expired_badge}</div>
       <div class="small">在线 <span data-role="online">{online.get(user, 0)}</span> / {max_devices} 设备</div>
+      {note_preview}
     </div>
   </div>
 </td>
@@ -1063,7 +1121,10 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
 <input type="hidden" name="user" value="{user_esc}">
 <label>兼容连接密码（可选）</label><input name="password" type="password" placeholder="留空则不修改">
 <label class="mt-sm">设备数上限</label><input name="max_devices" type="number" min="1" value="{max_devices or 2}">
-<label class="mt-sm">月流量上限 (GB)</label><input name="quota_gb" type="number" min="1" value="{quota_gb or 150}">
+<label class="mt-sm">月流量上限 (GB)</label><input name="quota_gb" type="number" min="1" value="{base_gb or 150}">
+<label class="mt-sm">加量包 (GB)</label><input name="quota_extra_gb" type="number" min="0" value="{extra_gb}">
+<label class="mt-sm">到期日</label><input name="expires_at" type="date" value="{html.escape(expires_at)}">
+<label class="mt-sm">备注</label><input name="note" maxlength="200" value="{html.escape(note)}" placeholder="可选：续费状态/来源/说明">
 <label class="switch mt-sm"><input type="checkbox" name="guest" {guest_checked}>客人用户（仅做标记，不影响认证）</label>
 <button class="btn mt-md" type="submit">保存</button>
 </form>
@@ -1166,11 +1227,14 @@ def render_admin(host, base_url, flash=''):
   <details class="summary-muted">
     <summary>新增用户</summary>
     <form method="post" action="/admin/add" class="inline-form mt-md">
-      <div class="grid grid-3">
-        <div><label>用户名</label><input name="user" required></div>
-        <div><label>兼容连接密码（可选）</label><input name="password" type="password" placeholder="默认仅用订阅 token 认证"></div>
-        <div><label>月流量上限 (GB)</label><input name="quota_gb" type="number" value="150" min="1"></div>
-      </div>
+          <div class="grid grid-3">
+            <div><label>用户名</label><input name="user" required></div>
+            <div><label>兼容连接密码（可选）</label><input name="password" type="password" placeholder="默认仅用订阅 token 认证"></div>
+            <div><label>月流量上限 (GB)</label><input name="quota_gb" type="number" value="150" min="1"></div>
+            <div><label>加量包 (GB)</label><input name="quota_extra_gb" type="number" value="0" min="0"></div>
+            <div><label>到期日</label><input name="expires_at" type="date"></div>
+            <div><label>备注</label><input name="note" maxlength="200" placeholder="可选"></div>
+          </div>
       <div class="row mt-md">
         <label class="switch"><input type="checkbox" name="guest" checked>客人用户</label>
         <label class="switch"><input type="checkbox" name="reset_token">已存在则重置订阅令牌</label>
@@ -1412,6 +1476,7 @@ def _build_usage_json_payload(*, now):
     for u, cfg in users.items():
         tx, rx, used = scaled_usage_for_user(u, daily=daily, now=now)
         total = user_total_quota(cfg)
+        expiry = user_expiry_state(cfg, today=now.date())
         total_used += used
         user_list.append({
             'user': u,
@@ -1421,6 +1486,12 @@ def _build_usage_json_payload(*, now):
             'total': total,
             'percent': pct(used, total),
             'online': int(online.get(u, 0)),
+            'disabled': bool((cfg or {}).get('disabled')),
+            'expired': bool(expiry['expired']),
+            'expires_at': expiry['expires_at'],
+            'expiry_label': expiry['label'],
+            'quota_extra_bytes': user_compat.quota_extra_bytes(cfg),
+            'note': str((cfg or {}).get('note') or ''),
             # NOTE: spark_html mirrors row_form's spark cell — see row_form for the 3-place coupling note.
             'spark_html': sparkline_svg(daily_window_for_user(u, daily, days=30)),
         })
@@ -1442,6 +1513,7 @@ def _build_user_json_payload(uid, *, now):
     if uid not in users:
         return None
     cfg = users[uid] or {}
+    expiry = user_expiry_state(cfg, today=now.date())
 
     online = load_json(ONLINE_FILE, {})
     hourly = load_json(USAGE_HOURLY_FILE, {})
@@ -1480,10 +1552,16 @@ def _build_user_json_payload(uid, *, now):
         "ts": now.isoformat(timespec="seconds"),
         "uid": uid,
         "metered": bool(cfg.get("metered", cfg.get("guest", False))),
+        "disabled": bool(cfg.get("disabled")),
+        "expired": bool(expiry["expired"]),
+        "expires_at": expiry["expires_at"],
+        "expiry_label": expiry["label"],
+        "note": str(cfg.get("note") or ""),
         "online": int(online.get(uid, 0) or 0),
         "max_devices": int(cfg.get("max_devices", 2)),
         "cycle_used_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
-        "cycle_quota_bytes": int(cfg.get("monthly_quota_bytes", 0) or 0),
+        "cycle_quota_bytes": int(user_total_quota(cfg)),
+        "quota_extra_bytes": int(user_compat.quota_extra_bytes(cfg)),
         "current_hour_bytes": int(cur_raw * DISPLAY_MULTIPLIER),
         "today_bytes": int(today_raw * DISPLAY_MULTIPLIER),
         "hourly_bars": bars,
@@ -1717,6 +1795,13 @@ def render_user_detail_page(uid, host):
     heat_svg = weekday_hour_heatmap_svg(payload["heatmap"], current_hour_iso=_hour_key(now))
 
     badge = '<span class="badge yellow">按量</span>' if payload["metered"] else '<span class="badge gray">免计</span>'
+    state_badges = ''
+    if payload.get('disabled'):
+        state_badges += '<span class="badge badge-danger">已停用</span>'
+    if payload.get('expired'):
+        state_badges += '<span class="badge badge-danger">已过期</span>'
+    note_line = (f'<div class="small faint mt-sm">备注：{html.escape(payload["note"])}</div>'
+                 if payload.get('note') else '')
     quota_line = (f'{fmt_bytes(payload["cycle_used_bytes"])} / '
                   f'{fmt_bytes(payload["cycle_quota_bytes"])}'
                   if payload["cycle_quota_bytes"] else
@@ -1733,9 +1818,10 @@ def render_user_detail_page(uid, host):
     )
 
     content = f'''<a class="back-link" href="/admin/usage">← 返回 /admin/usage</a>
-<h2 class="user-title">{html.escape(uid)} {badge}
-  <span class="small">{payload["online"]} / {payload["max_devices"]} 在线</span>
-</h2>
+    <h2 class="user-title">{html.escape(uid)} {badge}{state_badges}
+      <span class="small">{payload["online"]} / {payload["max_devices"]} 在线</span>
+    </h2>
+    <div class="small faint">有效期：{html.escape(payload["expiry_label"])}</div>{note_line}
 
 <div class="grid grid-3">
   <div class="card stat"><div class="k">本周期</div><div class="v">{quota_line}</div></div>
@@ -2349,6 +2435,9 @@ class Handler(BaseHTTPRequestHandler):
             if cfg.get('disabled'):
                 self.send_response_body(403, '账号已停用，请联系管理员', send_body=send_payload)
                 return
+            if user_compat.is_expired(cfg, today=local_now().date()):
+                self.send_response_body(403, '账号已到期，请联系管理员续费', send_body=send_payload)
+                return
             yml = build_yaml(user, str(cfg.get('sub_token') or ''))
             tx, rx, used = scaled_usage_for_user(user)
             total = user_total_quota(cfg)
@@ -2375,6 +2464,10 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if cfg.get('disabled'):
                 self.send_response_body(403, '{"error":"disabled"}',
+                                        'application/json; charset=utf-8', send_payload)
+                return
+            if user_compat.is_expired(cfg, today=local_now().date()):
+                self.send_response_body(403, '{"error":"expired"}',
                                         'application/json; charset=utf-8', send_payload)
                 return
             payload = _build_panel_json_payload(user, cfg, now=local_now())
@@ -2546,6 +2639,9 @@ class Handler(BaseHTTPRequestHandler):
             if not cfg:
                 self.send_response_body(403, '无权限访问')
                 return
+            if user_compat.is_expired(cfg, today=local_now().date()):
+                self.send_response_body(403, '账号已到期，请联系管理员续费')
+                return
             new_token = secrets.token_urlsafe(18)
             with usage_lock():
                 users = load_json(USERS_FILE, {})
@@ -2591,6 +2687,9 @@ class Handler(BaseHTTPRequestHandler):
             new_password = (form.get('password') or [''])[0].strip()
             max_devices = parse_int_field((form.get('max_devices') or ['2'])[0], 2, 1, 100)
             quota_gb = parse_int_field((form.get('quota_gb') or ['150'])[0], 150, 1, 10240)
+            quota_extra_gb = parse_int_field((form.get('quota_extra_gb') or ['0'])[0], 0, 0, 10240)
+            expires_at = parse_date_field((form.get('expires_at') or [''])[0])
+            note = parse_note_field((form.get('note') or [''])[0])
             guest = 'guest' in form
             with usage_lock():
                 users = load_json(USERS_FILE, {})
@@ -2603,6 +2702,15 @@ class Handler(BaseHTTPRequestHandler):
                 cfg.pop('password', None)
                 cfg['max_devices'] = max(1, max_devices)
                 cfg['monthly_quota_bytes'] = max(1, quota_gb) * 1024 * 1024 * 1024
+                cfg['quota_extra_bytes'] = max(0, quota_extra_gb) * 1024 * 1024 * 1024
+                if expires_at:
+                    cfg['expires_at'] = expires_at
+                else:
+                    cfg.pop('expires_at', None)
+                if note:
+                    cfg['note'] = note
+                else:
+                    cfg.pop('note', None)
                 cfg['metered'] = guest
                 cfg['guest'] = guest
                 if not cfg.get('sub_token'):
@@ -2621,6 +2729,9 @@ class Handler(BaseHTTPRequestHandler):
             username = (form.get('user') or [''])[0].strip()
             password = (form.get('password') or [''])[0].strip()
             quota_gb = parse_int_field((form.get('quota_gb') or ['150'])[0], 150, 1, 10240)
+            quota_extra_gb = parse_int_field((form.get('quota_extra_gb') or ['0'])[0], 0, 0, 10240)
+            expires_at = parse_date_field((form.get('expires_at') or [''])[0])
+            note = parse_note_field((form.get('note') or [''])[0])
             guest = 'guest' in form
             reset_token = 'reset_token' in form
             if not username:
@@ -2643,10 +2754,19 @@ class Handler(BaseHTTPRequestHandler):
                     'guest': guest,
                     'max_devices': 2,
                     'monthly_quota_bytes': max(1, quota_gb) * 1024 * 1024 * 1024,
+                    'quota_extra_bytes': max(0, quota_extra_gb) * 1024 * 1024 * 1024,
                     'sub_token': token,
                     'vless_uuid': vless_uuid,
                     'disabled': bool(existing.get('disabled')),
                 }
+                if expires_at:
+                    entry['expires_at'] = expires_at
+                elif existing.get('expires_at'):
+                    entry['expires_at'] = existing.get('expires_at')
+                if note:
+                    entry['note'] = note
+                elif existing.get('note'):
+                    entry['note'] = existing.get('note')
                 if password:
                     entry['password_hash'] = hash_secret(password)
                 elif existing.get('password_hash'):

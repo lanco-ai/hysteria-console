@@ -367,6 +367,38 @@ def test_admin_row_shows_enable_button_and_badge_for_disabled_user(tmp_path, mon
     assert 'data-action="disable-user"' not in row
 
 
+def test_user_total_quota_includes_extra_package():
+    cfg = {
+        'monthly_quota_bytes': 100,
+        'quota_extra_bytes': 25,
+    }
+    assert ss.user_total_quota(cfg) == 125
+
+
+def test_admin_row_shows_expiry_extra_and_note(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    monkeypatch.setattr(
+        ss, 'local_now',
+        lambda: datetime(2026, 6, 3, 10, tzinfo=SH),
+    )
+    cfg = {
+        'sub_token': 't',
+        'monthly_quota_bytes': 150 * (1 << 30),
+        'quota_extra_bytes': 20 * (1 << 30),
+        'max_devices': 2,
+        'expires_at': '2026-06-10',
+        'note': 'paid through June',
+    }
+    row = ss.row_form('alice', cfg, {}, 'host', 'http://host')
+    assert '加量 20 GB' in row
+    assert '7 天后到期' in row
+    assert 'paid through June' in row
+    assert 'name="quota_extra_gb"' in row
+    assert 'name="expires_at"' in row
+    assert 'name="note"' in row
+
+
 def test_admin_poll_js_confirms_destructive_admin_actions():
     text = (Path(ss.__file__).resolve().parent / 'admin_poll.js').read_text(encoding='utf-8')
     assert "f.dataset.action==='rotate-user-token'" in text
@@ -384,6 +416,18 @@ def test_auth_backend_rejects_disabled_user(tmp_path, monkeypatch):
     (tmp_path / 'users.json').write_text(json.dumps(
         {'alice': {'sub_token': 'SECRET', 'disabled': True}}))
     monkeypatch.setattr(ab, 'USERS_FILE', str(tmp_path / 'users.json'))
+    monkeypatch.setattr(sys, 'argv', ['auth_backend.py', 'hysteria', 'alice:SECRET'])
+    with pytest.raises(SystemExit) as e:
+        ab.main()
+    assert e.value.code == 1
+
+
+def test_auth_backend_rejects_expired_user(tmp_path, monkeypatch):
+    import auth_backend as ab
+    (tmp_path / 'users.json').write_text(json.dumps(
+        {'alice': {'sub_token': 'SECRET', 'expires_at': '2026-06-02'}}))
+    monkeypatch.setattr(ab, 'USERS_FILE', str(tmp_path / 'users.json'))
+    monkeypatch.setattr(ab, 'local_now', lambda: datetime(2026, 6, 3, 8, tzinfo=SH))
     monkeypatch.setattr(sys, 'argv', ['auth_backend.py', 'hysteria', 'alice:SECRET'])
     with pytest.raises(SystemExit) as e:
         ab.main()
@@ -446,6 +490,43 @@ def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
     assert captured['kick'] == ['bob'], 'an online disabled user must be re-kicked each tick'
 
 
+def test_cron_excludes_expired_user_from_xray_plan(tmp_path, monkeypatch):
+    import traffic_limiter as tl
+
+    snap = tmp_path / 'online.json'
+    monkeypatch.setattr(tl, 'ONLINE_SNAPSHOT_FILE', str(snap), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_FILE', str(tmp_path / 'usage.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_DAILY_FILE', str(tmp_path / 'usage_daily.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_HOURLY_FILE', str(tmp_path / 'usage_hourly.json'), raising=False)
+    monkeypatch.setattr(tl, 'USERS_FILE', str(tmp_path / 'users.json'), raising=False)
+    monkeypatch.setattr(tl, 'RESET_STATE_FILE', str(tmp_path / 'reset.json'), raising=False)
+    monkeypatch.setattr(tl, 'USAGE_LOCK_FILE', str(tmp_path / 'usage.lock'), raising=False)
+    monkeypatch.setattr(tl, 'local_now', lambda: datetime(2026, 6, 3, 8, tzinfo=SH))
+    (tmp_path / 'users.json').write_text(json.dumps({
+        'alice': {'vless_uuid': 'uuid-A'},
+        'bob': {'vless_uuid': 'uuid-B', 'expires_at': '2026-06-02'},
+    }))
+
+    results = [{}, {'bob': 1}]
+    monkeypatch.setattr(tl, 'get', lambda _p: results.pop(0))
+    captured = {'plan': None, 'kick': None}
+    monkeypatch.setattr(tl, 'post', lambda path, body=None, **k: captured.__setitem__('kick', body) or True)
+    monkeypatch.setattr(tl, 'get_xray_traffic', lambda: {})
+    monkeypatch.setattr(tl, 'check_alerts', lambda *a, **k: None)
+
+    import xray_config
+    monkeypatch.setattr(xray_config, 'apply_user_plan',
+                        lambda plan, **k: captured.__setitem__('plan', dict(plan)) or False,
+                        raising=False)
+    monkeypatch.setattr(xray_config, 'reload_async', lambda: None, raising=False)
+
+    tl.main()
+
+    assert captured['plan']['bob'] is None
+    assert captured['plan']['alice'] == 'uuid-A'
+    assert captured['kick'] == ['bob']
+
+
 # F2: suspended users see a banner and NO poll loop on the panel.
 
 def test_render_user_panel_disabled_shows_banner_and_omits_poll(tmp_path, monkeypatch):
@@ -461,6 +542,26 @@ def test_render_user_panel_disabled_shows_banner_and_omits_poll(tmp_path, monkey
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '账号已停用，请联系管理员' in page
     assert 'class="err"' in page
+    assert 'var pollUrl' not in page
+    assert '/panel/alice.json' not in page
+
+
+def test_render_user_panel_expired_shows_banner_and_omits_poll(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    monkeypatch.setattr(ss, 'local_now', lambda: datetime(2026, 6, 3, 8, tzinfo=SH))
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    (tmp_path / 'online.json').write_text('{}')
+    (tmp_path / 'meta.json').write_text('{}')
+    cfg = {
+        'sub_token': 'tok',
+        'monthly_quota_bytes': 1 << 30,
+        'max_devices': 2,
+        'expires_at': '2026-06-02',
+    }
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
+    assert '账号已到期，请联系管理员续费' in page
     assert 'var pollUrl' not in page
     assert '/panel/alice.json' not in page
 

@@ -110,6 +110,46 @@ def test_quota_does_not_refire_same_month(tmp_path, monkeypatch):
     assert len(sent) == 1
 
 
+def test_expiry_soon_alert_fires_once_per_expiry_date(tmp_path, monkeypatch):
+    today = datetime(2026, 6, 3)
+    sent, opener, _ = _setup(
+        tmp_path,
+        daily={},
+        usage={},
+        users={'alice': {'expires_at': '2026-06-05'}},
+        online={},
+        monkeypatch=monkeypatch,
+        alerts_cfg={'webhook': {'url': 'https://example.invalid/'}, 'expiry_warn_days': 3},
+    )
+    for _ in range(2):
+        tl.check_alerts(
+            users={'alice': {'expires_at': '2026-06-05'}},
+            now=today, month_key='2026-06', _opener=opener)
+
+    assert len(sent) == 1
+    assert b'expiry_soon' in sent[0]['body']
+
+
+def test_expired_alert_fires_once_per_expiry_date(tmp_path, monkeypatch):
+    today = datetime(2026, 6, 3)
+    sent, opener, _ = _setup(
+        tmp_path,
+        daily={},
+        usage={},
+        users={'alice': {'expires_at': '2026-06-02'}},
+        online={},
+        monkeypatch=monkeypatch,
+        alerts_cfg={'webhook': {'url': 'https://example.invalid/'}},
+    )
+    for _ in range(2):
+        tl.check_alerts(
+            users={'alice': {'expires_at': '2026-06-02'}},
+            now=today, month_key='2026-06', _opener=opener)
+
+    assert len(sent) == 1
+    assert b'expiry_expired' in sent[0]['body']
+
+
 def test_reset_paths_clear_cycle_daily_hourly_for_user():
     """Manual reset must clear the user's daily + hourly entries within the
     current cycle so that `本周期`, `今日`, and `当小时` all read 0 immediately
