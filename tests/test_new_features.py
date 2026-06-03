@@ -605,6 +605,14 @@ def test_render_incidents_has_actions_and_evidence_link(tmp_path, monkeypatch):
     assert '成本校准器' in page
 
 
+def test_incident_console_logic_lives_in_dedicated_module():
+    import incident_console
+
+    assert ss.build_incident_payload.__module__ == 'subscription_service'
+    assert incident_console.build_incident_payload.__module__ == 'incident_console'
+    assert incident_console.render_incidents.__module__ == 'incident_console'
+
+
 def test_incidents_appears_in_sidebar_nav():
     assert any(key == 'incidents' and href == '/admin/incidents'
                for key, href, _label, _icon in ss._SIDEBAR_NAV)

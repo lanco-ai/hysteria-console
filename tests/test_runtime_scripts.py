@@ -142,6 +142,13 @@ def test_deploy_installs_cost_calibrator_module():
     assert '$HY_DIR/cost_calibrator.py' in deploy
 
 
+def test_deploy_installs_incident_console_module():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'hysteria/incident_console.py' in deploy
+    assert '$HY_DIR/incident_console.py' in deploy
+
+
 def test_deploy_installs_restore_check_script():
     deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
 

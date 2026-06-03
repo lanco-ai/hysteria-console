@@ -21,6 +21,7 @@ import cost_calibrator
 import cycle as cycle_util
 import health
 import http_utils
+import incident_console
 import state_store
 import tuic_config
 import user_compat
@@ -1793,215 +1794,42 @@ def _build_usage_json_payload(*, now):
     }
 
 
-def _last_window_hour_keys(now, hours=24):
-    return [
-        _hour_key(now - timedelta(hours=i))
-        for i in reversed(range(hours))
-    ]
-
-
-def _alert_state_rows(limit=12):
-    labels = {
-        'quota_80': '配额 80%',
-        'quota_100': '配额 100%',
-        'anomaly': '异常用量',
-        'expiry_soon': '即将到期',
-        'expiry_expired': '已过期',
-    }
-    state = alerts.load_state()
-    rows = []
-    for kind, entries in (state or {}).items():
-        if not isinstance(entries, dict):
-            continue
-        for user, key in entries.items():
-            rows.append({
-                'kind': kind,
-                'label': labels.get(kind, kind),
-                'user': str(user),
-                'key': str(key),
-            })
-    rows.sort(key=lambda r: (r['key'], r['kind'], r['user']), reverse=True)
-    return rows[:limit]
-
-
-def _incident_peak_from_hourly(hourly, *, now, hours=24):
-    peak = {'hour': '', 'bytes': 0, 'users': []}
-    for hk in _last_window_hour_keys(now, hours=hours):
-        bucket = hourly.get(hk) or {}
-        raw_total = sum(_entry_total(v) for v in bucket.values())
-        scaled_total = int(raw_total * DISPLAY_MULTIPLIER)
-        if scaled_total >= peak['bytes']:
-            user_rows = [
-                {'user': uid, 'bytes': int(_entry_total(entry) * DISPLAY_MULTIPLIER)}
-                for uid, entry in bucket.items()
-                if _entry_total(entry) > 0
-            ]
-            user_rows.sort(key=lambda r: r['bytes'], reverse=True)
-            peak = {'hour': hk, 'bytes': scaled_total, 'users': user_rows[:8]}
-    return peak
-
-
-def _incident_user_rows(*, now, hourly, daily, users, online, hours=24, limit=8):
-    window_keys = _last_window_hour_keys(now, hours=hours)
-    raw_by_user = {uid: 0 for uid in users}
-    for hk in window_keys:
-        for uid, entry in (hourly.get(hk) or {}).items():
-            if uid in raw_by_user:
-                raw_by_user[uid] += _entry_total(entry)
-
-    rows = []
-    for uid, raw_total in raw_by_user.items():
-        cfg = users.get(uid) or {}
-        _tx, _rx, cycle_raw = _cycle_raw_for_user(uid, daily, now=now)
-        quota = user_total_quota(cfg)
-        expiry = user_expiry_state(cfg, today=now.date())
-        rows.append({
-            'user': uid,
-            'last_24h_bytes': int(raw_total * DISPLAY_MULTIPLIER),
-            'cycle_used_bytes': int(cycle_raw * DISPLAY_MULTIPLIER),
-            'quota_bytes': int(quota),
-            'quota_percent': pct(int(cycle_raw * DISPLAY_MULTIPLIER), quota),
-            'online': int(online.get(uid, 0) or 0),
-            'disabled': bool(cfg.get('disabled')),
-            'expired': bool(expiry['expired']),
-            'expiry_label': expiry['label'],
-            'note': str(cfg.get('note') or ''),
-        })
-    rows.sort(key=lambda r: (r['last_24h_bytes'], r['quota_percent'], r['online']), reverse=True)
-    return rows[:limit]
+def _incident_context():
+    return incident_console.IncidentConsoleContext(
+        alerts=alerts,
+        cost_calibrator=cost_calibrator,
+        display_multiplier=DISPLAY_MULTIPLIER,
+        users_file=USERS_FILE,
+        usage_daily_file=USAGE_DAILY_FILE,
+        usage_hourly_file=USAGE_HOURLY_FILE,
+        online_file=ONLINE_FILE,
+        cost_calibration_file=COST_CALIBRATION_FILE,
+        subscription_profiles=SUBSCRIPTION_PROFILES,
+        load_json=load_json,
+        local_now=local_now,
+        hour_key=_hour_key,
+        entry_total=_entry_total,
+        cycle_raw_for_user=_cycle_raw_for_user,
+        aggregate_stats=_aggregate_stats,
+        user_total_quota=user_total_quota,
+        user_expiry_state=user_expiry_state,
+        pct=pct,
+        fmt_bytes=fmt_bytes,
+        build_line_radar=build_line_radar,
+        render_line_radar=render_line_radar,
+        render_cost_calibrator=render_cost_calibrator,
+        render_alert=render_alert,
+        flash_text=flash_text,
+        render_admin_shell=render_admin_shell,
+    )
 
 
 def build_incident_payload(*, now=None):
-    now = now or local_now()
-    hourly = load_json(USAGE_HOURLY_FILE, {})
-    daily = load_json(USAGE_DAILY_FILE, {})
-    users = load_json(USERS_FILE, {})
-    online = load_json(ONLINE_FILE, {})
-    stats = _aggregate_stats(now=now, online=online)
-    peak = _incident_peak_from_hourly(hourly, now=now)
-    users_rows = _incident_user_rows(
-        now=now, hourly=hourly, daily=daily,
-        users=users, online=online,
-    )
-    radar = build_line_radar(now=now)
-    calibration = cost_calibrator.summarize(
-        COST_CALIBRATION_FILE,
-        current_multiplier=DISPLAY_MULTIPLIER,
-        now=now,
-    )
-    return {
-        'ts': now.isoformat(timespec='seconds'),
-        'stats': stats,
-        'peak_hour': peak,
-        'users': users_rows,
-        'line_radar': radar,
-        'cost_calibration': calibration,
-        'alerts': _alert_state_rows(),
-    }
-
-
-def _incident_status_badges(row):
-    badges = []
-    if row.get('disabled'):
-        badges.append('<span class="badge badge-danger">已停用</span>')
-    if row.get('expired'):
-        badges.append('<span class="badge badge-danger">已过期</span>')
-    if row.get('online', 0) > 0:
-        badges.append(f'<span class="badge">{int(row["online"])} 在线</span>')
-    return ''.join(badges)
+    return incident_console.build_incident_payload(_incident_context(), now=now)
 
 
 def render_incidents(host, flash=''):
-    now = local_now()
-    payload = build_incident_payload(now=now)
-    alert = render_alert(flash_text(flash))
-    peak = payload['peak_hour']
-    radar = payload['line_radar']
-    rec = SUBSCRIPTION_PROFILES.get(radar['recommendation'], SUBSCRIPTION_PROFILES['default'])
-
-    peak_users = ''.join(
-        f'<tr><td>{html.escape(u["user"])}</td><td>{fmt_bytes(u["bytes"])}</td></tr>'
-        for u in peak.get('users') or []
-    ) or '<tr><td colspan="2" class="empty">峰值小时暂无用户流量</td></tr>'
-
-    user_rows = []
-    for row in payload['users']:
-        user_esc = html.escape(row['user'])
-        quota_text = (
-            f'{row["quota_percent"]:.1f}%'
-            if row.get('quota_bytes') else '不限额'
-        )
-        actions = (
-            '<div class="row gap-sm">'
-            '<form method="post" action="/admin/pause-user" class="inline-form-row" data-action="disable-user">'
-            f'<input type="hidden" name="user" value="{user_esc}">'
-            '<input type="hidden" name="minutes" value="60">'
-            '<input type="hidden" name="next" value="/admin/incidents">'
-            '<button class="btn ghost btn-sm" type="submit">暂停 1 小时</button></form>'
-            '<form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token">'
-            f'<input type="hidden" name="user" value="{user_esc}">'
-            '<input type="hidden" name="next" value="/admin/incidents">'
-            '<button class="btn ghost btn-sm" type="submit">轮换 Token</button></form>'
-            f'<a class="btn ghost btn-sm" href="/admin/user/{user_esc}">画像</a>'
-            '</div>'
-        )
-        user_rows.append(
-            '<tr>'
-            f'<td style="padding-left:18px;"><div class="bold">{user_esc}</div>'
-            f'<div class="small faint">{html.escape(row.get("note") or row.get("expiry_label") or "")}</div></td>'
-            f'<td>{fmt_bytes(row["last_24h_bytes"])}</td>'
-            f'<td>{fmt_bytes(row["cycle_used_bytes"])} · {quota_text}</td>'
-            f'<td>{_incident_status_badges(row)}</td>'
-            f'<td style="padding-right:18px;">{actions}</td>'
-            '</tr>'
-        )
-    if not user_rows:
-        user_rows.append('<tr><td colspan="5" class="empty">暂无用户</td></tr>')
-
-    alert_rows = ''.join(
-        '<tr>'
-        f'<td style="padding-left:18px;">{html.escape(a["label"])}</td>'
-        f'<td>{html.escape(a["user"])}</td>'
-        f'<td style="padding-right:18px;"><code>{html.escape(a["key"])}</code></td>'
-        '</tr>'
-        for a in payload['alerts']
-    ) or '<tr><td colspan="3" class="empty">暂无告警状态</td></tr>'
-
-    content = f'''{alert}
-<div class="grid grid-4">
-  <div class="card stat"><div class="k">峰值小时</div><div class="v">{fmt_bytes(peak["bytes"])}</div><div class="small">{html.escape(peak["hour"] or "—")}</div></div>
-  <div class="card stat"><div class="k">当小时</div><div class="v">{fmt_bytes(payload["stats"]["current_hour_bytes"])}</div><div class="small">{payload["stats"]["online"]} 在线</div></div>
-  <div class="card stat"><div class="k">推荐处置</div><div class="v">{html.escape(rec["label"])}</div><div class="small">{html.escape(radar["reason"])}</div></div>
-  <div class="card stat"><div class="k">证据导出</div><a class="btn secondary btn-sm mt-sm" href="/admin/incidents/evidence.json">下载 JSON</a></div>
-</div>
-
-<div class="grid grid-2 mt-md">
-  <div class="card" style="padding:0;overflow:hidden;">
-    <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-      <div class="bold">峰值小时相关用户</div><span class="small">Top {len(peak.get('users') or [])}</span>
-    </div>
-    <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>峰值小时流量</th></tr></thead><tbody>{peak_users}</tbody></table>
-  </div>
-  <div class="card" style="padding:0;overflow:hidden;">
-    <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-      <div class="bold">近期告警状态</div><span class="small">去重状态</span>
-    </div>
-    <table class="table"><thead><tr><th style="padding-left:18px;">类型</th><th>用户</th><th style="padding-right:18px;">键</th></tr></thead><tbody>{alert_rows}</tbody></table>
-  </div>
-</div>
-
-<div class="card mt-md" style="padding:0;overflow:hidden;">
-  <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-    <div class="bold">处置候选用户</div>
-    <div class="small">按近 24 小时流量排序；暂停/轮换会复用现有安全动作</div>
-  </div>
-  <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>24h 流量</th><th>周期用量</th><th>状态</th><th style="padding-right:18px;">操作</th></tr></thead><tbody>{''.join(user_rows)}</tbody></table>
-</div>
-
-{render_line_radar(now=now)}
-{render_cost_calibrator(now=now)}'''
-    return render_admin_shell('incidents', '事故处理', content,
-                              badge=host, subtitle='峰值 · 用户 · 证据')
+    return incident_console.render_incidents(_incident_context(), host, flash=flash)
 
 
 def _build_user_json_payload(uid, *, now):

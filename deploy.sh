@@ -121,6 +121,7 @@ render "$REPO_DIR/hysteria/cost_calibrator.py"       "$HY_DIR/cost_calibrator.py
 render "$REPO_DIR/hysteria/cycle.py"                 "$HY_DIR/cycle.py"
 render "$REPO_DIR/hysteria/health.py"                "$HY_DIR/health.py"
 render "$REPO_DIR/hysteria/http_utils.py"            "$HY_DIR/http_utils.py"
+render "$REPO_DIR/hysteria/incident_console.py"      "$HY_DIR/incident_console.py"
 render "$REPO_DIR/hysteria/state_store.py"           "$HY_DIR/state_store.py"
 render "$REPO_DIR/hysteria/xray_config.py"           "$HY_DIR/xray_config.py"
 render "$REPO_DIR/hysteria/tuic_config.py"           "$HY_DIR/tuic_config.py"
