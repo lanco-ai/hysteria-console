@@ -77,11 +77,59 @@ def _rule_comments(ruleset):
         rule = item.get("rule")
         if not rule or rule.get("family") != NFT_FAMILY or rule.get("table") != NFT_TABLE:
             continue
+        if rule.get("comment"):
+            found.add(rule["comment"])
         for expr in rule.get("expr") or []:
             comment = expr.get("comment")
             if comment:
                 found.add(comment)
     return found
+
+
+def _rule_comment_set(rule):
+    comments = set()
+    if (rule or {}).get("comment"):
+        comments.add(rule["comment"])
+    for expr in (rule or {}).get("expr") or []:
+        if expr.get("comment"):
+            comments.add(expr["comment"])
+    return comments
+
+
+def _rule_counter_bytes(rule):
+    for expr in (rule or {}).get("expr") or []:
+        counter = expr.get("counter")
+        if counter:
+            return int(counter.get("bytes", 0) or 0)
+    return 0
+
+
+def _delete_duplicate_counters(ruleset, wanted_comments):
+    for comment in wanted_comments:
+        matches = []
+        for item in (ruleset or {}).get("nftables", []):
+            rule = item.get("rule")
+            if not rule or rule.get("family") != NFT_FAMILY or rule.get("table") != NFT_TABLE:
+                continue
+            if comment not in _rule_comment_set(rule):
+                continue
+            handle = rule.get("handle")
+            chain = rule.get("chain")
+            if handle is None or not chain:
+                continue
+            matches.append({
+                "chain": chain,
+                "handle": int(handle),
+                "bytes": _rule_counter_bytes(rule),
+            })
+        if len(matches) <= 1:
+            continue
+        matches.sort(key=lambda row: row["bytes"], reverse=True)
+        for row in matches[1:]:
+            _nft([
+                "delete", "rule", NFT_FAMILY, NFT_TABLE,
+                row["chain"], "handle", str(row["handle"]),
+            ], check=False)
 
 
 def _ensure_chain(name, hook):
@@ -99,9 +147,10 @@ def ensure_nft_counters(port):
     _nft(["add", "table", NFT_FAMILY, NFT_TABLE], check=False)
     _ensure_chain(NFT_INPUT_CHAIN, "input")
     _ensure_chain(NFT_OUTPUT_CHAIN, "output")
-    ruleset = _nft_json(["list", "ruleset"])
+    ruleset = _nft_json(["-a", "list", "ruleset"])
     comments = _rule_comments(ruleset)
     wanted = _counter_comments(port)
+    _delete_duplicate_counters(ruleset, wanted.values())
     if wanted["rx"] not in comments:
         _nft([
             "add", "rule", NFT_FAMILY, NFT_TABLE, NFT_INPUT_CHAIN,
@@ -122,11 +171,7 @@ def extract_counters(ruleset, port):
         if not rule or rule.get("family") != NFT_FAMILY or rule.get("table") != NFT_TABLE:
             continue
         exprs = rule.get("expr") or []
-        rule_comments = {
-            expr.get("comment")
-            for expr in exprs
-            if expr.get("comment")
-        }
+        rule_comments = _rule_comment_set(rule)
         counter = next((expr.get("counter") for expr in exprs if expr.get("counter")), None)
         if not counter:
             continue

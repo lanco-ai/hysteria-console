@@ -17,22 +17,22 @@ def test_extract_counters_from_nft_ruleset():
                 'family': 'inet',
                 'table': tm.NFT_TABLE,
                 'chain': tm.NFT_INPUT_CHAIN,
+                'comment': 'hy2_tuic_rx_9443',
                 'expr': [
                     {'match': {'left': {'payload': {'protocol': 'udp', 'field': 'dport'}},
                                'op': '==', 'right': 9443}},
                     {'counter': {'packets': 2, 'bytes': 1200}},
-                    {'comment': 'hy2_tuic_rx_9443'},
                 ],
             }},
             {'rule': {
                 'family': 'inet',
                 'table': tm.NFT_TABLE,
                 'chain': tm.NFT_OUTPUT_CHAIN,
+                'comment': 'hy2_tuic_tx_9443',
                 'expr': [
                     {'match': {'left': {'payload': {'protocol': 'udp', 'field': 'sport'}},
                                'op': '==', 'right': 9443}},
                     {'counter': {'packets': 3, 'bytes': 2400}},
-                    {'comment': 'hy2_tuic_tx_9443'},
                 ],
             }},
         ],
@@ -56,3 +56,28 @@ def test_get_tuic_traffic_baselines_then_returns_delta(tmp_path, monkeypatch):
 
     assert first == {'rx': 0, 'tx': 0, 'total': 0}
     assert second == {'rx': 500, 'tx': 600, 'total': 1100}
+
+
+def test_duplicate_counter_cleanup_keeps_largest_counter(monkeypatch):
+    ruleset = {
+        'nftables': [
+            {'rule': {'family': 'inet', 'table': tm.NFT_TABLE, 'chain': tm.NFT_INPUT_CHAIN,
+                      'handle': 3, 'comment': 'hy2_tuic_rx_9443',
+                      'expr': [{'counter': {'bytes': 100}}]}},
+            {'rule': {'family': 'inet', 'table': tm.NFT_TABLE, 'chain': tm.NFT_INPUT_CHAIN,
+                      'handle': 5, 'comment': 'hy2_tuic_rx_9443',
+                      'expr': [{'counter': {'bytes': 300}}]}},
+            {'rule': {'family': 'inet', 'table': tm.NFT_TABLE, 'chain': tm.NFT_INPUT_CHAIN,
+                      'handle': 7, 'comment': 'hy2_tuic_rx_9443',
+                      'expr': [{'counter': {'bytes': 200}}]}},
+        ],
+    }
+    calls = []
+    monkeypatch.setattr(tm, '_nft', lambda args, check=True: calls.append(args))
+
+    tm._delete_duplicate_counters(ruleset, ['hy2_tuic_rx_9443'])
+
+    assert calls == [
+        ['delete', 'rule', 'inet', tm.NFT_TABLE, tm.NFT_INPUT_CHAIN, 'handle', '7'],
+        ['delete', 'rule', 'inet', tm.NFT_TABLE, tm.NFT_INPUT_CHAIN, 'handle', '3'],
+    ]
