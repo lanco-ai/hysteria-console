@@ -85,6 +85,14 @@ sudo ./deploy.sh
 | `XRAY_REALITY_SHORT_ID` | `openssl rand -hex 8` |
 | `XRAY_CLIENT_UUID` | `xray uuid` (or `uuidgen`) |
 
+### Optional `.env` keys
+
+| Key | Default | Notes |
+|---|---:|---|
+| `HY_DISPLAY_MULTIPLIER` | `2.28` | Display/billing multiplier applied to raw Hysteria/Xray/TUIC traffic counters. Keep it aligned with your provider accounting. Valid range: `0.1`-`20.0`. |
+| `HY_ENABLE_HTTPS` | `0` | Set to `1` only when `HY_SERVER_HOST` is a real DNS name pointed at this VPS. |
+| `HY_CERTBOT_EMAIL` | empty | Required when `HY_ENABLE_HTTPS=1`. |
+
 ## Admin panel
 
 After deploy:
@@ -190,6 +198,15 @@ Drop a `/root/hysteria/alerts.json` (chmod 600) to enable Telegram / webhook ale
 - Webhook payloads are HMAC-SHA256 signed via `X-Hy2-Signature: sha256=<hex>` when `secret` is set
 
 If the file is absent, the dispatcher is a no-op. Live infra heartbeat at `/admin/health` (6 cards: cron pulse / hysteria / xray / disk / TLS cert / online users, auto-refreshes every 30s).
+
+## Development
+
+For local test runs:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest -q
+```
 
 ## License
 

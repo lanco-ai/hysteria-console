@@ -42,3 +42,12 @@ def test_nginx_template_and_deploy_render_server_host():
 
     assert 'server_name __HY_SERVER_HOST__ _;' in conf
     assert 'render "$REPO_DIR/nginx/hysteria-panel.conf"' in deploy
+
+
+def test_deploy_renders_display_multiplier():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+    env_example = (ROOT / '.env.example').read_text(encoding='utf-8')
+
+    assert 'HY_DISPLAY_MULTIPLIER="${HY_DISPLAY_MULTIPLIER:-2.28}"' in deploy
+    assert '__HY_DISPLAY_MULTIPLIER__|${HY_DISPLAY_MULTIPLIER}' in deploy
+    assert 'HY_DISPLAY_MULTIPLIER=2.28' in env_example

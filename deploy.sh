@@ -36,6 +36,19 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
 apt-get install -y curl openssl iptables ca-certificates python3 python3-yaml nginx qrencode >/dev/null
 
+HY_DISPLAY_MULTIPLIER="${HY_DISPLAY_MULTIPLIER:-2.28}"
+python3 - "$HY_DISPLAY_MULTIPLIER" <<'PY'
+import sys
+
+raw = sys.argv[1]
+try:
+    value = float(raw)
+except ValueError:
+    raise SystemExit("HY_DISPLAY_MULTIPLIER must be a number")
+if not (0.1 <= value <= 20.0):
+    raise SystemExit("HY_DISPLAY_MULTIPLIER must be between 0.1 and 20.0")
+PY
+
 # ---------- 3. Install hysteria binary ----------
 if ! command -v hysteria >/dev/null 2>&1; then
   log "Installing hysteria..."
@@ -77,6 +90,7 @@ render() {
     -e "s|__HY_API_SECRET__|${HY_API_SECRET}|g" \
     -e "s|__HY_OBFS_PASSWORD__|${HY_OBFS_PASSWORD}|g" \
     -e "s|__HY_SERVER_HOST__|${HY_SERVER_HOST}|g" \
+    -e "s|__HY_DISPLAY_MULTIPLIER__|${HY_DISPLAY_MULTIPLIER}|g" \
     -e "s|__XRAY_REALITY_PRIVATE_KEY__|${XRAY_REALITY_PRIVATE_KEY}|g" \
     -e "s|__XRAY_REALITY_PUBLIC_KEY__|${XRAY_REALITY_PUBLIC_KEY}|g" \
     -e "s|__XRAY_REALITY_SHORT_ID__|${XRAY_REALITY_SHORT_ID}|g" \

@@ -85,6 +85,14 @@ sudo ./deploy.sh
 | `XRAY_REALITY_SHORT_ID` | `openssl rand -hex 8` |
 | `XRAY_CLIENT_UUID` | `xray uuid`（或 `uuidgen`） |
 
+### `.env` 可选项
+
+| 变量 | 默认值 | 说明 |
+|---|---:|---|
+| `HY_DISPLAY_MULTIPLIER` | `2.28` | 作用于 Hysteria/Xray/TUIC 原始流量计数的展示/计费倍率。请按服务商实际账单校准。合法范围：`0.1`-`20.0`。 |
+| `HY_ENABLE_HTTPS` | `0` | 只有当 `HY_SERVER_HOST` 是已解析到本机的真实域名时才设为 `1`。 |
+| `HY_CERTBOT_EMAIL` | 空 | `HY_ENABLE_HTTPS=1` 时必填。 |
+
 ## 管理面板
 
 部署完成后：
@@ -190,6 +198,15 @@ sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
 - webhook 带 `secret` 时附 `X-Hy2-Signature: sha256=<hmac>` 头
 
 文件不存在时告警通道静默关闭。基础设施健康状态见 `/admin/health`（cron 心跳 / hysteria / xray / 磁盘 / TLS 证书 / 在线用户 6 张卡，30 秒自动刷新）。
+
+## 开发
+
+本地跑测试：
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m pytest -q
+```
 
 ## 许可
 

@@ -45,6 +45,7 @@ TEMPLATE_FILE = Path('/root/hysteria/template.yaml')
 SESSIONS_FILE = Path('/root/hysteria/state/panel_sessions.json')
 RESET_LOG_FILE = Path('/root/hysteria/state/usage_reset.log')
 USAGE_LOCK_FILE = Path('/root/hysteria/state/usage.lock')
+TEMPLATE_LOCK_FILE = Path('/root/hysteria/state/template.lock')
 HY_API_BASE = 'http://127.0.0.1:25413'
 HY_API_SECRET_FILE = '/root/hysteria/api_secret'
 HY_API_SECRET_PLACEHOLDER = '__HY_API_SECRET__'
@@ -116,6 +117,12 @@ def save_text_atomic(path, text):
 @contextmanager
 def usage_lock():
     with state_store.file_lock(USAGE_LOCK_FILE):
+        yield
+
+
+@contextmanager
+def template_lock():
+    with state_store.file_lock(TEMPLATE_LOCK_FILE):
         yield
 
 
@@ -1954,6 +1961,11 @@ def save_template_config(data):
     save_text_atomic(TEMPLATE_FILE, _dump_yaml(data))
 
 
+def replace_template_config(data):
+    with template_lock():
+        save_template_config(data)
+
+
 _CONFIG_FLASH = {
     'saved': '模板已保存，所有用户下次拉订阅将使用新配置',
     'invalid_json': 'JSON 格式错误，请检查语法',
@@ -2061,6 +2073,28 @@ def save_template_rules(rules):
         cut = start - 1 if start > 0 and lines[start - 1].startswith('#') else start
         result = lines[:cut] + new_rule_lines + lines[end:]
     save_text_atomic(TEMPLATE_FILE, '\n'.join(result) + ('\n' if not result[-1].endswith('\n') else ''))
+
+
+def add_template_rule(rule_str):
+    with template_lock():
+        rules = load_template_rules()
+        rules.insert(0, rule_str)
+        save_template_rules(rules)
+
+
+def delete_template_rule(index):
+    with template_lock():
+        rules = load_template_rules()
+        if index < 0 or index >= len(rules):
+            return False
+        rules.pop(index)
+        save_template_rules(rules)
+        return True
+
+
+def replace_template_rules(rules):
+    with template_lock():
+        save_template_rules(rules)
 
 
 def _parse_clash_rule(rule_str):
@@ -2891,7 +2925,7 @@ class Handler(BaseHTTPRequestHandler):
             except (json.JSONDecodeError, ValueError):
                 self.redirect('/admin/config?msg=err:invalid_json')
                 return
-            save_template_config(data)
+            replace_template_config(data)
             self.redirect('/admin/config?msg=saved')
             return
 
@@ -2912,9 +2946,7 @@ class Handler(BaseHTTPRequestHandler):
             rule_str = f'{rule_type},{pattern},{action}'
             if extra:
                 rule_str += f',{extra}'
-            rules = load_template_rules()
-            rules.insert(0, rule_str)
-            save_template_rules(rules)
+            add_template_rule(rule_str)
             self.redirect('/admin/rules?msg=rule_added')
             return
 
@@ -2927,12 +2959,9 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, IndexError):
                 self.redirect('/admin/rules?msg=err:invalid_index')
                 return
-            rules = load_template_rules()
-            if idx < 0 or idx >= len(rules):
+            if not delete_template_rule(idx):
                 self.redirect('/admin/rules?msg=err:index_out_of_range')
                 return
-            rules.pop(idx)
-            save_template_rules(rules)
             self.redirect('/admin/rules?msg=rule_deleted')
             return
 
@@ -2945,7 +2974,7 @@ class Handler(BaseHTTPRequestHandler):
             if not rules:
                 self.redirect('/admin/rules?msg=err:raw_empty')
                 return
-            save_template_rules(rules)
+            replace_template_rules(rules)
             self.redirect('/admin/rules?msg=raw_saved')
             return
 
