@@ -100,7 +100,8 @@ sudo ./deploy.sh
 - **管理后台** —— `http://<server>/admin` —— 在 `/login` 登录。管理员密码**不是**通过首次访问的表单设置的。首次部署时请在 `subscription_meta.json` 写入明文 `admin_pass`，下次启动会自动迁移为加盐的 PBKDF2 `admin_pass_hash` 并删除明文；若未配置任何密码，则会随机生成一个，并写入仅 root 可读的文件 `admin_initial_password.txt`（与 `subscription_meta.json` 同目录，权限 0600），你可读取后登录、轮换，再删除该文件。随时可在 `/admin/settings` 轮换密码——轮换会注销其它所有会话，同时保持当前设备登录。
 - **创建用户** —— 在面板里点一下，立即得到订阅链接 `http://<host>/sub/<name>?token=<token>`。
 - **用户操作** —— 每个用户行可编辑套餐、设置到期日、添加加量包、保留运营备注、清/刷流量、**重置订阅令牌**（泄露时一键作废旧链接）、**暂停/启用**（不删号临时停用：拒绝新连接、移除 xray 入站并断开现有会话），以及删除。过期用户会被认证拒绝，并从 Xray/TUIC 静态用户计划里移除，续费后恢复。
-- **用户面板** —— `http://<server>/panel/<user>?token=<token>` —— 单用户的流量与设备统计，含配额重置倒计时、近 30 天用量趋势、订阅/面板链接一键复制，并每 10 秒自动刷新用量（标签页隐藏时暂停）。
+- **用户面板** —— `http://<server>/panel/<user>?token=<token>` —— 单用户的流量与设备统计，含配额重置倒计时、近 30 天用量趋势、订阅/面板链接一键复制、多 profile 订阅导出，并每 10 秒自动刷新用量（标签页隐藏时暂停）。
+- **订阅 profile** —— `/sub/<user>?token=...` 可追加 `profile=game|work|lowdata|safe`。`game` 优先 UDP/低延迟，`work` 优先 TCP 与备用线路稳定性，`lowdata` 未命中规则的流量直连省流，`safe` 除局域网/私有地址外尽量全代理。不传 `profile` 时保持后台共享模板原样。
 - **模板配置** —— 在线编辑全局 Clash YAML 模板（JSON 视图，带语法校验、格式化、折叠/展开）。
 - **路由规则** —— 增删改 proxy/direct/reject 规则，与模板实时同步。
 - **清零日志** —— 每一次流量清零的完整审计记录。

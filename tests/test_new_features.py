@@ -18,6 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+import yaml
 
 import subscription_service as ss
 
@@ -397,6 +398,91 @@ def test_admin_row_shows_expiry_extra_and_note(tmp_path, monkeypatch):
     assert 'name="quota_extra_gb"' in row
     assert 'name="expires_at"' in row
     assert 'name="note"' in row
+
+
+def _seed_profile_template(tmp_path, monkeypatch):
+    template = Path(ss.__file__).resolve().parent / 'clash-default.yaml.tpl'
+    users_file = tmp_path / 'users.json'
+    users_file.write_text(json.dumps({'alice': {'vless_uuid': '11111111-1111-1111-1111-111111111111'}}))
+    monkeypatch.setattr(ss, 'TEMPLATE_FILE', template)
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+
+def _profile_cfg(tmp_path, monkeypatch, profile):
+    _seed_profile_template(tmp_path, monkeypatch)
+    text = ss.build_yaml('alice', 'tok', profile=profile)
+    return yaml.safe_load(text)
+
+
+def _groups(cfg):
+    return {group['name']: group for group in cfg['proxy-groups']}
+
+
+def test_subscription_profile_normalization():
+    assert ss.normalize_subscription_profile('game') == 'game'
+    assert ss.normalize_subscription_profile('low-data') == 'lowdata'
+    assert ss.normalize_subscription_profile('GLOBAL') == 'safe'
+    assert ss.normalize_subscription_profile('unknown') == 'default'
+
+
+def test_build_yaml_game_profile_prefers_udp_and_injects_credentials(tmp_path, monkeypatch):
+    cfg = _profile_cfg(tmp_path, monkeypatch, 'game')
+    groups = _groups(cfg)
+
+    assert cfg['proxies'][0]['password'] == 'alice:tok'
+    assert any(proxy.get('uuid') == '11111111-1111-1111-1111-111111111111'
+               for proxy in cfg['proxies'])
+    assert groups[ss.NODE_GROUP]['proxies'][:2] == [ss.HY2_UDP_PROXY, ss.TUIC_UDP_PROXY]
+    assert groups[ss.AUTO_GROUP]['type'] == 'url-test'
+    assert groups[ss.AUTO_GROUP]['timeout'] == 2500
+    assert f'DOMAIN-SUFFIX,steamcommunity.com,{ss.NODE_GROUP}' in cfg['rules'][:4]
+
+
+def test_build_yaml_work_profile_prefers_stable_tcp(tmp_path, monkeypatch):
+    cfg = _profile_cfg(tmp_path, monkeypatch, 'work')
+    groups = _groups(cfg)
+
+    assert groups[ss.NODE_GROUP]['proxies'][:4] == [
+        ss.GITHUB_GROUP, ss.AUTO_GROUP, ss.VLESS_TCP_PROXY, ss.VLESS_BACKUP_PROXY,
+    ]
+    assert groups[ss.AUTO_GROUP]['type'] == 'fallback'
+    assert groups[ss.AUTO_GROUP]['proxies'][:2] == [ss.VLESS_TCP_PROXY, ss.VLESS_BACKUP_PROXY]
+    assert f'DOMAIN-SUFFIX,slack.com,{ss.NODE_GROUP}' in cfg['rules'][:4]
+
+
+def test_build_yaml_lowdata_profile_routes_unknown_direct(tmp_path, monkeypatch):
+    cfg = _profile_cfg(tmp_path, monkeypatch, 'lowdata')
+    groups = _groups(cfg)
+
+    assert cfg['log-level'] == 'warning'
+    assert groups[ss.NODE_GROUP]['proxies'][0] == 'DIRECT'
+    assert cfg['rules'][-1] == 'MATCH,DIRECT'
+
+
+def test_build_yaml_safe_profile_proxies_cn_but_keeps_lan_direct(tmp_path, monkeypatch):
+    cfg = _profile_cfg(tmp_path, monkeypatch, 'safe')
+
+    assert 'RULE-SET,lancidr,DIRECT,no-resolve' in cfg['rules']
+    assert f'RULE-SET,cncidr,{ss.NODE_GROUP},no-resolve' in cfg['rules']
+    assert f'GEOIP,CN,{ss.NODE_GROUP}' in cfg['rules']
+    assert cfg['rules'][-1] == f'MATCH,{ss.NODE_GROUP}'
+
+
+def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    (tmp_path / 'users.json').write_text(json.dumps({'alice': {'sub_token': 'tok'}}))
+    monkeypatch.setattr(ss, 'render_qr_svg', lambda *a, **k: '')
+
+    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok',
+                                {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2})
+
+    assert '订阅模式' in page
+    assert 'http://h/sub/alice?token=tok&amp;profile=game' in page
+    assert 'http://h/sub/alice?token=tok&amp;profile=work' in page
+    assert 'http://h/sub/alice?token=tok&amp;profile=lowdata' in page
+    assert 'http://h/sub/alice?token=tok&amp;profile=safe' in page
 
 
 def test_admin_poll_js_confirms_destructive_admin_actions():
