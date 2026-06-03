@@ -66,8 +66,8 @@ def _nft_json(args):
 
 def _counter_comments(port):
     return {
-        "rx": f"hy2-tuic-rx:{int(port)}",
-        "tx": f"hy2-tuic-tx:{int(port)}",
+        "rx": f"hy2_tuic_rx_{int(port)}",
+        "tx": f"hy2_tuic_tx_{int(port)}",
     }
 
 

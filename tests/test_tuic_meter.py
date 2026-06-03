@@ -21,7 +21,7 @@ def test_extract_counters_from_nft_ruleset():
                     {'match': {'left': {'payload': {'protocol': 'udp', 'field': 'dport'}},
                                'op': '==', 'right': 9443}},
                     {'counter': {'packets': 2, 'bytes': 1200}},
-                    {'comment': 'hy2-tuic-rx:9443'},
+                    {'comment': 'hy2_tuic_rx_9443'},
                 ],
             }},
             {'rule': {
@@ -32,7 +32,7 @@ def test_extract_counters_from_nft_ruleset():
                     {'match': {'left': {'payload': {'protocol': 'udp', 'field': 'sport'}},
                                'op': '==', 'right': 9443}},
                     {'counter': {'packets': 3, 'bytes': 2400}},
-                    {'comment': 'hy2-tuic-tx:9443'},
+                    {'comment': 'hy2_tuic_tx_9443'},
                 ],
             }},
         ],
