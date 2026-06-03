@@ -12,13 +12,11 @@ from datetime import timedelta
 @dataclass(frozen=True)
 class IncidentConsoleContext:
     alerts: object
-    cost_calibrator: object
     display_multiplier: float
     users_file: object
     usage_daily_file: object
     usage_hourly_file: object
     online_file: object
-    cost_calibration_file: object
     subscription_profiles: dict
     load_json: object
     local_now: object
@@ -31,6 +29,7 @@ class IncidentConsoleContext:
     pct: object
     fmt_bytes: object
     build_line_radar: object
+    summarize_cost_calibration: object
     render_line_radar: object
     render_cost_calibrator: object
     render_alert: object
@@ -132,11 +131,7 @@ def build_incident_payload(ctx, *, now=None):
         users=users, online=online,
     )
     radar = ctx.build_line_radar(now=now)
-    calibration = ctx.cost_calibrator.summarize(
-        ctx.cost_calibration_file,
-        current_multiplier=ctx.display_multiplier,
-        now=now,
-    )
+    calibration = ctx.summarize_cost_calibration(now=now)
     return {
         'ts': now.isoformat(timespec='seconds'),
         'stats': stats,

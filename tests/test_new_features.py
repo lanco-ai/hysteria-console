@@ -531,6 +531,13 @@ def test_line_radar_recommends_game_when_hysteria_dominates(tmp_path, monkeypatc
     assert '暂不可计量' in html_out
 
 
+def test_health_widget_logic_lives_in_dedicated_module():
+    import health_widgets
+
+    assert health_widgets.build_line_radar.__module__ == 'health_widgets'
+    assert health_widgets.render_cost_calibrator.__module__ == 'health_widgets'
+
+
 def _seed_incident_console(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
