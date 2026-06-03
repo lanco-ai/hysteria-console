@@ -25,6 +25,7 @@ USERS_FILE = "/root/hysteria/users.json"
 USAGE_FILE = "/root/hysteria/state/usage.json"
 USAGE_DAILY_FILE = "/root/hysteria/state/usage_daily.json"
 USAGE_HOURLY_FILE = "/root/hysteria/state/usage_hourly.json"
+PROTOCOL_USAGE_HOURLY_FILE = "/root/hysteria/state/protocol_usage_hourly.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 RESET_STATE_FILE = "/root/hysteria/state/auto_reset_state.json"
 RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
@@ -284,6 +285,16 @@ def prune_hourly(hourly, now):
             del hourly[k]
 
 
+def traffic_totals(traffic):
+    total = {"tx": 0, "rx": 0, "total": 0}
+    for stat in (traffic or {}).values():
+        entry = normalize_usage_entry(stat)
+        total["tx"] += entry["tx"]
+        total["rx"] += entry["rx"]
+        total["total"] += entry["total"]
+    return total
+
+
 def accumulate_daily(traffic, now):
     """Returns the post-write daily dict so the caller can reuse it for
     cycle-quota math without re-reading the file we just persisted."""
@@ -322,6 +333,30 @@ def accumulate_hourly(traffic, now):
         hourly[hour_key][uid] = cur
     prune_hourly(hourly, now)
     save_json(USAGE_HOURLY_FILE, hourly)
+
+
+def accumulate_protocol_hourly(protocol_traffic, now):
+    """Track raw traffic by source protocol for the line-quality radar.
+
+    The main usage files stay user-centric. This sidecar keeps only aggregate
+    hourly buckets like {"2026-06-03T15": {"hysteria": {...}, "xray": {...}}}
+    so it is compact and independent of quota accounting.
+    """
+    hour_key = now.strftime("%Y-%m-%dT%H")
+    hourly = load_json(PROTOCOL_USAGE_HOURLY_FILE, {})
+    hourly.setdefault(hour_key, {})
+    for proto, traffic in (protocol_traffic or {}).items():
+        if not traffic:
+            continue
+        cur = normalize_usage_entry(hourly[hour_key].get(proto, 0))
+        delta = traffic_totals(traffic)
+        cur["tx"] += delta["tx"]
+        cur["rx"] += delta["rx"]
+        cur["total"] += delta["total"]
+        hourly[hour_key][proto] = cur
+    prune_hourly(hourly, now)
+    save_json(PROTOCOL_USAGE_HOURLY_FILE, hourly)
+    return hourly
 
 
 def _fmt_bytes(n):
@@ -428,7 +463,8 @@ def main():
     # delta we got and try the other source again next tick. The previous
     # implementation let exceptions propagate, which silently froze stats
     # for the entire window of any hysteria/xray hiccup.
-    traffic = get("/traffic?clear=1") or {}
+    hysteria_delta = get("/traffic?clear=1") or {}
+    traffic = dict(hysteria_delta)
     xray_delta = get_xray_traffic()
     if xray_delta:
         merge_traffic(traffic, xray_delta)
@@ -452,6 +488,10 @@ def main():
         save_json(USAGE_FILE, usage)
         daily = accumulate_daily(traffic, now)
         accumulate_hourly(traffic, now)
+        accumulate_protocol_hourly({
+            "hysteria": hysteria_delta,
+            "xray": xray_delta,
+        }, now)
 
     online_resp = get("/online")
     if online_resp is None:

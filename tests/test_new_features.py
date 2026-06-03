@@ -485,6 +485,52 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     assert 'http://h/sub/alice?token=tok&amp;profile=safe' in page
 
 
+def test_protocol_hourly_accumulator_records_source_totals(tmp_path, monkeypatch):
+    import traffic_limiter as tl
+    path = tmp_path / 'protocol_usage_hourly.json'
+    monkeypatch.setattr(tl, 'PROTOCOL_USAGE_HOURLY_FILE', str(path))
+    now = datetime(2026, 6, 3, 15, 5, tzinfo=SH)
+
+    tl.accumulate_protocol_hourly({
+        'hysteria': {'alice': {'tx': 10, 'rx': 20}},
+        'xray': {'alice': {'tx': 3, 'rx': 4}, 'bob': {'tx': 5, 'rx': 6}},
+    }, now)
+
+    data = json.loads(path.read_text())
+    bucket = data['2026-06-03T15']
+    assert bucket['hysteria'] == {'tx': 10, 'rx': 20, 'total': 30}
+    assert bucket['xray'] == {'tx': 8, 'rx': 10, 'total': 18}
+
+
+def test_line_radar_recommends_game_when_hysteria_dominates(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'PROTOCOL_USAGE_HOURLY_FILE', tmp_path / 'protocol_usage_hourly.json')
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    now = datetime(2026, 6, 3, 15, 5, tzinfo=SH)
+    (tmp_path / 'protocol_usage_hourly.json').write_text(json.dumps({
+        '2026-06-03T15': {
+            'hysteria': {'tx': 1000, 'rx': 1000, 'total': 2000},
+            'xray': {'tx': 100, 'rx': 100, 'total': 200},
+        }
+    }))
+    (tmp_path / 'users.json').write_text(json.dumps({
+        'alice': {'vless_uuid': 'uuid-A'},
+        'bob': {'disabled': True, 'vless_uuid': 'uuid-B'},
+    }))
+    (tmp_path / 'online.json').write_text(json.dumps({'alice': 2}))
+    monkeypatch.setattr(ss, 'probe_systemd', lambda unit: {'ok': True, 'label': 'active'})
+
+    radar = ss.build_line_radar(now=now)
+    html_out = ss.render_line_radar(now=now)
+
+    assert radar['recommendation'] == 'game'
+    assert radar['rows'][0]['active_users'] == 1
+    assert radar['rows'][0]['online'] == 2
+    assert '线路质量雷达' in html_out
+    assert '推荐：游戏' in html_out
+    assert '暂不可计量' in html_out
+
+
 def test_admin_poll_js_confirms_destructive_admin_actions():
     text = (Path(ss.__file__).resolve().parent / 'admin_poll.js').read_text(encoding='utf-8')
     assert "f.dataset.action==='rotate-user-token'" in text
