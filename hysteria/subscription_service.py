@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urlparse
 
 USERS_FILE = Path('/root/hysteria/users.json')
 USAGE_FILE = Path('/root/hysteria/state/usage.json')
@@ -951,6 +951,7 @@ def back_to_admin(label='返回管理后台'):
 _SIDEBAR_NAV = [
     ('dashboard', '/admin', '总览', 'dashboard'),
     ('usage', '/admin/usage', '流量分析', 'chart'),
+    ('incidents', '/admin/incidents', '事故处理', 'pulse'),
     ('health', '/admin/health', '健康状态', 'pulse'),
     ('config', '/admin/config', '模板配置', 'config'),
     ('rules', '/admin/rules', '路由规则', 'rules'),
@@ -1030,6 +1031,8 @@ def flash_text(msg):
         return f'已重置订阅令牌（旧链接已失效）：{msg.split(" ", 1)[1]}'
     if msg.startswith('disabled '):
         return f'已停用用户（已断开连接）：{msg.split(" ", 1)[1]}'
+    if msg.startswith('paused '):
+        return f'已暂停用户 1 小时（已断开连接）：{msg.split(" ", 1)[1]}'
     if msg.startswith('enabled '):
         return f'已启用用户：{msg.split(" ", 1)[1]}'
     if msg.startswith('settlement '):
@@ -1788,6 +1791,217 @@ def _build_usage_json_payload(*, now):
         "heatmap": grid,
         "top_n": top,
     }
+
+
+def _last_window_hour_keys(now, hours=24):
+    return [
+        _hour_key(now - timedelta(hours=i))
+        for i in reversed(range(hours))
+    ]
+
+
+def _alert_state_rows(limit=12):
+    labels = {
+        'quota_80': '配额 80%',
+        'quota_100': '配额 100%',
+        'anomaly': '异常用量',
+        'expiry_soon': '即将到期',
+        'expiry_expired': '已过期',
+    }
+    state = alerts.load_state()
+    rows = []
+    for kind, entries in (state or {}).items():
+        if not isinstance(entries, dict):
+            continue
+        for user, key in entries.items():
+            rows.append({
+                'kind': kind,
+                'label': labels.get(kind, kind),
+                'user': str(user),
+                'key': str(key),
+            })
+    rows.sort(key=lambda r: (r['key'], r['kind'], r['user']), reverse=True)
+    return rows[:limit]
+
+
+def _incident_peak_from_hourly(hourly, *, now, hours=24):
+    peak = {'hour': '', 'bytes': 0, 'users': []}
+    for hk in _last_window_hour_keys(now, hours=hours):
+        bucket = hourly.get(hk) or {}
+        raw_total = sum(_entry_total(v) for v in bucket.values())
+        scaled_total = int(raw_total * DISPLAY_MULTIPLIER)
+        if scaled_total >= peak['bytes']:
+            user_rows = [
+                {'user': uid, 'bytes': int(_entry_total(entry) * DISPLAY_MULTIPLIER)}
+                for uid, entry in bucket.items()
+                if _entry_total(entry) > 0
+            ]
+            user_rows.sort(key=lambda r: r['bytes'], reverse=True)
+            peak = {'hour': hk, 'bytes': scaled_total, 'users': user_rows[:8]}
+    return peak
+
+
+def _incident_user_rows(*, now, hourly, daily, users, online, hours=24, limit=8):
+    window_keys = _last_window_hour_keys(now, hours=hours)
+    raw_by_user = {uid: 0 for uid in users}
+    for hk in window_keys:
+        for uid, entry in (hourly.get(hk) or {}).items():
+            if uid in raw_by_user:
+                raw_by_user[uid] += _entry_total(entry)
+
+    rows = []
+    for uid, raw_total in raw_by_user.items():
+        cfg = users.get(uid) or {}
+        _tx, _rx, cycle_raw = _cycle_raw_for_user(uid, daily, now=now)
+        quota = user_total_quota(cfg)
+        expiry = user_expiry_state(cfg, today=now.date())
+        rows.append({
+            'user': uid,
+            'last_24h_bytes': int(raw_total * DISPLAY_MULTIPLIER),
+            'cycle_used_bytes': int(cycle_raw * DISPLAY_MULTIPLIER),
+            'quota_bytes': int(quota),
+            'quota_percent': pct(int(cycle_raw * DISPLAY_MULTIPLIER), quota),
+            'online': int(online.get(uid, 0) or 0),
+            'disabled': bool(cfg.get('disabled')),
+            'expired': bool(expiry['expired']),
+            'expiry_label': expiry['label'],
+            'note': str(cfg.get('note') or ''),
+        })
+    rows.sort(key=lambda r: (r['last_24h_bytes'], r['quota_percent'], r['online']), reverse=True)
+    return rows[:limit]
+
+
+def build_incident_payload(*, now=None):
+    now = now or local_now()
+    hourly = load_json(USAGE_HOURLY_FILE, {})
+    daily = load_json(USAGE_DAILY_FILE, {})
+    users = load_json(USERS_FILE, {})
+    online = load_json(ONLINE_FILE, {})
+    stats = _aggregate_stats(now=now, online=online)
+    peak = _incident_peak_from_hourly(hourly, now=now)
+    users_rows = _incident_user_rows(
+        now=now, hourly=hourly, daily=daily,
+        users=users, online=online,
+    )
+    radar = build_line_radar(now=now)
+    calibration = cost_calibrator.summarize(
+        COST_CALIBRATION_FILE,
+        current_multiplier=DISPLAY_MULTIPLIER,
+        now=now,
+    )
+    return {
+        'ts': now.isoformat(timespec='seconds'),
+        'stats': stats,
+        'peak_hour': peak,
+        'users': users_rows,
+        'line_radar': radar,
+        'cost_calibration': calibration,
+        'alerts': _alert_state_rows(),
+    }
+
+
+def _incident_status_badges(row):
+    badges = []
+    if row.get('disabled'):
+        badges.append('<span class="badge badge-danger">已停用</span>')
+    if row.get('expired'):
+        badges.append('<span class="badge badge-danger">已过期</span>')
+    if row.get('online', 0) > 0:
+        badges.append(f'<span class="badge">{int(row["online"])} 在线</span>')
+    return ''.join(badges)
+
+
+def render_incidents(host, flash=''):
+    now = local_now()
+    payload = build_incident_payload(now=now)
+    alert = render_alert(flash_text(flash))
+    peak = payload['peak_hour']
+    radar = payload['line_radar']
+    rec = SUBSCRIPTION_PROFILES.get(radar['recommendation'], SUBSCRIPTION_PROFILES['default'])
+
+    peak_users = ''.join(
+        f'<tr><td>{html.escape(u["user"])}</td><td>{fmt_bytes(u["bytes"])}</td></tr>'
+        for u in peak.get('users') or []
+    ) or '<tr><td colspan="2" class="empty">峰值小时暂无用户流量</td></tr>'
+
+    user_rows = []
+    for row in payload['users']:
+        user_esc = html.escape(row['user'])
+        quota_text = (
+            f'{row["quota_percent"]:.1f}%'
+            if row.get('quota_bytes') else '不限额'
+        )
+        actions = (
+            '<div class="row gap-sm">'
+            '<form method="post" action="/admin/pause-user" class="inline-form-row" data-action="disable-user">'
+            f'<input type="hidden" name="user" value="{user_esc}">'
+            '<input type="hidden" name="minutes" value="60">'
+            '<input type="hidden" name="next" value="/admin/incidents">'
+            '<button class="btn ghost btn-sm" type="submit">暂停 1 小时</button></form>'
+            '<form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token">'
+            f'<input type="hidden" name="user" value="{user_esc}">'
+            '<input type="hidden" name="next" value="/admin/incidents">'
+            '<button class="btn ghost btn-sm" type="submit">轮换 Token</button></form>'
+            f'<a class="btn ghost btn-sm" href="/admin/user/{user_esc}">画像</a>'
+            '</div>'
+        )
+        user_rows.append(
+            '<tr>'
+            f'<td style="padding-left:18px;"><div class="bold">{user_esc}</div>'
+            f'<div class="small faint">{html.escape(row.get("note") or row.get("expiry_label") or "")}</div></td>'
+            f'<td>{fmt_bytes(row["last_24h_bytes"])}</td>'
+            f'<td>{fmt_bytes(row["cycle_used_bytes"])} · {quota_text}</td>'
+            f'<td>{_incident_status_badges(row)}</td>'
+            f'<td style="padding-right:18px;">{actions}</td>'
+            '</tr>'
+        )
+    if not user_rows:
+        user_rows.append('<tr><td colspan="5" class="empty">暂无用户</td></tr>')
+
+    alert_rows = ''.join(
+        '<tr>'
+        f'<td style="padding-left:18px;">{html.escape(a["label"])}</td>'
+        f'<td>{html.escape(a["user"])}</td>'
+        f'<td style="padding-right:18px;"><code>{html.escape(a["key"])}</code></td>'
+        '</tr>'
+        for a in payload['alerts']
+    ) or '<tr><td colspan="3" class="empty">暂无告警状态</td></tr>'
+
+    content = f'''{alert}
+<div class="grid grid-4">
+  <div class="card stat"><div class="k">峰值小时</div><div class="v">{fmt_bytes(peak["bytes"])}</div><div class="small">{html.escape(peak["hour"] or "—")}</div></div>
+  <div class="card stat"><div class="k">当小时</div><div class="v">{fmt_bytes(payload["stats"]["current_hour_bytes"])}</div><div class="small">{payload["stats"]["online"]} 在线</div></div>
+  <div class="card stat"><div class="k">推荐处置</div><div class="v">{html.escape(rec["label"])}</div><div class="small">{html.escape(radar["reason"])}</div></div>
+  <div class="card stat"><div class="k">证据导出</div><a class="btn secondary btn-sm mt-sm" href="/admin/incidents/evidence.json">下载 JSON</a></div>
+</div>
+
+<div class="grid grid-2 mt-md">
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
+      <div class="bold">峰值小时相关用户</div><span class="small">Top {len(peak.get('users') or [])}</span>
+    </div>
+    <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>峰值小时流量</th></tr></thead><tbody>{peak_users}</tbody></table>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
+      <div class="bold">近期告警状态</div><span class="small">去重状态</span>
+    </div>
+    <table class="table"><thead><tr><th style="padding-left:18px;">类型</th><th>用户</th><th style="padding-right:18px;">键</th></tr></thead><tbody>{alert_rows}</tbody></table>
+  </div>
+</div>
+
+<div class="card mt-md" style="padding:0;overflow:hidden;">
+  <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
+    <div class="bold">处置候选用户</div>
+    <div class="small">按近 24 小时流量排序；暂停/轮换会复用现有安全动作</div>
+  </div>
+  <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>24h 流量</th><th>周期用量</th><th>状态</th><th style="padding-right:18px;">操作</th></tr></thead><tbody>{''.join(user_rows)}</tbody></table>
+</div>
+
+{render_line_radar(now=now)}
+{render_cost_calibrator(now=now)}'''
+    return render_admin_shell('incidents', '事故处理', content,
+                              badge=host, subtitle='峰值 · 用户 · 证据')
 
 
 def _build_user_json_payload(uid, *, now):
@@ -2674,6 +2888,31 @@ def replace_template_rules(rules):
         save_template_rules(rules)
 
 
+def safe_admin_next(raw, default='/admin'):
+    target = str(raw or '').strip()
+    if not target:
+        return default
+    parsed = urlparse(target)
+    if parsed.scheme or parsed.netloc:
+        return default
+    if parsed.path != '/admin' and not parsed.path.startswith('/admin/'):
+        return default
+    query = f'?{parsed.query}' if parsed.query else ''
+    return f'{parsed.path}{query}'
+
+
+def with_flash(target, msg):
+    parsed = urlparse(target)
+    pairs = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key != 'msg'
+    ]
+    pairs.append(('msg', str(msg or '')))
+    query = urlencode(pairs)
+    return f'{parsed.path}?{query}' if query else parsed.path
+
+
 def _parse_clash_rule(rule_str):
     """Parse 'TYPE,value,action[,extra]' into display parts."""
     parts = rule_str.split(',', 2)
@@ -3026,6 +3265,31 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response_body(
                 200, body,
                 'text/csv; charset=utf-8', send_payload,
+                extra_headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+            )
+            return
+
+        if path == '/admin/incidents':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            flash = (q.get('msg') or [''])[0]
+            self.send_response_body(200, render_incidents(host, flash=flash),
+                                    'text/html; charset=utf-8', send_payload)
+            return
+
+        if path == '/admin/incidents/evidence.json':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            now = local_now()
+            payload = build_incident_payload(now=now)
+            filename = f'incident-evidence-{now.strftime("%Y%m%dT%H%M%S")}.json'
+            self.send_response_body(
+                200,
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                'application/json; charset=utf-8',
+                send_payload,
                 extra_headers={'Content-Disposition': f'attachment; filename="{filename}"'},
             )
             return
@@ -3419,13 +3683,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
+            next_to = safe_admin_next((form.get('next') or [''])[0])
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect('/admin?msg=user+not+found')
+                    self.redirect(with_flash(next_to, 'user not found'))
                     return
                 if not isinstance(users.get(username), dict):
-                    self.redirect('/admin?msg=user+not+found')
+                    self.redirect(with_flash(next_to, 'user not found'))
                     return
                 users[username]['sub_token'] = secrets.token_urlsafe(18)
                 save_json(USERS_FILE, users)
@@ -3435,7 +3700,42 @@ class Handler(BaseHTTPRequestHandler):
                 tuic_config.reload_async()
             hy_kick([username])
             self.write_reset_log(self.get_admin_actor(), 'rotate_token', username, {}, {})
-            self.redirect('/admin?msg=rotated+' + username)
+            self.redirect(with_flash(next_to, 'rotated ' + username))
+            return
+
+        if path == '/admin/pause-user':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            username = (form.get('user') or [''])[0].strip()
+            minutes = parse_int_field((form.get('minutes') or ['60'])[0], 60, 1, 1440)
+            next_to = safe_admin_next((form.get('next') or [''])[0])
+            until = local_now() + timedelta(minutes=minutes)
+            until_text = until.isoformat(timespec='seconds')
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                if username not in users:
+                    self.redirect(with_flash(next_to, 'user not found'))
+                    return
+                if not isinstance(users.get(username), dict):
+                    self.redirect(with_flash(next_to, 'user not found'))
+                    return
+                users[username]['disabled'] = True
+                users[username]['disabled_until'] = until_text
+                save_json(USERS_FILE, users)
+            if xray_config.remove_user(username):
+                xray_config.reload_async()
+            if tuic_config.sync_all(users=users):
+                tuic_config.reload_async()
+            hy_kick([username])
+            self.write_reset_log(
+                self.get_admin_actor(),
+                'pause_user',
+                username,
+                {},
+                {'disabled_until': until_text},
+            )
+            self.redirect(with_flash(next_to, 'paused ' + username))
             return
 
         if path == '/admin/toggle-user':
@@ -3443,16 +3743,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
+            next_to = safe_admin_next((form.get('next') or [''])[0])
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect('/admin?msg=user+not+found')
+                    self.redirect(with_flash(next_to, 'user not found'))
                     return
                 if not isinstance(users.get(username), dict):
-                    self.redirect('/admin?msg=user+not+found')
+                    self.redirect(with_flash(next_to, 'user not found'))
                     return
                 disable = not bool(users[username].get('disabled'))
                 users[username]['disabled'] = disable
+                users[username].pop('disabled_until', None)
                 vless_uuid = str(users[username].get('vless_uuid') or '').strip()
                 save_json(USERS_FILE, users)
             # xray + tuic + hysteria side-effects run outside the file lock.
@@ -3466,14 +3768,14 @@ class Handler(BaseHTTPRequestHandler):
                     tuic_config.reload_async()
                 hy_kick([username])
                 self.write_reset_log(self.get_admin_actor(), 'disable_user', username, {}, {})
-                self.redirect('/admin?msg=disabled+' + username)
+                self.redirect(with_flash(next_to, 'disabled ' + username))
             else:
                 if vless_uuid and xray_config.sync_user(username, vless_uuid):
                     xray_config.reload_async()
                 if tuic_config.sync_all(users=users):
                     tuic_config.reload_async()
                 self.write_reset_log(self.get_admin_actor(), 'enable_user', username, {}, {})
-                self.redirect('/admin?msg=enabled+' + username)
+                self.redirect(with_flash(next_to, 'enabled ' + username))
             return
 
         if path == '/admin/reset-usage-all':

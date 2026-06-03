@@ -531,6 +531,121 @@ def test_line_radar_recommends_game_when_hysteria_dominates(tmp_path, monkeypatc
     assert '暂不可计量' in html_out
 
 
+def _seed_incident_console(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'USAGE_HOURLY_FILE', tmp_path / 'usage_hourly.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    monkeypatch.setattr(ss, 'PROTOCOL_USAGE_HOURLY_FILE', tmp_path / 'protocol_usage_hourly.json')
+    monkeypatch.setattr(ss, 'COST_CALIBRATION_FILE', tmp_path / 'cost_calibration.json')
+    monkeypatch.setattr(ss.alerts, 'load_state', lambda: {
+        'anomaly': {'bob': '2026-06-03'},
+        'quota_80': {'alice': '2026-05-12'},
+    })
+    monkeypatch.setattr(ss, 'probe_systemd', lambda unit: {'ok': True, 'label': 'active'})
+
+    (tmp_path / 'users.json').write_text(json.dumps({
+        'alice': {'monthly_quota_bytes': 10 << 30, 'vless_uuid': 'uuid-A', 'note': 'normal'},
+        'bob': {'monthly_quota_bytes': 10 << 30, 'vless_uuid': 'uuid-B', 'note': 'spike'},
+    }))
+    (tmp_path / 'usage_hourly.json').write_text(json.dumps({
+        '2026-06-03T07': {'alice': {'tx': 50, 'rx': 50, 'total': 100}},
+        '2026-06-03T08': {
+            'alice': {'tx': 25, 'rx': 25, 'total': 50},
+            'bob': {'tx': 100, 'rx': 200, 'total': 300},
+        },
+    }))
+    (tmp_path / 'usage_daily.json').write_text(json.dumps({
+        '2026-06-03': {
+            'alice': {'tx': 25, 'rx': 25, 'total': 50},
+            'bob': {'tx': 100, 'rx': 200, 'total': 300},
+        },
+    }))
+    (tmp_path / 'online.json').write_text(json.dumps({'bob': 2}))
+    (tmp_path / 'meta.json').write_text(json.dumps({
+        'settlement_day': 12,
+        'cycle_length_days': 30,
+        'cycle_anchor_date': '2026-05-12',
+    }))
+    (tmp_path / 'protocol_usage_hourly.json').write_text(json.dumps({
+        '2026-06-03T08': {
+            'hysteria': {'tx': 1000, 'rx': 1000, 'total': 2000},
+            'xray': {'tx': 50, 'rx': 50, 'total': 100},
+        },
+    }))
+
+
+def test_incident_payload_identifies_peak_hour_and_users(tmp_path, monkeypatch):
+    _seed_incident_console(tmp_path, monkeypatch)
+    now = datetime(2026, 6, 3, 8, 30, tzinfo=SH)
+
+    payload = ss.build_incident_payload(now=now)
+
+    assert payload['peak_hour']['hour'] == '2026-06-03T08'
+    assert payload['peak_hour']['users'][0]['user'] == 'bob'
+    assert payload['users'][0]['user'] == 'bob'
+    assert payload['users'][0]['online'] == 2
+    assert payload['line_radar']['recommendation'] == 'game'
+    assert any(row['user'] == 'bob' and row['kind'] == 'anomaly'
+               for row in payload['alerts'])
+
+
+def test_render_incidents_has_actions_and_evidence_link(tmp_path, monkeypatch):
+    _seed_incident_console(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, 'local_now', lambda: datetime(2026, 6, 3, 8, 30, tzinfo=SH))
+
+    page = ss.render_incidents('host')
+
+    assert '/admin/incidents/evidence.json' in page
+    assert 'action="/admin/pause-user"' in page
+    assert 'action="/admin/rotate-token"' in page
+    assert 'name="next" value="/admin/incidents"' in page
+    assert '线路质量雷达' in page
+    assert '成本校准器' in page
+
+
+def test_incidents_appears_in_sidebar_nav():
+    assert any(key == 'incidents' and href == '/admin/incidents'
+               for key, href, _label, _icon in ss._SIDEBAR_NAV)
+
+
+def test_safe_admin_next_rejects_external_and_prefix_tricks():
+    assert ss.safe_admin_next('/admin/incidents') == '/admin/incidents'
+    assert ss.safe_admin_next('/admin?msg=x') == '/admin?msg=x'
+    assert ss.safe_admin_next('/admin/incidents#frag') == '/admin/incidents'
+    assert ss.safe_admin_next('https://example.com/admin') == '/admin'
+    assert ss.safe_admin_next('/adminevil') == '/admin'
+
+
+def test_with_flash_replaces_existing_message():
+    target = ss.with_flash('/admin/incidents?msg=old&tab=peak', 'paused alice')
+    assert target == '/admin/incidents?tab=peak&msg=paused+alice'
+
+
+def test_resume_expired_temporary_disables_reenables_user(tmp_path, monkeypatch):
+    import traffic_limiter as tl
+
+    path = tmp_path / 'users.json'
+    monkeypatch.setattr(tl, 'USERS_FILE', str(path), raising=False)
+    users = {
+        'alice': {'disabled': True, 'disabled_until': '2026-06-03T07:00:00+08:00'},
+        'bob': {'disabled': True, 'disabled_until': '2026-06-03T09:00:00+08:00'},
+        'carol': {'disabled': True},
+    }
+
+    changed = tl.resume_expired_temporary_disables(
+        users, datetime(2026, 6, 3, 8, tzinfo=SH))
+
+    assert changed is True
+    assert users['alice']['disabled'] is False
+    assert 'disabled_until' not in users['alice']
+    assert users['bob']['disabled'] is True
+    assert users['carol']['disabled'] is True
+    saved = json.loads(path.read_text())
+    assert saved['alice']['disabled'] is False
+
+
 def test_admin_poll_js_confirms_destructive_admin_actions():
     text = (Path(ss.__file__).resolve().parent / 'admin_poll.js').read_text(encoding='utf-8')
     assert "f.dataset.action==='rotate-user-token'" in text

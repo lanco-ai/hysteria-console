@@ -53,6 +53,33 @@ def expiry_date(cfg):
     return parse_expiry_date(cfg.get('expires_at'))
 
 
+def parse_disabled_until(raw):
+    if raw in (None, ''):
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def disabled_until(cfg):
+    if not isinstance(cfg, dict):
+        return None
+    return parse_disabled_until(cfg.get('disabled_until'))
+
+
+def temporary_disable_expired(cfg, now=None):
+    until = disabled_until(cfg)
+    if until is None:
+        return False
+    current = now or datetime.now(tz=until.tzinfo)
+    if until.tzinfo is not None and current.tzinfo is None:
+        current = current.replace(tzinfo=until.tzinfo)
+    if until.tzinfo is None and current.tzinfo is not None:
+        until = until.replace(tzinfo=current.tzinfo)
+    return until <= current
+
+
 def is_expired(cfg, today=None):
     exp = expiry_date(cfg)
     if exp is None:

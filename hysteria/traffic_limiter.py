@@ -361,6 +361,20 @@ def accumulate_protocol_hourly(protocol_traffic, now):
     return hourly
 
 
+def resume_expired_temporary_disables(users, now):
+    changed = False
+    for cfg in (users or {}).values():
+        if not isinstance(cfg, dict):
+            continue
+        if cfg.get("disabled") and user_compat.temporary_disable_expired(cfg, now=now):
+            cfg["disabled"] = False
+            cfg.pop("disabled_until", None)
+            changed = True
+    if changed:
+        save_json(USERS_FILE, users)
+    return changed
+
+
 def _fmt_bytes(n):
     n = float(max(0, int(n)))
     units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -459,6 +473,7 @@ def check_alerts(users, now, month_key, *, daily=None, _opener=None):
 def main():
     users = load_json(USERS_FILE, {})
     now = local_now()
+    resume_expired_temporary_disables(users, now)
     settle_day = get_settlement_day()
     month_key = billing_month_key(now, day=settle_day)
     # Either source returning None / {} is fine — we accumulate whatever
