@@ -34,7 +34,7 @@ done
 log "Installing OS packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
-apt-get install -y curl openssl iptables ca-certificates python3 nginx qrencode >/dev/null
+apt-get install -y curl openssl iptables ca-certificates python3 python3-yaml nginx qrencode >/dev/null
 
 # ---------- 3. Install hysteria binary ----------
 if ! command -v hysteria >/dev/null 2>&1; then
@@ -102,6 +102,11 @@ render "$REPO_DIR/hysteria/subscription_service.py"  "$HY_DIR/subscription_servi
 render "$REPO_DIR/hysteria/traffic_limiter.py"       "$HY_DIR/traffic_limiter.py"
 render "$REPO_DIR/hysteria/alerts.py"                "$HY_DIR/alerts.py"
 render "$REPO_DIR/hysteria/anomaly.py"               "$HY_DIR/anomaly.py"
+render "$REPO_DIR/hysteria/charts.py"                "$HY_DIR/charts.py"
+render "$REPO_DIR/hysteria/cycle.py"                 "$HY_DIR/cycle.py"
+render "$REPO_DIR/hysteria/health.py"                "$HY_DIR/health.py"
+render "$REPO_DIR/hysteria/http_utils.py"            "$HY_DIR/http_utils.py"
+render "$REPO_DIR/hysteria/state_store.py"           "$HY_DIR/state_store.py"
 render "$REPO_DIR/hysteria/xray_config.py"           "$HY_DIR/xray_config.py"
 render "$REPO_DIR/hysteria/tuic_config.py"           "$HY_DIR/tuic_config.py"
 render "$REPO_DIR/hysteria/user_compat.py"           "$HY_DIR/user_compat.py"
@@ -142,6 +147,8 @@ fi
 # ---------- 8. Port hopping script ----------
 install -m 755 "$REPO_DIR/scripts/hysteria-porthop.sh" /usr/local/sbin/hysteria-porthop.sh
 install -m 755 "$REPO_DIR/scripts/hysteria-tcp-mss.sh" /usr/local/sbin/hysteria-tcp-mss.sh
+install -m 755 "$REPO_DIR/scripts/hy2-backup.sh" /usr/local/sbin/hy2-backup.sh
+install -m 755 "$REPO_DIR/scripts/hy2-enable-https.sh" /usr/local/sbin/hy2-enable-https.sh
 
 # ---------- 8b. Network tuning ----------
 log "Installing network tuning..."
@@ -164,13 +171,19 @@ sysctl --system >/dev/null
 # ---------- 9. nginx reverse proxy for the admin panel ----------
 # The subscription service only listens on 127.0.0.1:8081; nginx on :80 fronts it.
 log "Installing nginx site for hysteria-panel..."
-install -m 644 "$REPO_DIR/nginx/hysteria-panel.conf" /etc/nginx/sites-available/hysteria-panel.conf
+render "$REPO_DIR/nginx/hysteria-panel.conf" /etc/nginx/sites-available/hysteria-panel.conf
+chmod 644 /etc/nginx/sites-available/hysteria-panel.conf
 ln -sf /etc/nginx/sites-available/hysteria-panel.conf /etc/nginx/sites-enabled/hysteria-panel.conf
 # Remove the default site if it's still there (it would clash on :80).
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
 systemctl enable --now nginx.service
 systemctl reload nginx.service
+
+if [[ "${HY_ENABLE_HTTPS:-0}" == "1" ]]; then
+  [[ -n "${HY_CERTBOT_EMAIL:-}" ]] || die "HY_CERTBOT_EMAIL is required when HY_ENABLE_HTTPS=1"
+  /usr/local/sbin/hy2-enable-https.sh "$HY_SERVER_HOST" "$HY_CERTBOT_EMAIL"
+fi
 
 # ---------- 10. Systemd units ----------
 log "Installing systemd units..."
@@ -206,8 +219,8 @@ Done. Open the admin panel at:
   http://${HY_SERVER_HOST}/admin
 
 First-time setup:
-  1. Log in (default admin credentials are generated into $HY_DIR/subscription_meta.json
-     on first service start — cat that file to see the initial admin token).
+  1. Log in. If no admin password was preconfigured, the first service start
+     writes root-only credentials to $HY_DIR/admin_initial_password.txt.
   2. Create users. Each user gets a /sub/<name>?token=... URL to import into Clash.
   3. Hysteria auth flows through $HY_DIR/auth_backend.py which reads users.json.
 

@@ -27,7 +27,7 @@
 - ⚡  **Hysteria2** 监听 `:443/udp`，启用 Salamander 混淆 + UDP 端口跳跃 `20000-40000/udp`。
 - 🛡️ **Xray VLESS + Reality** 主端口 `:443/tcp`，备用端口 `:8443/tcp`，伪装成 `www.bing.com`。
 - 🎛️ **内置管理面板** —— 浏览器里创建用户、查看实时流量、维护订阅模板和路由规则；侧边栏布局，深色主题，移动端自适应。
-- 📊 **每用户配额 + 设备数限制** —— 1 分钟周期任务拉取 hysteria + xray 流量统计，超限自动踢人，每月 21 号重置。
+- 📊 **每用户配额 + 设备数限制** —— 5 秒周期任务拉取 hysteria + xray 流量统计，超限自动踢人，按可配置账期自动重置（默认 12 号锚定、30 天周期）。
 - 🔗 **每用户独立订阅 URL**，按请求渲染 Clash YAML，自动注入对应密码与 UUID。
 - 🚀 **一键部署** —— 填好 `.env`，跑 `./deploy.sh`，一分钟内完成。
 
@@ -113,6 +113,26 @@ sudo ./deploy.sh
 | `8443/tcp` | Xray —— VLESS + Reality（备用） |
 | `20000-40000/udp` | iptables REDIRECT → `443/udp`（端口跳跃） |
 
+### 备份
+
+部署后可随时运行：
+
+```bash
+sudo /usr/local/sbin/hy2-backup.sh
+```
+
+备份包默认写到 `/root/hysteria/backups/`，权限 0600，并生成 `.sha256` 校验文件。内容包括用户、管理员元数据、订阅模板、告警配置、运行状态（不包含实时管理员会话）、TLS/API 密钥、TUIC 与 Xray 配置。
+
+### 管理面板 HTTPS
+
+如果你已有解析到这台 VPS 的真实域名：
+
+```bash
+sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
+```
+
+也可以在运行 `deploy.sh` 前，在 `.env` 里设置 `HY_ENABLE_HTTPS=1` 和 `HY_CERTBOT_EMAIL=you@example.com`。脚本会安装 certbot、通过 nginx 申请证书、启用 HTTP 到 HTTPS 跳转并重载 nginx。
+
 ### 不进 git 的文件（已在 `.gitignore`）
 
 这些是单机密钥或运行时状态，**绝不提交**：
@@ -130,7 +150,7 @@ sudo ./deploy.sh
 - Hysteria 管理 API 仅监听本地，由 `HY_API_SECRET` 鉴权——把它当 SSH key 看待。
 - 管理员认证使用 PBKDF2-SHA256（20 万轮 + per-secret 盐），会话用 HttpOnly + `SameSite=Lax` cookie。
 - 每用户的 `sub_token` 是 24 字节 URL-safe 随机串；轮换 token 即可让泄露的订阅链接立即失效，且不影响用户本身。
-- 暴露到公网前请配真实 TLS 证书（例如 `certbot --nginx`）——内置的自签证书只用于 Hysteria 端点。
+- 暴露到公网前请为管理/订阅面板配置真实 TLS 证书。可用 `/usr/local/sbin/hy2-enable-https.sh <domain> <email>`；内置的自签证书只用于 Hysteria 端点。
 
 > **轮换记录** —— 早期某个 commit（位于 `e7d9d3a` 之前）曾把真实 `HY_API_SECRET` 硬编码进源码。该值已于 2026-04-30 在生产环境轮换并验证旧值返回 401 失效；保留在 `e7d9d3a` 之前 git 历史里的旧值已无法对任何端点鉴权成功。
 
@@ -144,7 +164,7 @@ sudo ./deploy.sh
 │   ├── config.yaml.tpl             # hysteria2 服务端配置
 │   ├── auth_backend.py             # auth-by-command 认证桥
 │   ├── subscription_service.py     # 管理面板 + /sub 渲染
-│   ├── traffic_limiter.py          # 1 分钟任务：流量统计 + 自动踢人
+│   ├── traffic_limiter.py          # 5 秒任务：流量统计 + 自动踢人
 │   └── clash-default.yaml.tpl      # 订阅模板
 ├── xray/config.json.tpl            # vless+reality 配置
 ├── nginx/hysteria-panel.conf       # :80 反向代理

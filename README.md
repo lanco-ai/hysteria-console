@@ -27,7 +27,7 @@
 - ⚡  **Hysteria2** on `:443/udp` with Salamander obfs + UDP port-hopping over `20000-40000/udp`.
 - 🛡️ **Xray VLESS&nbsp;+&nbsp;Reality** on `:443/tcp` (primary) and `:8443/tcp` (backup), masquerading as `www.bing.com`.
 - 🎛️ **Built-in admin panel** — create users, see live traffic, manage subscription template & route rules from a browser. Sidebar layout, dark theme, fully responsive.
-- 📊 **Per-user quota & device limit** — enforced by a 1-minute job that pulls hysteria + xray stats, kicks over-quota users, resets on the 21st of each month.
+- 📊 **Per-user quota & device limit** — enforced by a 5-second job that pulls hysteria + xray stats, kicks over-quota users, and resets on a configurable billing cycle (default: day-12 anchor, 30-day cycle).
 - 🔗 **Per-user subscription URL** that emits Clash YAML on the fly with the right password & UUID injected.
 - 🚀 **One-shot deploy** — fill in `.env`, run `./deploy.sh`, get a working stack in under a minute.
 
@@ -113,6 +113,26 @@ The panel polls `/admin/usage.json` every 5s, automatically pauses when the tab 
 | `8443/tcp` | Xray — VLESS + Reality (backup) |
 | `20000-40000/udp` | iptables REDIRECT → `443/udp` (port-hopping) |
 
+### Backup
+
+After deploy, run:
+
+```bash
+sudo /usr/local/sbin/hy2-backup.sh
+```
+
+Backups are written to `/root/hysteria/backups/` by default, mode 0600, with a `.sha256` checksum file. The archive includes users, admin metadata, subscription template, alert config, runtime state (excluding live admin sessions), TLS/API secrets, TUIC config, and Xray config.
+
+### HTTPS for the admin panel
+
+For a real domain already pointed at the VPS:
+
+```bash
+sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
+```
+
+Or set `HY_ENABLE_HTTPS=1` and `HY_CERTBOT_EMAIL=you@example.com` in `.env` before running `deploy.sh`. The helper installs certbot, requests an nginx certificate, enables HTTP-to-HTTPS redirect, and reloads nginx.
+
 ### Files NOT in git (by design)
 
 These are per-server secrets or runtime state — never commit them. They are already in `.gitignore`:
@@ -130,7 +150,7 @@ These are per-server secrets or runtime state — never commit them. They are al
 - Hysteria management API is localhost-only and gated by `HY_API_SECRET`. Treat that secret like an SSH key.
 - Admin auth uses PBKDF2-SHA256 with 200k rounds + per-secret salt; sessions use HTTP-only `SameSite=Lax` cookies.
 - Per-user `sub_token` is a 24-byte URL-safe random; rotating it instantly invalidates a leaked subscription URL without affecting the user record.
-- Set up a real TLS cert (e.g. `certbot --nginx`) before exposing this on the public internet — the bundled cert is self-signed for the Hysteria endpoint only.
+- Set up a real TLS cert for the admin/subscription panel before exposing it on the public internet. Use `/usr/local/sbin/hy2-enable-https.sh <domain> <email>`; the bundled cert is self-signed for the Hysteria endpoint only.
 
 > **Rotation log** — an early commit (pre-`e7d9d3a`) accidentally embedded a real `HY_API_SECRET` in source. It was rotated and verified invalid on 2026-04-30; the value present in pre-`e7d9d3a` git history no longer authenticates against any live endpoint.
 
@@ -144,7 +164,7 @@ These are per-server secrets or runtime state — never commit them. They are al
 │   ├── config.yaml.tpl             # hysteria2 server config
 │   ├── auth_backend.py             # auth-by-command bridge
 │   ├── subscription_service.py     # admin panel + /sub renderer
-│   ├── traffic_limiter.py          # 1-min job: stats + auto-kick
+│   ├── traffic_limiter.py          # 5-sec job: stats + auto-kick
 │   └── clash-default.yaml.tpl      # subscription template
 ├── xray/config.json.tpl            # vless+reality config
 ├── nginx/hysteria-panel.conf       # :80 reverse proxy

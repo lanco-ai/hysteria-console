@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import json
 import os
-import fcntl
 import subprocess
 import urllib.request
 from contextlib import contextmanager
 from datetime import datetime, timedelta
+import cycle as cycle_util
+import state_store
 from display import DISPLAY_MULTIPLIER
 from timeutil import billing_cycle_key, local_now
 
@@ -29,10 +30,10 @@ RESET_STATE_FILE = "/root/hysteria/state/auto_reset_state.json"
 RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
 USAGE_LOCK_FILE = "/root/hysteria/state/usage.lock"
 META_FILE = "/root/hysteria/subscription_meta.json"
-SETTLEMENT_DAY_DEFAULT = 12
-CYCLE_LENGTH_DAYS_DEFAULT = 30
-CYCLE_LENGTH_MIN = 1
-CYCLE_LENGTH_MAX = 90
+SETTLEMENT_DAY_DEFAULT = cycle_util.SETTLEMENT_DAY_DEFAULT
+CYCLE_LENGTH_DAYS_DEFAULT = cycle_util.CYCLE_LENGTH_DAYS_DEFAULT
+CYCLE_LENGTH_MIN = cycle_util.CYCLE_LENGTH_MIN
+CYCLE_LENGTH_MAX = cycle_util.CYCLE_LENGTH_MAX
 DAILY_RETENTION_DAYS = 30
 HOURLY_RETENTION_HOURS = 168
 API_BASE = "http://127.0.0.1:25413"
@@ -59,50 +60,28 @@ def get_api_secret():
 
 
 def load_json(path, default):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
+    return state_store.load_json(path, default)
 
 
 def get_settlement_day():
     """Day-of-month when the billing cycle rolls over. Editable via /admin/cycle-config."""
-    try:
-        v = int((load_json(META_FILE, {}) or {}).get("settlement_day", SETTLEMENT_DAY_DEFAULT))
-    except (TypeError, ValueError):
-        return SETTLEMENT_DAY_DEFAULT
-    return max(1, min(28, v))
+    return cycle_util.settlement_day_from_meta(load_json(META_FILE, {}) or {})
 
 
 def get_cycle_length_days():
     """Length of one billing cycle, in days. Mirrors subscription_service.get_cycle_length_days."""
-    try:
-        v = int((load_json(META_FILE, {}) or {}).get("cycle_length_days", CYCLE_LENGTH_DAYS_DEFAULT))
-    except (TypeError, ValueError):
-        return CYCLE_LENGTH_DAYS_DEFAULT
-    return max(CYCLE_LENGTH_MIN, min(CYCLE_LENGTH_MAX, v))
+    return cycle_util.cycle_length_from_meta(load_json(META_FILE, {}) or {})
 
 
 def _settlement_anchor_date(now, settlement_day):
     """Most recent date with day-of-month == settlement_day, on/before now."""
-    if now.day >= settlement_day:
-        return now.date().replace(day=settlement_day)
-    prev_month_end = now.replace(day=1) - timedelta(days=1)
-    return prev_month_end.date().replace(day=settlement_day)
+    return cycle_util.settlement_anchor_date(now, settlement_day)
 
 
 def get_cycle_anchor_date(now):
     """Persisted anchor date (the cycle calendar's origin). Falls back to the
     most recent settlement_day on/before now if not yet stored."""
-    meta = load_json(META_FILE, {}) or {}
-    raw = meta.get("cycle_anchor_date")
-    if raw:
-        try:
-            return datetime.strptime(str(raw), "%Y-%m-%d").date()
-        except (TypeError, ValueError):
-            pass
-    return _settlement_anchor_date(now, get_settlement_day())
+    return cycle_util.cycle_anchor_date(now, load_json(META_FILE, {}) or {})
 
 
 def save_json(path, data):
@@ -110,24 +89,13 @@ def save_json(path, data):
     Prevents truncated state files — load_json silently returns `{}` on parse
     errors, which has caused cycle/reset state to be lost across the boundary
     of an interrupted oneshot tick."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=True, indent=2)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    state_store.save_json(path, data)
 
 
 @contextmanager
 def usage_lock():
-    os.makedirs(os.path.dirname(USAGE_LOCK_FILE), exist_ok=True)
-    with open(USAGE_LOCK_FILE, "a+", encoding="utf-8") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    with state_store.file_lock(USAGE_LOCK_FILE):
+        yield
 
 
 def append_reset_log(actor, action, target, before, after, mk):
@@ -198,25 +166,13 @@ def cycle_days(now, day=None, length=None, anchor=None):
     Uses fixed-N-day rolling blocks anchored at `anchor` (defaults to the
     persisted `cycle_anchor_date`, or to the most recent settlement_day on/
     before now if not set)."""
-    if anchor is None:
-        if day is None:
-            anchor = get_cycle_anchor_date(now)
-        else:
-            anchor = _settlement_anchor_date(now, int(day))
-    N = int(length) if length is not None else get_cycle_length_days()
-    today = now.date()
-    if today < anchor:
-        start = anchor
-    else:
-        offset_days = (today - anchor).days
-        start = anchor + timedelta(days=(offset_days // N) * N)
-    end = min(start + timedelta(days=N - 1), today)
-    out = []
-    cur = start
-    while cur <= end:
-        out.append(cur.strftime("%Y-%m-%d"))
-        cur += timedelta(days=1)
-    return out
+    return cycle_util.cycle_days(
+        now,
+        day=day,
+        length=length,
+        anchor=anchor,
+        meta=load_json(META_FILE, {}) or {},
+    )
 
 
 def cycle_used_raw_for(uid, daily, *, now, day=None):

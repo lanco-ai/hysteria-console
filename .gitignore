@@ -9,4 +9,7 @@ state/
 __pycache__/
 *.pyc
 *.bak
+*.tar.gz
+*.tar.gz.sha256
+backups/
 .superpowers/

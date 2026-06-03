@@ -6,7 +6,6 @@ import hashlib
 import hmac
 import io
 import json
-import fcntl
 import os
 import re
 import secrets
@@ -18,6 +17,10 @@ import uuid
 import urllib.request
 
 import alerts
+import cycle as cycle_util
+import health
+import http_utils
+import state_store
 import tuic_config
 import user_compat
 import xray_config
@@ -83,6 +86,7 @@ def hy_kick(usernames):
         pass
 LISTEN = ('127.0.0.1', 8081)
 SESSION_TTL = 86400
+MAX_FORM_BYTES = http_utils.MAX_FORM_BYTES
 
 _STATIC_DIR = Path(__file__).resolve().parent
 BASE_CSS_BYTES = (_STATIC_DIR / 'admin.css').read_bytes()
@@ -94,35 +98,25 @@ USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
 
 
 def load_json(path, default):
-    try:
-        return json.loads(path.read_text(encoding='utf-8'))
-    except Exception:
-        return default
+    return state_store.load_json(path, default)
 
 
 def save_json(path, data):
     """Atomic write: serialize to a sibling temp file, fsync, then rename. Prevents
     truncated state files (which the readers fall back to `{}` on, silently losing
     the cycle/state tracking)."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(data, ensure_ascii=True, indent=2) + "\n"
-    tmp = path.with_name(path.name + '.tmp')
-    with tmp.open('w', encoding='utf-8') as f:
-        f.write(payload)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    state_store.save_json(path, data)
+
+
+def save_text_atomic(path, text):
+    """Atomic UTF-8 text write for operator-edited config files."""
+    state_store.save_text_atomic(path, text)
 
 
 @contextmanager
 def usage_lock():
-    USAGE_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with USAGE_LOCK_FILE.open('a+', encoding='utf-8') as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    with state_store.file_lock(USAGE_LOCK_FILE):
+        yield
 
 
 _USERNAME_RE = re.compile(r'^[A-Za-z0-9_.-]{1,64}$')
@@ -148,28 +142,11 @@ def parse_int_field(raw, default, min_value, max_value):
 
 
 def sanitize_host(raw_host):
-    h = (raw_host or '').strip()
-    if not h:
-        return '127.0.0.1'
-    if ',' in h:
-        h = h.split(',', 1)[0].strip()
-    if '/' in h or '\\' in h or '@' in h:
-        return '127.0.0.1'
-    if h.count(':') <= 1 and ':' in h:
-        name, port = h.rsplit(':', 1)
-        if name and port.isdigit() and 1 <= int(port) <= 65535:
-            h = name
-    allowed = set('abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-[]:')
-    if any(ch not in allowed for ch in h):
-        return '127.0.0.1'
-    return h or '127.0.0.1'
+    return http_utils.sanitize_host(raw_host)
 
 
 def safe_base_url(host, forwarded_proto):
-    scheme = (forwarded_proto or 'http').split(',')[0].strip().lower()
-    if scheme not in ('http', 'https'):
-        scheme = 'http'
-    return f'{scheme}://{host}'
+    return http_utils.safe_base_url(host, forwarded_proto)
 
 
 def _b64url_nopad(data):
@@ -252,39 +229,28 @@ def migrate_admin_password():
         save_json(META_FILE, meta)
 
 
-SETTLEMENT_DAY_DEFAULT = 12
-CYCLE_LENGTH_DAYS_DEFAULT = 30
-CYCLE_LENGTH_MIN = 1
-CYCLE_LENGTH_MAX = 90
+SETTLEMENT_DAY_DEFAULT = cycle_util.SETTLEMENT_DAY_DEFAULT
+CYCLE_LENGTH_DAYS_DEFAULT = cycle_util.CYCLE_LENGTH_DAYS_DEFAULT
+CYCLE_LENGTH_MIN = cycle_util.CYCLE_LENGTH_MIN
+CYCLE_LENGTH_MAX = cycle_util.CYCLE_LENGTH_MAX
 
 
 def get_settlement_day():
     """Day-of-month when the billing cycle rolls over. Editable via /admin/cycle-config."""
-    try:
-        v = int((load_json(META_FILE, {}) or {}).get('settlement_day', SETTLEMENT_DAY_DEFAULT))
-    except (TypeError, ValueError):
-        return SETTLEMENT_DAY_DEFAULT
-    return max(1, min(28, v))
+    return cycle_util.settlement_day_from_meta(load_json(META_FILE, {}) or {})
 
 
 def get_cycle_length_days():
     """Length of one billing cycle, in days. Editable via /admin/cycle-config.
     Cycles roll exactly every N days from `cycle_anchor_date` (or, if absent,
     from the most recent settlement_day on/before today)."""
-    try:
-        v = int((load_json(META_FILE, {}) or {}).get('cycle_length_days', CYCLE_LENGTH_DAYS_DEFAULT))
-    except (TypeError, ValueError):
-        return CYCLE_LENGTH_DAYS_DEFAULT
-    return max(CYCLE_LENGTH_MIN, min(CYCLE_LENGTH_MAX, v))
+    return cycle_util.cycle_length_from_meta(load_json(META_FILE, {}) or {})
 
 
 def _settlement_anchor_date(now, settlement_day):
     """Most recent date with day-of-month == settlement_day, on/before now.date().
     Falls back through prev month / Feb edge cases."""
-    if now.day >= settlement_day:
-        return now.date().replace(day=settlement_day)
-    prev_month_end = now.replace(day=1) - timedelta(days=1)
-    return prev_month_end.date().replace(day=settlement_day)
+    return cycle_util.settlement_anchor_date(now, settlement_day)
 
 
 def get_cycle_anchor_date(now=None):
@@ -297,13 +263,7 @@ def get_cycle_anchor_date(now=None):
     if now is None:
         now = local_now()
     meta = load_json(META_FILE, {}) or {}
-    raw = meta.get('cycle_anchor_date')
-    if raw:
-        try:
-            return datetime.strptime(str(raw), '%Y-%m-%d').date()
-        except (TypeError, ValueError):
-            pass
-    return _settlement_anchor_date(now, get_settlement_day())
+    return cycle_util.cycle_anchor_date(now, meta)
 
 
 def cycle_start_for(now, day=None, length=None, anchor=None):
@@ -313,21 +273,8 @@ def cycle_start_for(now, day=None, length=None, anchor=None):
     calendar-month behaviour as long as the anchor is the most recent
     settlement_day. For shorter/longer N, cycles roll exactly every N days
     from the anchor — they intentionally do not re-align to calendar months."""
-    if anchor is None:
-        if day is None:
-            anchor = get_cycle_anchor_date(now)
-        else:
-            anchor = _settlement_anchor_date(now, int(day))
-    N = int(length) if length is not None else get_cycle_length_days()
-    today = now.date()
-    if today < anchor:
-        # `now` is before the anchor (operator just changed settings forward in
-        # time); treat the anchor as the current cycle's start.
-        start_date = anchor
-    else:
-        offset_days = (today - anchor).days
-        start_date = anchor + timedelta(days=(offset_days // N) * N)
-    return datetime.combine(start_date, datetime.min.time(), tzinfo=now.tzinfo)
+    meta = load_json(META_FILE, {}) or {}
+    return cycle_util.cycle_start_for(now, day=day, length=length, anchor=anchor, meta=meta)
 
 
 def month_key(now=None):
@@ -343,16 +290,7 @@ def month_key(now=None):
 def _cycle_days(now):
     """List of YYYY-MM-DD date keys covered by the current cycle, oldest first.
     Capped at today (future days in a cycle aren't displayed/summed)."""
-    start = cycle_start_for(now).date()
-    end = start + timedelta(days=get_cycle_length_days() - 1)
-    today = now.date()
-    last = min(end, today)
-    out = []
-    d = start
-    while d <= last:
-        out.append(d.strftime('%Y-%m-%d'))
-        d += timedelta(days=1)
-    return out
+    return cycle_util.cycle_days(now, meta=load_json(META_FILE, {}) or {})
 
 
 def _zero_cycle_daily_hourly_for(uids, *, now):
@@ -578,6 +516,22 @@ def parse_cookies(handler):
     except Exception:
         return {}
     return {k: v.value for k, v in ck.items()}
+
+
+def is_secure_request(handler):
+    return http_utils.is_secure_request(handler)
+
+
+def is_same_origin_post(handler):
+    return http_utils.is_same_origin_post(handler)
+
+
+def session_cookie(sid, *, max_age=SESSION_TTL, secure=False):
+    return http_utils.session_cookie(sid, max_age=max_age, secure=secure)
+
+
+def clear_session_cookie(*, secure=False):
+    return http_utils.clear_session_cookie(secure=secure)
 
 
 def get_sessions():
@@ -1835,67 +1789,28 @@ def _render_daily_table_collapsed(host):
 
 
 def probe_cron_heartbeat():
-    """How long since the cron tick last wrote usage.json. Stale if >120s."""
-    try:
-        mt = USAGE_FILE.stat().st_mtime
-        age = int(time.time() - mt)
-        return {'ok': age < 120, 'label': f'{age} 秒前'}
-    except Exception:
-        return {'ok': False, 'label': '未知'}
+    return health.probe_cron_heartbeat(USAGE_FILE)
 
 
 def probe_systemd(unit):
-    """`systemctl is-active <unit>` → ok if 'active'."""
-    try:
-        out = subprocess.run(['systemctl', 'is-active', unit],
-                             capture_output=True, text=True, timeout=3)
-        v = (out.stdout or '').strip()
-        return {'ok': v == 'active', 'label': v or '未知'}
-    except Exception:
-        return {'ok': False, 'label': '未知'}
+    return health.probe_systemd(unit, runner=subprocess.run)
 
 
 def probe_disk():
-    try:
-        u = shutil.disk_usage('/')
-        free_pct = u.free * 100 / u.total
-        return {'ok': free_pct > 15, 'label': f'{free_pct:.0f}% free'}
-    except Exception:
-        return {'ok': False, 'label': '未知'}
+    return health.probe_disk(disk_usage=shutil.disk_usage)
 
 
 def probe_cert(path=None):
     p = Path(path) if path else Path('/root/hysteria/server.crt')
-    try:
-        # Force C locale so openssl emits English month names that strptime can parse.
-        env = {**os.environ, 'LC_ALL': 'C'}
-        out = subprocess.run(['openssl', 'x509', '-enddate', '-noout', '-in', str(p)],
-                             capture_output=True, text=True, timeout=3, env=env)
-        if out.returncode != 0 or '=' not in out.stdout:
-            return {'ok': False, 'label': '未知'}
-        end_str = out.stdout.split('=', 1)[1].strip()
-        end_dt = datetime.strptime(end_str, '%b %d %H:%M:%S %Y %Z')
-        days = (end_dt - datetime.utcnow()).days
-        return {'ok': days > 14, 'label': f'{days} 天剩余'}
-    except Exception:
-        return {'ok': False, 'label': '未知'}
+    return health.probe_cert(p, runner=subprocess.run, environ=os.environ)
 
 
 def probe_online():
-    try:
-        data = load_json(ONLINE_FILE, {})
-        n = sum(int(v) for v in data.values())
-        return {'ok': True, 'label': f'{n} 在线'}
-    except Exception:
-        return {'ok': False, 'label': '未知'}
+    return health.probe_online(ONLINE_FILE, load_json=load_json)
 
 
 def _health_card(title, probe_result):
-    cls = 'ok' if probe_result['ok'] else 'bad'
-    return (f'<div class="card stat health-{cls}">'
-            f'<div class="k">{html.escape(title)}</div>'
-            f'<div class="v">{html.escape(probe_result["label"])}</div>'
-            f'</div>')
+    return health.health_card(title, probe_result)
 
 
 def _fire_test_alert(cfg, actor):
@@ -2036,7 +1951,7 @@ def load_template_config():
 
 def save_template_config(data):
     """Save dict to the subscription template."""
-    TEMPLATE_FILE.write_text(_dump_yaml(data), encoding='utf-8')
+    save_text_atomic(TEMPLATE_FILE, _dump_yaml(data))
 
 
 _CONFIG_FLASH = {
@@ -2145,7 +2060,7 @@ def save_template_rules(rules):
     else:
         cut = start - 1 if start > 0 and lines[start - 1].startswith('#') else start
         result = lines[:cut] + new_rule_lines + lines[end:]
-    TEMPLATE_FILE.write_text('\n'.join(result) + ('\n' if not result[-1].endswith('\n') else ''), encoding='utf-8')
+    save_text_atomic(TEMPLATE_FILE, '\n'.join(result) + ('\n' if not result[-1].endswith('\n') else ''))
 
 
 def _parse_clash_rule(rule_str):
@@ -2278,14 +2193,16 @@ def _handle_legacy_daily_redirect(handler):
     handler.redirect("/admin/usage", status=301)
 
 
+RequestTooLarge = http_utils.RequestTooLarge
+BadRequest = http_utils.BadRequest
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
 
     def parse_form(self):
-        length = int(self.headers.get('Content-Length', '0') or 0)
-        body = self.rfile.read(length).decode('utf-8', errors='ignore')
-        return parse_qs(body)
+        return http_utils.parse_form(self, max_bytes=MAX_FORM_BYTES)
 
     def send_response_body(self, code, body, ctype='text/plain; charset=utf-8', send_body=True, extra_headers=None):
         data = body.encode('utf-8')
@@ -2385,7 +2302,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/logout':
             sid = parse_cookies(self).get('sid', '')
             delete_session(sid)
-            self.redirect('/login', cookie='sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax')
+            self.redirect('/login', cookie=clear_session_cookie(secure=is_secure_request(self)))
             return
 
         if path.startswith('/sub/'):
@@ -2571,7 +2488,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        form = self.parse_form()
+        if path != '/login' and not is_same_origin_post(self):
+            self.send_response_body(403, '跨站请求被拒绝')
+            return
+        try:
+            form = self.parse_form()
+        except RequestTooLarge:
+            self.send_response_body(413, '请求体过大')
+            return
+        except BadRequest:
+            self.send_response_body(400, '请求体无效')
+            return
         meta = ensure_meta()
 
         if path.startswith('/panel/') and path.endswith('/rotate-token'):
@@ -2615,7 +2542,8 @@ class Handler(BaseHTTPRequestHandler):
             if ok:
                 _clear_failures(ip)
                 sid = create_session('admin')
-                self.redirect('/admin?msg=login+success', cookie=f'sid={sid}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; SameSite=Lax')
+                self.redirect('/admin?msg=login+success',
+                              cookie=session_cookie(sid, secure=is_secure_request(self)))
                 return
             _record_failure(ip)
             self.send_response_body(200, render_login(host, msg='用户名或密码错误'), 'text/html; charset=utf-8', True)
@@ -2820,7 +2748,7 @@ class Handler(BaseHTTPRequestHandler):
             save_json(SESSIONS_FILE, {})
             sid = create_session('admin')
             self.redirect('/admin/settings?msg=password+changed',
-                          cookie=f'sid={sid}; Path=/; Max-Age={SESSION_TTL}; HttpOnly; SameSite=Lax')
+                          cookie=session_cookie(sid, secure=is_secure_request(self)))
             return
 
         if path == '/admin/test-alert':

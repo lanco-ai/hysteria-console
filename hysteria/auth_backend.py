@@ -5,9 +5,10 @@ import hashlib
 import hmac
 import sys
 import urllib.request
-from datetime import datetime
 
+import cycle as cycle_util
 from display import DISPLAY_MULTIPLIER
+from timeutil import local_now
 import user_compat
 
 USERS_FILE = "/root/hysteria/users.json"
@@ -15,10 +16,10 @@ USAGE_FILE = "/root/hysteria/state/usage.json"
 USAGE_DAILY_FILE = "/root/hysteria/state/usage_daily.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 META_FILE = "/root/hysteria/subscription_meta.json"
-SETTLEMENT_DAY_DEFAULT = 12
-CYCLE_LENGTH_DAYS_DEFAULT = 30
-CYCLE_LENGTH_MIN = 1
-CYCLE_LENGTH_MAX = 90
+SETTLEMENT_DAY_DEFAULT = cycle_util.SETTLEMENT_DAY_DEFAULT
+CYCLE_LENGTH_DAYS_DEFAULT = cycle_util.CYCLE_LENGTH_DAYS_DEFAULT
+CYCLE_LENGTH_MIN = cycle_util.CYCLE_LENGTH_MIN
+CYCLE_LENGTH_MAX = cycle_util.CYCLE_LENGTH_MAX
 API_BASE = "http://127.0.0.1:25413"
 API_SECRET_FILE = "/root/hysteria/api_secret"
 API_SECRET_PLACEHOLDER = "__HY_API_SECRET__"
@@ -111,46 +112,13 @@ def main():
         sys.exit(1)
 
     if user_compat.is_metered(u):
-        now = datetime.now()
+        now = local_now()
         meta = load_json(META_FILE, {}) or {}
-        try:
-            settle_day = int(meta.get("settlement_day", SETTLEMENT_DAY_DEFAULT))
-        except (TypeError, ValueError):
-            settle_day = SETTLEMENT_DAY_DEFAULT
-        settle_day = max(1, min(28, settle_day))
-        try:
-            cycle_len = int(meta.get("cycle_length_days", CYCLE_LENGTH_DAYS_DEFAULT))
-        except (TypeError, ValueError):
-            cycle_len = CYCLE_LENGTH_DAYS_DEFAULT
-        cycle_len = max(CYCLE_LENGTH_MIN, min(CYCLE_LENGTH_MAX, cycle_len))
-        from datetime import timedelta
-        raw_anchor = meta.get("cycle_anchor_date")
-        anchor = None
-        if raw_anchor:
-            try:
-                anchor = datetime.strptime(str(raw_anchor), "%Y-%m-%d").date()
-            except (TypeError, ValueError):
-                anchor = None
-        if anchor is None:
-            if now.day >= settle_day:
-                anchor = now.replace(day=settle_day).date()
-            else:
-                prev_month_end = now.replace(day=1) - timedelta(days=1)
-                anchor = prev_month_end.replace(day=settle_day).date()
-        today = now.date()
-        if today < anchor:
-            cycle_start_date = anchor
-        else:
-            offset_days = (today - anchor).days
-            cycle_start_date = anchor + timedelta(days=(offset_days // cycle_len) * cycle_len)
         daily = load_json(USAGE_DAILY_FILE, {})
-        used = 0
-        d = cycle_start_date
-        cycle_end_date = min(cycle_start_date + timedelta(days=cycle_len - 1), today)
-        while d <= cycle_end_date:
-            entry = (daily.get(d.strftime("%Y-%m-%d")) or {}).get(username)
-            used += usage_total(entry)
-            d += timedelta(days=1)
+        used = sum(
+            usage_total((daily.get(day_key) or {}).get(username))
+            for day_key in cycle_util.cycle_days(now, meta=meta)
+        )
         quota = int(u.get("monthly_quota_bytes", 0))
         if quota > 0 and int(used * DISPLAY_MULTIPLIER) >= quota:
             sys.exit(1)
