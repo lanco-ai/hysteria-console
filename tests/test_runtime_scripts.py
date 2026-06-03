@@ -36,6 +36,88 @@ def test_backup_excludes_live_admin_sessions(tmp_path):
     assert not any(name.endswith('/state/panel_sessions.json') for name in names)
 
 
+def test_restore_check_accepts_plain_backup_archive(tmp_path):
+    hy_dir = tmp_path / 'hysteria'
+    state_dir = hy_dir / 'state'
+    state_dir.mkdir(parents=True)
+    (hy_dir / 'users.json').write_text('{}')
+    (hy_dir / 'subscription_meta.json').write_text('{}')
+    (hy_dir / 'template.yaml').write_text('proxies: []\nrules: []\n')
+    (state_dir / 'usage.json').write_text('{}')
+
+    env = os.environ.copy()
+    env['HY2_HY_DIR'] = str(hy_dir)
+    env['HY2_BACKUP_DIR'] = str(tmp_path / 'backups')
+    env['HY2_XRAY_CONFIG'] = str(tmp_path / 'missing-xray.json')
+    archive = subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-backup.sh')],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+
+    result = subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-restore-check.sh'), archive],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert 'OK: hy2 backup dry-run passed' in result.stdout
+    assert 'would_overwrite=' in result.stdout
+
+
+def test_backup_encryption_and_restore_check(tmp_path):
+    hy_dir = tmp_path / 'hysteria'
+    hy_dir.mkdir(parents=True)
+    (hy_dir / 'users.json').write_text('{}')
+    (hy_dir / 'subscription_meta.json').write_text('{}')
+
+    env = os.environ.copy()
+    env['HY2_HY_DIR'] = str(hy_dir)
+    env['HY2_BACKUP_DIR'] = str(tmp_path / 'backups')
+    env['HY2_XRAY_CONFIG'] = str(tmp_path / 'missing-xray.json')
+    env['HY2_BACKUP_PASSPHRASE'] = 'test-passphrase'
+    archive = subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-backup.sh')],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    ).stdout.strip()
+
+    assert archive.endswith('.tar.gz.enc')
+    result = subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-restore-check.sh'), archive],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert 'OK: hy2 backup dry-run passed' in result.stdout
+
+
+def test_restore_check_rejects_invalid_json(tmp_path):
+    root = tmp_path / 'payload'
+    target = root / 'root/hysteria'
+    target.mkdir(parents=True)
+    (target / 'users.json').write_text('{bad json')
+    archive = tmp_path / 'bad.tar.gz'
+    with tarfile.open(archive, 'w:gz') as tf:
+        tf.add(target / 'users.json', arcname='root/hysteria/users.json')
+
+    result = subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-restore-check.sh'), str(archive)],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert 'invalid JSON' in result.stderr
+
+
 def test_nginx_template_and_deploy_render_server_host():
     conf = (ROOT / 'nginx/hysteria-panel.conf').read_text(encoding='utf-8')
     deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
@@ -58,3 +140,10 @@ def test_deploy_installs_cost_calibrator_module():
 
     assert 'hysteria/cost_calibrator.py' in deploy
     assert '$HY_DIR/cost_calibrator.py' in deploy
+
+
+def test_deploy_installs_restore_check_script():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'hy2-restore-check.sh' in deploy
+    assert '/usr/local/sbin/hy2-restore-check.sh' in deploy

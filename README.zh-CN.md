@@ -132,6 +132,23 @@ sudo /usr/local/sbin/hy2-backup.sh
 
 备份包默认写到 `/root/hysteria/backups/`，权限 0600，并生成 `.sha256` 校验文件。内容包括用户、管理员元数据、订阅模板、告警配置、运行状态（不包含实时管理员会话）、TLS/API 密钥、TUIC 与 Xray 配置。
 
+可选加密：
+
+```bash
+sudo install -m 600 /dev/null /root/hysteria/backup.pass
+sudo sh -c 'openssl rand -base64 32 > /root/hysteria/backup.pass'
+sudo HY2_BACKUP_PASSPHRASE_FILE=/root/hysteria/backup.pass /usr/local/sbin/hy2-backup.sh
+```
+
+真正恢复前，先做 dry-run 检查：
+
+```bash
+sudo /usr/local/sbin/hy2-restore-check.sh /root/hysteria/backups/hy2-backup-YYYYMMDDTHHMMSSZ.tar.gz
+sudo HY2_RESTORE_PASSPHRASE_FILE=/root/hysteria/backup.pass /usr/local/sbin/hy2-restore-check.sh /root/hysteria/backups/hy2-backup-YYYYMMDDTHHMMSSZ.tar.gz.enc
+```
+
+dry-run 会按需解密、校验归档路径、检查 JSON/YAML 是否可解析，并报告会覆盖多少现有运行态文件；它不会写回 `/root/hysteria`。
+
 ### 管理面板 HTTPS
 
 如果你已有解析到这台 VPS 的真实域名：

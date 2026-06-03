@@ -132,6 +132,23 @@ sudo /usr/local/sbin/hy2-backup.sh
 
 Backups are written to `/root/hysteria/backups/` by default, mode 0600, with a `.sha256` checksum file. The archive includes users, admin metadata, subscription template, alert config, runtime state (excluding live admin sessions), TLS/API secrets, TUIC config, and Xray config.
 
+Optional encryption:
+
+```bash
+sudo install -m 600 /dev/null /root/hysteria/backup.pass
+sudo sh -c 'openssl rand -base64 32 > /root/hysteria/backup.pass'
+sudo HY2_BACKUP_PASSPHRASE_FILE=/root/hysteria/backup.pass /usr/local/sbin/hy2-backup.sh
+```
+
+Before restoring anything, dry-run the archive:
+
+```bash
+sudo /usr/local/sbin/hy2-restore-check.sh /root/hysteria/backups/hy2-backup-YYYYMMDDTHHMMSSZ.tar.gz
+sudo HY2_RESTORE_PASSPHRASE_FILE=/root/hysteria/backup.pass /usr/local/sbin/hy2-restore-check.sh /root/hysteria/backups/hy2-backup-YYYYMMDDTHHMMSSZ.tar.gz.enc
+```
+
+The dry-run decrypts if needed, validates archive paths, checks JSON/YAML parseability, and reports how many live runtime files would be overwritten. It never writes back into `/root/hysteria`.
+
 ### HTTPS for the admin panel
 
 For a real domain already pointed at the VPS:

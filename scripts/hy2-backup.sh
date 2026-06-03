@@ -9,12 +9,28 @@ umask 077
 install -d -m 700 "$BACKUP_DIR"
 
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
-out="$BACKUP_DIR/hy2-backup-$ts.tar.gz"
-tmp_out="$out.tmp"
+plain_out="$BACKUP_DIR/hy2-backup-$ts.tar.gz"
+out="$plain_out"
+tmp_tar="$plain_out.tmp"
+tmp_enc=""
 manifest="$(mktemp)"
+pass_arg=()
+
+if [[ -n "${HY2_BACKUP_PASSPHRASE_FILE:-}" ]]; then
+  out="$plain_out.enc"
+  tmp_enc="$out.tmp"
+  pass_arg=(-pass "file:$HY2_BACKUP_PASSPHRASE_FILE")
+elif [[ -n "${HY2_BACKUP_PASSPHRASE:-}" ]]; then
+  out="$plain_out.enc"
+  tmp_enc="$out.tmp"
+  pass_arg=(-pass env:HY2_BACKUP_PASSPHRASE)
+fi
 
 cleanup() {
-  rm -f "$manifest" "$tmp_out"
+  rm -f "$manifest" "$tmp_tar"
+  if [[ -n "$tmp_enc" ]]; then
+    rm -f "$tmp_enc"
+  fi
 }
 trap cleanup EXIT
 
@@ -50,8 +66,15 @@ if [[ ! -s "$manifest" ]]; then
   exit 1
 fi
 
-tar -C / -czf "$tmp_out" --files-from "$manifest"
-mv "$tmp_out" "$out"
+tar -C / -czf "$tmp_tar" --files-from "$manifest"
+if [[ ${#pass_arg[@]} -gt 0 ]]; then
+  openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -md sha256 \
+    -in "$tmp_tar" -out "$tmp_enc" "${pass_arg[@]}"
+  mv "$tmp_enc" "$out"
+  rm -f "$tmp_tar"
+else
+  mv "$tmp_tar" "$out"
+fi
 chmod 600 "$out"
 sha256sum "$out" > "$out.sha256"
 chmod 600 "$out.sha256"
