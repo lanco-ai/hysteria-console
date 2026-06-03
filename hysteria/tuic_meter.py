@@ -178,16 +178,21 @@ def counter_delta(current, *, port, state_file=STATE_FILE):
     return delta
 
 
-def get_tuic_traffic(*, config_file=None, state_file=STATE_FILE):
+def _default_lock_file(state_file):
+    return str(Path(state_file).with_suffix(".lock"))
+
+
+def get_tuic_traffic(*, config_file=None, state_file=STATE_FILE, lock_file=None):
     """Return TUIC aggregate delta as {'tx', 'rx', 'total'}.
 
     First run after enabling the counter stores a baseline and returns zero so
     old accumulated firewall bytes do not appear as a sudden traffic spike.
     """
     try:
-        port = load_listen_port(config_file=config_file)
-        current = read_nft_counters(port)
-        return counter_delta(current, port=port, state_file=state_file)
+        with state_store.file_lock(lock_file or _default_lock_file(state_file)):
+            port = load_listen_port(config_file=config_file)
+            current = read_nft_counters(port)
+            return counter_delta(current, port=port, state_file=state_file)
     except Exception as e:
         print(f"tuic meter skipped: {e}", file=sys.stderr)
         return {}
