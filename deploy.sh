@@ -117,6 +117,7 @@ render "$REPO_DIR/hysteria/traffic_limiter.py"       "$HY_DIR/traffic_limiter.py
 render "$REPO_DIR/hysteria/alerts.py"                "$HY_DIR/alerts.py"
 render "$REPO_DIR/hysteria/anomaly.py"               "$HY_DIR/anomaly.py"
 render "$REPO_DIR/hysteria/charts.py"                "$HY_DIR/charts.py"
+render "$REPO_DIR/hysteria/cost_calibrator.py"       "$HY_DIR/cost_calibrator.py"
 render "$REPO_DIR/hysteria/cycle.py"                 "$HY_DIR/cycle.py"
 render "$REPO_DIR/hysteria/health.py"                "$HY_DIR/health.py"
 render "$REPO_DIR/hysteria/http_utils.py"            "$HY_DIR/http_utils.py"

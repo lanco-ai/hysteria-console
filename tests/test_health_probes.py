@@ -80,14 +80,20 @@ def test_probe_online_sums_values(tmp_path, monkeypatch):
 def test_render_health_page_loads(tmp_path, monkeypatch):
     f = tmp_path / 'usage.json'; f.write_text('{}')
     g = tmp_path / 'online.json'; g.write_text('{}')
+    c = tmp_path / 'cost_calibration.json'; c.write_text('{}')
+    p = tmp_path / 'protocol_usage_hourly.json'; p.write_text('{}')
     monkeypatch.setattr(ss, 'USAGE_FILE', f, raising=False)
     monkeypatch.setattr(ss, 'ONLINE_FILE', g, raising=False)
+    monkeypatch.setattr(ss, 'COST_CALIBRATION_FILE', c, raising=False)
+    monkeypatch.setattr(ss, 'PROTOCOL_USAGE_HOURLY_FILE', p, raising=False)
     with patch.object(ss.subprocess, 'run', side_effect=FileNotFoundError):
         with patch.object(ss.shutil, 'disk_usage',
                           return_value=type('U', (), {'total': 100, 'free': 50, 'used': 50})()):
             html_out = ss.render_health('panel.example.com')
     assert '健康状态' in html_out
     assert 'cron' in html_out.lower() or '心跳' in html_out
+    assert '成本校准器' in html_out
+    assert '线路质量雷达' in html_out
 
 
 def test_probe_cert_happy_path():

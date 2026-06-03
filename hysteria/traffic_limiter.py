@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import urllib.request
+import cost_calibrator
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 import cycle as cycle_util
@@ -26,6 +27,7 @@ USAGE_FILE = "/root/hysteria/state/usage.json"
 USAGE_DAILY_FILE = "/root/hysteria/state/usage_daily.json"
 USAGE_HOURLY_FILE = "/root/hysteria/state/usage_hourly.json"
 PROTOCOL_USAGE_HOURLY_FILE = "/root/hysteria/state/protocol_usage_hourly.json"
+COST_CALIBRATION_FILE = "/root/hysteria/state/cost_calibration.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 RESET_STATE_FILE = "/root/hysteria/state/auto_reset_state.json"
 RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
@@ -492,6 +494,13 @@ def main():
             "hysteria": hysteria_delta,
             "xray": xray_delta,
         }, now)
+        app_raw_bytes = traffic_totals(traffic)["total"]
+        if app_raw_bytes > 0:
+            cost_calibrator.update_sample(
+                COST_CALIBRATION_FILE,
+                app_raw_bytes=app_raw_bytes,
+                now=now,
+            )
 
     online_resp = get("/online")
     if online_resp is None:

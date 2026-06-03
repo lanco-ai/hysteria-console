@@ -17,6 +17,7 @@ import uuid
 import urllib.request
 
 import alerts
+import cost_calibrator
 import cycle as cycle_util
 import health
 import http_utils
@@ -38,6 +39,7 @@ USAGE_FILE = Path('/root/hysteria/state/usage.json')
 USAGE_DAILY_FILE = Path('/root/hysteria/state/usage_daily.json')
 USAGE_HOURLY_FILE = Path('/root/hysteria/state/usage_hourly.json')
 PROTOCOL_USAGE_HOURLY_FILE = Path('/root/hysteria/state/protocol_usage_hourly.json')
+COST_CALIBRATION_FILE = Path('/root/hysteria/state/cost_calibration.json')
 USAGE_PRESERVED_FILE = Path('/root/hysteria/state/usage_preserved.json')
 HOURLY_RETENTION_HOURS = 168
 ONLINE_FILE = Path('/root/hysteria/state/online.json')
@@ -2331,6 +2333,68 @@ def render_line_radar(now=None):
     )
 
 
+_CALIBRATION_CONFIDENCE_LABELS = {
+    'high': '高',
+    'medium': '中',
+    'low': '低',
+    'none': '无样本',
+}
+
+
+def _fmt_optional_multiplier(value):
+    if value is None:
+        return '—'
+    return f'{float(value):.2f}x'
+
+
+def render_cost_calibrator(now=None):
+    summary = cost_calibrator.summarize(
+        COST_CALIBRATION_FILE,
+        current_multiplier=DISPLAY_MULTIPLIER,
+        now=now or local_now(),
+    )
+    confidence = _CALIBRATION_CONFIDENCE_LABELS.get(summary['confidence'], summary['confidence'])
+    delta = summary.get('delta_percent')
+    delta_text = '—' if delta is None else f'{delta:+.1f}%'
+    iface_text = ', '.join(summary.get('ifaces') or []) or '未识别'
+    advice = '样本不足，先观察一段时间'
+    if summary['confidence'] in ('medium', 'high') and summary.get('suggested_multiplier') is not None:
+        advice = '可作为调整 HY_DISPLAY_MULTIPLIER 的参考'
+    rows = (
+        '<tr><th style="padding-left:18px;">当前倍率</th>'
+        f'<td>{_fmt_optional_multiplier(summary["current_multiplier"])}</td>'
+        '<th>建议倍率</th>'
+        f'<td>{_fmt_optional_multiplier(summary["suggested_multiplier"])}</td>'
+        '<th>相对当前</th>'
+        f'<td style="padding-right:18px;">{delta_text}</td></tr>'
+        '<tr><th style="padding-left:18px;">App 原始流量</th>'
+        f'<td>{fmt_bytes(summary["app_raw_bytes"])}</td>'
+        '<th>系统总流量</th>'
+        f'<td>{fmt_bytes(summary["net_total_bytes"])}</td>'
+        '<th>系统出站参考</th>'
+        f'<td style="padding-right:18px;">{_fmt_optional_multiplier(summary["egress_multiplier"])}</td></tr>'
+        '<tr><th style="padding-left:18px;">样本</th>'
+        f'<td>{summary["sample_count"]} 个</td>'
+        '<th>置信度</th>'
+        f'<td>{html.escape(confidence)}</td>'
+        '<th>公网网卡</th>'
+        f'<td style="padding-right:18px;">{html.escape(iface_text)}</td></tr>'
+    )
+    return (
+        '<div class="card mt-md" style="padding:0;overflow:hidden;">'
+        '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
+        '<div><div class="bold">成本校准器</div>'
+        f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div></div>'
+        f'<div class="badge">{html.escape(advice)}</div>'
+        '</div>'
+        f'<table class="table"><tbody>{rows}</tbody></table>'
+        '<div class="small faint" style="padding:0 18px 14px;">'
+        '建议倍率使用公网网卡 RX+TX 与应用原始流量的加权比值；不会自动修改 .env。'
+        '</div>'
+        '</div>'
+    )
+
+
 def _fire_test_alert(cfg, actor):
     """Dispatch a synthetic alert on a background daemon thread so a slow or
     unreachable channel never blocks the admin request thread. SSRF note: the
@@ -2369,6 +2433,7 @@ def render_health(host, flash=''):
         alert
         + '<div class="grid grid-3">' + ''.join(cards) + '</div>'
         + render_line_radar()
+        + render_cost_calibrator()
         + '<meta http-equiv="refresh" content="30">'
     )
     test_btn = ('<form method="post" action="/admin/test-alert" class="inline-form-row">'

@@ -89,7 +89,7 @@ sudo ./deploy.sh
 
 | Key | Default | Notes |
 |---|---:|---|
-| `HY_DISPLAY_MULTIPLIER` | `2.28` | Display/billing multiplier applied to raw Hysteria/Xray/TUIC traffic counters. Keep it aligned with your provider accounting. Valid range: `0.1`-`20.0`. |
+| `HY_DISPLAY_MULTIPLIER` | `2.28` | Display/billing multiplier applied to raw Hysteria/Xray/TUIC traffic counters. Keep it aligned with your provider accounting. `/admin/health` shows a calibration suggestion after enough traffic samples. Valid range: `0.1`-`20.0`. |
 | `HY_ENABLE_HTTPS` | `0` | Set to `1` only when `HY_SERVER_HOST` is a real DNS name pointed at this VPS. |
 | `HY_CERTBOT_EMAIL` | empty | Required when `HY_ENABLE_HTTPS=1`. |
 
@@ -106,7 +106,7 @@ After deploy:
 - **Route rules** — add / remove / re-order proxy/direct/reject rules; live diff against the template.
 - **Reset log** — full audit trail of every traffic-reset action.
 - **Settings** — `http://<server>/admin/settings` — change the admin password in-browser (verifies the current password, then stores a fresh PBKDF2 hash). Changing it signs out every existing session and re-issues a session cookie for the current device.
-- **Health** — alongside the 6 status cards, a "send test alert" button verifies the Telegram / webhook channels in `alerts.json`. The page also includes a line radar that compares recent Hysteria/Xray protocol traffic and recommends a subscription profile. It is dispatched on a background thread (non-blocking); the webhook URL is operator-supplied (admin-equivalent trust) with no URL allowlisting, so confirm delivery at the receiver.
+- **Health** — alongside the 6 status cards, a "send test alert" button verifies the Telegram / webhook channels in `alerts.json`. The page also includes a line radar that compares recent Hysteria/Xray protocol traffic and recommends a subscription profile, plus a cost calibrator that compares public NIC counters with app-level raw traffic and suggests a `HY_DISPLAY_MULTIPLIER`. It is dispatched on a background thread (non-blocking); the webhook URL is operator-supplied (admin-equivalent trust) with no URL allowlisting, so confirm delivery at the receiver.
 
 The panel polls `/admin/usage.json` every 5s, automatically pauses when the tab is hidden, and uses an in-memory row index so it doesn't re-query the DOM on each tick.
 

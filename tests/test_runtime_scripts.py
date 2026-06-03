@@ -51,3 +51,10 @@ def test_deploy_renders_display_multiplier():
     assert 'HY_DISPLAY_MULTIPLIER="${HY_DISPLAY_MULTIPLIER:-2.28}"' in deploy
     assert '__HY_DISPLAY_MULTIPLIER__|${HY_DISPLAY_MULTIPLIER}' in deploy
     assert 'HY_DISPLAY_MULTIPLIER=2.28' in env_example
+
+
+def test_deploy_installs_cost_calibrator_module():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'hysteria/cost_calibrator.py' in deploy
+    assert '$HY_DIR/cost_calibrator.py' in deploy

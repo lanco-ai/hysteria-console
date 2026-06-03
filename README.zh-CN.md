@@ -89,7 +89,7 @@ sudo ./deploy.sh
 
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
-| `HY_DISPLAY_MULTIPLIER` | `2.28` | 作用于 Hysteria/Xray/TUIC 原始流量计数的展示/计费倍率。请按服务商实际账单校准。合法范围：`0.1`-`20.0`。 |
+| `HY_DISPLAY_MULTIPLIER` | `2.28` | 作用于 Hysteria/Xray/TUIC 原始流量计数的展示/计费倍率。请按服务商实际账单校准；`/admin/health` 在样本足够后会给出建议倍率。合法范围：`0.1`-`20.0`。 |
 | `HY_ENABLE_HTTPS` | `0` | 只有当 `HY_SERVER_HOST` 是已解析到本机的真实域名时才设为 `1`。 |
 | `HY_CERTBOT_EMAIL` | 空 | `HY_ENABLE_HTTPS=1` 时必填。 |
 
@@ -106,7 +106,7 @@ sudo ./deploy.sh
 - **路由规则** —— 增删改 proxy/direct/reject 规则，与模板实时同步。
 - **清零日志** —— 每一次流量清零的完整审计记录。
 - **设置** —— `http://<server>/admin/settings` —— 在线修改管理员密码（校验旧密码后写入新的 PBKDF2 哈希）。修改后会注销所有已有会话，并为当前设备重新签发会话 cookie。
-- **健康状态** —— 6 张状态卡之外，提供「发送测试告警」按钮，验证 `alerts.json` 的 Telegram / webhook 是否配通；页面还会展示线路质量雷达，对比近期 Hysteria/Xray 协议流量并推荐订阅 profile。发送在后台线程进行（不阻塞请求）；webhook URL 由运营者自行配置（视为管理员级信任），不做 URL 白名单限制，请在接收端确认是否收到。
+- **健康状态** —— 6 张状态卡之外，提供「发送测试告警」按钮，验证 `alerts.json` 的 Telegram / webhook 是否配通；页面还会展示线路质量雷达，对比近期 Hysteria/Xray 协议流量并推荐订阅 profile，并提供成本校准器，对比公网网卡计数与 App 原始流量后建议 `HY_DISPLAY_MULTIPLIER`。发送在后台线程进行（不阻塞请求）；webhook URL 由运营者自行配置（视为管理员级信任），不做 URL 白名单限制，请在接收端确认是否收到。
 
 面板每 5 秒轮询 `/admin/usage.json` 拉取最新数据，标签页隐藏时自动暂停，使用内存行索引避免每帧重查 DOM。
 
