@@ -425,6 +425,13 @@ def test_subscription_profile_normalization():
     assert ss.normalize_subscription_profile('unknown') == 'default'
 
 
+def test_subscription_profile_logic_lives_in_dedicated_module():
+    import subscription_profiles
+
+    assert subscription_profiles.build_yaml.__module__ == 'subscription_profiles'
+    assert subscription_profiles.apply_subscription_profile.__module__ == 'subscription_profiles'
+
+
 def test_build_yaml_game_profile_prefers_udp_and_injects_credentials(tmp_path, monkeypatch):
     cfg = _profile_cfg(tmp_path, monkeypatch, 'game')
     groups = _groups(cfg)

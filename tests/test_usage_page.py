@@ -9,6 +9,14 @@ import subscription_service as ss
 SH = ZoneInfo("Asia/Shanghai")
 
 
+def test_usage_dashboard_logic_lives_in_dedicated_module():
+    import usage_dashboard
+
+    assert usage_dashboard.build_usage_json_payload.__module__ == 'usage_dashboard'
+    assert usage_dashboard.render_usage_page.__module__ == 'usage_dashboard'
+    assert usage_dashboard.render_user_detail_page.__module__ == 'usage_dashboard'
+
+
 def _seed_state(tmp_path, monkeypatch, *, users=None, hourly=None, daily=None,
                 usage=None, online=None, preserved=None):
     """Repoint all state files at tmp_path and pre-fill them."""
@@ -391,5 +399,4 @@ def test_save_json_is_atomic_against_crash(tmp_path, monkeypatch):
         pass
     # The previously-written file must still be readable; no truncation.
     assert json.loads(target.read_text())["good"] == "value"
-
 

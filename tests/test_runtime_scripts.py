@@ -156,6 +156,20 @@ def test_deploy_installs_health_widgets_module():
     assert '$HY_DIR/health_widgets.py' in deploy
 
 
+def test_deploy_installs_usage_dashboard_module():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'hysteria/usage_dashboard.py' in deploy
+    assert '$HY_DIR/usage_dashboard.py' in deploy
+
+
+def test_deploy_installs_subscription_profiles_module():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'hysteria/subscription_profiles.py' in deploy
+    assert '$HY_DIR/subscription_profiles.py' in deploy
+
+
 def test_deploy_installs_restore_check_script():
     deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
 

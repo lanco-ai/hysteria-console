@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-import csv
 import html
 import base64
 import hashlib
 import hmac
-import io
 import json
 import os
 import re
@@ -23,7 +21,9 @@ import health_widgets
 import http_utils
 import incident_console
 import state_store
+import subscription_profiles as profile_defs
 import tuic_config
+import usage_dashboard
 import user_compat
 import xray_config
 from display import DISPLAY_MULTIPLIER, fmt_bytes
@@ -474,290 +474,42 @@ def user_expiry_state(user_cfg, *, today=None):
     }
 
 
-NODE_GROUP = '🚀 节点选择'
-AUTO_GROUP = '🔄 自动选择'
-GITHUB_GROUP = '⚡ GitHub 加速'
-HY2_UDP_PROXY = '🇺🇸 美国 UDP (端口跳跃)'
-TUIC_UDP_PROXY = '🇺🇸 美国 UDP TUIC'
-VLESS_TCP_PROXY = '🇺🇸 美国 TCP (VLESS+REALITY)'
-VLESS_BACKUP_PROXY = '🇺🇸 美国 TCP 备用 (VLESS+REALITY)'
 
-SUBSCRIPTION_PROFILES = {
-    'default': {
-        'label': '默认',
-        'desc': '保持后台模板策略',
-    },
-    'game': {
-        'label': '游戏',
-        'desc': '优先 UDP，低延迟测试更激进',
-    },
-    'work': {
-        'label': '办公',
-        'desc': '优先 TCP/备用线路，稳定性优先',
-    },
-    'lowdata': {
-        'label': '省流',
-        'desc': '未知流量直连，只代理规则命中的域名',
-    },
-    'safe': {
-        'label': '全代理',
-        'desc': '除局域网/私有地址外尽量走代理',
-    },
-}
-SUBSCRIPTION_PROFILE_ORDER = ('default', 'game', 'work', 'lowdata', 'safe')
-_PROFILE_ALIASES = {
-    '': 'default',
-    'normal': 'default',
-    'auto': 'default',
-    'office': 'work',
-    'stable': 'work',
-    'low-data': 'lowdata',
-    'low_data': 'lowdata',
-    'save': 'lowdata',
-    'global': 'safe',
-    'proxy': 'safe',
-    'full': 'safe',
-}
+NODE_GROUP = profile_defs.NODE_GROUP
+AUTO_GROUP = profile_defs.AUTO_GROUP
+GITHUB_GROUP = profile_defs.GITHUB_GROUP
+HY2_UDP_PROXY = profile_defs.HY2_UDP_PROXY
+TUIC_UDP_PROXY = profile_defs.TUIC_UDP_PROXY
+VLESS_TCP_PROXY = profile_defs.VLESS_TCP_PROXY
+VLESS_BACKUP_PROXY = profile_defs.VLESS_BACKUP_PROXY
+SUBSCRIPTION_PROFILES = profile_defs.SUBSCRIPTION_PROFILES
+SUBSCRIPTION_PROFILE_ORDER = profile_defs.SUBSCRIPTION_PROFILE_ORDER
+
+
+def _subscription_profile_context():
+    return profile_defs.SubscriptionProfileContext(
+        template_file=TEMPLATE_FILE,
+        users_file=USERS_FILE,
+        load_json=load_json,
+    )
 
 
 def normalize_subscription_profile(raw):
-    key = str(raw or '').strip().lower()
-    key = _PROFILE_ALIASES.get(key, key)
-    if key not in SUBSCRIPTION_PROFILES:
-        return 'default'
-    return key
-
-
-def _proxy_names(cfg):
-    return {
-        str(proxy.get('name'))
-        for proxy in (cfg.get('proxies') or [])
-        if isinstance(proxy, dict) and proxy.get('name')
-    }
-
-
-def _proxy_group_map(cfg):
-    return {
-        str(group.get('name')): group
-        for group in (cfg.get('proxy-groups') or [])
-        if isinstance(group, dict) and group.get('name')
-    }
-
-
-def _dedupe(seq):
-    out = []
-    seen = set()
-    for item in seq:
-        if item in seen:
-            continue
-        seen.add(item)
-        out.append(item)
-    return out
-
-
-def _set_group_proxies(cfg, group_name, preferred, *,
-                       allow_group_refs=False, allow_direct=False,
-                       group_type=None, interval=None, timeout=None,
-                       tolerance=None):
-    groups = _proxy_group_map(cfg)
-    group = groups.get(group_name)
-    if not group:
-        return
-    allowed = set(_proxy_names(cfg))
-    if allow_group_refs:
-        allowed.update(name for name in groups if name != group_name)
-    if allow_direct:
-        allowed.add('DIRECT')
-
-    current = [p for p in (group.get('proxies') or []) if p in allowed]
-    ordered = [p for p in preferred if p in allowed and p != group_name]
-    group['proxies'] = _dedupe(ordered + current)
-    if group_type:
-        group['type'] = group_type
-    if interval is not None:
-        group['interval'] = interval
-    if timeout is not None:
-        group['timeout'] = timeout
-    if tolerance is not None:
-        group['tolerance'] = tolerance
-
-
-def _prepend_unique_rules(cfg, new_rules):
-    rules = list(cfg.get('rules') or [])
-    existing = [r for r in rules if r not in new_rules]
-    cfg['rules'] = new_rules + existing
-
-
-def _replace_match_rule(cfg, action):
-    rules = []
-    replaced = False
-    for rule in (cfg.get('rules') or []):
-        if isinstance(rule, str) and rule.startswith('MATCH,'):
-            rules.append(f'MATCH,{action}')
-            replaced = True
-        else:
-            rules.append(rule)
-    if not replaced:
-        rules.append(f'MATCH,{action}')
-    cfg['rules'] = rules
-
-
-def _rewrite_rule_action(rule, action):
-    parts = str(rule).split(',')
-    if not parts:
-        return rule
-    if parts[0] == 'MATCH':
-        return f'MATCH,{action}'
-    if len(parts) >= 3:
-        parts[2] = action
-        return ','.join(parts)
-    return rule
-
-
-def _apply_game_profile(cfg):
-    _set_group_proxies(
-        cfg, NODE_GROUP,
-        [HY2_UDP_PROXY, TUIC_UDP_PROXY, AUTO_GROUP, VLESS_TCP_PROXY,
-         VLESS_BACKUP_PROXY, GITHUB_GROUP, 'DIRECT'],
-        allow_group_refs=True, allow_direct=True,
-    )
-    _set_group_proxies(
-        cfg, AUTO_GROUP,
-        [HY2_UDP_PROXY, TUIC_UDP_PROXY, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY],
-        group_type='url-test', interval=20, timeout=2500, tolerance=50,
-    )
-    _prepend_unique_rules(cfg, [
-        f'DOMAIN-SUFFIX,steamcommunity.com,{NODE_GROUP}',
-        f'DOMAIN-SUFFIX,epicgames.com,{NODE_GROUP}',
-        f'DOMAIN-SUFFIX,epicgames.dev,{NODE_GROUP}',
-        f'DOMAIN-SUFFIX,riotgames.com,{NODE_GROUP}',
-        'DOMAIN-SUFFIX,steamcontent.com,DIRECT',
-        'DOMAIN-SUFFIX,steamserver.net,DIRECT',
-    ])
-
-
-def _apply_work_profile(cfg):
-    _set_group_proxies(
-        cfg, NODE_GROUP,
-        [GITHUB_GROUP, AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY,
-         HY2_UDP_PROXY, TUIC_UDP_PROXY, 'DIRECT'],
-        allow_group_refs=True, allow_direct=True,
-    )
-    _set_group_proxies(
-        cfg, AUTO_GROUP,
-        [VLESS_TCP_PROXY, VLESS_BACKUP_PROXY, HY2_UDP_PROXY, TUIC_UDP_PROXY],
-        group_type='fallback', interval=60, timeout=6000,
-    )
-    _prepend_unique_rules(cfg, [
-        f'DOMAIN-SUFFIX,slack.com,{NODE_GROUP}',
-        f'DOMAIN-SUFFIX,notion.so,{NODE_GROUP}',
-        f'DOMAIN-SUFFIX,zoom.us,{NODE_GROUP}',
-        f'DOMAIN-SUFFIX,linear.app,{NODE_GROUP}',
-    ])
-
-
-def _apply_lowdata_profile(cfg):
-    cfg['log-level'] = 'warning'
-    _set_group_proxies(
-        cfg, NODE_GROUP,
-        ['DIRECT', AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY,
-         HY2_UDP_PROXY, TUIC_UDP_PROXY, GITHUB_GROUP],
-        allow_group_refs=True, allow_direct=True,
-    )
-    _set_group_proxies(
-        cfg, AUTO_GROUP,
-        [VLESS_TCP_PROXY, VLESS_BACKUP_PROXY, HY2_UDP_PROXY, TUIC_UDP_PROXY],
-        group_type='fallback', interval=90, timeout=6000,
-    )
-    _replace_match_rule(cfg, 'DIRECT')
-
-
-def _apply_safe_profile(cfg):
-    _set_group_proxies(
-        cfg, NODE_GROUP,
-        [AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY, HY2_UDP_PROXY,
-         TUIC_UDP_PROXY, 'DIRECT'],
-        allow_group_refs=True, allow_direct=True,
-    )
-    _set_group_proxies(
-        cfg, AUTO_GROUP,
-        [VLESS_TCP_PROXY, VLESS_BACKUP_PROXY, HY2_UDP_PROXY, TUIC_UDP_PROXY],
-        group_type='fallback', interval=45, timeout=5000,
-    )
-    keep_direct = (
-        'RULE-SET,private,DIRECT',
-        'RULE-SET,lancidr,DIRECT',
-        'GEOIP,LAN,DIRECT',
-    )
-    rewritten = []
-    for rule in (cfg.get('rules') or []):
-        if not isinstance(rule, str):
-            rewritten.append(rule)
-        elif rule.startswith('RULE-SET,reject,') or rule.startswith(keep_direct):
-            rewritten.append(rule)
-        elif rule.startswith('MATCH,'):
-            rewritten.append(f'MATCH,{NODE_GROUP}')
-        elif ',DIRECT' in rule:
-            rewritten.append(_rewrite_rule_action(rule, NODE_GROUP))
-        else:
-            rewritten.append(rule)
-    cfg['rules'] = rewritten
-    _replace_match_rule(cfg, NODE_GROUP)
+    return profile_defs.normalize_subscription_profile(raw)
 
 
 def apply_subscription_profile(cfg, profile):
-    profile = normalize_subscription_profile(profile)
-    if profile == 'default':
-        return cfg
-    appliers = {
-        'game': _apply_game_profile,
-        'work': _apply_work_profile,
-        'lowdata': _apply_lowdata_profile,
-        'safe': _apply_safe_profile,
-    }
-    appliers[profile](cfg)
-    return cfg
+    return profile_defs.apply_subscription_profile(cfg, profile)
 
 
 def render_profile_yaml(text, profile):
-    profile = normalize_subscription_profile(profile)
-    if profile == 'default':
-        return text
-    try:
-        import yaml
-        data = yaml.safe_load(text) or {}
-        apply_subscription_profile(data, profile)
-        return _dump_yaml(data)
-    except Exception:
-        log.exception('failed to render subscription profile %s', profile)
-        return text
+    return profile_defs.render_profile_yaml(text, profile)
 
 
 def build_yaml(username, auth_secret, profile='default'):
-    if not TEMPLATE_FILE.exists():
-        return ''
-    text = TEMPLATE_FILE.read_text(encoding='utf-8')
-    text = re.sub(
-        r'(?m)^(\s*password:\s*).*$',
-        lambda m: f'{m.group(1)}{username}:{auth_secret}',
-        text,
-        count=1,
+    return profile_defs.build_yaml(
+        _subscription_profile_context(), username, auth_secret, profile=profile,
     )
-    users = load_json(USERS_FILE, {})
-    vless_uuid = str((users.get(username) or {}).get('vless_uuid') or '').strip()
-    if vless_uuid:
-        text = re.sub(
-            r'(?m)^(\s*uuid:\s*).*$',
-            lambda m: f'{m.group(1)}{vless_uuid}',
-            text,
-        )
-        text = re.sub(
-            r'(?m)^(\s*password:\s*)TUIC_PASSWORD_PLACEHOLDER\s*$',
-            lambda m: f'{m.group(1)}{username}:{auth_secret}',
-            text,
-        )
-    return render_profile_yaml(text, profile)
-
 
 def pct(used, total):
     if total <= 0:
@@ -1553,245 +1305,97 @@ DAILY_RETENTION_DAYS = 30
 LOCAL_TZ_LABEL = "Asia/Shanghai · 滚动 7 天小时 / 30 天每日"
 
 
+
+def _usage_context():
+    return usage_dashboard.UsageDashboardContext(
+        display_multiplier=DISPLAY_MULTIPLIER,
+        hourly_retention_hours=HOURLY_RETENTION_HOURS,
+        daily_retention_days=DAILY_RETENTION_DAYS,
+        local_tz_label=LOCAL_TZ_LABEL,
+        users_file=USERS_FILE,
+        usage_daily_file=USAGE_DAILY_FILE,
+        usage_hourly_file=USAGE_HOURLY_FILE,
+        online_file=ONLINE_FILE,
+        load_json=load_json,
+        local_now=local_now,
+        cycle_days=_cycle_days,
+        cycle_start_for=cycle_start_for,
+        get_cycle_length_days=get_cycle_length_days,
+        preserved_raw_for_cycle=preserved_raw_for_cycle,
+        scaled_usage_for_user=scaled_usage_for_user,
+        cycle_raw_for_user=_cycle_raw_for_user,
+        user_total_quota=user_total_quota,
+        user_expiry_state=user_expiry_state,
+        pct=pct,
+        fmt_bytes=fmt_bytes,
+        render_admin_shell=render_admin_shell,
+    )
+
+
 def _scale_daily_entry(entry):
-    """Scale a raw daily usage entry by DISPLAY_MULTIPLIER, returning (tx, rx, total)."""
-    if not entry:
-        return 0, 0, 0
-    if isinstance(entry, dict):
-        tx = int(entry.get('tx', 0))
-        rx = int(entry.get('rx', 0))
-        total = int(entry.get('total', tx + rx))
-    else:
-        total = int(entry or 0)
-        tx, rx = 0, total
-    m = DISPLAY_MULTIPLIER
-    return int(tx * m), int(rx * m), int(total * m)
+    return usage_dashboard.scale_daily_entry(_usage_context(), entry)
 
 
 def _hour_key(dt):
-    return dt.strftime("%Y-%m-%dT%H")
+    return usage_dashboard.hour_key(dt)
 
 
 def _entry_total(entry):
-    """Extract `total` from a per-user usage entry, tolerating int and dict shapes."""
-    if isinstance(entry, dict):
-        return int(entry.get("total", 0))
-    return int(entry or 0)
+    return usage_dashboard.entry_total(entry)
 
 
 def _load_hourly_totals(*, now):
-    """Return list of 168 {hour, bytes} entries (oldest first), bytes × DISPLAY_MULTIPLIER."""
-    hourly = load_json(USAGE_HOURLY_FILE, {})
-    out = []
-    for i in reversed(range(HOURLY_RETENTION_HOURS)):
-        h = now - timedelta(hours=i)
-        hk = _hour_key(h)
-        bucket = hourly.get(hk) or {}
-        raw_total = sum(_entry_total(v) for v in bucket.values())
-        out.append({"hour": hk, "bytes": int(raw_total * DISPLAY_MULTIPLIER)})
-    return out
+    return usage_dashboard.load_hourly_totals(_usage_context(), now=now)
 
 
 def _load_heatmap_grid(*, now):
-    """Return 7-row grid: [{date, hours: [24 ints]}, ...] oldest first.
-
-    Each cell value is post-DISPLAY_MULTIPLIER aggregate across all users for that hour.
-    """
-    hourly = load_json(USAGE_HOURLY_FILE, {})
-    today = now.date()
-    rows = []
-    for d in reversed(range(7)):
-        day = today - timedelta(days=d)
-        date_str = day.strftime("%Y-%m-%d")
-        hours = []
-        for hh in range(24):
-            hk = f"{date_str}T{hh:02d}"
-            bucket = hourly.get(hk) or {}
-            raw = sum(_entry_total(v) for v in bucket.values())
-            hours.append(int(raw * DISPLAY_MULTIPLIER))
-        rows.append({"date": date_str, "hours": hours})
-    return rows
+    return usage_dashboard.load_heatmap_grid(_usage_context(), now=now)
 
 
 def _top_n_users(*, n=5, window_hours=24, now):
-    """Return top-N users by last-`window_hours` total bytes (post-DISPLAY_MULTIPLIER).
-
-    Each item: {uid, last_24h_bytes, spark}. `spark` is window_hours hourly ints.
-    Includes both metered and unmetered users.
-
-    Allocation note: the previous implementation pre-allocated a window_hours-int
-    spark list for *every* user in users.json on every call (called from the
-    5-second admin/usage.json poll). This version computes totals first, picks
-    the winners, and only then builds spark arrays for the N selected users —
-    cuts the transient allocation to ~5% of the previous version when there
-    are many users.
-    """
-    hourly = load_json(USAGE_HOURLY_FILE, {})
-    users = load_json(USERS_FILE, {})
-    known_users = set(users.keys())
-
-    buckets = []
-    for i in reversed(range(window_hours)):
-        h = now - timedelta(hours=i)
-        buckets.append(hourly.get(_hour_key(h)) or {})
-
-    per_user_totals = {}
-    for bucket in buckets:
-        for uid, entry in bucket.items():
-            if uid not in known_users:
-                continue  # skip ghost entries from deleted users
-            per_user_totals[uid] = per_user_totals.get(uid, 0) + _entry_total(entry)
-    # Ensure users with zero traffic in the window can still appear as
-    # zero-total entries when there are fewer than n users with traffic.
-    for uid in known_users:
-        per_user_totals.setdefault(uid, 0)
-
-    ranked = sorted(per_user_totals.items(), key=lambda kv: kv[1], reverse=True)
-    selected = ranked[:n]
-    top_uids = [uid for uid, _ in selected]
-    top_set = set(top_uids)
-
-    spark = {uid: [0] * window_hours for uid in top_uids}
-    for idx, bucket in enumerate(buckets):
-        for uid, entry in bucket.items():
-            if uid in top_set:
-                spark[uid][idx] = int(_entry_total(entry) * DISPLAY_MULTIPLIER)
-
-    out = []
-    for uid, raw_total in selected:
-        out.append({
-            "uid": uid,
-            "last_24h_bytes": int(raw_total * DISPLAY_MULTIPLIER),
-            "spark": spark[uid],
-        })
-    return out
+    return usage_dashboard.top_n_users(_usage_context(), n=n, window_hours=window_hours, now=now)
 
 
 def _aggregate_stats(*, now, online):
-    """Return the 4 stat-card numbers + cycle context."""
-    hourly = load_json(USAGE_HOURLY_FILE, {})
-    daily = load_json(USAGE_DAILY_FILE, {})
-
-    today_str = now.strftime("%Y-%m-%d")
-    yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-
-    cur_bucket = hourly.get(_hour_key(now)) or {}
-    current_hour_raw = sum(_entry_total(v) for v in cur_bucket.values())
-
-    today_raw = 0
-    for hh in range(24):
-        b = hourly.get(f"{today_str}T{hh:02d}") or {}
-        today_raw += sum(_entry_total(v) for v in b.values())
-
-    yest_bucket = daily.get(yesterday_str) or {}
-    yesterday_raw = sum(_entry_total(v) for v in yest_bucket.values())
-
-    last_7d_raw = 0
-    for d in range(7):
-        dk = (now.date() - timedelta(days=d)).strftime("%Y-%m-%d")
-        last_7d_raw += sum(_entry_total(v) for v in (daily.get(dk) or {}).values())
-
-    cycle_raw = sum(
-        _entry_total(v)
-        for dk in _cycle_days(now)
-        for v in (daily.get(dk) or {}).values()
-    )
-    cycle_raw += preserved_raw_for_cycle(now=now)
-
-    cycle_start = cycle_start_for(now)
-    cycle_day = (now.date() - cycle_start.date()).days + 1
-    cycle_total_days = get_cycle_length_days()
-
-    return {
-        "current_hour_bytes": int(current_hour_raw * DISPLAY_MULTIPLIER),
-        "today_bytes": int(today_raw * DISPLAY_MULTIPLIER),
-        "yesterday_bytes": int(yesterday_raw * DISPLAY_MULTIPLIER),
-        "last_7d_bytes": int(last_7d_raw * DISPLAY_MULTIPLIER),
-        "cycle_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
-        "cycle_day": cycle_day,
-        "cycle_total_days": cycle_total_days,
-        "online": int(sum(1 for v in (online or {}).values() if int(v or 0) > 0)),
-    }
+    return usage_dashboard.aggregate_stats(_usage_context(), now=now, online=online)
 
 
 def _build_usage_csv(*, now, window='cycle'):
-    """Return CSV body: per-user per-day usage rows for the requested window.
-
-    Columns: date, user, tx_bytes, rx_bytes, total_bytes, displayed_bytes.
-    `tx/rx/total_bytes` are raw (application-level) bytes from usage_daily.json;
-    `displayed_bytes` is total * DISPLAY_MULTIPLIER (what the user is billed for).
-    Window: 'cycle' = current billing cycle days; '30d' = last 30 calendar days.
-    """
-    daily = load_json(USAGE_DAILY_FILE, {})
-    if window == '30d':
-        today = now.date()
-        days = [(today - timedelta(days=i)).strftime('%Y-%m-%d')
-                for i in range(DAILY_RETENTION_DAYS - 1, -1, -1)]
-    else:
-        days = _cycle_days(now)
-
-    buf = io.StringIO()
-    w = csv.writer(buf, lineterminator='\n')
-    w.writerow(['date', 'user', 'tx_bytes', 'rx_bytes', 'total_bytes', 'displayed_bytes'])
-    for dk in days:
-        bucket = daily.get(dk) or {}
-        for uid, entry in sorted(bucket.items()):
-            if isinstance(entry, dict):
-                tx = int(entry.get('tx', 0))
-                rx = int(entry.get('rx', 0))
-                total = int(entry.get('total', tx + rx))
-            else:
-                tx = 0
-                rx = int(entry or 0)
-                total = rx
-            displayed = int(total * DISPLAY_MULTIPLIER)
-            w.writerow([dk, uid, tx, rx, total, displayed])
-    return buf.getvalue()
+    return usage_dashboard.build_usage_csv(_usage_context(), now=now, window=window)
 
 
 def _build_usage_json_payload(*, now):
-    """Compose the /admin/usage.json payload."""
-    users = load_json(USERS_FILE, {})
-    online = load_json(ONLINE_FILE, {})
-    daily = load_json(USAGE_DAILY_FILE, {})
-    series = _load_hourly_totals(now=now)
-    grid = _load_heatmap_grid(now=now)
-    stats = _aggregate_stats(now=now, online=online)
-    top = _top_n_users(n=5, window_hours=24, now=now)
-    user_list = []
-    total_used = 0
-    for u, cfg in users.items():
-        tx, rx, used = scaled_usage_for_user(u, daily=daily, now=now)
-        total = user_total_quota(cfg)
-        expiry = user_expiry_state(cfg, today=now.date())
-        total_used += used
-        user_list.append({
-            'user': u,
-            'tx': tx,
-            'rx': rx,
-            'used': used,
-            'total': total,
-            'percent': pct(used, total),
-            'online': int(online.get(u, 0)),
-            'disabled': bool((cfg or {}).get('disabled')),
-            'expired': bool(expiry['expired']),
-            'expires_at': expiry['expires_at'],
-            'expiry_label': expiry['label'],
-            'quota_extra_bytes': user_compat.quota_extra_bytes(cfg),
-            'note': str((cfg or {}).get('note') or ''),
-            # NOTE: spark_html mirrors row_form's spark cell — see row_form for the 3-place coupling note.
-            'spark_html': sparkline_svg(daily_window_for_user(u, daily, days=30)),
-        })
-    total_used += int(preserved_raw_for_cycle(now=now) * DISPLAY_MULTIPLIER)
-    return {
-        "ts": now.isoformat(timespec="seconds"),
-        "stats": stats,
-        "total_used": total_used,
-        "users": user_list,
-        "hourly_totals": series,
-        "heatmap": grid,
-        "top_n": top,
-    }
+    return usage_dashboard.build_usage_json_payload(_usage_context(), now=now)
+
+
+def _build_user_json_payload(uid, *, now):
+    return usage_dashboard.build_user_json_payload(_usage_context(), uid, now=now)
+
+
+def daily_window_for_user(uid, daily, *, days=30, today=None):
+    return usage_dashboard.daily_window_for_user(
+        _usage_context(), uid, daily, days=days, today=today,
+    )
+
+
+def sparkline_svg(values, *, height=24):
+    return usage_dashboard.sparkline_svg(values, height=height)
+
+
+def render_daily_usage(host, days=14):
+    return usage_dashboard.render_daily_usage(_usage_context(), host, days=days)
+
+
+def render_usage_page(host):
+    return usage_dashboard.render_usage_page(_usage_context(), host)
+
+
+def render_user_detail_page(uid, host):
+    return usage_dashboard.render_user_detail_page(_usage_context(), uid, host)
+
+
+def _render_daily_table_collapsed(host):
+    return usage_dashboard.render_daily_table_collapsed(_usage_context(), host)
 
 
 def _incident_context():
@@ -1829,380 +1433,6 @@ def build_incident_payload(*, now=None):
 
 def render_incidents(host, flash=''):
     return incident_console.render_incidents(_incident_context(), host, flash=flash)
-
-
-def _build_user_json_payload(uid, *, now):
-    """Compose the /admin/user/<uid>.json payload, or None if user unknown."""
-    users = load_json(USERS_FILE, {})
-    if uid not in users:
-        return None
-    cfg = users[uid] or {}
-    expiry = user_expiry_state(cfg, today=now.date())
-
-    online = load_json(ONLINE_FILE, {})
-    hourly = load_json(USAGE_HOURLY_FILE, {})
-
-    bars = []
-    for i in reversed(range(HOURLY_RETENTION_HOURS)):
-        h = now - timedelta(hours=i)
-        hk = _hour_key(h)
-        v = _entry_total((hourly.get(hk) or {}).get(uid))
-        bars.append({"hour": hk, "bytes": int(v * DISPLAY_MULTIPLIER)})
-
-    heat_grid = []
-    today = now.date()
-    for d in reversed(range(7)):
-        day = today - timedelta(days=d)
-        date_str = day.strftime("%Y-%m-%d")
-        hours = []
-        for hh in range(24):
-            v = _entry_total((hourly.get(f"{date_str}T{hh:02d}") or {}).get(uid))
-            hours.append(int(v * DISPLAY_MULTIPLIER))
-        heat_grid.append({"date": date_str, "hours": hours})
-
-    daily = load_json(USAGE_DAILY_FILE, {})
-    _tx, _rx, cycle_raw = _cycle_raw_for_user(uid, daily, now=now)
-
-    today_str = today.strftime("%Y-%m-%d")
-    today_raw = sum(
-        _entry_total((hourly.get(f"{today_str}T{hh:02d}") or {}).get(uid))
-        for hh in range(24)
-    )
-    cur_raw = _entry_total((hourly.get(_hour_key(now)) or {}).get(uid))
-
-    recent_alerts = []
-
-    return {
-        "ts": now.isoformat(timespec="seconds"),
-        "uid": uid,
-        "metered": bool(cfg.get("metered", cfg.get("guest", False))),
-        "disabled": bool(cfg.get("disabled")),
-        "expired": bool(expiry["expired"]),
-        "expires_at": expiry["expires_at"],
-        "expiry_label": expiry["label"],
-        "note": str(cfg.get("note") or ""),
-        "online": int(online.get(uid, 0) or 0),
-        "max_devices": int(cfg.get("max_devices", 2)),
-        "cycle_used_bytes": int(cycle_raw * DISPLAY_MULTIPLIER),
-        "cycle_quota_bytes": int(user_total_quota(cfg)),
-        "quota_extra_bytes": int(user_compat.quota_extra_bytes(cfg)),
-        "current_hour_bytes": int(cur_raw * DISPLAY_MULTIPLIER),
-        "today_bytes": int(today_raw * DISPLAY_MULTIPLIER),
-        "hourly_bars": bars,
-        "heatmap": heat_grid,
-        "recent_alerts": recent_alerts,
-    }
-
-
-def daily_window_for_user(uid, daily, *, days=30, today=None):
-    """Return [(YYYY-MM-DD, scaled_total_bytes), ...] oldest-first for `days`."""
-    today = today or local_now().date()
-    out = []
-    for i in reversed(range(days)):
-        dk = (today - timedelta(days=i)).strftime('%Y-%m-%d')
-        _tx, _rx, total = _scale_daily_entry((daily.get(dk) or {}).get(uid))
-        out.append((dk, total))
-    return out
-
-
-def sparkline_svg(values, *, height=24):
-    """Forwarder kept for backward compat; new code calls charts.mini_sparkline_svg."""
-    from charts import mini_sparkline_svg
-    return mini_sparkline_svg(values, height=height)
-
-
-def render_daily_usage(host, days=14):
-    days = max(1, min(DAILY_RETENTION_DAYS, int(days)))
-    users = load_json(USERS_FILE, {})
-    daily = load_json(USAGE_DAILY_FILE, {})
-
-    today = local_now().date()
-    today_key = today.strftime('%Y-%m-%d')
-    window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
-    weekday_labels = ['一', '二', '三', '四', '五', '六', '日']
-
-    per_user = {}
-    user_window_total = {}
-    day_totals = {dk: 0 for dk in window}
-    overall_total = 0
-    for uid in users.keys():
-        per_user[uid] = {}
-        utot = 0
-        for dk in window:
-            tx, rx, tot = _scale_daily_entry((daily.get(dk) or {}).get(uid))
-            per_user[uid][dk] = (tx, rx, tot)
-            utot += tot
-            day_totals[dk] += tot
-            overall_total += tot
-        user_window_total[uid] = utot
-
-    sorted_uids = sorted(users.keys(), key=lambda u: user_window_total[u], reverse=True)
-
-    col_headers = []
-    for dk in window:
-        wd = weekday_labels[datetime.strptime(dk, '%Y-%m-%d').weekday()]
-        cls = ' day-today' if dk == today_key else ''
-        col_headers.append(
-            f'<th class="day-col{cls}" title="{dk}">'
-            f'<div class="day-mmdd">{dk[5:]}</div>'
-            f'<div class="day-weekday">周{wd}</div></th>'
-        )
-
-    rows = []
-    for uid in sorted_uids:
-        cells = []
-        for dk in window:
-            tx, rx, tot = per_user[uid][dk]
-            today_cls = ' day-today' if dk == today_key else ''
-            if tot <= 0:
-                cells.append(f'<td class="day-cell empty-day{today_cls}">—</td>')
-            else:
-                title = f'{dk} · ↑ {fmt_bytes(tx)} · ↓ {fmt_bytes(rx)}'
-                cells.append(
-                    f'<td class="day-cell{today_cls}" title="{html.escape(title)}">{fmt_bytes(tot)}</td>'
-                )
-        utot = user_window_total[uid]
-        utot_disp = fmt_bytes(utot) if utot > 0 else '—'
-        rows.append(
-            f'<tr><th class="user-col" scope="row">{html.escape(uid)}</th>'
-            f'<td class="num user-total">{utot_disp}</td>'
-            f'{"".join(cells)}</tr>'
-        )
-
-    if not rows:
-        rows.append(f'<tr><td colspan="{2 + days}" class="empty">暂无用户</td></tr>')
-
-    foot_cells = []
-    peak_day = None
-    peak_val = 0
-    for dk in window:
-        v = day_totals[dk]
-        if v > peak_val:
-            peak_val = v
-            peak_day = dk
-        today_cls = ' day-today' if dk == today_key else ''
-        foot_cells.append(
-            f'<td class="day-cell{today_cls}">{fmt_bytes(v) if v else "—"}</td>'
-        )
-
-    today_total = day_totals.get(today_key, 0)
-    avg_per_day = int(overall_total / days) if days else 0
-
-    switcher = ''.join(
-        f'<a class="btn btn-sm {"primary" if d == days else "secondary"}" '
-        f'href="/admin/daily?days={d}">{d} 天</a>'
-        for d in (7, 14, 30)
-    )
-
-    earliest_recorded = min(daily.keys()) if daily else '—'
-
-    content = f'''<div class="grid grid-4">
-  <div class="card stat"><div class="k">{days} 天总流量</div><div class="v big">{fmt_bytes(overall_total)}</div><div class="accent-bar"></div></div>
-  <div class="card stat"><div class="k">今日已用</div><div class="v">{fmt_bytes(today_total)}</div><div class="small">{today_key}</div></div>
-  <div class="card stat"><div class="k">日均</div><div class="v">{fmt_bytes(avg_per_day)}</div></div>
-  <div class="card stat"><div class="k">峰值日</div><div class="v">{fmt_bytes(peak_val) if peak_val else "—"}</div><div class="small">{peak_day or "—"}</div></div>
-</div>
-<div class="card mt-md" style="padding:14px 18px;">
-  <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
-    <div>
-      <div class="bold">每日流量明细 · 最近 {days} 天</div>
-      <div class="small">最早数据：{earliest_recorded} · 保留 {DAILY_RETENTION_DAYS} 天</div>
-    </div>
-    <div class="row gap-sm">{switcher}</div>
-  </div>
-</div>
-<div class="card mt-md scroll-x" style="padding:0;overflow:auto;">
-  <table class="table daily-table">
-    <thead><tr>
-      <th class="user-col" style="padding-left:18px;">用户</th>
-      <th class="num">{days} 天累计</th>
-      {"".join(col_headers)}
-    </tr></thead>
-    <tbody>{"".join(rows)}</tbody>
-    <tfoot><tr>
-      <th class="user-col" style="padding-left:18px;">合计</th>
-      <td class="num user-total">{fmt_bytes(overall_total) if overall_total else "—"}</td>
-      {"".join(foot_cells)}
-    </tr></tfoot>
-  </table>
-</div>'''
-    return render_admin_shell('daily', '每日流量', content,
-                              badge=f'最近 {days} 天',
-                              subtitle=f'{host} · 滚动窗口 {DAILY_RETENTION_DAYS} 天')
-
-
-def render_usage_page(host):
-    """Replacement for render_daily_usage. Renders 4 stat cards + 168-bar chart
-    + 7×24 heatmap + Top-5 list + collapsed historical daily table."""
-    from charts import hourly_bars_svg, weekday_hour_heatmap_svg, mini_sparkline_svg
-
-    now = local_now()
-    payload = _build_usage_json_payload(now=now)
-    stats = payload["stats"]
-    series = payload["hourly_totals"]
-    grid = payload["heatmap"]
-    top = payload["top_n"]
-
-    peak_hour = max(series, key=lambda s: s["bytes"])["hour"] if any(s["bytes"] for s in series) else None
-    bars_svg = hourly_bars_svg(series, peak_hour=peak_hour)
-    heat_svg = weekday_hour_heatmap_svg(grid, current_hour_iso=_hour_key(now))
-
-    def _spark_to_pairs(arr):
-        return [("h", v) for v in arr]
-
-    top_rows = []
-    for u in top:
-        spark_html = mini_sparkline_svg(_spark_to_pairs(u["spark"]), height=14)
-        top_rows.append(
-            f'<a class="top-row" href="/admin/user/{html.escape(u["uid"])}">'
-            f'<span class="top-uid">{html.escape(u["uid"])} ↗</span>'
-            f'<span class="top-spark">{spark_html}</span>'
-            f'<span class="top-bytes">{fmt_bytes(u["last_24h_bytes"])}</span>'
-            f'</a>'
-        )
-    top_html = "".join(top_rows) or '<div class="empty">暂无数据</div>'
-
-    historical = _render_daily_table_collapsed(host)
-    poll_controls = (
-        '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
-        '<span class="badge poll-status" data-role="poll-status">已加载</span>'
-    )
-
-    content = f'''<div class="grid grid-4">
-  <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{fmt_bytes(stats["current_hour_bytes"])}</div><div class="small">{stats["online"]} 在线</div></div>
-  <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{fmt_bytes(stats["today_bytes"])}</div><div class="small">昨日 {fmt_bytes(stats["yesterday_bytes"])}</div></div>
-  <div class="card stat" data-stat="last_7d"><div class="k">近 7 天</div><div class="v">{fmt_bytes(stats["last_7d_bytes"])}</div><div class="small">日均 {fmt_bytes(stats["last_7d_bytes"] // 7)}</div></div>
-  <div class="card stat" data-stat="cycle"><div class="k">本周期</div><div class="v">{fmt_bytes(stats["cycle_bytes"])}</div><div class="small">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div></div>
-</div>
-
-<div class="card mt-md" style="padding:14px 18px;">
-  <div class="bold">过去 7 天 · 每小时</div>
-  <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
-</div>
-
-<div class="grid grid-2 mt-md">
-  <div class="card" style="padding:14px 18px;">
-    <div class="bold">7 天 × 24 小时 热图</div>
-    <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
-  </div>
-  <div class="card" style="padding:14px 0;">
-    <div class="bold" style="padding:0 18px;">Top 5 · 近 24 小时</div>
-    <div id="top-n-host" style="margin-top:10px;">{top_html}</div>
-  </div>
-</div>
-
-<details class="card mt-md" style="padding:8px 18px;">
-  <summary style="cursor:pointer;">历史每日明细（可展开）</summary>
-  <div style="margin-top:10px;">{historical}</div>
-</details>
-
-<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
-<script src="/static/usage.js" defer></script>
-'''
-    return render_admin_shell('usage', '流量分析', content,
-                              subtitle=f'{host} · {LOCAL_TZ_LABEL}',
-                              topbar_extra=poll_controls)
-
-
-def render_user_detail_page(uid, host):
-    """Per-user drill page for /admin/user/<uid>. Returns None if user unknown."""
-    from charts import hourly_bars_svg, weekday_hour_heatmap_svg
-
-    now = local_now()
-    payload = _build_user_json_payload(uid, now=now)
-    if payload is None:
-        return None
-
-    peak_hour = (max(payload["hourly_bars"], key=lambda s: s["bytes"])["hour"]
-                 if any(s["bytes"] for s in payload["hourly_bars"]) else None)
-    bars_svg = hourly_bars_svg(payload["hourly_bars"], peak_hour=peak_hour)
-    heat_svg = weekday_hour_heatmap_svg(payload["heatmap"], current_hour_iso=_hour_key(now))
-
-    badge = '<span class="badge yellow">按量</span>' if payload["metered"] else '<span class="badge gray">免计</span>'
-    state_badges = ''
-    if payload.get('disabled'):
-        state_badges += '<span class="badge badge-danger">已停用</span>'
-    if payload.get('expired'):
-        state_badges += '<span class="badge badge-danger">已过期</span>'
-    note_line = (f'<div class="small faint mt-sm">备注：{html.escape(payload["note"])}</div>'
-                 if payload.get('note') else '')
-    quota_line = (f'{fmt_bytes(payload["cycle_used_bytes"])} / '
-                  f'{fmt_bytes(payload["cycle_quota_bytes"])}'
-                  if payload["cycle_quota_bytes"] else
-                  f'{fmt_bytes(payload["cycle_used_bytes"])} (无限)')
-
-    alert_html = "".join(
-        f'<div class="alert-row">{html.escape(a.get("ts", ""))} — '
-        f'{html.escape(a.get("kind", ""))}: {html.escape(a.get("details", ""))}</div>'
-        for a in payload["recent_alerts"]
-    ) or '<div class="empty">无近期告警</div>'
-    poll_controls = (
-        '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
-        '<span class="badge poll-status" data-role="poll-status">已加载</span>'
-    )
-
-    content = f'''<a class="back-link" href="/admin/usage">← 返回 /admin/usage</a>
-    <h2 class="user-title">{html.escape(uid)} {badge}{state_badges}
-      <span class="small">{payload["online"]} / {payload["max_devices"]} 在线</span>
-    </h2>
-    <div class="small faint">有效期：{html.escape(payload["expiry_label"])}</div>{note_line}
-
-<div class="grid grid-3">
-  <div class="card stat"><div class="k">本周期</div><div class="v">{quota_line}</div></div>
-  <div class="card stat"><div class="k">今日</div><div class="v">{fmt_bytes(payload["today_bytes"])}</div></div>
-  <div class="card stat"><div class="k">当小时</div><div class="v">{fmt_bytes(payload["current_hour_bytes"])}</div></div>
-</div>
-
-<div class="card mt-md" style="padding:14px 18px;">
-  <div class="bold">7 天小时柱</div>
-  <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
-</div>
-
-<div class="card mt-md" style="padding:14px 18px;">
-  <div class="bold">个人 7×24 热图</div>
-  <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
-</div>
-
-<div class="card mt-md" style="padding:14px 18px;">
-  <div class="bold">最近告警</div>
-  <div style="margin-top:10px;">{alert_html}</div>
-</div>
-
-<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
-<script src="/static/usage.js" defer></script>
-'''
-    return render_admin_shell('usage', f'{uid} · 用量画像', content,
-                              subtitle=f'{host} · {LOCAL_TZ_LABEL}',
-                              topbar_extra=poll_controls)
-
-
-def _render_daily_table_collapsed(host):
-    """Inline-render the per-user historical table, no shell wrapping.
-
-    Window matches DAILY_RETENTION_DAYS (currently 30) — the full retained range,
-    so the collapsed section shows everything we have on disk.
-    """
-    days = DAILY_RETENTION_DAYS
-    users = load_json(USERS_FILE, {})
-    daily = load_json(USAGE_DAILY_FILE, {})
-    today = local_now().date()
-    window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
-
-    rows_html = []
-    for uid, _cfg in users.items():
-        cells = []
-        for dk in window:
-            tx, rx, tot = _scale_daily_entry((daily.get(dk) or {}).get(uid))
-            cells.append(f'<td>{fmt_bytes(tot) if tot else "—"}</td>')
-        rows_html.append(f'<tr><th>{html.escape(uid)}</th>{"".join(cells)}</tr>')
-
-    headers = "".join(f'<th>{dk[5:]}</th>' for dk in window)
-    return (f'<div class="scroll-x">'
-            f'<table class="table daily-table-collapsed">'
-            f'<thead><tr><th>用户</th>{headers}</tr></thead>'
-            f'<tbody>{"".join(rows_html) or f"<tr><td colspan={days + 1}>暂无数据</td></tr>"}</tbody>'
-            f'</table>'
-            f'</div>')
 
 
 def probe_cron_heartbeat():
