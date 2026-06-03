@@ -106,7 +106,7 @@ sudo ./deploy.sh
 - **路由规则** —— 增删改 proxy/direct/reject 规则，与模板实时同步。
 - **清零日志** —— 每一次流量清零的完整审计记录。
 - **设置** —— `http://<server>/admin/settings` —— 在线修改管理员密码（校验旧密码后写入新的 PBKDF2 哈希）。修改后会注销所有已有会话，并为当前设备重新签发会话 cookie。
-- **健康状态** —— 6 张状态卡之外，提供「发送测试告警」按钮，验证 `alerts.json` 的 Telegram / webhook 是否配通；页面还会展示线路质量雷达，对比近期 Hysteria/Xray 协议流量并推荐订阅 profile，并提供成本校准器，对比公网网卡计数与 App 原始流量后建议 `HY_DISPLAY_MULTIPLIER`。发送在后台线程进行（不阻塞请求）；webhook URL 由运营者自行配置（视为管理员级信任），不做 URL 白名单限制，请在接收端确认是否收到。
+- **健康状态** —— 6 张状态卡之外，提供「发送测试告警」按钮，验证 `alerts.json` 的 Telegram / webhook 是否配通；页面还会展示线路质量雷达，对比近期 Hysteria/Xray/TUIC 协议流量并推荐订阅 profile，并提供成本校准器，对比公网网卡计数与 App 原始流量后建议 `HY_DISPLAY_MULTIPLIER`。TUIC 流量是端口级总量计量，不参与单用户额度扣减。告警测试在后台线程发送（不阻塞请求）；webhook URL 由运营者自行配置（视为管理员级信任），不做 URL 白名单限制，请在接收端确认是否收到。
 
 面板每 5 秒轮询 `/admin/usage.json` 拉取最新数据，标签页隐藏时自动暂停，使用内存行索引避免每帧重查 DOM。
 
@@ -120,6 +120,7 @@ sudo ./deploy.sh
 | `443/tcp` | Xray —— VLESS + Reality |
 | `443/udp` | Hysteria2 |
 | `8443/tcp` | Xray —— VLESS + Reality（备用） |
+| `9443/udp` | TUIC v5 |
 | `20000-40000/udp` | iptables REDIRECT → `443/udp`（端口跳跃） |
 
 ### 备份

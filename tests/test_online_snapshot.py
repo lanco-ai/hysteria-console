@@ -45,6 +45,7 @@ def _run_main_with_get(monkeypatch, get_results):
     monkeypatch.setattr(tl, "get", fake_get)
     monkeypatch.setattr(tl, "post", lambda *_a, **_k: True)
     monkeypatch.setattr(tl, "get_xray_traffic", lambda: {})
+    monkeypatch.setattr(tl, "get_tuic_traffic", lambda: {})
     monkeypatch.setattr(tl, "check_alerts", lambda *a, **k: None)
 
     import xray_config

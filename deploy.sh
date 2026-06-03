@@ -34,7 +34,7 @@ done
 log "Installing OS packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
-apt-get install -y curl openssl iptables ca-certificates python3 python3-yaml nginx qrencode >/dev/null
+apt-get install -y curl openssl iptables nftables ca-certificates python3 python3-yaml nginx qrencode >/dev/null
 
 HY_DISPLAY_MULTIPLIER="${HY_DISPLAY_MULTIPLIER:-2.28}"
 python3 - "$HY_DISPLAY_MULTIPLIER" <<'PY'
@@ -127,6 +127,7 @@ render "$REPO_DIR/hysteria/state_store.py"           "$HY_DIR/state_store.py"
 render "$REPO_DIR/hysteria/subscription_profiles.py" "$HY_DIR/subscription_profiles.py"
 render "$REPO_DIR/hysteria/xray_config.py"           "$HY_DIR/xray_config.py"
 render "$REPO_DIR/hysteria/tuic_config.py"           "$HY_DIR/tuic_config.py"
+render "$REPO_DIR/hysteria/tuic_meter.py"            "$HY_DIR/tuic_meter.py"
 render "$REPO_DIR/hysteria/usage_dashboard.py"       "$HY_DIR/usage_dashboard.py"
 render "$REPO_DIR/hysteria/user_compat.py"           "$HY_DIR/user_compat.py"
 render "$REPO_DIR/hysteria/display.py"               "$HY_DIR/display.py"

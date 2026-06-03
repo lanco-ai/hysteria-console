@@ -501,12 +501,14 @@ def test_protocol_hourly_accumulator_records_source_totals(tmp_path, monkeypatch
     tl.accumulate_protocol_hourly({
         'hysteria': {'alice': {'tx': 10, 'rx': 20}},
         'xray': {'alice': {'tx': 3, 'rx': 4}, 'bob': {'tx': 5, 'rx': 6}},
+        'tuic': {'_tuic': {'tx': 7, 'rx': 9}},
     }, now)
 
     data = json.loads(path.read_text())
     bucket = data['2026-06-03T15']
     assert bucket['hysteria'] == {'tx': 10, 'rx': 20, 'total': 30}
     assert bucket['xray'] == {'tx': 8, 'rx': 10, 'total': 18}
+    assert bucket['tuic'] == {'tx': 7, 'rx': 9, 'total': 16}
 
 
 def test_line_radar_recommends_game_when_hysteria_dominates(tmp_path, monkeypatch):
@@ -518,6 +520,7 @@ def test_line_radar_recommends_game_when_hysteria_dominates(tmp_path, monkeypatc
         '2026-06-03T15': {
             'hysteria': {'tx': 1000, 'rx': 1000, 'total': 2000},
             'xray': {'tx': 100, 'rx': 100, 'total': 200},
+            'tuic': {'tx': 300, 'rx': 300, 'total': 600},
         }
     }))
     (tmp_path / 'users.json').write_text(json.dumps({
@@ -533,9 +536,10 @@ def test_line_radar_recommends_game_when_hysteria_dominates(tmp_path, monkeypatc
     assert radar['recommendation'] == 'game'
     assert radar['rows'][0]['active_users'] == 1
     assert radar['rows'][0]['online'] == 2
+    assert radar['rows'][2]['bytes'] == int(600 * ss.DISPLAY_MULTIPLIER)
     assert '线路质量雷达' in html_out
     assert '推荐：游戏' in html_out
-    assert '暂不可计量' in html_out
+    assert '端口级总量计量' in html_out
 
 
 def test_health_widget_logic_lives_in_dedicated_module():
@@ -742,6 +746,7 @@ def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
     captured = {'plan': None, 'kick': None}
     monkeypatch.setattr(tl, 'post', lambda path, body=None, **k: captured.__setitem__('kick', body) or True)
     monkeypatch.setattr(tl, 'get_xray_traffic', lambda: {})
+    monkeypatch.setattr(tl, 'get_tuic_traffic', lambda: {})
     monkeypatch.setattr(tl, 'check_alerts', lambda *a, **k: None)
 
     import xray_config
@@ -781,6 +786,7 @@ def test_cron_excludes_expired_user_from_xray_plan(tmp_path, monkeypatch):
     captured = {'plan': None, 'kick': None}
     monkeypatch.setattr(tl, 'post', lambda path, body=None, **k: captured.__setitem__('kick', body) or True)
     monkeypatch.setattr(tl, 'get_xray_traffic', lambda: {})
+    monkeypatch.setattr(tl, 'get_tuic_traffic', lambda: {})
     monkeypatch.setattr(tl, 'check_alerts', lambda *a, **k: None)
 
     import xray_config

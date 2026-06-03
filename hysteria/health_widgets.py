@@ -29,7 +29,7 @@ LINE_PROTOCOLS = {
         'label': 'TUIC UDP',
         'unit': 'tuic-server.service',
         'profile': 'game',
-        'note': '当前仅展示可用性，暂无流量计量',
+        'note': '端口级总量计量，不参与单用户额度',
     },
 }
 
@@ -83,15 +83,17 @@ def _active_line_users(users, *, today):
 def _line_recommendation(service_states, totals, total_bytes):
     hy_ok = bool((service_states.get('hysteria') or {}).get('ok'))
     xray_ok = bool((service_states.get('xray') or {}).get('ok'))
-    if not hy_ok and xray_ok:
-        return 'work', 'Hysteria 不可用，建议切到 TCP 稳定 profile'
-    if hy_ok and not xray_ok:
+    tuic_ok = bool((service_states.get('tuic') or {}).get('ok'))
+    udp_ok = hy_ok or tuic_ok
+    if not udp_ok and xray_ok:
+        return 'work', 'UDP 线路不可用，建议切到 TCP 稳定 profile'
+    if udp_ok and not xray_ok:
         return 'game', 'Xray 不可用，建议优先 UDP profile'
     if total_bytes <= 0:
         return 'default', '近 24 小时暂无协议分布数据，保持默认模板'
-    hy_share = totals.get('hysteria', 0) / total_bytes
+    udp_share = (totals.get('hysteria', 0) + totals.get('tuic', 0)) / total_bytes
     xray_share = totals.get('xray', 0) / total_bytes
-    if hy_share >= 0.55:
+    if udp_share >= 0.55:
         return 'game', '近 24 小时 UDP 承载占比更高'
     if xray_share >= 0.55:
         return 'work', '近 24 小时 TCP/VLESS 承载占比更高'
@@ -141,7 +143,7 @@ def render_line_radar(ctx, now=None):
     for row in radar['rows']:
         cls = 'badge' if row['ok'] else 'badge badge-danger'
         share = f'{row["share"]:.1f}%' if radar['total_bytes'] > 0 else '—'
-        traffic = ctx.fmt_bytes(row['bytes']) if row['key'] != 'tuic' else '暂不可计量'
+        traffic = ctx.fmt_bytes(row['bytes'])
         online = str(row['online']) if row['online'] is not None else '—'
         rows.append(
             '<tr>'

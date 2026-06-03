@@ -170,6 +170,22 @@ def test_deploy_installs_subscription_profiles_module():
     assert '$HY_DIR/subscription_profiles.py' in deploy
 
 
+def test_deploy_installs_tuic_meter_module_and_nftables():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert ' nftables ' in deploy
+    assert 'hysteria/tuic_meter.py' in deploy
+    assert '$HY_DIR/tuic_meter.py' in deploy
+
+
+def test_traffic_limiter_unit_can_access_nftables():
+    unit = (ROOT / 'systemd/hysteria-traffic-limiter.service').read_text(encoding='utf-8')
+
+    assert 'AmbientCapabilities=CAP_NET_ADMIN' in unit
+    assert 'CapabilityBoundingSet=CAP_NET_ADMIN' in unit
+    assert 'AF_NETLINK' in unit
+
+
 def test_deploy_installs_restore_check_script():
     deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
 

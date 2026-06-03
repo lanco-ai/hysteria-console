@@ -106,7 +106,7 @@ After deploy:
 - **Route rules** — add / remove / re-order proxy/direct/reject rules; live diff against the template.
 - **Reset log** — full audit trail of every traffic-reset action.
 - **Settings** — `http://<server>/admin/settings` — change the admin password in-browser (verifies the current password, then stores a fresh PBKDF2 hash). Changing it signs out every existing session and re-issues a session cookie for the current device.
-- **Health** — alongside the 6 status cards, a "send test alert" button verifies the Telegram / webhook channels in `alerts.json`. The page also includes a line radar that compares recent Hysteria/Xray protocol traffic and recommends a subscription profile, plus a cost calibrator that compares public NIC counters with app-level raw traffic and suggests a `HY_DISPLAY_MULTIPLIER`. It is dispatched on a background thread (non-blocking); the webhook URL is operator-supplied (admin-equivalent trust) with no URL allowlisting, so confirm delivery at the receiver.
+- **Health** — alongside the 6 status cards, a "send test alert" button verifies the Telegram / webhook channels in `alerts.json`. The page also includes a line radar that compares recent Hysteria/Xray/TUIC protocol traffic and recommends a subscription profile, plus a cost calibrator that compares public NIC counters with app-level raw traffic and suggests a `HY_DISPLAY_MULTIPLIER`. TUIC traffic is port-level aggregate metering, not per-user quota metering. Alert tests are dispatched on a background thread (non-blocking); the webhook URL is operator-supplied (admin-equivalent trust) with no URL allowlisting, so confirm delivery at the receiver.
 
 The panel polls `/admin/usage.json` every 5s, automatically pauses when the tab is hidden, and uses an in-memory row index so it doesn't re-query the DOM on each tick.
 
@@ -120,6 +120,7 @@ The panel polls `/admin/usage.json` every 5s, automatically pauses when the tab 
 | `443/tcp` | Xray — VLESS + Reality |
 | `443/udp` | Hysteria2 |
 | `8443/tcp` | Xray — VLESS + Reality (backup) |
+| `9443/udp` | TUIC v5 |
 | `20000-40000/udp` | iptables REDIRECT → `443/udp` (port-hopping) |
 
 ### Backup

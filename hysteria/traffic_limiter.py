@@ -13,6 +13,7 @@ from timeutil import billing_cycle_key, local_now
 
 import alerts as _alerts
 import anomaly as _anomaly
+import tuic_meter
 import tuic_config
 import user_compat
 import xray_config
@@ -265,6 +266,10 @@ def get_xray_traffic():
     return result
 
 
+def get_tuic_traffic():
+    return tuic_meter.get_tuic_traffic()
+
+
 def merge_traffic(dst, src):
     for uid, stat in src.items():
         cur = dst.setdefault(uid, {"tx": 0, "rx": 0})
@@ -483,6 +488,7 @@ def main():
     hysteria_delta = get("/traffic?clear=1") or {}
     traffic = dict(hysteria_delta)
     xray_delta = get_xray_traffic()
+    tuic_delta = get_tuic_traffic()
     if xray_delta:
         merge_traffic(traffic, xray_delta)
     with usage_lock():
@@ -505,11 +511,15 @@ def main():
         save_json(USAGE_FILE, usage)
         daily = accumulate_daily(traffic, now)
         accumulate_hourly(traffic, now)
-        accumulate_protocol_hourly({
+        protocol_traffic = {
             "hysteria": hysteria_delta,
             "xray": xray_delta,
-        }, now)
-        app_raw_bytes = traffic_totals(traffic)["total"]
+        }
+        tuic_entry = normalize_usage_entry(tuic_delta)
+        if tuic_entry["total"] > 0:
+            protocol_traffic["tuic"] = {"_tuic": tuic_entry}
+        accumulate_protocol_hourly(protocol_traffic, now)
+        app_raw_bytes = traffic_totals(traffic)["total"] + tuic_entry["total"]
         if app_raw_bytes > 0:
             cost_calibrator.update_sample(
                 COST_CALIBRATION_FILE,
