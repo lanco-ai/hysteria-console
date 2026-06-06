@@ -7,12 +7,15 @@ TUIC password so subscriptions stay simple.
 """
 import json
 import os
+import secrets
 import subprocess
 import time
 from pathlib import Path
 
 USERS_FILE = Path('/root/hysteria/users.json')
 CONFIG_FILE = Path('/root/hysteria/tuic.json')
+LOCKED_USER_FILE = Path('/root/hysteria/state/tuic_locked_user.json')
+LOCKED_USER_UUID = '00000000-0000-4000-8000-000000000000'
 
 
 def _base_config():
@@ -56,6 +59,42 @@ def _save_config(path, cfg):
     path.chmod(0o600)
 
 
+def _save_secret(path, data):
+    payload = json.dumps(data, indent=2, ensure_ascii=True) + '\n'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + '.tmp')
+    with tmp.open('w', encoding='utf-8') as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    path.chmod(0o600)
+
+
+def _locked_user_password():
+    data = _load_json(LOCKED_USER_FILE, {})
+    password = str((data or {}).get('password') or '').strip()
+    if password:
+        return password
+    password = secrets.token_urlsafe(48)
+    _save_secret(LOCKED_USER_FILE, {'password': password})
+    return password
+
+
+def _ensure_tuic_accepts_config(cfg):
+    """TUIC server 1.0.0 refuses to start when users is empty.
+
+    Keep the service healthy with a local random locked credential when every
+    real user is suspended, expired, over quota, or not yet created. The locked
+    user is never emitted in subscriptions, and the password is generated on
+    the node rather than hard-coded in the repo.
+    """
+    users = cfg.setdefault('users', {})
+    if not users:
+        users[LOCKED_USER_UUID] = _locked_user_password()
+    return cfg
+
+
 def render_from_users(users):
     cfg = _base_config()
     tuic_users = cfg['users']
@@ -66,7 +105,7 @@ def render_from_users(users):
         token = str(user_cfg.get('sub_token') or '').strip()
         if uid and token:
             tuic_users[uid] = f'{username}:{token}'
-    return cfg
+    return _ensure_tuic_accepts_config(cfg)
 
 
 def sync_all(*, users=None, path=None):
@@ -92,10 +131,12 @@ def render_from_user_plan(users, plan):
         token = str(user_cfg.get('sub_token') or '').strip()
         if token:
             tuic_users[uid] = f'{username}:{token}'
-    return cfg
+    return _ensure_tuic_accepts_config(cfg)
 
 
 def sync_user_plan(users, plan, *, path=None):
+    if not users and not plan:
+        return False
     p = Path(path) if path else CONFIG_FILE
     desired = render_from_user_plan(users, plan)
     current = _load_json(p, None)
