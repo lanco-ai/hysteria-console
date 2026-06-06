@@ -117,7 +117,7 @@ proxies:
     uuid: 00000000-0000-0000-0000-000000000000
     network: tcp
     tls: true
-    udp: true
+    udp: false
     flow: xtls-rprx-vision
     reality-opts:
       public-key: __XRAY_REALITY_PUBLIC_KEY__
@@ -133,7 +133,7 @@ proxies:
     uuid: 00000000-0000-0000-0000-000000000000
     network: tcp
     tls: true
-    udp: true
+    udp: false
     flow: xtls-rprx-vision
     reality-opts:
       public-key: __XRAY_REALITY_PUBLIC_KEY__

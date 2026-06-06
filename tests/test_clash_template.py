@@ -44,3 +44,11 @@ def test_github_dns_uses_overseas_resolvers():
             "https://1.1.1.1/dns-query",
             "https://8.8.8.8/dns-query",
         ]
+
+
+def test_tcp_vless_nodes_do_not_tunnel_udp():
+    cfg = load_template()
+    proxies = {proxy["name"]: proxy for proxy in cfg["proxies"]}
+
+    assert proxies["🇺🇸 美国 TCP (VLESS+REALITY)"]["udp"] is False
+    assert proxies["🇺🇸 美国 TCP 备用 (VLESS+REALITY)"]["udp"] is False
