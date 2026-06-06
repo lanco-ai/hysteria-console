@@ -58,6 +58,36 @@ dns:
     '+.github-cloud.s3.amazonaws.com':
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query
+    '+.openai.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.chatgpt.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.oaistatic.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.oaiusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.openaiusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.ai.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.auth0.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.arkoselabs.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.statsigapi.net':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.featuregates.org':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
     '+.steamcontent.com':
       - 223.5.5.5
       - 119.29.29.29
@@ -148,6 +178,7 @@ proxy-groups:
     type: select
     proxies:
       - ⚡ GitHub 加速
+      - 🤖 GPT 优化
       - 🔄 自动选择
       - 🇺🇸 美国 UDP (端口跳跃)
       - 🇺🇸 美国 UDP TUIC
@@ -175,6 +206,18 @@ proxy-groups:
       - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
     url: https://github.com/favicon.ico
     interval: 120
+    timeout: 5000
+    tolerance: 100
+
+  - name: 🤖 GPT 优化
+    type: url-test
+    proxies:
+      - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
+      - 🇺🇸 美国 TCP (VLESS+REALITY)
+      - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
+    url: https://chatgpt.com/cdn-cgi/trace
+    interval: 60
     timeout: 5000
     tolerance: 100
 
@@ -245,6 +288,22 @@ rule-providers:
 
 # 6. 规则
 rules:
+  - 'DOMAIN-SUFFIX,openai.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,chatgpt.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,oaistatic.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,oaiusercontent.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,openaiusercontent.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,ai.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,auth0.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,arkoselabs.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,statsigapi.net,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,featuregates.org,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,intercom.io,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,intercomcdn.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,sentry.io,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,browser-intake-datadoghq.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,chatgpt.livekit.cloud,🤖 GPT 优化'
+  - 'DOMAIN,challenges.cloudflare.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,github.com,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,github.io,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,githubusercontent.com,⚡ GitHub 加速'

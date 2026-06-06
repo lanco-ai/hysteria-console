@@ -9,6 +9,7 @@ log = logging.getLogger(__name__)
 NODE_GROUP = '🚀 节点选择'
 AUTO_GROUP = '🔄 自动选择'
 GITHUB_GROUP = '⚡ GitHub 加速'
+GPT_GROUP = '🤖 GPT 优化'
 HY2_UDP_PROXY = '🇺🇸 美国 UDP (端口跳跃)'
 TUIC_UDP_PROXY = '🇺🇸 美国 UDP TUIC'
 VLESS_TCP_PROXY = '🇺🇸 美国 TCP (VLESS+REALITY)'
@@ -156,8 +157,8 @@ def _rewrite_rule_action(rule, action):
 def _apply_game_profile(cfg):
     _set_group_proxies(
         cfg, NODE_GROUP,
-        [HY2_UDP_PROXY, TUIC_UDP_PROXY, AUTO_GROUP, VLESS_TCP_PROXY,
-         VLESS_BACKUP_PROXY, GITHUB_GROUP, 'DIRECT'],
+        [HY2_UDP_PROXY, TUIC_UDP_PROXY, GPT_GROUP, AUTO_GROUP,
+         VLESS_TCP_PROXY, VLESS_BACKUP_PROXY, GITHUB_GROUP, 'DIRECT'],
         allow_group_refs=True, allow_direct=True,
     )
     _set_group_proxies(
@@ -178,8 +179,8 @@ def _apply_game_profile(cfg):
 def _apply_work_profile(cfg):
     _set_group_proxies(
         cfg, NODE_GROUP,
-        [GITHUB_GROUP, AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY,
-         HY2_UDP_PROXY, TUIC_UDP_PROXY, 'DIRECT'],
+        [GITHUB_GROUP, GPT_GROUP, AUTO_GROUP, VLESS_TCP_PROXY,
+         VLESS_BACKUP_PROXY, HY2_UDP_PROXY, TUIC_UDP_PROXY, 'DIRECT'],
         allow_group_refs=True, allow_direct=True,
     )
     _set_group_proxies(
@@ -199,7 +200,7 @@ def _apply_lowdata_profile(cfg):
     cfg['log-level'] = 'warning'
     _set_group_proxies(
         cfg, NODE_GROUP,
-        ['DIRECT', AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY,
+        ['DIRECT', GPT_GROUP, AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY,
          HY2_UDP_PROXY, TUIC_UDP_PROXY, GITHUB_GROUP],
         allow_group_refs=True, allow_direct=True,
     )
@@ -214,8 +215,8 @@ def _apply_lowdata_profile(cfg):
 def _apply_safe_profile(cfg):
     _set_group_proxies(
         cfg, NODE_GROUP,
-        [AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY, HY2_UDP_PROXY,
-         TUIC_UDP_PROXY, 'DIRECT'],
+        [GPT_GROUP, AUTO_GROUP, VLESS_TCP_PROXY, VLESS_BACKUP_PROXY,
+         HY2_UDP_PROXY, TUIC_UDP_PROXY, 'DIRECT'],
         allow_group_refs=True, allow_direct=True,
     )
     _set_group_proxies(
