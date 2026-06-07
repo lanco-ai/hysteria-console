@@ -50,6 +50,21 @@ def test_google_uses_dedicated_url_test_group():
     assert "🌐 Google 优化" in groups["🚀 节点选择"]["proxies"]
 
 
+def test_telegram_uses_dedicated_url_test_group():
+    cfg = load_template()
+    groups = {group["name"]: group for group in cfg["proxy-groups"]}
+
+    telegram_group = groups["✈️ Telegram 优化"]
+    assert telegram_group["type"] == "url-test"
+    assert telegram_group["url"] == "https://telegram.org/img/website_icon.svg"
+    assert telegram_group["proxies"][:2] == [
+        "🇺🇸 美国 UDP (端口跳跃)",
+        "🇺🇸 美国 UDP TUIC",
+    ]
+    assert "🇺🇸 美国 TCP (VLESS+REALITY)" in telegram_group["proxies"]
+    assert "✈️ Telegram 优化" in groups["🚀 节点选择"]["proxies"]
+
+
 def test_github_rules_precede_external_rulesets():
     cfg = load_template()
     rules = cfg["rules"]
@@ -99,6 +114,24 @@ def test_google_rules_precede_external_rulesets():
     assert not any("google" in rule.lower() and rule.endswith(",DIRECT") for rule in rules)
 
 
+def test_telegram_rules_precede_general_rulesets():
+    cfg = load_template()
+    rules = cfg["rules"]
+    telegram_domain_indexes = [
+        i for i, rule in enumerate(rules)
+        if any(token in rule.lower() for token in ("telegram", "t.me", "telegra.ph", "tdesktop"))
+        and rule.startswith("DOMAIN")
+    ]
+    first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
+
+    assert telegram_domain_indexes
+    assert max(telegram_domain_indexes) < first_ruleset
+    assert "DOMAIN-SUFFIX,telegram.org,✈️ Telegram 优化" in rules
+    assert "DOMAIN-SUFFIX,t.me,✈️ Telegram 优化" in rules
+    assert "RULE-SET,telegramcidr,✈️ Telegram 优化,no-resolve" in rules
+    assert not any("telegram" in rule.lower() and rule.endswith(",DIRECT") for rule in rules)
+
+
 def test_github_dns_uses_overseas_resolvers():
     cfg = load_template()
     policy = cfg["dns"]["nameserver-policy"]
@@ -126,6 +159,17 @@ def test_google_dns_uses_overseas_resolvers():
     policy = cfg["dns"]["nameserver-policy"]
 
     for domain in ("+.google.com", "+.gmail.com", "+.googleapis.com", "+.gstatic.com"):
+        assert policy[domain] == [
+            "https://1.1.1.1/dns-query",
+            "https://8.8.8.8/dns-query",
+        ]
+
+
+def test_telegram_dns_uses_overseas_resolvers():
+    cfg = load_template()
+    policy = cfg["dns"]["nameserver-policy"]
+
+    for domain in ("+.telegram.org", "+.telegram.me", "+.t.me", "+.telegra.ph"):
         assert policy[domain] == [
             "https://1.1.1.1/dns-query",
             "https://8.8.8.8/dns-query",

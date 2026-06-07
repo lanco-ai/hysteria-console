@@ -124,6 +124,24 @@ dns:
     '+.youtu.be':
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query
+    '+.telegram.org':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.telegram.me':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.telegram.dog':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.t.me':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.telegra.ph':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.tdesktop.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
     '+.steamcontent.com':
       - 223.5.5.5
       - 119.29.29.29
@@ -216,6 +234,7 @@ proxy-groups:
       - ⚡ GitHub 加速
       - 🤖 GPT 优化
       - 🌐 Google 优化
+      - ✈️ Telegram 优化
       - 🔄 自动选择
       - 🇺🇸 美国 UDP (端口跳跃)
       - 🇺🇸 美国 UDP TUIC
@@ -266,6 +285,18 @@ proxy-groups:
       - 🇺🇸 美国 TCP (VLESS+REALITY)
       - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
     url: https://www.gstatic.com/generate_204
+    interval: 60
+    timeout: 5000
+    tolerance: 100
+
+  - name: ✈️ Telegram 优化
+    type: url-test
+    proxies:
+      - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
+      - 🇺🇸 美国 TCP (VLESS+REALITY)
+      - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
+    url: https://telegram.org/img/website_icon.svg
     interval: 60
     timeout: 5000
     tolerance: 100
@@ -367,6 +398,12 @@ rules:
   - 'DOMAIN-SUFFIX,youtu.be,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,withgoogle.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,googleblog.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,telegram.org,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,telegram.me,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,telegram.dog,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,t.me,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,telegra.ph,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,tdesktop.com,✈️ Telegram 优化'
   - 'DOMAIN-SUFFIX,github.com,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,github.io,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,githubusercontent.com,⚡ GitHub 加速'
@@ -385,6 +422,7 @@ rules:
   - 'DOMAIN-SUFFIX,bootstrapcdn.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,fontawesome.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,fontawesomecdn.com,🚀 节点选择'
+  - 'RULE-SET,telegramcidr,✈️ Telegram 优化,no-resolve'
   - 'RULE-SET,reject,REJECT'
   - 'RULE-SET,private,DIRECT'
   - 'RULE-SET,lancidr,DIRECT,no-resolve'
@@ -401,7 +439,6 @@ rules:
   - 'RULE-SET,apple,DIRECT'
   - 'RULE-SET,direct,DIRECT'
   - 'RULE-SET,proxy,🚀 节点选择'
-  - 'RULE-SET,telegramcidr,🚀 节点选择,no-resolve'
   - 'RULE-SET,cncidr,DIRECT,no-resolve'
   - 'GEOIP,CN,DIRECT'
   - 'MATCH,🚀 节点选择'

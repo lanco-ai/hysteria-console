@@ -442,6 +442,7 @@ def test_build_yaml_game_profile_prefers_udp_and_injects_credentials(tmp_path, m
     assert groups[ss.NODE_GROUP]['proxies'][:2] == [ss.HY2_UDP_PROXY, ss.TUIC_UDP_PROXY]
     assert ss.GPT_GROUP in groups[ss.NODE_GROUP]['proxies']
     assert ss.GOOGLE_GROUP in groups[ss.NODE_GROUP]['proxies']
+    assert ss.TELEGRAM_GROUP in groups[ss.NODE_GROUP]['proxies']
     assert groups[ss.AUTO_GROUP]['type'] == 'url-test'
     assert groups[ss.AUTO_GROUP]['timeout'] == 2500
     assert f'DOMAIN-SUFFIX,steamcommunity.com,{ss.NODE_GROUP}' in cfg['rules'][:4]
@@ -451,9 +452,9 @@ def test_build_yaml_work_profile_prefers_stable_tcp(tmp_path, monkeypatch):
     cfg = _profile_cfg(tmp_path, monkeypatch, 'work')
     groups = _groups(cfg)
 
-    assert groups[ss.NODE_GROUP]['proxies'][:6] == [
-        ss.GITHUB_GROUP, ss.GPT_GROUP, ss.GOOGLE_GROUP, ss.AUTO_GROUP,
-        ss.VLESS_TCP_PROXY, ss.VLESS_BACKUP_PROXY,
+    assert groups[ss.NODE_GROUP]['proxies'][:7] == [
+        ss.GITHUB_GROUP, ss.GPT_GROUP, ss.GOOGLE_GROUP, ss.TELEGRAM_GROUP,
+        ss.AUTO_GROUP, ss.VLESS_TCP_PROXY, ss.VLESS_BACKUP_PROXY,
     ]
     assert groups[ss.AUTO_GROUP]['type'] == 'fallback'
     assert groups[ss.AUTO_GROUP]['proxies'][:2] == [ss.VLESS_TCP_PROXY, ss.VLESS_BACKUP_PROXY]
@@ -468,6 +469,7 @@ def test_build_yaml_lowdata_profile_routes_unknown_direct(tmp_path, monkeypatch)
     assert groups[ss.NODE_GROUP]['proxies'][0] == 'DIRECT'
     assert groups[ss.NODE_GROUP]['proxies'][1] == ss.GPT_GROUP
     assert groups[ss.NODE_GROUP]['proxies'][2] == ss.GOOGLE_GROUP
+    assert groups[ss.NODE_GROUP]['proxies'][3] == ss.TELEGRAM_GROUP
     assert cfg['rules'][-1] == 'MATCH,DIRECT'
 
 
@@ -477,6 +479,7 @@ def test_build_yaml_safe_profile_proxies_cn_but_keeps_lan_direct(tmp_path, monke
 
     assert groups[ss.NODE_GROUP]['proxies'][0] == ss.GPT_GROUP
     assert groups[ss.NODE_GROUP]['proxies'][1] == ss.GOOGLE_GROUP
+    assert groups[ss.NODE_GROUP]['proxies'][2] == ss.TELEGRAM_GROUP
     assert 'RULE-SET,lancidr,DIRECT,no-resolve' in cfg['rules']
     assert f'RULE-SET,cncidr,{ss.NODE_GROUP},no-resolve' in cfg['rules']
     assert f'GEOIP,CN,{ss.NODE_GROUP}' in cfg['rules']
