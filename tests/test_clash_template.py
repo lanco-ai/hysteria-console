@@ -35,6 +35,21 @@ def test_gpt_uses_dedicated_url_test_group():
     assert "🤖 GPT 优化" in groups["🚀 节点选择"]["proxies"]
 
 
+def test_google_uses_dedicated_url_test_group():
+    cfg = load_template()
+    groups = {group["name"]: group for group in cfg["proxy-groups"]}
+
+    google_group = groups["🌐 Google 优化"]
+    assert google_group["type"] == "url-test"
+    assert google_group["url"] == "https://www.gstatic.com/generate_204"
+    assert google_group["proxies"][:2] == [
+        "🇺🇸 美国 UDP (端口跳跃)",
+        "🇺🇸 美国 UDP TUIC",
+    ]
+    assert "🇺🇸 美国 TCP (VLESS+REALITY)" in google_group["proxies"]
+    assert "🌐 Google 优化" in groups["🚀 节点选择"]["proxies"]
+
+
 def test_github_rules_precede_external_rulesets():
     cfg = load_template()
     rules = cfg["rules"]
@@ -67,6 +82,23 @@ def test_gpt_rules_precede_external_rulesets():
     assert not any("openai" in rule.lower() and rule.endswith(",DIRECT") for rule in rules)
 
 
+def test_google_rules_precede_external_rulesets():
+    cfg = load_template()
+    rules = cfg["rules"]
+    google_rule_indexes = [
+        i for i, rule in enumerate(rules)
+        if any(token in rule.lower() for token in ("google", "gmail", "gstatic", "youtube"))
+    ]
+    first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
+
+    assert google_rule_indexes
+    assert max(google_rule_indexes) < first_ruleset
+    assert "DOMAIN-SUFFIX,gmail.com,🌐 Google 优化" in rules
+    assert "DOMAIN-SUFFIX,google.com,🌐 Google 优化" in rules
+    assert "DOMAIN-SUFFIX,gstatic.com,🌐 Google 优化" in rules
+    assert not any("google" in rule.lower() and rule.endswith(",DIRECT") for rule in rules)
+
+
 def test_github_dns_uses_overseas_resolvers():
     cfg = load_template()
     policy = cfg["dns"]["nameserver-policy"]
@@ -83,6 +115,17 @@ def test_gpt_dns_uses_overseas_resolvers():
     policy = cfg["dns"]["nameserver-policy"]
 
     for domain in ("+.openai.com", "+.chatgpt.com", "+.oaistatic.com", "+.oaiusercontent.com"):
+        assert policy[domain] == [
+            "https://1.1.1.1/dns-query",
+            "https://8.8.8.8/dns-query",
+        ]
+
+
+def test_google_dns_uses_overseas_resolvers():
+    cfg = load_template()
+    policy = cfg["dns"]["nameserver-policy"]
+
+    for domain in ("+.google.com", "+.gmail.com", "+.googleapis.com", "+.gstatic.com"):
         assert policy[domain] == [
             "https://1.1.1.1/dns-query",
             "https://8.8.8.8/dns-query",

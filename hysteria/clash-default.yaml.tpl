@@ -88,6 +88,42 @@ dns:
     '+.featuregates.org':
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query
+    '+.google.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.gmail.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googlemail.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googleapis.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.gstatic.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googleusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.ggpht.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.gvt1.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googlevideo.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.youtube.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.ytimg.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.youtu.be':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
     '+.steamcontent.com':
       - 223.5.5.5
       - 119.29.29.29
@@ -179,6 +215,7 @@ proxy-groups:
     proxies:
       - ⚡ GitHub 加速
       - 🤖 GPT 优化
+      - 🌐 Google 优化
       - 🔄 自动选择
       - 🇺🇸 美国 UDP (端口跳跃)
       - 🇺🇸 美国 UDP TUIC
@@ -217,6 +254,18 @@ proxy-groups:
       - 🇺🇸 美国 TCP (VLESS+REALITY)
       - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
     url: https://chatgpt.com/cdn-cgi/trace
+    interval: 60
+    timeout: 5000
+    tolerance: 100
+
+  - name: 🌐 Google 优化
+    type: url-test
+    proxies:
+      - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
+      - 🇺🇸 美国 TCP (VLESS+REALITY)
+      - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
+    url: https://www.gstatic.com/generate_204
     interval: 60
     timeout: 5000
     tolerance: 100
@@ -304,6 +353,20 @@ rules:
   - 'DOMAIN-SUFFIX,browser-intake-datadoghq.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,chatgpt.livekit.cloud,🤖 GPT 优化'
   - 'DOMAIN,challenges.cloudflare.com,🤖 GPT 优化'
+  - 'DOMAIN-SUFFIX,google.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,gmail.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googlemail.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googleapis.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,gstatic.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googleusercontent.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,ggpht.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,gvt1.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googlevideo.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,youtube.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,ytimg.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,youtu.be,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,withgoogle.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googleblog.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,github.com,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,github.io,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,githubusercontent.com,⚡ GitHub 加速'
@@ -316,9 +379,6 @@ rules:
   - 'DOMAIN-SUFFIX,steamcontent.com,DIRECT'
   - 'DOMAIN-SUFFIX,steamserver.net,DIRECT'
   - 'DOMAIN-SUFFIX,steampowered.com,🚀 节点选择'
-  - 'DOMAIN-SUFFIX,googleapis.com,🚀 节点选择'
-  - 'DOMAIN-SUFFIX,gstatic.com,🚀 节点选择'
-  - 'DOMAIN-SUFFIX,googleusercontent.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,cloudflare.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,cdnjs.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,jsdelivr.net,🚀 节点选择'

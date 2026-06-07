@@ -479,6 +479,7 @@ NODE_GROUP = profile_defs.NODE_GROUP
 AUTO_GROUP = profile_defs.AUTO_GROUP
 GITHUB_GROUP = profile_defs.GITHUB_GROUP
 GPT_GROUP = profile_defs.GPT_GROUP
+GOOGLE_GROUP = profile_defs.GOOGLE_GROUP
 HY2_UDP_PROXY = profile_defs.HY2_UDP_PROXY
 TUIC_UDP_PROXY = profile_defs.TUIC_UDP_PROXY
 VLESS_TCP_PROXY = profile_defs.VLESS_TCP_PROXY
