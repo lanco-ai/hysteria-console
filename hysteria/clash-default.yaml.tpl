@@ -368,6 +368,7 @@ rule-providers:
 
 # 6. 规则
 rules:
+  - 'IP-CIDR,47.245.53.96/32,DIRECT,no-resolve'
   - 'DOMAIN-SUFFIX,openai.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,chatgpt.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,oaistatic.com,🤖 GPT 优化'

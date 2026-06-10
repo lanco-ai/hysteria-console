@@ -65,6 +65,16 @@ def test_telegram_uses_dedicated_url_test_group():
     assert "✈️ Telegram 优化" in groups["🚀 节点选择"]["proxies"]
 
 
+def test_direct_ip_bypass_rule_stays_first():
+    cfg = load_template()
+    rules = cfg["rules"]
+
+    assert rules[0] == "IP-CIDR,47.245.53.96/32,DIRECT,no-resolve"
+    assert rules.index("IP-CIDR,47.245.53.96/32,DIRECT,no-resolve") < rules.index(
+        "DOMAIN-SUFFIX,openai.com,🤖 GPT 优化"
+    )
+
+
 def test_github_rules_precede_external_rulesets():
     cfg = load_template()
     rules = cfg["rules"]

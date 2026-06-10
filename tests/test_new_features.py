@@ -480,6 +480,8 @@ def test_build_yaml_safe_profile_proxies_cn_but_keeps_lan_direct(tmp_path, monke
     assert groups[ss.NODE_GROUP]['proxies'][0] == ss.GPT_GROUP
     assert groups[ss.NODE_GROUP]['proxies'][1] == ss.GOOGLE_GROUP
     assert groups[ss.NODE_GROUP]['proxies'][2] == ss.TELEGRAM_GROUP
+    assert ss.DIRECT_IP_RULE in cfg['rules']
+    assert f'IP-CIDR,47.245.53.96/32,{ss.NODE_GROUP},no-resolve' not in cfg['rules']
     assert 'RULE-SET,lancidr,DIRECT,no-resolve' in cfg['rules']
     assert f'RULE-SET,cncidr,{ss.NODE_GROUP},no-resolve' in cfg['rules']
     assert f'GEOIP,CN,{ss.NODE_GROUP}' in cfg['rules']
