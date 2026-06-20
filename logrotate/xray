@@ -1,0 +1,10 @@
+/var/log/xray/*.log {
+    daily
+    maxsize 20M
+    rotate 7
+    missingok
+    notifempty
+    compress
+    copytruncate
+    create 0600 nobody nogroup
+}

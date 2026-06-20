@@ -178,12 +178,32 @@ def test_deploy_installs_tuic_meter_module_and_nftables():
     assert '$HY_DIR/tuic_meter.py' in deploy
 
 
+def test_deploy_installs_xray_logrotate_config():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+    config = (ROOT / 'logrotate/xray').read_text(encoding='utf-8')
+
+    assert ' logrotate ' in deploy
+    assert 'logrotate/xray' in deploy
+    assert '/etc/logrotate.d/xray' in deploy
+    assert '/var/log/xray/*.log' in config
+    assert 'maxsize 20M' in config
+    assert 'copytruncate' in config
+
+
 def test_traffic_limiter_unit_can_access_nftables():
     unit = (ROOT / 'systemd/hysteria-traffic-limiter.service').read_text(encoding='utf-8')
 
     assert 'AmbientCapabilities=CAP_NET_ADMIN' in unit
     assert 'CapabilityBoundingSet=CAP_NET_ADMIN' in unit
     assert 'AF_NETLINK' in unit
+
+
+def test_traffic_limiter_timer_runs_every_15_seconds():
+    timer = (ROOT / 'systemd/hysteria-traffic-limiter.timer').read_text(encoding='utf-8')
+
+    assert 'OnUnitActiveSec=15s' in timer
+    assert 'AccuracySec=5s' in timer
+    assert 'OnUnitActiveSec=5s' not in timer
 
 
 def test_deploy_installs_restore_check_script():

@@ -27,7 +27,7 @@
 - ⚡  **Hysteria2** 监听 `:443/udp`，启用 Salamander 混淆 + UDP 端口跳跃 `20000-40000/udp`。
 - 🛡️ **Xray VLESS + Reality** 主端口 `:443/tcp`，备用端口 `:8443/tcp`，伪装成 `www.bing.com`。
 - 🎛️ **内置管理面板** —— 浏览器里创建用户、查看实时流量、维护订阅模板和路由规则；侧边栏布局，深色主题，移动端自适应。
-- 📊 **每用户配额 + 设备数限制** —— 5 秒周期任务拉取 hysteria + xray 流量统计，超限自动踢人，按可配置账期自动重置（默认 12 号锚定、30 天周期）。
+- 📊 **每用户配额 + 设备数限制** —— 15 秒周期任务拉取 hysteria + xray 流量统计，超限自动踢人，按可配置账期自动重置（默认 12 号锚定、30 天周期）。
 - 🔗 **每用户独立订阅 URL**，按请求渲染 Clash YAML，自动注入对应密码与 UUID。
 - 🚀 **一键部署** —— 填好 `.env`，跑 `./deploy.sh`，一分钟内完成。
 
@@ -191,7 +191,7 @@ sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
 │   ├── config.yaml.tpl             # hysteria2 服务端配置
 │   ├── auth_backend.py             # auth-by-command 认证桥
 │   ├── subscription_service.py     # 管理面板 + /sub 渲染
-│   ├── traffic_limiter.py          # 5 秒任务：流量统计 + 自动踢人
+│   ├── traffic_limiter.py          # 15 秒任务：流量统计 + 自动踢人
 │   └── clash-default.yaml.tpl      # 订阅模板
 ├── xray/config.json.tpl            # vless+reality 配置
 ├── nginx/hysteria-panel.conf       # :80 反向代理

@@ -68,11 +68,14 @@ def test_telegram_uses_dedicated_url_test_group():
 def test_direct_ip_bypass_rule_stays_first():
     cfg = load_template()
     rules = cfg["rules"]
+    direct_rules = [
+        "IP-CIDR,47.245.53.96/32,DIRECT,no-resolve",
+        "IP-CIDR,192.238.178.243/32,DIRECT,no-resolve",
+    ]
 
-    assert rules[0] == "IP-CIDR,47.245.53.96/32,DIRECT,no-resolve"
-    assert rules.index("IP-CIDR,47.245.53.96/32,DIRECT,no-resolve") < rules.index(
-        "DOMAIN-SUFFIX,openai.com,🤖 GPT 优化"
-    )
+    assert rules[:2] == direct_rules
+    openai_index = rules.index("DOMAIN-SUFFIX,openai.com,🤖 GPT 优化")
+    assert all(rules.index(rule) < openai_index for rule in direct_rules)
 
 
 def test_github_rules_precede_external_rulesets():

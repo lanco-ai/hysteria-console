@@ -17,6 +17,8 @@ TUIC_UDP_PROXY = '🇺🇸 美国 UDP TUIC'
 VLESS_TCP_PROXY = '🇺🇸 美国 TCP (VLESS+REALITY)'
 VLESS_BACKUP_PROXY = '🇺🇸 美国 TCP 备用 (VLESS+REALITY)'
 DIRECT_IP_RULE = 'IP-CIDR,47.245.53.96/32,DIRECT,no-resolve'
+NOISY_TIMEOUT_IP_RULE = 'IP-CIDR,192.238.178.243/32,DIRECT,no-resolve'
+DIRECT_IP_RULES = (DIRECT_IP_RULE, NOISY_TIMEOUT_IP_RULE)
 
 SUBSCRIPTION_PROFILES = {
     'default': {
@@ -231,7 +233,7 @@ def _apply_safe_profile(cfg):
         group_type='fallback', interval=45, timeout=5000,
     )
     keep_direct = (
-        DIRECT_IP_RULE,
+        *DIRECT_IP_RULES,
         'RULE-SET,private,DIRECT',
         'RULE-SET,lancidr,DIRECT',
         'GEOIP,LAN,DIRECT',

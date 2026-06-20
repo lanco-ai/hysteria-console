@@ -34,7 +34,7 @@ done
 log "Installing OS packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
-apt-get install -y curl openssl iptables nftables ca-certificates python3 python3-yaml nginx qrencode >/dev/null
+apt-get install -y curl openssl iptables nftables ca-certificates python3 python3-yaml nginx qrencode logrotate >/dev/null
 
 HY_DISPLAY_MULTIPLIER="${HY_DISPLAY_MULTIPLIER:-2.28}"
 python3 - "$HY_DISPLAY_MULTIPLIER" <<'PY'
@@ -170,6 +170,7 @@ install -m 755 "$REPO_DIR/scripts/hysteria-tcp-mss.sh" /usr/local/sbin/hysteria-
 install -m 755 "$REPO_DIR/scripts/hy2-backup.sh" /usr/local/sbin/hy2-backup.sh
 install -m 755 "$REPO_DIR/scripts/hy2-restore-check.sh" /usr/local/sbin/hy2-restore-check.sh
 install -m 755 "$REPO_DIR/scripts/hy2-enable-https.sh" /usr/local/sbin/hy2-enable-https.sh
+install -m 644 "$REPO_DIR/logrotate/xray" /etc/logrotate.d/xray
 
 # ---------- 8b. Network tuning ----------
 log "Installing network tuning..."

@@ -27,7 +27,7 @@
 - ⚡  **Hysteria2** on `:443/udp` with Salamander obfs + UDP port-hopping over `20000-40000/udp`.
 - 🛡️ **Xray VLESS&nbsp;+&nbsp;Reality** on `:443/tcp` (primary) and `:8443/tcp` (backup), masquerading as `www.bing.com`.
 - 🎛️ **Built-in admin panel** — create users, see live traffic, manage subscription template & route rules from a browser. Sidebar layout, dark theme, fully responsive.
-- 📊 **Per-user quota & device limit** — enforced by a 5-second job that pulls hysteria + xray stats, kicks over-quota users, and resets on a configurable billing cycle (default: day-12 anchor, 30-day cycle).
+- 📊 **Per-user quota & device limit** — enforced by a 15-second job that pulls hysteria + xray stats, kicks over-quota users, and resets on a configurable billing cycle (default: day-12 anchor, 30-day cycle).
 - 🔗 **Per-user subscription URL** that emits Clash YAML on the fly with the right password & UUID injected.
 - 🚀 **One-shot deploy** — fill in `.env`, run `./deploy.sh`, get a working stack in under a minute.
 
