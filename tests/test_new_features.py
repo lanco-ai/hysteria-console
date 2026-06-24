@@ -566,7 +566,8 @@ def test_build_yaml_applies_user_clash_overrides_only_to_that_user(tmp_path, mon
     assert alice_cfg['rules'][:len(extra_rules)] == extra_rules
     assert all(rule not in bob_cfg['rules'] for rule in extra_rules)
     assert alice_cfg['dns']['fake-ip-filter'][:2] == fake_ip_filters
-    assert 'fake-ip-filter' not in bob_cfg['dns']
+    assert all(item not in bob_cfg['dns']['fake-ip-filter'] for item in fake_ip_filters)
+    assert '*.msftconnecttest.com' in bob_cfg['dns']['fake-ip-filter']
     assert alice_cfg['tun']['route-exclude-address'] == tun_excludes
     assert 'tun' not in bob_cfg
 

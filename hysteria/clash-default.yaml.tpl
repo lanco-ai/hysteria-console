@@ -16,6 +16,17 @@ dns:
     - 119.29.29.29
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  fake-ip-filter:
+    - "*.msftconnecttest.com"
+    - "*.msftncsi.com"
+    - "*.microsoft.com"
+    - "*.microsoftonline.com"
+    - "*.windows.com"
+    - "*.windowsupdate.com"
+    - "*.mp.microsoft.com"
+    - "*.xboxlive.com"
+    - "*.xboxservices.com"
+    - "*.gamepass.com"
   use-hosts: true
 
   nameserver:
@@ -420,6 +431,17 @@ rules:
   - 'DOMAIN,ipv6.msftconnecttest.com,REJECT'
   - 'DOMAIN,ipv6.msftncsi.com,REJECT'
   - 'IP-CIDR6,::/0,REJECT,no-resolve'
+  - 'DOMAIN-SUFFIX,msftconnecttest.com,DIRECT'
+  - 'DOMAIN-SUFFIX,msftncsi.com,DIRECT'
+  - 'DOMAIN-SUFFIX,microsoft.com,DIRECT'
+  - 'DOMAIN-SUFFIX,microsoftonline.com,DIRECT'
+  - 'DOMAIN-SUFFIX,windows.com,DIRECT'
+  - 'DOMAIN-SUFFIX,windowsupdate.com,DIRECT'
+  - 'DOMAIN-SUFFIX,mp.microsoft.com,DIRECT'
+  - 'DOMAIN-SUFFIX,xboxlive.com,DIRECT'
+  - 'DOMAIN-SUFFIX,xboxservices.com,DIRECT'
+  - 'DOMAIN-SUFFIX,gamepass.com,DIRECT'
+  - 'DOMAIN-SUFFIX,playfabapi.com,DIRECT'
   - 'DOMAIN-SUFFIX,openai.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,chatgpt.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,oaistatic.com,🤖 GPT 优化'

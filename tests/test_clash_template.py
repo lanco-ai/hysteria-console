@@ -96,6 +96,50 @@ def test_ipv6_dead_end_rules_precede_proxy_rules():
     assert all(rules.index(rule) < first_ruleset for rule in ipv6_rules)
 
 
+def test_microsoft_store_xbox_rules_stay_direct_before_proxy_rules():
+    cfg = load_template()
+    rules = cfg["rules"]
+    microsoft_rules = [
+        "DOMAIN-SUFFIX,msftconnecttest.com,DIRECT",
+        "DOMAIN-SUFFIX,msftncsi.com,DIRECT",
+        "DOMAIN-SUFFIX,microsoft.com,DIRECT",
+        "DOMAIN-SUFFIX,microsoftonline.com,DIRECT",
+        "DOMAIN-SUFFIX,windows.com,DIRECT",
+        "DOMAIN-SUFFIX,windowsupdate.com,DIRECT",
+        "DOMAIN-SUFFIX,mp.microsoft.com,DIRECT",
+        "DOMAIN-SUFFIX,xboxlive.com,DIRECT",
+        "DOMAIN-SUFFIX,xboxservices.com,DIRECT",
+        "DOMAIN-SUFFIX,gamepass.com,DIRECT",
+        "DOMAIN-SUFFIX,playfabapi.com,DIRECT",
+    ]
+    first_proxy_rule = rules.index("DOMAIN-SUFFIX,openai.com,🤖 GPT 优化")
+    first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
+
+    assert rules.index("DOMAIN,ipv6.msftconnecttest.com,REJECT") < rules.index(
+        "DOMAIN-SUFFIX,msftconnecttest.com,DIRECT")
+    assert rules.index("DOMAIN,ipv6.msftncsi.com,REJECT") < rules.index(
+        "DOMAIN-SUFFIX,msftncsi.com,DIRECT")
+    assert all(rule in rules for rule in microsoft_rules)
+    assert all(rules.index(rule) < first_proxy_rule for rule in microsoft_rules)
+    assert all(rules.index(rule) < first_ruleset for rule in microsoft_rules)
+
+
+def test_microsoft_fake_ip_filters_are_present():
+    cfg = load_template()
+    filters = cfg["dns"]["fake-ip-filter"]
+
+    for pattern in (
+        "*.msftconnecttest.com",
+        "*.msftncsi.com",
+        "*.microsoft.com",
+        "*.windowsupdate.com",
+        "*.mp.microsoft.com",
+        "*.xboxlive.com",
+        "*.xboxservices.com",
+    ):
+        assert pattern in filters
+
+
 def test_github_rules_precede_external_rulesets():
     cfg = load_template()
     rules = cfg["rules"]
