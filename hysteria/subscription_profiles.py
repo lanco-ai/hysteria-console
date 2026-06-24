@@ -2,6 +2,9 @@
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
+
+import user_compat
 
 
 log = logging.getLogger(__name__)
@@ -19,6 +22,48 @@ VLESS_BACKUP_PROXY = '🇺🇸 美国 TCP 备用 (VLESS+REALITY)'
 DIRECT_IP_RULE = 'IP-CIDR,47.245.53.96/32,DIRECT,no-resolve'
 NOISY_TIMEOUT_IP_RULE = 'IP-CIDR,192.238.178.243/32,DIRECT,no-resolve'
 DIRECT_IP_RULES = (DIRECT_IP_RULE, NOISY_TIMEOUT_IP_RULE)
+USER_CLASH_RULES_KEY = 'clash_rules'
+USER_FAKE_IP_FILTER_KEY = 'clash_fake_ip_filter'
+USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY = 'clash_tun_route_exclude_address'
+USER_TUIC_ENABLED_KEY = 'tuic_enabled'
+
+RULE_PACKS = {
+    'easyconnect': {
+        'label': 'EasyConnect 直连',
+        'desc': '深信服 EasyConnect / 西工大 VPN 进程、域名、IP 强制直连',
+        'rules': [
+            'PROCESS-NAME,EasyConnect.exe,DIRECT',
+            'PROCESS-NAME,ECAgent.exe,DIRECT',
+            'PROCESS-NAME,SangforCSClient.exe,DIRECT',
+            'PROCESS-NAME,SangforServiceClient.exe,DIRECT',
+            'DOMAIN,vpn.nwpu.edu.cn,DIRECT',
+            'DOMAIN-SUFFIX,nwpu.edu.cn,DIRECT',
+            'IP-CIDR,202.117.80.11/32,DIRECT,no-resolve',
+            'IP-CIDR6,2001:250:1004:805:202:117:80:11/128,DIRECT,no-resolve',
+        ],
+        'fake_ip_filter': ['vpn.nwpu.edu.cn', '*.nwpu.edu.cn'],
+        'tun_route_exclude_address': ['202.117.80.11/32'],
+    },
+    'overleaf': {
+        'label': 'Overleaf 加速',
+        'desc': 'Overleaf / ShareLaTeX 相关域名优先走节点选择',
+        'rules': [
+            f'DOMAIN-SUFFIX,overleaf.com,{NODE_GROUP}',
+            f'DOMAIN-SUFFIX,overleafusercontent.com,{NODE_GROUP}',
+            f'DOMAIN-SUFFIX,sharelatex.com,{NODE_GROUP}',
+        ],
+    },
+    'ipv6_dead_end': {
+        'label': 'IPv6 抑制',
+        'desc': '拦截无 IPv6 出口时容易拖慢连接的 IPv6/NCSI 探测',
+        'rules': [
+            'DOMAIN,ipv6.msftconnecttest.com,REJECT',
+            'DOMAIN,ipv6.msftncsi.com,REJECT',
+            'IP-CIDR6,::/0,REJECT,no-resolve',
+        ],
+    },
+}
+RULE_PACK_ORDER = ('easyconnect', 'overleaf', 'ipv6_dead_end')
 
 SUBSCRIPTION_PROFILES = {
     'default': {
@@ -131,6 +176,122 @@ def _prepend_unique_rules(cfg, new_rules):
     rules = list(cfg.get('rules') or [])
     existing = [rule for rule in rules if rule not in new_rules]
     cfg['rules'] = new_rules + existing
+
+
+def _string_list(value):
+    if isinstance(value, str):
+        items = value.splitlines()
+    elif isinstance(value, (list, tuple)):
+        items = value
+    else:
+        return []
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
+def _prepend_unique_fake_ip_filters(cfg, new_filters):
+    dns = cfg.get('dns')
+    if not isinstance(dns, dict):
+        dns = {}
+        cfg['dns'] = dns
+    current = _string_list(dns.get('fake-ip-filter') or [])
+    dns['fake-ip-filter'] = _dedupe(list(new_filters) + current)
+
+
+def _prepend_unique_tun_route_exclude_addresses(cfg, new_addresses):
+    tun = cfg.get('tun')
+    if not isinstance(tun, dict):
+        tun = {}
+        cfg['tun'] = tun
+    current = _string_list(tun.get('route-exclude-address') or [])
+    tun['route-exclude-address'] = _dedupe(list(new_addresses) + current)
+
+
+def get_rule_pack(key):
+    return RULE_PACKS.get(str(key or '').strip())
+
+
+def apply_rule_pack_to_clash_config(cfg, pack_key):
+    pack = get_rule_pack(pack_key)
+    if not pack:
+        return False
+    rules = _string_list(pack.get('rules'))
+    fake_ip_filters = _string_list(pack.get('fake_ip_filter'))
+    route_exclude_addresses = _string_list(pack.get('tun_route_exclude_address'))
+    if rules:
+        _prepend_unique_rules(cfg, rules)
+    if fake_ip_filters:
+        _prepend_unique_fake_ip_filters(cfg, fake_ip_filters)
+    if route_exclude_addresses:
+        _prepend_unique_tun_route_exclude_addresses(cfg, route_exclude_addresses)
+    return True
+
+
+def apply_rule_pack_to_user_config(user_cfg, pack_key):
+    pack = get_rule_pack(pack_key)
+    if not pack or not isinstance(user_cfg, dict):
+        return False
+    merged = {
+        USER_CLASH_RULES_KEY: _string_list(user_cfg.get(USER_CLASH_RULES_KEY)),
+        USER_FAKE_IP_FILTER_KEY: _string_list(user_cfg.get(USER_FAKE_IP_FILTER_KEY)),
+        USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY: _string_list(
+            user_cfg.get(USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY)),
+    }
+    pack_map = {
+        USER_CLASH_RULES_KEY: _string_list(pack.get('rules')),
+        USER_FAKE_IP_FILTER_KEY: _string_list(pack.get('fake_ip_filter')),
+        USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY: _string_list(
+            pack.get('tun_route_exclude_address')),
+    }
+    for key, additions in pack_map.items():
+        if additions:
+            user_cfg[key] = _dedupe(additions + merged[key])
+    return True
+
+
+def _remove_proxy_everywhere(cfg, proxy_name):
+    cfg['proxies'] = [
+        proxy for proxy in (cfg.get('proxies') or [])
+        if not (isinstance(proxy, dict) and proxy.get('name') == proxy_name)
+    ]
+    for group in (cfg.get('proxy-groups') or []):
+        if isinstance(group, dict) and isinstance(group.get('proxies'), list):
+            group['proxies'] = [p for p in group['proxies'] if p != proxy_name]
+
+
+def apply_user_transport_policy(cfg, user_cfg):
+    if not user_compat.tuic_enabled(user_cfg):
+        _remove_proxy_everywhere(cfg, TUIC_UDP_PROXY)
+    return cfg
+
+
+def apply_user_clash_overrides(cfg, user_cfg):
+    if not isinstance(user_cfg, dict):
+        return cfg
+    rules = _string_list(user_cfg.get(USER_CLASH_RULES_KEY))
+    fake_ip_filters = _string_list(user_cfg.get(USER_FAKE_IP_FILTER_KEY))
+    route_exclude_addresses = _string_list(
+        user_cfg.get(USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY))
+    if rules:
+        _prepend_unique_rules(cfg, rules)
+    if fake_ip_filters:
+        _prepend_unique_fake_ip_filters(cfg, fake_ip_filters)
+    if route_exclude_addresses:
+        _prepend_unique_tun_route_exclude_addresses(
+            cfg, route_exclude_addresses)
+    return cfg
+
+
+def render_user_transport_policy_yaml(text, user_cfg):
+    if user_compat.tuic_enabled(user_cfg):
+        return text
+    try:
+        import yaml
+        data = yaml.safe_load(text) or {}
+        apply_user_transport_policy(data, user_cfg)
+        return _dump_yaml(data)
+    except Exception:
+        log.exception('failed to render user transport policy')
+        return text
 
 
 def _replace_match_rule(cfg, action):
@@ -273,6 +434,30 @@ def _dump_yaml(data):
     return yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
+def utc_now_iso():
+    return datetime.utcnow().isoformat(timespec='seconds') + 'Z'
+
+
+def template_mtime_iso(template_file):
+    try:
+        return datetime.utcfromtimestamp(template_file.stat().st_mtime).isoformat(timespec='seconds') + 'Z'
+    except Exception:
+        return ''
+
+
+def prepend_subscription_header(text, username, profile, template_file, *, generated_at=None):
+    generated = generated_at or utc_now_iso()
+    profile = normalize_subscription_profile(profile)
+    header = [
+        f'# hy2-generated-at: {generated}',
+        f'# hy2-template-mtime: {template_mtime_iso(template_file)}',
+        f'# hy2-user: {username}',
+        f'# hy2-profile: {profile}',
+        '# hy2-note: refresh the client subscription after route or rule changes',
+    ]
+    return '\n'.join(header) + '\n' + str(text or '').lstrip()
+
+
 def render_profile_yaml(text, profile):
     profile = normalize_subscription_profile(profile)
     if profile == 'default':
@@ -287,7 +472,24 @@ def render_profile_yaml(text, profile):
         return text
 
 
-def build_yaml(ctx, username, auth_secret, profile='default'):
+def render_user_clash_overrides_yaml(text, user_cfg):
+    if not isinstance(user_cfg, dict):
+        return text
+    if not (_string_list(user_cfg.get(USER_CLASH_RULES_KEY)) or
+            _string_list(user_cfg.get(USER_FAKE_IP_FILTER_KEY)) or
+            _string_list(user_cfg.get(USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY))):
+        return text
+    try:
+        import yaml
+        data = yaml.safe_load(text) or {}
+        apply_user_clash_overrides(data, user_cfg)
+        return _dump_yaml(data)
+    except Exception:
+        log.exception('failed to render user Clash overrides')
+        return text
+
+
+def build_yaml(ctx, username, auth_secret, profile='default', *, generated_at=None):
     if not ctx.template_file.exists():
         return ''
     text = ctx.template_file.read_text(encoding='utf-8')
@@ -298,7 +500,8 @@ def build_yaml(ctx, username, auth_secret, profile='default'):
         count=1,
     )
     users = ctx.load_json(ctx.users_file, {})
-    vless_uuid = str((users.get(username) or {}).get('vless_uuid') or '').strip()
+    user_cfg = users.get(username) or {}
+    vless_uuid = str(user_cfg.get('vless_uuid') or '').strip()
     if vless_uuid:
         text = re.sub(
             r'(?m)^(\s*uuid:\s*).*$',
@@ -310,4 +513,8 @@ def build_yaml(ctx, username, auth_secret, profile='default'):
             lambda match: f'{match.group(1)}{username}:{auth_secret}',
             text,
         )
-    return render_profile_yaml(text, profile)
+    text = render_profile_yaml(text, profile)
+    text = render_user_transport_policy_yaml(text, user_cfg)
+    text = render_user_clash_overrides_yaml(text, user_cfg)
+    return prepend_subscription_header(
+        text, username, profile, ctx.template_file, generated_at=generated_at)

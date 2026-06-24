@@ -18,6 +18,21 @@ def is_metered(cfg):
     return bool(cfg.get('guest', False))
 
 
+def tuic_enabled(cfg):
+    """Return whether this user may receive/use TUIC credentials.
+
+    TUIC metering in this stack is protocol-level only, so metered users cannot
+    be safely quota-enforced on TUIC. Missing config therefore means:
+    non-metered users keep TUIC, metered users do not. Operators can override
+    explicitly with `tuic_enabled`.
+    """
+    if not isinstance(cfg, dict):
+        return False
+    if 'tuic_enabled' in cfg:
+        return bool(cfg.get('tuic_enabled'))
+    return not is_metered(cfg)
+
+
 def _as_int(value, default=0):
     try:
         return int(value)

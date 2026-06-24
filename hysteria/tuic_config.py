@@ -12,6 +12,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import user_compat
+
 USERS_FILE = Path('/root/hysteria/users.json')
 CONFIG_FILE = Path('/root/hysteria/tuic.json')
 LOCKED_USER_FILE = Path('/root/hysteria/state/tuic_locked_user.json')
@@ -101,6 +103,8 @@ def render_from_users(users):
     for username, user_cfg in sorted((users or {}).items()):
         if not isinstance(user_cfg, dict) or user_cfg.get('disabled'):
             continue
+        if not user_compat.tuic_enabled(user_cfg):
+            continue
         uid = str(user_cfg.get('vless_uuid') or '').strip()
         token = str(user_cfg.get('sub_token') or '').strip()
         if uid and token:
@@ -127,6 +131,8 @@ def render_from_user_plan(users, plan):
         uid = str(uid or '').strip()
         user_cfg = (users or {}).get(username)
         if not uid or not isinstance(user_cfg, dict):
+            continue
+        if not user_compat.tuic_enabled(user_cfg):
             continue
         token = str(user_cfg.get('sub_token') or '').strip()
         if token:

@@ -29,6 +29,8 @@ USAGE_DAILY_FILE = "/root/hysteria/state/usage_daily.json"
 USAGE_HOURLY_FILE = "/root/hysteria/state/usage_hourly.json"
 PROTOCOL_USAGE_HOURLY_FILE = "/root/hysteria/state/protocol_usage_hourly.json"
 COST_CALIBRATION_FILE = "/root/hysteria/state/cost_calibration.json"
+DISPLAY_MULTIPLIER_STATE_FILE = "/root/hysteria/state/display_multiplier.json"
+MULTIPLIER_AUTO_POLICY_FILE = "/root/hysteria/state/display_multiplier_auto.json"
 ONLINE_SNAPSHOT_FILE = "/root/hysteria/state/online.json"
 RESET_STATE_FILE = "/root/hysteria/state/auto_reset_state.json"
 RESET_LOG_FILE = "/root/hysteria/state/usage_reset.log"
@@ -116,6 +118,18 @@ def append_reset_log(actor, action, target, before, after, mk):
     os.makedirs(os.path.dirname(RESET_LOG_FILE), exist_ok=True)
     with open(RESET_LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(line, ensure_ascii=True) + "\n")
+
+
+def restart_subscription_async():
+    try:
+        subprocess.Popen(
+            ['systemd-run', '--no-block', '--on-active=2s',
+             '--unit', f'hy2-subscription-restart-auto-{int(datetime.utcnow().timestamp())}',
+             'systemctl', 'restart', 'hysteria-subscription.service'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
 
 
 def get(path):
@@ -526,6 +540,15 @@ def main():
                 app_raw_bytes=app_raw_bytes,
                 now=now,
             )
+            auto_result = cost_calibrator.maybe_auto_adjust(
+                COST_CALIBRATION_FILE,
+                current_multiplier=DISPLAY_MULTIPLIER,
+                policy_path=MULTIPLIER_AUTO_POLICY_FILE,
+                runtime_state_path=DISPLAY_MULTIPLIER_STATE_FILE,
+                now=now,
+            )
+            if auto_result.get('applied'):
+                restart_subscription_async()
 
     online_resp = get("/online")
     if online_resp is None:

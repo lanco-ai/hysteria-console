@@ -41,6 +41,8 @@ class HealthWidgetContext:
     online_file: object
     protocol_usage_hourly_file: object
     cost_calibration_file: object
+    display_multiplier_state_file: object
+    multiplier_auto_policy_file: object
     subscription_profiles: dict
     load_json: object
     local_now: object
@@ -199,14 +201,60 @@ def summarize_cost_calibration(ctx, *, now=None):
 
 
 def render_cost_calibrator(ctx, now=None):
-    summary = summarize_cost_calibration(ctx, now=now)
+    current_now = now or ctx.local_now()
+    summary = summarize_cost_calibration(ctx, now=current_now)
+    windows = cost_calibrator.summarize_windows(
+        ctx.cost_calibration_file,
+        current_multiplier=ctx.display_multiplier,
+        now=current_now,
+    )
+    policy = cost_calibrator.load_auto_policy(ctx.multiplier_auto_policy_file)
+    runtime_state = ctx.load_json(ctx.display_multiplier_state_file, {})
     confidence = _CALIBRATION_CONFIDENCE_LABELS.get(summary['confidence'], summary['confidence'])
     delta = summary.get('delta_percent')
     delta_text = '—' if delta is None else f'{delta:+.1f}%'
     iface_text = ', '.join(summary.get('ifaces') or []) or '未识别'
     advice = '样本不足，先观察一段时间'
+    apply_form = ''
     if summary['confidence'] in ('medium', 'high') and summary.get('suggested_multiplier') is not None:
-        advice = '可作为调整 HY_DISPLAY_MULTIPLIER 的参考'
+        advice = '可应用为运行时倍率'
+        apply_form = (
+            '<form method="post" action="/admin/cost-multiplier/apply" class="inline-form-row">'
+            '<button class="btn secondary btn-sm" type="submit">应用建议倍率</button>'
+            '</form>'
+        )
+    window_rows = ''.join(
+        '<tr>'
+        f'<td style="padding-left:18px;">{int(w["window_hours"])}h</td>'
+        f'<td>{_fmt_optional_multiplier(w["suggested_multiplier"])}</td>'
+        f'<td>{_fmt_optional_multiplier(w["egress_multiplier"])}</td>'
+        f'<td>{ctx.fmt_bytes(w["app_raw_bytes"])}</td>'
+        f'<td>{w["included_sample_count"]}/{w["sample_count"]}</td>'
+        f'<td style="padding-right:18px;">{html.escape(_CALIBRATION_CONFIDENCE_LABELS.get(w["confidence"], w["confidence"]))}</td>'
+        '</tr>'
+        for w in windows
+    )
+    checked = 'checked' if policy.get('enabled') else ''
+    mode_total = 'selected' if policy.get('mode') == 'total' else ''
+    mode_egress = 'selected' if policy.get('mode') == 'egress' else ''
+    conf_opts = ''.join(
+        f'<option value="{key}" {"selected" if policy.get("min_confidence") == key else ""}>{label}</option>'
+        for key, label in (('medium', '中'), ('high', '高'))
+    )
+    last_state = ''
+    if runtime_state.get('multiplier'):
+        source = '自动' if runtime_state.get('auto') else '手动'
+        last_state = (
+            f'<div class="small faint">当前运行时覆盖：{_fmt_optional_multiplier(runtime_state.get("multiplier"))}'
+            f' · {html.escape(source)} · {html.escape(str(runtime_state.get("applied_at") or ""))}</div>'
+        )
+    last_policy = ''
+    if policy.get('last_checked_at'):
+        last_policy = (
+            f'<div class="small faint">自动检查：{html.escape(str(policy.get("last_decision") or ""))}'
+            f' / {html.escape(str(policy.get("last_reason") or ""))}'
+            f' · {html.escape(str(policy.get("last_checked_at") or ""))}</div>'
+        )
     rows = (
         '<tr><th style="padding-left:18px;">当前倍率</th>'
         f'<td>{_fmt_optional_multiplier(summary["current_multiplier"])}</td>'
@@ -221,7 +269,7 @@ def render_cost_calibrator(ctx, now=None):
         '<th>系统出站参考</th>'
         f'<td style="padding-right:18px;">{_fmt_optional_multiplier(summary["egress_multiplier"])}</td></tr>'
         '<tr><th style="padding-left:18px;">样本</th>'
-        f'<td>{summary["sample_count"]} 个</td>'
+        f'<td>{summary["included_sample_count"]}/{summary["sample_count"]} 个</td>'
         '<th>置信度</th>'
         f'<td>{html.escape(confidence)}</td>'
         '<th>公网网卡</th>'
@@ -232,11 +280,30 @@ def render_cost_calibrator(ctx, now=None):
         '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
         '<div><div class="bold">成本校准器</div>'
         f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div></div>'
-        f'<div class="badge">{html.escape(advice)}</div>'
+        f'<div class="row gap-sm"><div class="badge">{html.escape(advice)}</div>{apply_form}</div>'
         '</div>'
         f'<table class="table"><tbody>{rows}</tbody></table>'
+        '<table class="table"><thead><tr><th style="padding-left:18px;">窗口</th><th>总量建议</th><th>出站建议</th><th>纳入流量</th><th>样本</th><th style="padding-right:18px;">置信度</th></tr></thead>'
+        f'<tbody>{window_rows}</tbody></table>'
+        '<div style="padding:0 18px 14px;">'
+        '<form method="post" action="/admin/cost-multiplier/auto" class="inline-form">'
+        '<div class="grid grid-3">'
+        f'<label class="switch"><input type="checkbox" name="enabled" {checked}>自动调倍率</label>'
+        '<div><label>依据</label><select name="mode">'
+        f'<option value="total" {mode_total}>公网 RX+TX 总量</option>'
+        f'<option value="egress" {mode_egress}>公网 TX 出站</option>'
+        '</select></div>'
+        f'<div><label>最低置信度</label><select name="min_confidence">{conf_opts}</select></div>'
+        f'<div><label>最大单次变化 (%)</label><input name="max_delta_percent" type="number" min="1" max="100" value="{float(policy["max_delta_percent"]):.0f}"></div>'
+        f'<div><label>最小变化 (%)</label><input name="min_delta_percent" type="number" min="0" max="50" value="{float(policy["min_delta_percent"]):.0f}"></div>'
+        f'<div><label>冷却时间 (小时)</label><input name="cooldown_hours" type="number" min="1" max="168" value="{float(policy["cooldown_hours"]):.0f}"></div>'
+        '</div>'
+        '<button class="btn secondary btn-sm mt-md" type="submit">保存自动策略</button>'
+        '</form>'
+        f'{last_state}{last_policy}'
+        '</div>'
         '<div class="small faint" style="padding:0 18px 14px;">'
-        '建议倍率使用公网网卡 RX+TX 与应用原始流量的加权比值；不会自动修改 .env。'
+        '建议倍率使用小样本过滤 + 10% 截尾加权平均；自动模式默认关闭，启用后仍受置信度、单次变化和冷却时间限制。'
         '</div>'
         '</div>'
     )

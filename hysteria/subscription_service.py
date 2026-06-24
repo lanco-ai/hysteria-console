@@ -15,6 +15,7 @@ import uuid
 import urllib.request
 
 import alerts
+import cost_calibrator
 import cycle as cycle_util
 import health
 import health_widgets
@@ -41,11 +42,15 @@ USAGE_DAILY_FILE = Path('/root/hysteria/state/usage_daily.json')
 USAGE_HOURLY_FILE = Path('/root/hysteria/state/usage_hourly.json')
 PROTOCOL_USAGE_HOURLY_FILE = Path('/root/hysteria/state/protocol_usage_hourly.json')
 COST_CALIBRATION_FILE = Path('/root/hysteria/state/cost_calibration.json')
+DISPLAY_MULTIPLIER_STATE_FILE = Path('/root/hysteria/state/display_multiplier.json')
+MULTIPLIER_AUTO_POLICY_FILE = Path('/root/hysteria/state/display_multiplier_auto.json')
 USAGE_PRESERVED_FILE = Path('/root/hysteria/state/usage_preserved.json')
 HOURLY_RETENTION_HOURS = 168
 ONLINE_FILE = Path('/root/hysteria/state/online.json')
 META_FILE = Path('/root/hysteria/subscription_meta.json')
 TEMPLATE_FILE = Path('/root/hysteria/template.yaml')
+BACKUP_DIR = Path('/root/hysteria/backups')
+XRAY_CONFIG_FILE = Path('/usr/local/etc/xray/config.json')
 SESSIONS_FILE = Path('/root/hysteria/state/panel_sessions.json')
 RESET_LOG_FILE = Path('/root/hysteria/state/usage_reset.log')
 USAGE_LOCK_FILE = Path('/root/hysteria/state/usage.lock')
@@ -490,6 +495,8 @@ NOISY_TIMEOUT_IP_RULE = profile_defs.NOISY_TIMEOUT_IP_RULE
 DIRECT_IP_RULES = profile_defs.DIRECT_IP_RULES
 SUBSCRIPTION_PROFILES = profile_defs.SUBSCRIPTION_PROFILES
 SUBSCRIPTION_PROFILE_ORDER = profile_defs.SUBSCRIPTION_PROFILE_ORDER
+RULE_PACKS = profile_defs.RULE_PACKS
+RULE_PACK_ORDER = profile_defs.RULE_PACK_ORDER
 
 
 def _subscription_profile_context():
@@ -512,10 +519,15 @@ def render_profile_yaml(text, profile):
     return profile_defs.render_profile_yaml(text, profile)
 
 
-def build_yaml(username, auth_secret, profile='default'):
+def build_yaml(username, auth_secret, profile='default', *, generated_at=None):
     return profile_defs.build_yaml(
         _subscription_profile_context(), username, auth_secret, profile=profile,
+        generated_at=generated_at,
     )
+
+
+def subscription_template_mtime():
+    return profile_defs.template_mtime_iso(TEMPLATE_FILE)
 
 def pct(used, total):
     if total <= 0:
@@ -888,7 +900,8 @@ def render_subscription_profile_links(base_url, user, token):
     return (
         '<div class="card mt-md">'
         '<div class="k">订阅模式</div>'
-        '<div class="small">同一个账号可按场景导入不同策略，默认模式保持后台模板原样。</div>'
+        '<div class="small">同一个账号可按场景导入不同策略，默认模式保持后台模板原样。'
+        f'模板更新时间：{html.escape(subscription_template_mtime() or "未知")}。</div>'
         f'<div class="profile-links mt-md">{"".join(items)}</div>'
         '</div>'
     )
@@ -1111,6 +1124,8 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     sub_http = f'{base_url}/sub/{user}?token={cfg.get("sub_token", "")}'
     metered = user_compat.is_metered(cfg)
     guest_checked = 'checked' if metered else ''
+    tuic_allowed = user_compat.tuic_enabled(cfg)
+    tuic_checked = 'checked' if tuic_allowed else ''
     expiry = user_expiry_state(cfg, today=(now or local_now()).date())
     expires_at = expiry['expires_at']
     expired_badge = '<span class="badge badge-danger">已过期</span>' if expiry['expired'] else ''
@@ -1123,6 +1138,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     bar_w = f'{percent:.1f}'
     user_esc = html.escape(user)
     guest_badge = '<span class="badge badge-info">访客</span>' if metered else ''
+    tuic_badge = '<span class="badge">TUIC</span>' if tuic_allowed else '<span class="badge badge-danger">TUIC 关闭</span>'
     disabled = bool(cfg.get('disabled'))
     disabled_badge = '<span class="badge badge-danger">已停用</span>' if disabled else ''
     guest_preview = ' · 访客' if metered else ''
@@ -1144,7 +1160,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
   <div class="row gap-sm" style="flex-wrap:nowrap;">
     <div class="user-avatar">{html.escape(user[:1].upper())}</div>
     <div style="min-width:0;">
-      <div class="bold">{user_esc} {guest_badge}{disabled_badge}{expired_badge}</div>
+      <div class="bold">{user_esc} {guest_badge}{tuic_badge}{disabled_badge}{expired_badge}</div>
       <div class="small">在线 <span data-role="online">{online.get(user, 0)}</span> / {max_devices} 设备</div>
       {note_preview}
     </div>
@@ -1169,9 +1185,10 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
 <label class="mt-sm">月流量上限 (GB)</label><input name="quota_gb" type="number" min="1" value="{base_gb or 150}">
 <label class="mt-sm">加量包 (GB)</label><input name="quota_extra_gb" type="number" min="0" value="{extra_gb}">
 <label class="mt-sm">到期日</label><input name="expires_at" type="date" value="{html.escape(expires_at)}">
-<label class="mt-sm">备注</label><input name="note" maxlength="200" value="{html.escape(note)}" placeholder="可选：续费状态/来源/说明">
-<label class="switch mt-sm"><input type="checkbox" name="guest" {guest_checked}>客人用户（仅做标记，不影响认证）</label>
-<button class="btn mt-md" type="submit">保存</button>
+	<label class="mt-sm">备注</label><input name="note" maxlength="200" value="{html.escape(note)}" placeholder="可选：续费状态/来源/说明">
+	<label class="switch mt-sm"><input type="checkbox" name="guest" {guest_checked}>客人用户（仅做标记，不影响认证）</label>
+	<label class="switch mt-sm"><input type="checkbox" name="tuic_enabled" {tuic_checked}>允许 TUIC（TUIC 不参与单用户额度计量）</label>
+	<button class="btn mt-md" type="submit">保存</button>
 </form>
 </details>
 <div class="row gap-sm mt-sm">
@@ -1281,8 +1298,9 @@ def render_admin(host, base_url, flash=''):
             <div><label>备注</label><input name="note" maxlength="200" placeholder="可选"></div>
           </div>
       <div class="row mt-md">
-        <label class="switch"><input type="checkbox" name="guest" checked>客人用户</label>
-        <label class="switch"><input type="checkbox" name="reset_token">已存在则重置订阅令牌</label>
+	        <label class="switch"><input type="checkbox" name="guest" checked>客人用户</label>
+	        <label class="switch"><input type="checkbox" name="tuic_enabled">允许 TUIC</label>
+	        <label class="switch"><input type="checkbox" name="reset_token">已存在则重置订阅令牌</label>
       </div>
       <button class="btn mt-md" type="submit">创建用户</button>
     </form>
@@ -1462,6 +1480,18 @@ def probe_online():
     return health.probe_online(ONLINE_FILE, load_json=load_json)
 
 
+def probe_xray_config_permissions():
+    return health.probe_file_mode(XRAY_CONFIG_FILE, mode='640', group='nogroup')
+
+
+def probe_hysteria_update():
+    return health.probe_hysteria_update(runner=subprocess.run)
+
+
+def probe_recent_backup():
+    return health.probe_recent_backup(BACKUP_DIR, disk_usage=shutil.disk_usage)
+
+
 def _health_card(title, probe_result):
     return health.health_card(title, probe_result)
 
@@ -1473,6 +1503,8 @@ def _health_widget_context():
         online_file=ONLINE_FILE,
         protocol_usage_hourly_file=PROTOCOL_USAGE_HOURLY_FILE,
         cost_calibration_file=COST_CALIBRATION_FILE,
+        display_multiplier_state_file=DISPLAY_MULTIPLIER_STATE_FILE,
+        multiplier_auto_policy_file=MULTIPLIER_AUTO_POLICY_FILE,
         subscription_profiles=SUBSCRIPTION_PROFILES,
         load_json=load_json,
         local_now=local_now,
@@ -1519,6 +1551,11 @@ _HEALTH_FLASH = {
     'alert dispatched': '测试告警已在后台发送，请在接收端确认是否收到',
     'alert sent': '测试告警已发送，请在接收端确认',
     'alert_no_channels': '未配置告警通道（缺少 alerts.json 或其中的 telegram/webhook）',
+    'multiplier_applied': '建议倍率已应用，订阅后台将自动重启后生效',
+    'multiplier_low_confidence': '样本置信度不足，暂不应用建议倍率',
+    'multiplier_invalid': '建议倍率无效，未应用',
+    'multiplier_delta_too_large': '建议倍率变化过大，未应用',
+    'multiplier_auto_saved': '自动调倍率策略已保存',
 }
 
 
@@ -1528,9 +1565,14 @@ def render_health(host, flash=''):
         _health_card('cron 心跳', probe_cron_heartbeat()),
         _health_card('hysteria', probe_systemd('hysteria-server.service')),
         _health_card('xray', probe_systemd('xray.service')),
+        _health_card('tuic', probe_systemd('tuic-server.service')),
+        _health_card('限流 timer', probe_systemd('hysteria-traffic-limiter.timer')),
         _health_card('磁盘', probe_disk()),
         _health_card('TLS 证书', probe_cert()),
         _health_card('在线用户', probe_online()),
+        _health_card('Xray 配置权限', probe_xray_config_permissions()),
+        _health_card('Hysteria 更新', probe_hysteria_update()),
+        _health_card('最近备份', probe_recent_backup()),
     ]
     content = (
         alert
@@ -1544,6 +1586,62 @@ def render_health(host, flash=''):
     return render_admin_shell('health', '健康状态', content,
                               badge=host, subtitle='30 秒自动刷新',
                               topbar_extra=test_btn)
+
+
+def restart_subscription_async():
+    try:
+        subprocess.Popen(
+            ['systemd-run', '--no-block', '--on-active=2s',
+             '--unit', f'hy2-subscription-restart-{int(time.time())}',
+             'systemctl', 'restart', 'hysteria-subscription.service'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass
+
+
+def apply_suggested_display_multiplier(*, actor='admin', now=None):
+    now = now or local_now()
+    summary = summarize_cost_calibration(now=now)
+    policy = cost_calibrator.load_auto_policy(MULTIPLIER_AUTO_POLICY_FILE)
+    decision = cost_calibrator.evaluate_multiplier_candidate(
+        summary, DISPLAY_MULTIPLIER, policy,
+        runtime_state=load_json(DISPLAY_MULTIPLIER_STATE_FILE, {}),
+        now=now, manual=True)
+    if decision.get('reason') == 'low_confidence':
+        return 'multiplier_low_confidence'
+    if decision.get('reason') == 'delta_too_large':
+        return 'multiplier_delta_too_large'
+    if not decision.get('apply'):
+        return 'multiplier_invalid'
+    cost_calibrator.write_multiplier_state(
+        DISPLAY_MULTIPLIER_STATE_FILE,
+        multiplier=decision['candidate'],
+        previous_multiplier=DISPLAY_MULTIPLIER,
+        summary=summary,
+        mode=policy.get('mode', 'total'),
+        actor=actor or 'admin',
+        now=now,
+        auto=False,
+    )
+    restart_subscription_async()
+    return 'multiplier_applied'
+
+
+def save_multiplier_auto_policy_from_form(form):
+    policy = cost_calibrator.load_auto_policy(MULTIPLIER_AUTO_POLICY_FILE)
+    policy.update({
+        'enabled': 'enabled' in form,
+        'mode': (form.get('mode') or ['total'])[0],
+        'min_confidence': (form.get('min_confidence') or ['medium'])[0],
+        'max_delta_percent': parse_int_field(
+            (form.get('max_delta_percent') or ['25'])[0], 25, 1, 100),
+        'min_delta_percent': parse_int_field(
+            (form.get('min_delta_percent') or ['3'])[0], 3, 0, 50),
+        'cooldown_hours': parse_int_field(
+            (form.get('cooldown_hours') or ['24'])[0], 24, 1, 168),
+    })
+    cost_calibrator.save_auto_policy(policy, MULTIPLIER_AUTO_POLICY_FILE)
 
 
 _SETTINGS_FLASH = {
@@ -1777,6 +1875,31 @@ def replace_template_rules(rules):
         save_template_rules(rules)
 
 
+def apply_rule_pack_to_template(pack_key):
+    with template_lock():
+        data = load_template_config()
+        if not profile_defs.apply_rule_pack_to_clash_config(data, pack_key):
+            return False
+        save_template_config(data)
+        return True
+
+
+def apply_rule_pack_to_user(username, pack_key):
+    username = str(username or '').strip()
+    if not username:
+        return False
+    with usage_lock():
+        users = load_json(USERS_FILE, {})
+        cfg = users.get(username)
+        if not isinstance(cfg, dict):
+            return False
+        if not profile_defs.apply_rule_pack_to_user_config(cfg, pack_key):
+            return False
+        users[username] = cfg
+        save_json(USERS_FILE, users)
+    return True
+
+
 def safe_admin_next(raw, default='/admin'):
     target = str(raw or '').strip()
     if not target:
@@ -1836,11 +1959,16 @@ _RULES_FLASH = {
     'index_out_of_range': '规则序号超出范围',
     'raw_saved': '全部规则已保存，客户端更新订阅后生效',
     'raw_empty': '规则不能为空',
+    'rule_pack_applied': '规则包已应用，客户端更新订阅后生效',
+    'invalid_rule_pack': '无效的规则包',
+    'invalid_rule_pack_scope': '无效的应用范围',
+    'rule_pack_user_missing': '请选择要应用的用户',
 }
 
 
 def render_rules(host, flash=''):
     rules = load_template_rules()
+    users = load_json(USERS_FILE, {})
     alert = render_prefixed_alert(flash, _RULES_FLASH)
 
     rows = ''
@@ -1867,10 +1995,36 @@ def render_rules(host, flash=''):
         )
 
     rules_text = html.escape('\n'.join(rules))
+    pack_options = ''.join(
+        f'<option value="{html.escape(key)}">{html.escape(RULE_PACKS[key]["label"])}'
+        f' · {html.escape(RULE_PACKS[key]["desc"])}</option>'
+        for key in RULE_PACK_ORDER
+    )
+    user_options = ''.join(
+        f'<option value="{html.escape(uid)}">{html.escape(uid)}</option>'
+        for uid in sorted(users)
+    )
 
     content = f'''{alert}
 <div class="card mb-md">
   <div class="small">自定义规则优先级高于规则集，从上到下依次匹配。灰色行为内置规则集，不可删除。</div>
+</div>
+<div class="card mb-md">
+  <div class="bold mb-md">规则包</div>
+  <form method="post" action="/admin/rule-pack/apply" class="inline-form">
+    <div class="grid grid-3">
+      <div><label>规则包</label><select name="pack">{pack_options}</select></div>
+      <div><label>应用范围</label><select name="scope">
+        <option value="global">全局模板</option>
+        <option value="user">单个用户</option>
+      </select></div>
+      <div><label>用户（选择“单个用户”时生效）</label><select name="user">
+        <option value="">选择用户</option>{user_options}
+      </select></div>
+    </div>
+    <button class="btn mt-md" type="submit">应用规则包</button>
+  </form>
+  <div class="small mt-sm faint">全局模板影响所有用户；单个用户会写入 users.json 的个人 Clash 覆盖项。</div>
 </div>
 <div class="card scroll-x" style="padding:0;overflow:hidden;">
   <table class="table"><thead><tr><th style="padding-left:18px;width:50px;">#</th><th>类型</th><th>匹配</th><th>动作</th><th style="padding-right:18px;width:90px;">操作</th></tr></thead>
@@ -2058,7 +2212,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_response_body(403, '账号已到期，请联系管理员续费', send_body=send_payload)
                 return
             profile = normalize_subscription_profile((q.get('profile') or ['default'])[0])
-            yml = build_yaml(user, str(cfg.get('sub_token') or ''), profile=profile)
+            generated_at = profile_defs.utc_now_iso()
+            template_mtime = subscription_template_mtime()
+            yml = build_yaml(
+                user, str(cfg.get('sub_token') or ''),
+                profile=profile, generated_at=generated_at)
             tx, rx, used = scaled_usage_for_user(user)
             total = user_total_quota(cfg)
             payload = yml.encode('utf-8')
@@ -2067,6 +2225,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', 'text/yaml; charset=utf-8')
             self.send_header('Content-Disposition', f"attachment; filename*=UTF-8''{filename}")
             self.send_header('x-subscription-profile', profile)
+            self.send_header('x-subscription-generated-at', generated_at)
+            self.send_header('x-subscription-template-mtime', template_mtime)
             self.send_header('profile-update-interval', '24')
             self.send_header('subscription-userinfo', f'upload={tx}; download={rx}; total={total}; expire=0')
             self.send_header('x-usage-total-bytes', str(used))
@@ -2338,6 +2498,7 @@ class Handler(BaseHTTPRequestHandler):
             expires_at = parse_date_field((form.get('expires_at') or [''])[0])
             note = parse_note_field((form.get('note') or [''])[0])
             guest = 'guest' in form
+            tuic_enabled = 'tuic_enabled' in form
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
@@ -2360,6 +2521,7 @@ class Handler(BaseHTTPRequestHandler):
                     cfg.pop('note', None)
                 cfg['metered'] = guest
                 cfg['guest'] = guest
+                cfg['tuic_enabled'] = tuic_enabled
                 if not cfg.get('sub_token'):
                     cfg['sub_token'] = secrets.token_urlsafe(18)
                 users[username] = cfg
@@ -2380,6 +2542,7 @@ class Handler(BaseHTTPRequestHandler):
             expires_at = parse_date_field((form.get('expires_at') or [''])[0])
             note = parse_note_field((form.get('note') or [''])[0])
             guest = 'guest' in form
+            tuic_enabled = 'tuic_enabled' in form
             reset_token = 'reset_token' in form
             if not username:
                 self.redirect('/admin?msg=user+empty')
@@ -2399,6 +2562,7 @@ class Handler(BaseHTTPRequestHandler):
                 entry = {
                     'metered': guest,
                     'guest': guest,
+                    'tuic_enabled': tuic_enabled,
                     'max_devices': 2,
                     'monthly_quota_bytes': max(1, quota_gb) * 1024 * 1024 * 1024,
                     'quota_extra_bytes': max(0, quota_extra_gb) * 1024 * 1024 * 1024,
@@ -2565,6 +2729,23 @@ class Handler(BaseHTTPRequestHandler):
             # receiver, so we report "dispatched" rather than guaranteed-sent.
             _fire_test_alert(cfg, self.get_admin_actor())
             self.redirect('/admin/health?msg=alert+dispatched')
+            return
+
+        if path == '/admin/cost-multiplier/apply':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            result = apply_suggested_display_multiplier(actor=self.get_admin_actor())
+            prefix = 'err:' if result != 'multiplier_applied' else ''
+            self.redirect(f'/admin/health?msg={prefix}{result}')
+            return
+
+        if path == '/admin/cost-multiplier/auto':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            save_multiplier_auto_policy_from_form(form)
+            self.redirect('/admin/health?msg=multiplier_auto_saved')
             return
 
         if path == '/admin/rotate-token':
@@ -2781,6 +2962,33 @@ class Handler(BaseHTTPRequestHandler):
                 return
             replace_template_rules(rules)
             self.redirect('/admin/rules?msg=raw_saved')
+            return
+
+        if path == '/admin/rule-pack/apply':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            pack = (form.get('pack') or [''])[0]
+            scope = (form.get('scope') or ['global'])[0]
+            if pack not in RULE_PACKS:
+                self.redirect('/admin/rules?msg=err:invalid_rule_pack')
+                return
+            if scope == 'global':
+                if not apply_rule_pack_to_template(pack):
+                    self.redirect('/admin/rules?msg=err:invalid_rule_pack')
+                    return
+            elif scope == 'user':
+                username = (form.get('user') or [''])[0].strip()
+                if not username:
+                    self.redirect('/admin/rules?msg=err:rule_pack_user_missing')
+                    return
+                if not apply_rule_pack_to_user(username, pack):
+                    self.redirect('/admin/rules?msg=err:rule_pack_user_missing')
+                    return
+            else:
+                self.redirect('/admin/rules?msg=err:invalid_rule_pack_scope')
+                return
+            self.redirect('/admin/rules?msg=rule_pack_applied')
             return
 
         self.send_response_body(404, '页面不存在')

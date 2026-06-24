@@ -12,12 +12,15 @@ inbound ports leaves the user reachable on one and rejected on the other, with
 no obvious error.
 """
 import json
+import grp
 import os
 import subprocess
 import time
 from pathlib import Path
 
 CONFIG_FILE = Path('/usr/local/etc/xray/config.json')
+CONFIG_GROUP = 'nogroup'
+CONFIG_MODE = 0o640
 INBOUND_PORTS = (443, 8443)
 PRIMARY_PORT = 443
 BACKUP_SUFFIX = '-backup'
@@ -43,6 +46,15 @@ def _load_config(path):
         return None
 
 
+def _secure_config_permissions(path):
+    if os.geteuid() == 0:
+        try:
+            os.chown(path, 0, grp.getgrnam(CONFIG_GROUP).gr_gid)
+        except KeyError:
+            pass
+    path.chmod(CONFIG_MODE)
+
+
 def _save_config(path, cfg):
     """Atomic write: serialize to a sibling temp file, fsync, then rename.
     A naked write_text() can leave config.json truncated if the process is
@@ -55,7 +67,7 @@ def _save_config(path, cfg):
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, path)
-    path.chmod(0o644)
+    _secure_config_permissions(path)
 
 
 def _apply_sync(cfg, username, vless_uuid):

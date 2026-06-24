@@ -4,9 +4,33 @@ set -euo pipefail
 HY_DIR="${HY2_HY_DIR:-/root/hysteria}"
 XRAY_CONFIG="${HY2_XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
 BACKUP_DIR="${HY2_BACKUP_DIR:-$HY_DIR/backups}"
+BACKUP_KEEP="${HY2_BACKUP_KEEP:-14}"
 
 umask 077
 install -d -m 700 "$BACKUP_DIR"
+
+if ! [[ "$BACKUP_KEEP" =~ ^[0-9]+$ ]]; then
+  printf 'HY2_BACKUP_KEEP must be a non-negative integer\n' >&2
+  exit 2
+fi
+
+prune_old_backups() {
+  local keep="$1"
+  [[ "$keep" -gt 0 ]] || return 0
+  local count=0
+  local line path
+  while IFS= read -r line; do
+    path="${line#* }"
+    count=$((count + 1))
+    if [[ "$count" -gt "$keep" ]]; then
+      rm -f -- "$path" "$path.sha256"
+    fi
+  done < <(
+    find "$BACKUP_DIR" -maxdepth 1 -type f \
+      \( -name 'hy2-backup-*.tar.gz' -o -name 'hy2-backup-*.tar.gz.enc' \) \
+      -printf '%T@ %p\n' | sort -rn
+  )
+}
 
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
 plain_out="$BACKUP_DIR/hy2-backup-$ts.tar.gz"
@@ -78,5 +102,6 @@ fi
 chmod 600 "$out"
 sha256sum "$out" > "$out.sha256"
 chmod 600 "$out.sha256"
+prune_old_backups "$BACKUP_KEEP"
 
 printf '%s\n' "$out"

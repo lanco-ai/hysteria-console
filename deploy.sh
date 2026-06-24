@@ -143,7 +143,8 @@ render "$REPO_DIR/hysteria/clash-default.yaml.tpl" "$HY_DIR/template.yaml"
 
 log "Rendering xray config.json..."
 render "$REPO_DIR/xray/config.json.tpl" "$XRAY_ETC/config.json"
-chmod 644 "$XRAY_ETC/config.json"
+chown root:nogroup "$XRAY_ETC/config.json"
+chmod 640 "$XRAY_ETC/config.json"
 
 # ---------- 6. Initial users.json ----------
 if [[ ! -f "$HY_DIR/users.json" ]]; then
@@ -213,6 +214,8 @@ install -m 644 "$REPO_DIR/systemd/hysteria-server.service"           "$SYSTEMD_D
 install -m 644 "$REPO_DIR/systemd/hysteria-subscription.service"     "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.service"  "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.timer"    "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/hy2-backup.service"                "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/hy2-backup.timer"                  "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-porthop.service"          "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-tcp-mss.service"          "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/tuic-server.service"               "$SYSTEMD_DIR/"
@@ -226,12 +229,13 @@ systemctl enable --now hysteria-tcp-mss.service
 systemctl enable --now hysteria-server.service
 systemctl enable --now hysteria-subscription.service
 systemctl enable --now hysteria-traffic-limiter.timer
+systemctl enable --now hy2-backup.timer
 systemctl enable --now xray.service
 systemctl enable --now tuic-server.service
 
 sleep 1
 log "Status:"
-for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer hysteria-tcp-mss xray tuic-server; do
+for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer hy2-backup.timer hysteria-tcp-mss xray tuic-server; do
   printf '  %-40s %s\n' "$u" "$(systemctl is-active "$u" || true)"
 done
 

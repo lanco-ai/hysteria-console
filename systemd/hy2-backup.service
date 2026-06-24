@@ -1,0 +1,21 @@
+[Unit]
+Description=hy2 Runtime Backup
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hy2-backup.sh
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/root/hysteria
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=

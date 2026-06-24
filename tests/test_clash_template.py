@@ -35,18 +35,20 @@ def test_gpt_uses_dedicated_url_test_group():
     assert "🤖 GPT 优化" in groups["🚀 节点选择"]["proxies"]
 
 
-def test_google_uses_dedicated_url_test_group():
+def test_google_uses_tcp_first_fallback_group():
     cfg = load_template()
     groups = {group["name"]: group for group in cfg["proxy-groups"]}
 
     google_group = groups["🌐 Google 优化"]
-    assert google_group["type"] == "url-test"
+    assert google_group["type"] == "fallback"
     assert google_group["url"] == "https://www.gstatic.com/generate_204"
-    assert google_group["proxies"][:2] == [
+    assert google_group["timeout"] == 3000
+    assert google_group["proxies"] == [
+        "🇺🇸 美国 TCP (VLESS+REALITY)",
+        "🇺🇸 美国 TCP 备用 (VLESS+REALITY)",
         "🇺🇸 美国 UDP (端口跳跃)",
         "🇺🇸 美国 UDP TUIC",
     ]
-    assert "🇺🇸 美国 TCP (VLESS+REALITY)" in google_group["proxies"]
     assert "🌐 Google 优化" in groups["🚀 节点选择"]["proxies"]
 
 
@@ -78,6 +80,22 @@ def test_direct_ip_bypass_rule_stays_first():
     assert all(rules.index(rule) < openai_index for rule in direct_rules)
 
 
+def test_ipv6_dead_end_rules_precede_proxy_rules():
+    cfg = load_template()
+    rules = cfg["rules"]
+    ipv6_rules = [
+        "DOMAIN,ipv6.msftconnecttest.com,REJECT",
+        "DOMAIN,ipv6.msftncsi.com,REJECT",
+        "IP-CIDR6,::/0,REJECT,no-resolve",
+    ]
+    first_proxy_rule = rules.index("DOMAIN-SUFFIX,openai.com,🤖 GPT 优化")
+    first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
+
+    assert rules[2:5] == ipv6_rules
+    assert all(rules.index(rule) < first_proxy_rule for rule in ipv6_rules)
+    assert all(rules.index(rule) < first_ruleset for rule in ipv6_rules)
+
+
 def test_github_rules_precede_external_rulesets():
     cfg = load_template()
     rules = cfg["rules"]
@@ -91,6 +109,20 @@ def test_github_rules_precede_external_rulesets():
     assert max(github_rule_indexes) < first_ruleset
     assert "DOMAIN-SUFFIX,githubusercontent.com,⚡ GitHub 加速" in rules
     assert not any("github" in rule.lower() and rule.endswith(",DIRECT") for rule in rules)
+
+
+def test_overleaf_rules_precede_external_rulesets():
+    cfg = load_template()
+    rules = cfg["rules"]
+    overleaf_rules = [
+        "DOMAIN-SUFFIX,overleaf.com,🚀 节点选择",
+        "DOMAIN-SUFFIX,overleafusercontent.com,🚀 节点选择",
+        "DOMAIN-SUFFIX,sharelatex.com,🚀 节点选择",
+    ]
+    first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
+
+    assert all(rule in rules for rule in overleaf_rules)
+    assert all(rules.index(rule) < first_ruleset for rule in overleaf_rules)
 
 
 def test_gpt_rules_precede_external_rulesets():
@@ -124,6 +156,9 @@ def test_google_rules_precede_external_rulesets():
     assert "DOMAIN-SUFFIX,gmail.com,🌐 Google 优化" in rules
     assert "DOMAIN-SUFFIX,google.com,🌐 Google 优化" in rules
     assert "DOMAIN-SUFFIX,gstatic.com,🌐 Google 优化" in rules
+    assert "DOMAIN-SUFFIX,recaptcha.net,🌐 Google 优化" in rules
+    assert "DOMAIN-SUFFIX,doubleclick.net,🌐 Google 优化" in rules
+    assert "DOMAIN-SUFFIX,firebaseapp.com,🌐 Google 优化" in rules
     assert not any("google" in rule.lower() and rule.endswith(",DIRECT") for rule in rules)
 
 
@@ -171,7 +206,18 @@ def test_google_dns_uses_overseas_resolvers():
     cfg = load_template()
     policy = cfg["dns"]["nameserver-policy"]
 
-    for domain in ("+.google.com", "+.gmail.com", "+.googleapis.com", "+.gstatic.com"):
+    for domain in (
+        "+.google.com",
+        "+.gmail.com",
+        "+.googleapis.com",
+        "+.gstatic.com",
+        "+.googleadservices.com",
+        "+.googletagmanager.com",
+        "+.doubleclick.net",
+        "+.recaptcha.net",
+        "+.gvt2.com",
+        "+.firebaseapp.com",
+    ):
         assert policy[domain] == [
             "https://1.1.1.1/dns-query",
             "https://8.8.8.8/dns-query",

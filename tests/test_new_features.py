@@ -345,6 +345,35 @@ def test_health_page_has_test_alert_button_and_flash():
     assert '未配置告警通道' in ss.render_health('host', flash='err:alert_no_channels')
 
 
+def test_rules_page_renders_rule_pack_form(tmp_path, monkeypatch):
+    template = tmp_path / 'template.yaml'
+    template.write_text('rules:\n  - MATCH,🚀 节点选择\n')
+    users_file = tmp_path / 'users.json'
+    users_file.write_text(json.dumps({'alice': {'sub_token': 'tok'}}))
+    monkeypatch.setattr(ss, 'TEMPLATE_FILE', template)
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+    page = ss.render_rules('host')
+
+    assert 'action="/admin/rule-pack/apply"' in page
+    assert 'EasyConnect 直连' in page
+    assert 'Overleaf 加速' in page
+    assert '<option value="alice">alice</option>' in page
+
+
+def test_apply_rule_pack_to_user_writes_clash_overrides(tmp_path, monkeypatch):
+    users_file = tmp_path / 'users.json'
+    users_file.write_text(json.dumps({'alice': {'sub_token': 'tok'}}))
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+    assert ss.apply_rule_pack_to_user('alice', 'easyconnect') is True
+
+    cfg = json.loads(users_file.read_text())['alice']
+    assert 'PROCESS-NAME,EasyConnect.exe,DIRECT' in cfg['clash_rules']
+    assert cfg['clash_fake_ip_filter'][:2] == ['vpn.nwpu.edu.cn', '*.nwpu.edu.cn']
+    assert cfg['clash_tun_route_exclude_address'] == ['202.117.80.11/32']
+
+
 def test_admin_row_has_rotate_and_suspend_for_enabled_user(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
@@ -448,6 +477,24 @@ def test_build_yaml_game_profile_prefers_udp_and_injects_credentials(tmp_path, m
     assert f'DOMAIN-SUFFIX,steamcommunity.com,{ss.NODE_GROUP}' in cfg['rules'][:4]
 
 
+def test_build_yaml_prepends_subscription_metadata(tmp_path, monkeypatch):
+    template = Path(ss.__file__).resolve().parent / 'clash-default.yaml.tpl'
+    users_file = tmp_path / 'users.json'
+    users_file.write_text(json.dumps({'alice': {
+        'vless_uuid': '11111111-1111-1111-1111-111111111111',
+    }}))
+    monkeypatch.setattr(ss, 'TEMPLATE_FILE', template)
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+    text = ss.build_yaml('alice', 'tok', profile='work',
+                         generated_at='2026-06-22T16:00:00Z')
+
+    assert text.startswith('# hy2-generated-at: 2026-06-22T16:00:00Z')
+    assert '# hy2-user: alice' in text
+    assert '# hy2-profile: work' in text
+    assert yaml.safe_load(text)['proxies'][0]['password'] == 'alice:tok'
+
+
 def test_build_yaml_work_profile_prefers_stable_tcp(tmp_path, monkeypatch):
     cfg = _profile_cfg(tmp_path, monkeypatch, 'work')
     groups = _groups(cfg)
@@ -489,6 +536,109 @@ def test_build_yaml_safe_profile_proxies_cn_but_keeps_lan_direct(tmp_path, monke
     assert cfg['rules'][-1] == f'MATCH,{ss.NODE_GROUP}'
 
 
+def test_build_yaml_applies_user_clash_overrides_only_to_that_user(tmp_path, monkeypatch):
+    template = Path(ss.__file__).resolve().parent / 'clash-default.yaml.tpl'
+    users_file = tmp_path / 'users.json'
+    extra_rules = [
+        'PROCESS-NAME,EasyConnect.exe,DIRECT',
+        'DOMAIN,vpn.nwpu.edu.cn,DIRECT',
+        'IP-CIDR6,2001:250:1004:805:202:117:80:11/128,DIRECT,no-resolve',
+    ]
+    fake_ip_filters = ['vpn.nwpu.edu.cn', '*.nwpu.edu.cn']
+    tun_excludes = ['202.117.80.11/32']
+    users_file.write_text(json.dumps({
+        'alice': {
+            'vless_uuid': '11111111-1111-1111-1111-111111111111',
+            'clash_rules': extra_rules,
+            'clash_fake_ip_filter': fake_ip_filters,
+            'clash_tun_route_exclude_address': tun_excludes,
+        },
+        'bob': {
+            'vless_uuid': '22222222-2222-2222-2222-222222222222',
+        },
+    }))
+    monkeypatch.setattr(ss, 'TEMPLATE_FILE', template)
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+    alice_cfg = yaml.safe_load(ss.build_yaml('alice', 'tok'))
+    bob_cfg = yaml.safe_load(ss.build_yaml('bob', 'tok'))
+
+    assert alice_cfg['rules'][:len(extra_rules)] == extra_rules
+    assert all(rule not in bob_cfg['rules'] for rule in extra_rules)
+    assert alice_cfg['dns']['fake-ip-filter'][:2] == fake_ip_filters
+    assert 'fake-ip-filter' not in bob_cfg['dns']
+    assert alice_cfg['tun']['route-exclude-address'] == tun_excludes
+    assert 'tun' not in bob_cfg
+
+
+def test_build_yaml_removes_tuic_for_metered_users_by_default(tmp_path, monkeypatch):
+    template = Path(ss.__file__).resolve().parent / 'clash-default.yaml.tpl'
+    users_file = tmp_path / 'users.json'
+    users_file.write_text(json.dumps({
+        'alice': {
+            'vless_uuid': '11111111-1111-1111-1111-111111111111',
+            'metered': True,
+        },
+        'bob': {
+            'vless_uuid': '22222222-2222-2222-2222-222222222222',
+        },
+    }))
+    monkeypatch.setattr(ss, 'TEMPLATE_FILE', template)
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+    alice_cfg = yaml.safe_load(ss.build_yaml('alice', 'tok', profile='game'))
+    bob_cfg = yaml.safe_load(ss.build_yaml('bob', 'tok', profile='game'))
+    alice_proxies = {proxy['name'] for proxy in alice_cfg['proxies']}
+    bob_proxies = {proxy['name'] for proxy in bob_cfg['proxies']}
+
+    assert ss.TUIC_UDP_PROXY not in alice_proxies
+    assert all(ss.TUIC_UDP_PROXY not in group.get('proxies', [])
+               for group in alice_cfg['proxy-groups'])
+    assert ss.TUIC_UDP_PROXY in bob_proxies
+
+
+def test_build_yaml_keeps_tuic_for_explicitly_enabled_metered_user(tmp_path, monkeypatch):
+    template = Path(ss.__file__).resolve().parent / 'clash-default.yaml.tpl'
+    users_file = tmp_path / 'users.json'
+    users_file.write_text(json.dumps({
+        'alice': {
+            'vless_uuid': '11111111-1111-1111-1111-111111111111',
+            'metered': True,
+            'tuic_enabled': True,
+        },
+    }))
+    monkeypatch.setattr(ss, 'TEMPLATE_FILE', template)
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+    cfg = yaml.safe_load(ss.build_yaml('alice', 'tok'))
+
+    assert ss.TUIC_UDP_PROXY in {proxy['name'] for proxy in cfg['proxies']}
+
+
+def test_user_clash_direct_overrides_survive_safe_profile(tmp_path, monkeypatch):
+    template = Path(ss.__file__).resolve().parent / 'clash-default.yaml.tpl'
+    users_file = tmp_path / 'users.json'
+    extra_rules = [
+        'DOMAIN-SUFFIX,nwpu.edu.cn,DIRECT',
+        'IP-CIDR,202.117.80.11/32,DIRECT,no-resolve',
+    ]
+    users_file.write_text(json.dumps({
+        'alice': {
+            'vless_uuid': '11111111-1111-1111-1111-111111111111',
+            'clash_rules': extra_rules,
+        },
+    }))
+    monkeypatch.setattr(ss, 'TEMPLATE_FILE', template)
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+
+    cfg = yaml.safe_load(ss.build_yaml('alice', 'tok', profile='safe'))
+
+    assert cfg['rules'][:len(extra_rules)] == extra_rules
+    assert all(rule in cfg['rules'] for rule in extra_rules)
+    assert all(rule.replace(',DIRECT', f',{ss.NODE_GROUP}') not in cfg['rules']
+               for rule in extra_rules)
+
+
 def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
@@ -504,6 +654,7 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     assert 'http://h/sub/alice?token=tok&amp;profile=work' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=lowdata' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=safe' in page
+    assert '模板更新时间' in page
 
 
 def test_protocol_hourly_accumulator_records_source_totals(tmp_path, monkeypatch):
@@ -561,6 +712,74 @@ def test_health_widget_logic_lives_in_dedicated_module():
 
     assert health_widgets.build_line_radar.__module__ == 'health_widgets'
     assert health_widgets.render_cost_calibrator.__module__ == 'health_widgets'
+
+
+def _seed_high_confidence_calibration(path):
+    path.write_text(json.dumps({
+        'last': {'ifaces': ['eth0'], 'ts': '2026-06-22T16:00:00'},
+        'samples': [
+            {
+                'ts': f'2026-06-22T15:{i:02d}:00',
+                'app_raw_bytes': 1 << 30,
+                'net_total_delta': 2 << 30,
+                'net_tx_delta': 1 << 30,
+            }
+            for i in range(12)
+        ],
+    }))
+
+
+def test_cost_calibrator_renders_apply_button_when_confident(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'COST_CALIBRATION_FILE', tmp_path / 'cost_calibration.json')
+    monkeypatch.setattr(ss, 'DISPLAY_MULTIPLIER_STATE_FILE', tmp_path / 'display_multiplier.json')
+    monkeypatch.setattr(ss, 'MULTIPLIER_AUTO_POLICY_FILE', tmp_path / 'display_multiplier_auto.json')
+    _seed_high_confidence_calibration(tmp_path / 'cost_calibration.json')
+
+    out = ss.render_cost_calibrator(now=datetime(2026, 6, 22, 16, tzinfo=SH))
+
+    assert 'action="/admin/cost-multiplier/apply"' in out
+    assert '应用建议倍率' in out
+    assert 'action="/admin/cost-multiplier/auto"' in out
+    assert '自动调倍率' in out
+
+
+def test_apply_suggested_display_multiplier_writes_runtime_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'COST_CALIBRATION_FILE', tmp_path / 'cost_calibration.json')
+    monkeypatch.setattr(ss, 'DISPLAY_MULTIPLIER_STATE_FILE', tmp_path / 'display_multiplier.json')
+    monkeypatch.setattr(ss, 'MULTIPLIER_AUTO_POLICY_FILE', tmp_path / 'display_multiplier_auto.json')
+    monkeypatch.setattr(ss, 'restart_subscription_async', lambda: None)
+    _seed_high_confidence_calibration(tmp_path / 'cost_calibration.json')
+
+    result = ss.apply_suggested_display_multiplier(
+        actor='tester', now=datetime(2026, 6, 22, 16, tzinfo=SH))
+
+    state = json.loads((tmp_path / 'display_multiplier.json').read_text())
+    assert result == 'multiplier_applied'
+    assert state['multiplier'] == 2.0
+    assert state['previous_multiplier'] == ss.DISPLAY_MULTIPLIER
+    assert state['actor'] == 'tester'
+
+
+def test_save_multiplier_auto_policy_from_form(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'MULTIPLIER_AUTO_POLICY_FILE', tmp_path / 'display_multiplier_auto.json')
+    form = {
+        'enabled': ['on'],
+        'mode': ['egress'],
+        'min_confidence': ['high'],
+        'max_delta_percent': ['15'],
+        'min_delta_percent': ['4'],
+        'cooldown_hours': ['48'],
+    }
+
+    ss.save_multiplier_auto_policy_from_form(form)
+
+    data = json.loads((tmp_path / 'display_multiplier_auto.json').read_text())
+    assert data['enabled'] is True
+    assert data['mode'] == 'egress'
+    assert data['min_confidence'] == 'high'
+    assert data['max_delta_percent'] == 15
+    assert data['min_delta_percent'] == 4
+    assert data['cooldown_hours'] == 48
 
 
 def _seed_incident_console(tmp_path, monkeypatch):

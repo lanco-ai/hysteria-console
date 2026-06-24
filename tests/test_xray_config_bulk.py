@@ -9,6 +9,8 @@ folds the loop into a single read + single (atomic) write. These tests pin:
   - mixed add/remove/no-op behavior is correct
 """
 import json
+import grp
+import os
 
 import xray_config as xc
 
@@ -101,6 +103,16 @@ def test_save_config_is_atomic(tmp_path):
     assert new != original
     assert 'alice' in new
     assert not (p.parent / (p.name + '.tmp')).exists(), 'temp file must be renamed away'
+
+
+def test_save_config_sets_restricted_permissions(tmp_path):
+    p = _make_cfg(tmp_path)
+
+    xc._save_config(p, {'inbounds': []})
+
+    assert (p.stat().st_mode & 0o777) == 0o640
+    if os.geteuid() == 0:
+        assert p.stat().st_gid == grp.getgrnam(xc.CONFIG_GROUP).gr_gid
 
 
 def test_apply_user_plan_returns_false_on_unreadable_config(tmp_path):

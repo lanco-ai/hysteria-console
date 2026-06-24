@@ -99,6 +99,14 @@ def test_backup_encryption_and_restore_check(tmp_path):
     assert 'OK: hy2 backup dry-run passed' in result.stdout
 
 
+def test_backup_script_has_retention_guard():
+    script = (ROOT / 'scripts/hy2-backup.sh').read_text(encoding='utf-8')
+
+    assert 'BACKUP_KEEP="${HY2_BACKUP_KEEP:-14}"' in script
+    assert 'prune_old_backups "$BACKUP_KEEP"' in script
+    assert "hy2-backup-*.tar.gz.enc" in script
+
+
 def test_restore_check_rejects_invalid_json(tmp_path):
     root = tmp_path / 'payload'
     target = root / 'root/hysteria'
@@ -178,6 +186,14 @@ def test_deploy_installs_tuic_meter_module_and_nftables():
     assert '$HY_DIR/tuic_meter.py' in deploy
 
 
+def test_deploy_installs_and_enables_backup_timer():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'systemd/hy2-backup.service' in deploy
+    assert 'systemd/hy2-backup.timer' in deploy
+    assert 'systemctl enable --now hy2-backup.timer' in deploy
+
+
 def test_deploy_installs_xray_logrotate_config():
     deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
     config = (ROOT / 'logrotate/xray').read_text(encoding='utf-8')
@@ -198,12 +214,19 @@ def test_traffic_limiter_unit_can_access_nftables():
     assert 'AF_NETLINK' in unit
 
 
-def test_traffic_limiter_timer_runs_every_15_seconds():
+def test_traffic_limiter_timer_runs_every_30_seconds():
     timer = (ROOT / 'systemd/hysteria-traffic-limiter.timer').read_text(encoding='utf-8')
 
-    assert 'OnUnitActiveSec=15s' in timer
+    assert 'OnUnitActiveSec=30s' in timer
     assert 'AccuracySec=5s' in timer
+    assert 'OnUnitActiveSec=15s' not in timer
     assert 'OnUnitActiveSec=5s' not in timer
+
+
+def test_xray_template_uses_ipv4_outbound_strategy():
+    cfg = (ROOT / 'xray/config.json.tpl').read_text(encoding='utf-8')
+
+    assert '"domainStrategy": "UseIPv4"' in cfg
 
 
 def test_deploy_installs_restore_check_script():

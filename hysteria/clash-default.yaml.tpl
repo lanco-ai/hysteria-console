@@ -124,6 +124,54 @@ dns:
     '+.youtu.be':
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query
+    '+.google.com.hk':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.google.com.tw':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googleadservices.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googlesyndication.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.google-analytics.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googletagmanager.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.googletagservices.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.doubleclick.net':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.recaptcha.net':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.gvt2.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.gvt3.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.appspot.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.firebaseapp.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.firebaseio.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.blogger.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
+    '+.blogspot.com':
+      - https://1.1.1.1/dns-query
+      - https://8.8.8.8/dns-query
     '+.telegram.org':
       - https://1.1.1.1/dns-query
       - https://8.8.8.8/dns-query
@@ -278,16 +326,15 @@ proxy-groups:
     tolerance: 100
 
   - name: 🌐 Google 优化
-    type: url-test
+    type: fallback
     proxies:
-      - 🇺🇸 美国 UDP (端口跳跃)
-      - 🇺🇸 美国 UDP TUIC
       - 🇺🇸 美国 TCP (VLESS+REALITY)
       - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
+      - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
     url: https://www.gstatic.com/generate_204
     interval: 60
-    timeout: 5000
-    tolerance: 100
+    timeout: 3000
 
   - name: ✈️ Telegram 优化
     type: url-test
@@ -370,6 +417,9 @@ rule-providers:
 rules:
   - 'IP-CIDR,47.245.53.96/32,DIRECT,no-resolve'
   - 'IP-CIDR,192.238.178.243/32,DIRECT,no-resolve'
+  - 'DOMAIN,ipv6.msftconnecttest.com,REJECT'
+  - 'DOMAIN,ipv6.msftncsi.com,REJECT'
+  - 'IP-CIDR6,::/0,REJECT,no-resolve'
   - 'DOMAIN-SUFFIX,openai.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,chatgpt.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,oaistatic.com,🤖 GPT 优化'
@@ -387,6 +437,8 @@ rules:
   - 'DOMAIN-SUFFIX,chatgpt.livekit.cloud,🤖 GPT 优化'
   - 'DOMAIN,challenges.cloudflare.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,google.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,google.com.hk,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,google.com.tw,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,gmail.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,googlemail.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,googleapis.com,🌐 Google 优化'
@@ -394,12 +446,26 @@ rules:
   - 'DOMAIN-SUFFIX,googleusercontent.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,ggpht.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,gvt1.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,gvt2.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,gvt3.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,googlevideo.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,youtube.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,ytimg.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,youtu.be,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,withgoogle.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,googleblog.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googleadservices.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googlesyndication.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,google-analytics.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googletagmanager.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,googletagservices.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,doubleclick.net,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,recaptcha.net,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,appspot.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,firebaseapp.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,firebaseio.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,blogger.com,🌐 Google 优化'
+  - 'DOMAIN-SUFFIX,blogspot.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,telegram.org,✈️ Telegram 优化'
   - 'DOMAIN-SUFFIX,telegram.me,✈️ Telegram 优化'
   - 'DOMAIN-SUFFIX,telegram.dog,✈️ Telegram 优化'
@@ -415,6 +481,9 @@ rules:
   - 'DOMAIN-SUFFIX,ghcr.io,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,githubcopilot.com,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,github-cloud.s3.amazonaws.com,⚡ GitHub 加速'
+  - 'DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'
+  - 'DOMAIN-SUFFIX,overleafusercontent.com,🚀 节点选择'
+  - 'DOMAIN-SUFFIX,sharelatex.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,steamcontent.com,DIRECT'
   - 'DOMAIN-SUFFIX,steamserver.net,DIRECT'
   - 'DOMAIN-SUFFIX,steampowered.com,🚀 节点选择'

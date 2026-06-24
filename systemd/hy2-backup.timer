@@ -1,0 +1,11 @@
+[Unit]
+Description=Run hy2 runtime backup daily
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 UTC
+RandomizedDelaySec=30m
+Persistent=true
+Unit=hy2-backup.service
+
+[Install]
+WantedBy=timers.target

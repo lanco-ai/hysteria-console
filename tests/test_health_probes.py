@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
+import health
 import subscription_service as ss
 
 
@@ -132,3 +133,33 @@ def test_probe_cert_openssl_failure():
         out = ss.probe_cert(path='/dev/null')
     assert out['ok'] is False
     assert out['label'] == '未知'
+
+
+def test_probe_hysteria_update_marks_urgent_bad():
+    payload = ('Jun 22 15:37 hysteria[1]: update available '
+               '{"version":"v2.9.2","url":"https://example","urgent":true}\n')
+
+    def runner(*_args, **_kwargs):
+        return type('R', (), {'stdout': payload, 'returncode': 0})()
+
+    out = health.probe_hysteria_update(runner=runner)
+
+    assert out['ok'] is False
+    assert 'v2.9.2' in out['label']
+    assert 'urgent' in out['label']
+
+
+def test_probe_recent_backup_reports_latest_age_and_disk(tmp_path):
+    import os
+    backup = tmp_path / 'hy2-backup-20260622T010000Z.tar.gz'
+    backup.write_text('x')
+    old = (datetime.now() - timedelta(hours=2)).timestamp()
+    os.utime(backup, (old, old))
+    fake_disk = type('U', (), {'total': 10 * 1024 ** 3, 'free': 4 * 1024 ** 3, 'used': 6 * 1024 ** 3})()
+
+    out = health.probe_recent_backup(
+        tmp_path, max_age_hours=30, disk_usage=lambda _p: fake_disk)
+
+    assert out['ok'] is True
+    assert '小时前' in out['label']
+    assert '4.0GB' in out['label']
