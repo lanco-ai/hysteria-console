@@ -1,17 +1,16 @@
 [Unit]
-Description=hy2 Runtime Backup
-After=network.target
+Description=hy2 VPN stack health check
+After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/hy2-backup.sh
+ExecStart=/usr/local/sbin/hy2-health-check.sh
 User=root
 Group=root
-EnvironmentFile=-/root/hysteria/backup.env
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/root/hysteria
+ReadOnlyPaths=/root/hysteria /etc/letsencrypt
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

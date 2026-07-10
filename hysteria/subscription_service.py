@@ -176,8 +176,8 @@ def sanitize_host(raw_host):
     return http_utils.sanitize_host(raw_host)
 
 
-def safe_base_url(host, forwarded_proto):
-    return http_utils.safe_base_url(host, forwarded_proto)
+def safe_base_url(host, forwarded_proto, forwarded_port=None):
+    return http_utils.safe_base_url(host, forwarded_proto, forwarded_port)
 
 
 def _b64url_nopad(data):
@@ -1481,7 +1481,7 @@ def probe_online():
 
 
 def probe_xray_config_permissions():
-    return health.probe_file_mode(XRAY_CONFIG_FILE, mode='640', group='nogroup')
+    return health.probe_file_mode(XRAY_CONFIG_FILE, mode='640', group='hy2-xray')
 
 
 def probe_hysteria_update():
@@ -2168,7 +2168,11 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
         q = parse_qs(parsed.query)
         host = sanitize_host(self.headers.get('Host', '127.0.0.1'))
-        base_url = safe_base_url(host, self.headers.get('X-Forwarded-Proto', 'http'))
+        base_url = safe_base_url(
+            host,
+            self.headers.get('X-Forwarded-Proto', 'http'),
+            self.headers.get('X-Forwarded-Port', ''),
+        )
 
         if path == '/static/style.css':
             self._serve_static(BASE_CSS_BYTES, BASE_CSS_ETAG, 'text/css; charset=utf-8', send_payload)

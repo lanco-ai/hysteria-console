@@ -212,13 +212,15 @@ def test_traffic_limiter_unit_can_access_nftables():
     assert 'AmbientCapabilities=CAP_NET_ADMIN' in unit
     assert 'CapabilityBoundingSet=CAP_NET_ADMIN' in unit
     assert 'AF_NETLINK' in unit
+    assert 'Group=hy2-xray' in unit
 
 
-def test_traffic_limiter_timer_runs_every_30_seconds():
+def test_traffic_limiter_timer_runs_every_90_seconds():
     timer = (ROOT / 'systemd/hysteria-traffic-limiter.timer').read_text(encoding='utf-8')
 
-    assert 'OnUnitActiveSec=30s' in timer
-    assert 'AccuracySec=5s' in timer
+    assert 'OnUnitActiveSec=90s' in timer
+    assert 'AccuracySec=10s' in timer
+    assert 'OnUnitActiveSec=30s' not in timer
     assert 'OnUnitActiveSec=15s' not in timer
     assert 'OnUnitActiveSec=5s' not in timer
 
@@ -234,3 +236,48 @@ def test_deploy_installs_restore_check_script():
 
     assert 'hy2-restore-check.sh' in deploy
     assert '/usr/local/sbin/hy2-restore-check.sh' in deploy
+
+
+def test_hysteria_service_restarts_and_waits_for_network_online():
+    unit = (ROOT / 'systemd/hysteria-server.service').read_text(encoding='utf-8')
+
+    assert 'Restart=on-failure' in unit
+    assert 'After=network-online.target' in unit
+    assert 'CapabilityBoundingSet=CAP_NET_BIND_SERVICE' in unit
+
+
+def test_https_templates_preserve_acme_and_use_dedicated_port():
+    plain = (ROOT / 'nginx/hysteria-panel.conf').read_text(encoding='utf-8')
+    redirect = (ROOT / 'nginx/hysteria-panel-redirect.conf').read_text(encoding='utf-8')
+    tls = (ROOT / 'nginx/hysteria-panel-https.conf').read_text(encoding='utf-8')
+
+    assert '/.well-known/acme-challenge/' in plain
+    assert '/.well-known/acme-challenge/' in redirect
+    assert 'https://__HY_SERVER_HOST__:__HY_HTTPS_PORT__$request_uri' in redirect
+    assert 'listen __HY_HTTPS_PORT__ ssl;' in tls
+    assert 'proxy_set_header X-Forwarded-Proto https;' in tls
+    assert 'proxy_set_header X-Forwarded-Port $server_port;' in tls
+
+
+def test_deploy_installs_monitoring_fail2ban_and_journal_limits():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'hy2-health-check.timer' in deploy
+    assert 'fail2ban/filter.d/tuic-auth.conf' in deploy
+    assert 'journald/60-hy2-limits.conf' in deploy
+    assert 'systemd/xray.service.d/20-hy2-hardening.conf' in deploy
+
+
+def test_deploy_pins_proxy_binary_versions():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'HY_HYSTERIA_VERSION="${HY_HYSTERIA_VERSION:-v2.9.3}"' in deploy
+    assert 'HY_XRAY_VERSION="${HY_XRAY_VERSION:-v26.6.27}"' in deploy
+    assert 'sha256sum -c -' in deploy
+
+
+def test_backup_remote_requires_encryption():
+    script = (ROOT / 'scripts/hy2-backup.sh').read_text(encoding='utf-8')
+
+    assert 'Refusing off-host upload of an unencrypted backup' in script
+    assert 'rclone copyto' in script

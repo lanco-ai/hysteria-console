@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 CONFIG_FILE = Path('/usr/local/etc/xray/config.json')
-CONFIG_GROUP = 'nogroup'
+CONFIG_GROUP = 'hy2-xray'
 CONFIG_MODE = 0o640
 INBOUND_PORTS = (443, 8443)
 PRIMARY_PORT = 443
@@ -49,7 +49,9 @@ def _load_config(path):
 def _secure_config_permissions(path):
     if os.geteuid() == 0:
         try:
-            os.chown(path, 0, grp.getgrnam(CONFIG_GROUP).gr_gid)
+            target_gid = grp.getgrnam(CONFIG_GROUP).gr_gid
+            if path.stat().st_gid != target_gid:
+                os.chown(path, 0, target_gid)
         except KeyError:
             pass
     path.chmod(CONFIG_MODE)
@@ -63,6 +65,9 @@ def _save_config(path, cfg):
     payload = json.dumps(cfg, indent=2, ensure_ascii=False) + '\n'
     tmp = path.with_name(path.name + '.tmp')
     with tmp.open('w', encoding='utf-8') as f:
+        # Set the final mode before rename so a later permission error cannot
+        # briefly expose the Reality private key through a 0644 replacement.
+        os.chmod(tmp, CONFIG_MODE)
         f.write(payload)
         f.flush()
         os.fsync(f.fileno())

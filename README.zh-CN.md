@@ -27,7 +27,7 @@
 - ⚡  **Hysteria2** 监听 `:443/udp`，启用 Salamander 混淆 + UDP 端口跳跃 `20000-40000/udp`。
 - 🛡️ **Xray VLESS + Reality** 主端口 `:443/tcp`，备用端口 `:8443/tcp`，伪装成 `www.bing.com`。
 - 🎛️ **内置管理面板** —— 浏览器里创建用户、查看实时流量、维护订阅模板和路由规则；侧边栏布局，深色主题，移动端自适应。
-- 📊 **每用户配额 + 设备数限制** —— 15 秒周期任务拉取 hysteria + xray 流量统计，超限自动踢人，按可配置账期自动重置（默认 12 号锚定、30 天周期）。
+- 📊 **每用户配额 + 设备数限制** —— 90 秒周期任务拉取 Hysteria + Xray 流量统计，超限自动踢人，按可配置账期自动重置（默认 12 号锚定、30 天周期）。
 - 🔗 **每用户独立订阅 URL**，按请求渲染 Clash YAML，自动注入对应密码与 UUID。
 - 🚀 **一键部署** —— 填好 `.env`，跑 `./deploy.sh`，一分钟内完成。
 
@@ -90,8 +90,11 @@ sudo ./deploy.sh
 | 变量 | 默认值 | 说明 |
 |---|---:|---|
 | `HY_DISPLAY_MULTIPLIER` | `2.28` | 作用于 Hysteria/Xray/TUIC 原始流量计数的展示/计费倍率。请按服务商实际账单校准；`/admin/health` 在样本足够后会给出建议倍率。合法范围：`0.1`-`20.0`。 |
-| `HY_ENABLE_HTTPS` | `0` | 只有当 `HY_SERVER_HOST` 是已解析到本机的真实域名时才设为 `1`。 |
-| `HY_CERTBOT_EMAIL` | 空 | `HY_ENABLE_HTTPS=1` 时必填。 |
+| `HY_HYSTERIA_VERSION` | `v2.9.3` | `deploy.sh` 安装并校验摘要的 Hysteria 固定版本。 |
+| `HY_XRAY_VERSION` | `v26.6.27` | 官方安装器安装的 Xray 固定版本。 |
+| `HY_ENABLE_HTTPS` | `1` | 仅在明确采用私网 HTTP 部署时设为 `0`。 |
+| `HY_CERTBOT_EMAIL` | 空 | 可选的 Let's Encrypt 账户邮箱。 |
+| `HY_HTTPS_PORT` | `9444` | nginx TLS 端口，不得与 Xray/TUIC 冲突。 |
 
 ## 管理面板
 
@@ -121,6 +124,7 @@ sudo ./deploy.sh
 | `443/udp` | Hysteria2 |
 | `8443/tcp` | Xray —— VLESS + Reality（备用） |
 | `9443/udp` | TUIC v5 |
+| `9444/tcp` | nginx —— HTTPS 管理/订阅面板 |
 | `20000-40000/udp` | iptables REDIRECT → `443/udp`（端口跳跃） |
 
 ### 备份
@@ -141,6 +145,10 @@ sudo sh -c 'openssl rand -base64 32 > /root/hysteria/backup.pass'
 sudo HY2_BACKUP_PASSPHRASE_FILE=/root/hysteria/backup.pass /usr/local/sbin/hy2-backup.sh
 ```
 
+异机备份可使用 rclone 目标，脚本会拒绝上传明文归档。把
+`HY2_BACKUP_PASSPHRASE_FILE` 和 `HY2_BACKUP_REMOTE` 写入仅 root 可读的
+`/root/hysteria/backup.env`，并单独配置 rclone。未配置远端时仍正常保留每日本地备份。
+
 真正恢复前，先做 dry-run 检查：
 
 ```bash
@@ -152,13 +160,18 @@ dry-run 会按需解密、校验归档路径、检查 JSON/YAML 是否可解析�
 
 ### 管理面板 HTTPS
 
-如果你已有解析到这台 VPS 的真实域名：
+脚本同时支持已解析域名和服务器公网 IPv4。域名使用普通 Let's Encrypt
+证书；IPv4 使用约 6 天有效的公网可信短期证书，因此必须保持自动续期正常。
+由于 Xray 已占用 TCP/443 与 TCP/8443，面板默认使用 TCP/9444。
 
 ```bash
 sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
+sudo /usr/local/sbin/hy2-enable-https.sh 203.0.113.10 '' 9444
 ```
 
-也可以在运行 `deploy.sh` 前，在 `.env` 里设置 `HY_ENABLE_HTTPS=1` 和 `HY_CERTBOT_EMAIL=you@example.com`。脚本会安装 certbot、通过 nginx 申请证书、启用 HTTP 到 HTTPS 跳转并重载 nginx。
+也可以在运行 `deploy.sh` 前设置 `HY_ENABLE_HTTPS=1`。脚本会安装新版
+Certbot、保留 HTTP ACME 验证路径、把其他 HTTP 流量重定向到 HTTPS、安装
+续期重载钩子并启用 snap 续期定时器。`HY_CERTBOT_EMAIL` 推荐填写但不是必填。
 
 ### 不进 git 的文件（已在 `.gitignore`）
 
@@ -172,12 +185,12 @@ sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
 
 ## 安全说明
 
-- 订阅服务**只**绑定 `127.0.0.1:8081`，对外暴露的是 nginx `:80`。
+- 订阅服务**只**绑定 `127.0.0.1:8081`；nginx 在 `:80` 提供 ACME/跳转，在 `:9444` 提供加密面板。
 - 所有模板文件用 `__PLACEHOLDER__` 占位，**真实密钥只存在于 `.env` 和 `/root/hysteria/` 下渲染后的文件**，两者都已 gitignore。
 - Hysteria 管理 API 仅监听本地，由 `HY_API_SECRET` 鉴权——把它当 SSH key 看待。
 - 管理员认证使用 PBKDF2-SHA256（20 万轮 + per-secret 盐），会话用 HttpOnly + `SameSite=Lax` cookie。
 - 每用户的 `sub_token` 是 24 字节 URL-safe 随机串；轮换 token 即可让泄露的订阅链接立即失效，且不影响用户本身。
-- 暴露到公网前请为管理/订阅面板配置真实 TLS 证书。可用 `/usr/local/sbin/hy2-enable-https.sh <domain> <email>`；内置的自签证书只用于 Hysteria 端点。
+- 暴露到公网前请为管理/订阅面板配置可信 TLS 证书。可用 `/usr/local/sbin/hy2-enable-https.sh <domain-or-ip> [email] [port]`；内置自签证书只用于 Hysteria/TUIC 端点。
 
 > **轮换记录** —— 早期某个 commit（位于 `e7d9d3a` 之前）曾把真实 `HY_API_SECRET` 硬编码进源码。该值已于 2026-04-30 在生产环境轮换并验证旧值返回 401 失效；保留在 `e7d9d3a` 之前 git 历史里的旧值已无法对任何端点鉴权成功。
 
@@ -191,7 +204,7 @@ sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
 │   ├── config.yaml.tpl             # hysteria2 服务端配置
 │   ├── auth_backend.py             # auth-by-command 认证桥
 │   ├── subscription_service.py     # 管理面板 + /sub 渲染
-│   ├── traffic_limiter.py          # 15 秒任务：流量统计 + 自动踢人
+│   ├── traffic_limiter.py          # 90 秒任务：流量统计 + 自动踢人
 │   └── clash-default.yaml.tpl      # 订阅模板
 ├── xray/config.json.tpl            # vless+reality 配置
 ├── nginx/hysteria-panel.conf       # :80 反向代理

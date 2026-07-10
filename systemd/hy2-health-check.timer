@@ -1,0 +1,12 @@
+[Unit]
+Description=Run hy2 VPN stack health check every five minutes
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=5m
+AccuracySec=30s
+Persistent=true
+Unit=hy2-health-check.service
+
+[Install]
+WantedBy=timers.target

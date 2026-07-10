@@ -44,10 +44,15 @@ def sanitize_host(raw_host):
     return h or '127.0.0.1'
 
 
-def safe_base_url(host, forwarded_proto):
+def safe_base_url(host, forwarded_proto, forwarded_port=None):
     scheme = (forwarded_proto or 'http').split(',')[0].strip().lower()
     if scheme not in ('http', 'https'):
         scheme = 'http'
+    port = str(forwarded_port or '').split(',', 1)[0].strip()
+    if port.isdigit() and 1 <= int(port) <= 65535:
+        if not ((scheme == 'http' and port == '80') or
+                (scheme == 'https' and port == '443')):
+            return f'{scheme}://{host}:{port}'
     return f'{scheme}://{host}'
 
 

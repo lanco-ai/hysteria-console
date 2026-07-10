@@ -11,6 +11,7 @@ folds the loop into a single read + single (atomic) write. These tests pin:
 import json
 import grp
 import os
+from pathlib import Path
 
 import xray_config as xc
 
@@ -113,6 +114,21 @@ def test_save_config_sets_restricted_permissions(tmp_path):
     assert (p.stat().st_mode & 0o777) == 0o640
     if os.geteuid() == 0:
         assert p.stat().st_gid == grp.getgrnam(xc.CONFIG_GROUP).gr_gid
+
+
+def test_save_config_sets_mode_before_atomic_replace(tmp_path, monkeypatch):
+    p = _make_cfg(tmp_path)
+    original_replace = xc.os.replace
+    observed = {}
+
+    def checked_replace(src, dst):
+        observed['mode'] = Path(src).stat().st_mode & 0o777
+        original_replace(src, dst)
+
+    monkeypatch.setattr(xc.os, 'replace', checked_replace)
+    xc._save_config(p, {'inbounds': []})
+
+    assert observed['mode'] == 0o640
 
 
 def test_apply_user_plan_returns_false_on_unreadable_config(tmp_path):

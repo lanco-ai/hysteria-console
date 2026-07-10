@@ -52,6 +52,22 @@ def test_google_uses_tcp_first_fallback_group():
     assert "🌐 Google 优化" in groups["🚀 节点选择"]["proxies"]
 
 
+def test_academic_access_group_defaults_to_direct():
+    cfg = load_template()
+    groups = {group["name"]: group for group in cfg["proxy-groups"]}
+
+    academic_group = groups["📚 学术访问"]
+    assert academic_group["type"] == "select"
+    assert academic_group["proxies"] == [
+        "DIRECT",
+        "🇺🇸 美国 TCP (VLESS+REALITY)",
+        "🇺🇸 美国 TCP 备用 (VLESS+REALITY)",
+        "🇺🇸 美国 UDP (端口跳跃)",
+        "🇺🇸 美国 UDP TUIC",
+    ]
+    assert "📚 学术访问" in groups["🚀 节点选择"]["proxies"]
+
+
 def test_telegram_uses_dedicated_url_test_group():
     cfg = load_template()
     groups = {group["name"]: group for group in cfg["proxy-groups"]}
@@ -136,6 +152,45 @@ def test_microsoft_fake_ip_filters_are_present():
         "*.mp.microsoft.com",
         "*.xboxlive.com",
         "*.xboxservices.com",
+    ):
+        assert pattern in filters
+
+
+def test_academic_rules_precede_external_rulesets():
+    cfg = load_template()
+    rules = cfg["rules"]
+    academic_rules = [
+        "DOMAIN-SUFFIX,sciencedirect.com,📚 学术访问",
+        "DOMAIN-SUFFIX,sciencedirectassets.com,📚 学术访问",
+        "DOMAIN-SUFFIX,els-cdn.com,📚 学术访问",
+        "DOMAIN-SUFFIX,elsevier.com,📚 学术访问",
+        "DOMAIN-SUFFIX,scopus.com,📚 学术访问",
+        "DOMAIN-SUFFIX,springer.com,📚 学术访问",
+        "DOMAIN-SUFFIX,nature.com,📚 学术访问",
+        "DOMAIN-SUFFIX,wiley.com,📚 学术访问",
+        "DOMAIN-SUFFIX,ieee.org,📚 学术访问",
+    ]
+    first_proxy_rule = rules.index("DOMAIN-SUFFIX,openai.com,🤖 GPT 优化")
+    first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
+
+    assert all(rule in rules for rule in academic_rules)
+    assert all(rules.index(rule) < first_proxy_rule for rule in academic_rules)
+    assert all(rules.index(rule) < first_ruleset for rule in academic_rules)
+
+
+def test_academic_fake_ip_filters_are_present():
+    cfg = load_template()
+    filters = cfg["dns"]["fake-ip-filter"]
+
+    for pattern in (
+        "*.sciencedirect.com",
+        "*.sciencedirectassets.com",
+        "*.els-cdn.com",
+        "*.elsevier.com",
+        "*.scopus.com",
+        "*.springer.com",
+        "*.nature.com",
+        "*.wiley.com",
     ):
         assert pattern in filters
 

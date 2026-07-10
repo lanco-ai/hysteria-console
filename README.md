@@ -27,7 +27,7 @@
 - ⚡  **Hysteria2** on `:443/udp` with Salamander obfs + UDP port-hopping over `20000-40000/udp`.
 - 🛡️ **Xray VLESS&nbsp;+&nbsp;Reality** on `:443/tcp` (primary) and `:8443/tcp` (backup), masquerading as `www.bing.com`.
 - 🎛️ **Built-in admin panel** — create users, see live traffic, manage subscription template & route rules from a browser. Sidebar layout, dark theme, fully responsive.
-- 📊 **Per-user quota & device limit** — enforced by a 15-second job that pulls hysteria + xray stats, kicks over-quota users, and resets on a configurable billing cycle (default: day-12 anchor, 30-day cycle).
+- 📊 **Per-user quota & device limit** — enforced by a 90-second job that pulls Hysteria + Xray stats, kicks over-quota users, and resets on a configurable billing cycle (default: day-12 anchor, 30-day cycle).
 - 🔗 **Per-user subscription URL** that emits Clash YAML on the fly with the right password & UUID injected.
 - 🚀 **One-shot deploy** — fill in `.env`, run `./deploy.sh`, get a working stack in under a minute.
 
@@ -90,8 +90,11 @@ sudo ./deploy.sh
 | Key | Default | Notes |
 |---|---:|---|
 | `HY_DISPLAY_MULTIPLIER` | `2.28` | Display/billing multiplier applied to raw Hysteria/Xray/TUIC traffic counters. Keep it aligned with your provider accounting. `/admin/health` shows a calibration suggestion after enough traffic samples. Valid range: `0.1`-`20.0`. |
-| `HY_ENABLE_HTTPS` | `0` | Set to `1` only when `HY_SERVER_HOST` is a real DNS name pointed at this VPS. |
-| `HY_CERTBOT_EMAIL` | empty | Required when `HY_ENABLE_HTTPS=1`. |
+| `HY_HYSTERIA_VERSION` | `v2.9.3` | Exact checksum-verified Hysteria release installed by `deploy.sh`. |
+| `HY_XRAY_VERSION` | `v26.6.27` | Exact Xray release installed by the official installer. |
+| `HY_ENABLE_HTTPS` | `1` | Set to `0` only for an intentionally HTTP-only private deployment. |
+| `HY_CERTBOT_EMAIL` | empty | Optional Let's Encrypt account email. |
+| `HY_HTTPS_PORT` | `9444` | nginx TLS port; must not conflict with Xray/TUIC. |
 
 ## Admin panel
 
@@ -121,6 +124,7 @@ The panel polls `/admin/usage.json` every 5s, automatically pauses when the tab 
 | `443/udp` | Hysteria2 |
 | `8443/tcp` | Xray — VLESS + Reality (backup) |
 | `9443/udp` | TUIC v5 |
+| `9444/tcp` | nginx — HTTPS admin/subscription panel |
 | `20000-40000/udp` | iptables REDIRECT → `443/udp` (port-hopping) |
 
 ### Backup
@@ -141,6 +145,11 @@ sudo sh -c 'openssl rand -base64 32 > /root/hysteria/backup.pass'
 sudo HY2_BACKUP_PASSPHRASE_FILE=/root/hysteria/backup.pass /usr/local/sbin/hy2-backup.sh
 ```
 
+Optional off-host upload uses an rclone destination and refuses plaintext
+archives. Put `HY2_BACKUP_PASSPHRASE_FILE` and `HY2_BACKUP_REMOTE` in the
+root-only `/root/hysteria/backup.env`; configure rclone separately. Without a
+remote, daily local backups continue normally.
+
 Before restoring anything, dry-run the archive:
 
 ```bash
@@ -152,13 +161,20 @@ The dry-run decrypts if needed, validates archive paths, checks JSON/YAML parsea
 
 ### HTTPS for the admin panel
 
-For a real domain already pointed at the VPS:
+The helper accepts either a DNS name or the server's public IPv4 address. DNS
+names receive a normal Let's Encrypt certificate. IP addresses receive a
+publicly trusted six-day certificate, so automated renewal must stay healthy.
+TCP/9444 is used because Xray owns TCP/443 and TCP/8443.
 
 ```bash
 sudo /usr/local/sbin/hy2-enable-https.sh panel.example.com you@example.com
+sudo /usr/local/sbin/hy2-enable-https.sh 203.0.113.10 '' 9444
 ```
 
-Or set `HY_ENABLE_HTTPS=1` and `HY_CERTBOT_EMAIL=you@example.com` in `.env` before running `deploy.sh`. The helper installs certbot, requests an nginx certificate, enables HTTP-to-HTTPS redirect, and reloads nginx.
+Or set `HY_ENABLE_HTTPS=1` in `.env` before running `deploy.sh`. The helper
+installs a current Certbot, preserves the HTTP ACME challenge path, redirects
+other HTTP traffic to HTTPS, installs the renewal reload hook, and enables the
+snap renewal timer. `HY_CERTBOT_EMAIL` is recommended but optional.
 
 ### Files NOT in git (by design)
 
@@ -172,12 +188,12 @@ These are per-server secrets or runtime state — never commit them. They are al
 
 ## Security notes
 
-- The subscription service binds **only** to `127.0.0.1:8081`. The public surface is nginx on `:80`.
+- The subscription service binds **only** to `127.0.0.1:8081`. nginx exposes the ACME/redirect listener on `:80` and the encrypted panel on `:9444`.
 - All template files use `__PLACEHOLDER__` markers; the **real secrets only ever live in `.env` and the rendered files under `/root/hysteria/`**, both of which are gitignored.
 - Hysteria management API is localhost-only and gated by `HY_API_SECRET`. Treat that secret like an SSH key.
 - Admin auth uses PBKDF2-SHA256 with 200k rounds + per-secret salt; sessions use HTTP-only `SameSite=Lax` cookies.
 - Per-user `sub_token` is a 24-byte URL-safe random; rotating it instantly invalidates a leaked subscription URL without affecting the user record.
-- Set up a real TLS cert for the admin/subscription panel before exposing it on the public internet. Use `/usr/local/sbin/hy2-enable-https.sh <domain> <email>`; the bundled cert is self-signed for the Hysteria endpoint only.
+- Set up a trusted TLS cert for the admin/subscription panel before exposing it on the public internet. Use `/usr/local/sbin/hy2-enable-https.sh <domain-or-ip> [email] [port]`; the bundled self-signed cert remains limited to the Hysteria/TUIC endpoints.
 
 > **Rotation log** — an early commit (pre-`e7d9d3a`) accidentally embedded a real `HY_API_SECRET` in source. It was rotated and verified invalid on 2026-04-30; the value present in pre-`e7d9d3a` git history no longer authenticates against any live endpoint.
 

@@ -34,9 +34,13 @@ done
 log "Installing OS packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
-apt-get install -y curl openssl iptables nftables ca-certificates python3 python3-yaml nginx qrencode logrotate >/dev/null
+apt-get install -y curl openssl iptables nftables ca-certificates python3 python3-yaml nginx qrencode logrotate fail2ban >/dev/null
 
 HY_DISPLAY_MULTIPLIER="${HY_DISPLAY_MULTIPLIER:-2.28}"
+HY_HYSTERIA_VERSION="${HY_HYSTERIA_VERSION:-v2.9.3}"
+HY_XRAY_VERSION="${HY_XRAY_VERSION:-v26.6.27}"
+HY_ENABLE_HTTPS="${HY_ENABLE_HTTPS:-1}"
+HY_HTTPS_PORT="${HY_HTTPS_PORT:-9444}"
 python3 - "$HY_DISPLAY_MULTIPLIER" <<'PY'
 import sys
 
@@ -49,23 +53,44 @@ if not (0.1 <= value <= 20.0):
     raise SystemExit("HY_DISPLAY_MULTIPLIER must be between 0.1 and 20.0")
 PY
 
-# ---------- 3. Install hysteria binary ----------
-if ! command -v hysteria >/dev/null 2>&1; then
-  log "Installing hysteria..."
-  bash <(curl -fsSL https://get.hy2.sh/)
+# ---------- 3. Install/upgrade hysteria binary ----------
+[[ "$HY_HYSTERIA_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+  die "HY_HYSTERIA_VERSION must look like v2.9.3"
+case "$(uname -m)" in
+  x86_64) hysteria_asset=hysteria-linux-amd64 ;;
+  aarch64|arm64) hysteria_asset=hysteria-linux-arm64 ;;
+  *) die "Unsupported architecture for Hysteria: $(uname -m)" ;;
+esac
+installed_hysteria_version="$(hysteria version 2>/dev/null | sed -n 's/^Version:[[:space:]]*//p' | head -1 || true)"
+if [[ "$installed_hysteria_version" != "$HY_HYSTERIA_VERSION" ]]; then
+  log "Installing Hysteria $HY_HYSTERIA_VERSION (was ${installed_hysteria_version:-missing})..."
+  tmpdir="$(mktemp -d)"
+  hysteria_base="https://github.com/apernet/hysteria/releases/download/app%2F${HY_HYSTERIA_VERSION}"
+  curl -fL "$hysteria_base/$hysteria_asset" -o "$tmpdir/$hysteria_asset"
+  curl -fL "$hysteria_base/hashes.txt" -o "$tmpdir/hashes.txt"
+  expected_hash="$(awk -v asset="build/$hysteria_asset" '$2 == asset {print $1}' "$tmpdir/hashes.txt")"
+  [[ "$expected_hash" =~ ^[0-9a-f]{64}$ ]] || die "Release checksum not found for $hysteria_asset"
+  printf '%s  %s\n' "$expected_hash" "$tmpdir/$hysteria_asset" | sha256sum -c -
+  install -m 755 "$tmpdir/$hysteria_asset" /usr/local/bin/hysteria
+  rm -rf "$tmpdir"
 else
-  log "hysteria already installed: $(hysteria version 2>/dev/null | head -1 || true)"
+  log "Hysteria already at $HY_HYSTERIA_VERSION"
 fi
 
 # Disable the stock hysteria-server@ instance — we use our own unit.
+systemctl stop hysteria-traffic-limiter.timer 2>/dev/null || true
 systemctl disable --now hysteria-server.service 2>/dev/null || true
 
-# ---------- 4. Install xray binary ----------
-if ! command -v xray >/dev/null 2>&1; then
-  log "Installing xray..."
-  bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" @ install
+# ---------- 4. Install/upgrade xray binary ----------
+[[ "$HY_XRAY_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+  die "HY_XRAY_VERSION must look like v26.6.27"
+installed_xray_version="$(xray version 2>/dev/null | awk 'NR == 1 {print "v" $2}' || true)"
+if [[ "$installed_xray_version" != "$HY_XRAY_VERSION" ]]; then
+  log "Installing Xray $HY_XRAY_VERSION (was ${installed_xray_version:-missing})..."
+  bash -c "$(curl -fsSL https://github.com/XTLS/Xray-install/raw/main/install-release.sh)" \
+    @ install --version "$HY_XRAY_VERSION"
 else
-  log "xray already installed: $(xray version 2>/dev/null | head -1 || true)"
+  log "Xray already at $HY_XRAY_VERSION"
 fi
 
 # ---------- 4b. Install TUIC server binary ----------
@@ -143,7 +168,15 @@ render "$REPO_DIR/hysteria/clash-default.yaml.tpl" "$HY_DIR/template.yaml"
 
 log "Rendering xray config.json..."
 render "$REPO_DIR/xray/config.json.tpl" "$XRAY_ETC/config.json"
-chown root:nogroup "$XRAY_ETC/config.json"
+if ! getent group hy2-xray >/dev/null; then
+  groupadd --system hy2-xray
+fi
+if ! id -u hy2-xray >/dev/null 2>&1; then
+  useradd --system --gid hy2-xray --home-dir /nonexistent --shell /usr/sbin/nologin hy2-xray
+fi
+install -d -o hy2-xray -g hy2-xray -m 750 /var/log/xray
+chown -R hy2-xray:hy2-xray /var/log/xray
+chown root:hy2-xray "$XRAY_ETC/config.json"
 chmod 640 "$XRAY_ETC/config.json"
 
 # ---------- 6. Initial users.json ----------
@@ -171,7 +204,13 @@ install -m 755 "$REPO_DIR/scripts/hysteria-tcp-mss.sh" /usr/local/sbin/hysteria-
 install -m 755 "$REPO_DIR/scripts/hy2-backup.sh" /usr/local/sbin/hy2-backup.sh
 install -m 755 "$REPO_DIR/scripts/hy2-restore-check.sh" /usr/local/sbin/hy2-restore-check.sh
 install -m 755 "$REPO_DIR/scripts/hy2-enable-https.sh" /usr/local/sbin/hy2-enable-https.sh
+install -m 755 "$REPO_DIR/scripts/hy2-cert-renew-hook.sh" /usr/local/sbin/hy2-cert-renew-hook.sh
+install -m 755 "$REPO_DIR/scripts/hy2-health-check.sh" /usr/local/sbin/hy2-health-check.sh
 install -m 644 "$REPO_DIR/logrotate/xray" /etc/logrotate.d/xray
+install -d -m 755 /usr/local/share/hy2
+install -m 644 "$REPO_DIR/nginx/hysteria-panel-https.conf" /usr/local/share/hy2/hysteria-panel-https.conf
+install -m 644 "$REPO_DIR/nginx/hysteria-panel-redirect.conf" /usr/local/share/hy2/hysteria-panel-redirect.conf
+install -m 644 "$REPO_DIR/scripts/hy2-cert-renew-hook.sh" /usr/local/share/hy2/hy2-cert-renew-hook.sh
 
 # ---------- 8b. Network tuning ----------
 log "Installing network tuning..."
@@ -203,9 +242,8 @@ nginx -t
 systemctl enable --now nginx.service
 systemctl reload nginx.service
 
-if [[ "${HY_ENABLE_HTTPS:-0}" == "1" ]]; then
-  [[ -n "${HY_CERTBOT_EMAIL:-}" ]] || die "HY_CERTBOT_EMAIL is required when HY_ENABLE_HTTPS=1"
-  /usr/local/sbin/hy2-enable-https.sh "$HY_SERVER_HOST" "$HY_CERTBOT_EMAIL"
+if [[ "$HY_ENABLE_HTTPS" == "1" ]]; then
+  /usr/local/sbin/hy2-enable-https.sh "$HY_SERVER_HOST" "${HY_CERTBOT_EMAIL:-}" "$HY_HTTPS_PORT"
 fi
 
 # ---------- 10. Systemd units ----------
@@ -219,8 +257,22 @@ install -m 644 "$REPO_DIR/systemd/hy2-backup.timer"                  "$SYSTEMD_D
 install -m 644 "$REPO_DIR/systemd/hysteria-porthop.service"          "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-tcp-mss.service"          "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/tuic-server.service"               "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/hy2-health-check.service"          "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/hy2-health-check.timer"            "$SYSTEMD_DIR/"
+install -d -m 755 "$SYSTEMD_DIR/xray.service.d"
+install -m 644 "$REPO_DIR/systemd/xray.service.d/20-hy2-hardening.conf" \
+  "$SYSTEMD_DIR/xray.service.d/20-hy2-hardening.conf"
+
+install -d -m 755 /etc/fail2ban/filter.d /etc/fail2ban/jail.d
+install -m 644 "$REPO_DIR/fail2ban/filter.d/tuic-auth.conf" /etc/fail2ban/filter.d/tuic-auth.conf
+install -m 644 "$REPO_DIR/fail2ban/jail.d/tuic-auth.conf" /etc/fail2ban/jail.d/tuic-auth.conf
+
+install -d -m 755 /etc/systemd/journald.conf.d
+install -m 644 "$REPO_DIR/journald/60-hy2-limits.conf" /etc/systemd/journald.conf.d/60-hy2-limits.conf
 
 systemctl daemon-reload
+systemctl restart systemd-journald.service
+systemctl restart fail2ban.service
 
 # ---------- 11. Enable + start ----------
 log "Enabling and starting services..."
@@ -230,19 +282,31 @@ systemctl enable --now hysteria-server.service
 systemctl enable --now hysteria-subscription.service
 systemctl enable --now hysteria-traffic-limiter.timer
 systemctl enable --now hy2-backup.timer
+systemctl enable --now hy2-health-check.timer
 systemctl enable --now xray.service
 systemctl enable --now tuic-server.service
 
+# Existing active units do not automatically reload changed configs or sandbox
+# settings after daemon-reload. Restart them explicitly during an in-place deploy.
+systemctl restart hysteria-subscription.service
+systemctl restart xray.service
+systemctl restart tuic-server.service
+systemctl restart hysteria-traffic-limiter.timer
+if [[ "$HY_ENABLE_HTTPS" == "1" ]]; then
+  sleep 2
+  systemctl start hy2-health-check.service
+fi
+
 sleep 1
 log "Status:"
-for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer hy2-backup.timer hysteria-tcp-mss xray tuic-server; do
+for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer hy2-backup.timer hy2-health-check.timer hysteria-tcp-mss xray tuic-server; do
   printf '  %-40s %s\n' "$u" "$(systemctl is-active "$u" || true)"
 done
 
 cat <<EOF
 
 Done. Open the admin panel at:
-  http://${HY_SERVER_HOST}/admin
+  $(if [[ "$HY_ENABLE_HTTPS" == "1" ]]; then printf 'https://%s:%s/admin' "$HY_SERVER_HOST" "$HY_HTTPS_PORT"; else printf 'http://%s/admin' "$HY_SERVER_HOST"; fi)
 
 First-time setup:
   1. Log in. If no admin password was preconfigured, the first service start

@@ -1,12 +1,13 @@
 [Unit]
 Description=Hysteria Traffic Limiter Sync
-After=network.target hysteria-server.service
+Wants=network-online.target
+After=network-online.target hysteria-server.service
 
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/env python3 /root/hysteria/traffic_limiter.py
 User=root
-Group=root
+Group=hy2-xray
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -20,3 +21,4 @@ RestrictSUIDSGID=true
 LockPersonality=true
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
+SystemCallArchitectures=native

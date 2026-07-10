@@ -1,14 +1,17 @@
 [Unit]
 Description=Hysteria Subscription Backend
-After=network.target hysteria-server.service
+Wants=network-online.target
+After=network-online.target hysteria-server.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
 ExecStart=/usr/bin/env python3 /root/hysteria/subscription_service.py
 WorkingDirectory=/root/hysteria
 User=root
-Group=root
-Restart=always
+Group=hy2-xray
+Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true
 PrivateTmp=true
@@ -22,6 +25,7 @@ RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
 CapabilityBoundingSet=
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

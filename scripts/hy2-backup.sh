@@ -104,4 +104,18 @@ sha256sum "$out" > "$out.sha256"
 chmod 600 "$out.sha256"
 prune_old_backups "$BACKUP_KEEP"
 
+if [[ -n "${HY2_BACKUP_REMOTE:-}" ]]; then
+  [[ "$out" == *.enc ]] || {
+    printf 'Refusing off-host upload of an unencrypted backup\n' >&2
+    exit 2
+  }
+  command -v rclone >/dev/null 2>&1 || {
+    printf 'HY2_BACKUP_REMOTE requires rclone\n' >&2
+    exit 2
+  }
+  remote="${HY2_BACKUP_REMOTE%/}"
+  rclone copyto "$out" "$remote/$(basename "$out")"
+  rclone copyto "$out.sha256" "$remote/$(basename "$out.sha256")"
+fi
+
 printf '%s\n' "$out"

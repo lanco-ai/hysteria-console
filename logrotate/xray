@@ -6,5 +6,5 @@
     notifempty
     compress
     copytruncate
-    create 0600 nobody nogroup
+    create 0600 hy2-xray hy2-xray
 }

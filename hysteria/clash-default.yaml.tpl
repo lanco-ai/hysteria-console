@@ -27,6 +27,29 @@ dns:
     - "*.xboxlive.com"
     - "*.xboxservices.com"
     - "*.gamepass.com"
+    - "*.sciencedirect.com"
+    - "*.sciencedirectassets.com"
+    - "*.els-cdn.com"
+    - "*.elsevier.com"
+    - "*.elsevier-ae.com"
+    - "*.elsevier.io"
+    - "*.scopus.com"
+    - "*.springer.com"
+    - "*.springernature.com"
+    - "*.nature.com"
+    - "*.wiley.com"
+    - "*.tandfonline.com"
+    - "*.jstor.org"
+    - "*.ieee.org"
+    - "*.acs.org"
+    - "*.rsc.org"
+    - "*.sagepub.com"
+    - "*.science.org"
+    - "*.cell.com"
+    - "*.thelancet.com"
+    - "*.bmj.com"
+    - "*.oup.com"
+    - "*.cambridge.org"
   use-hosts: true
 
   nameserver:
@@ -293,6 +316,7 @@ proxy-groups:
       - ⚡ GitHub 加速
       - 🤖 GPT 优化
       - 🌐 Google 优化
+      - 📚 学术访问
       - ✈️ Telegram 优化
       - 🔄 自动选择
       - 🇺🇸 美国 UDP (端口跳跃)
@@ -346,6 +370,15 @@ proxy-groups:
     url: https://www.gstatic.com/generate_204
     interval: 60
     timeout: 3000
+
+  - name: 📚 学术访问
+    type: select
+    proxies:
+      - DIRECT
+      - 🇺🇸 美国 TCP (VLESS+REALITY)
+      - 🇺🇸 美国 TCP 备用 (VLESS+REALITY)
+      - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
 
   - name: ✈️ Telegram 优化
     type: url-test
@@ -442,6 +475,32 @@ rules:
   - 'DOMAIN-SUFFIX,xboxservices.com,DIRECT'
   - 'DOMAIN-SUFFIX,gamepass.com,DIRECT'
   - 'DOMAIN-SUFFIX,playfabapi.com,DIRECT'
+  - 'DOMAIN-SUFFIX,sciencedirect.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,sciencedirectassets.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,els-cdn.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,elsevier.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,elsevier-ae.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,elsevier.io,📚 学术访问'
+  - 'DOMAIN-SUFFIX,elseviercdn.cn,📚 学术访问'
+  - 'DOMAIN-SUFFIX,scopus.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,springer.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,springernature.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,nature.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,wiley.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,tandfonline.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,jstor.org,📚 学术访问'
+  - 'DOMAIN-SUFFIX,ieee.org,📚 学术访问'
+  - 'DOMAIN-SUFFIX,acs.org,📚 学术访问'
+  - 'DOMAIN-SUFFIX,rsc.org,📚 学术访问'
+  - 'DOMAIN-SUFFIX,sagepub.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,science.org,📚 学术访问'
+  - 'DOMAIN-SUFFIX,cell.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,thelancet.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,bmj.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,oup.com,📚 学术访问'
+  - 'DOMAIN-SUFFIX,cambridge.org,📚 学术访问'
+  - 'DOMAIN-SUFFIX,arxiv.org,📚 学术访问'
+  - 'DOMAIN-SUFFIX,nih.gov,📚 学术访问'
   - 'DOMAIN-SUFFIX,openai.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,chatgpt.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,oaistatic.com,🤖 GPT 优化'
