@@ -202,6 +202,7 @@ fi
 install -m 755 "$REPO_DIR/scripts/hysteria-porthop.sh" /usr/local/sbin/hysteria-porthop.sh
 install -m 755 "$REPO_DIR/scripts/hysteria-tcp-mss.sh" /usr/local/sbin/hysteria-tcp-mss.sh
 install -m 755 "$REPO_DIR/scripts/hy2-backup.sh" /usr/local/sbin/hy2-backup.sh
+install -m 755 "$REPO_DIR/scripts/hy2-backup-git.sh" /usr/local/sbin/hy2-backup-git.sh
 install -m 755 "$REPO_DIR/scripts/hy2-restore-check.sh" /usr/local/sbin/hy2-restore-check.sh
 install -m 755 "$REPO_DIR/scripts/hy2-enable-https.sh" /usr/local/sbin/hy2-enable-https.sh
 install -m 755 "$REPO_DIR/scripts/hy2-cert-renew-hook.sh" /usr/local/sbin/hy2-cert-renew-hook.sh

@@ -100,7 +100,7 @@ else
   mv "$tmp_tar" "$out"
 fi
 chmod 600 "$out"
-sha256sum "$out" > "$out.sha256"
+(cd "$(dirname "$out")" && sha256sum "$(basename "$out")") > "$out.sha256"
 chmod 600 "$out.sha256"
 prune_old_backups "$BACKUP_KEEP"
 
@@ -116,6 +116,23 @@ if [[ -n "${HY2_BACKUP_REMOTE:-}" ]]; then
   remote="${HY2_BACKUP_REMOTE%/}"
   rclone copyto "$out" "$remote/$(basename "$out")"
   rclone copyto "$out.sha256" "$remote/$(basename "$out.sha256")"
+fi
+
+if [[ -n "${HY2_BACKUP_GIT_REPO:-}" ]]; then
+  [[ "$out" == *.enc ]] || {
+    printf 'Refusing Git upload of an unencrypted backup\n' >&2
+    exit 2
+  }
+  uploader="${HY2_BACKUP_GIT_UPLOADER:-/usr/local/sbin/hy2-backup-git.sh}"
+  [[ -x "$uploader" ]] || {
+    printf 'Git backup uploader is not executable: %s\n' "$uploader" >&2
+    exit 2
+  }
+  "$uploader" "$BACKUP_DIR"
+  git_marker="${HY2_BACKUP_GIT_MARKER:-$HY_DIR/state/git_backup.last}"
+  install -d -m 700 "$(dirname "$git_marker")"
+  touch "$git_marker"
+  chmod 600 "$git_marker"
 fi
 
 printf '%s\n' "$out"

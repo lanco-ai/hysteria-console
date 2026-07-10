@@ -46,6 +46,16 @@ else
   bad "no runtime backup found"
 fi
 
+git_marker="${HY2_BACKUP_GIT_MARKER:-$HY_DIR/state/git_backup.last}"
+if [[ -f "$git_marker" ]]; then
+  git_age=$(( $(date +%s) - $(stat -c %Y "$git_marker") ))
+  if (( git_age <= MAX_BACKUP_AGE )); then
+    ok "Git backup upload age ${git_age}s"
+  else
+    bad "latest Git backup upload is ${git_age}s old"
+  fi
+fi
+
 panel_cert="$(find /etc/letsencrypt/live -mindepth 2 -maxdepth 2 -name fullchain.pem -type l -print -quit 2>/dev/null || true)"
 panel_target=""
 if [[ -n "$panel_cert" ]] && openssl x509 -checkend 86400 -noout -in "$panel_cert" >/dev/null 2>&1; then

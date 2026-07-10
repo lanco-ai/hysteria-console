@@ -1,3 +1,4 @@
+import hashlib
 import os
 import subprocess
 import tarfile
@@ -281,3 +282,50 @@ def test_backup_remote_requires_encryption():
 
     assert 'Refusing off-host upload of an unencrypted backup' in script
     assert 'rclone copyto' in script
+    assert 'Refusing Git upload of an unencrypted backup' in script
+    assert 'git_backup.last' in script
+
+
+def test_git_backup_uploader_force_pushes_one_rolling_snapshot(tmp_path):
+    backups = tmp_path / 'backups'
+    backups.mkdir()
+    remote = tmp_path / 'remote.git'
+    subprocess.run(['git', 'init', '--bare', '-q', str(remote)], check=True)
+
+    for idx in range(3):
+        archive = backups / f'hy2-backup-2026070{idx + 1}T000000Z.tar.gz.enc'
+        archive.write_bytes(f'encrypted-{idx}'.encode())
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        archive.with_name(archive.name + '.sha256').write_text(
+            f'{digest}  {archive.name}\n', encoding='utf-8')
+
+    env = os.environ.copy()
+    env['HY2_BACKUP_GIT_REPO'] = str(remote)
+    env['HY2_BACKUP_GIT_KEEP'] = '2'
+    subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-backup-git.sh'), str(backups)],
+        check=True, capture_output=True, text=True, env=env)
+
+    checkout = tmp_path / 'checkout'
+    subprocess.run(
+        ['git', 'clone', '-q', '--branch', 'main', str(remote), str(checkout)],
+        check=True)
+    uploaded = sorted((checkout / 'backups').glob('*.tar.gz.enc'))
+    assert [p.name for p in uploaded] == [
+        'hy2-backup-20260702T000000Z.tar.gz.enc',
+        'hy2-backup-20260703T000000Z.tar.gz.enc',
+    ]
+    assert not list((checkout / 'backups').glob('*.tar.gz'))
+    checksum = uploaded[-1].with_name(uploaded[-1].name + '.sha256').read_text()
+    assert '/root/' not in checksum
+    commit_count = subprocess.run(
+        ['git', '-C', str(checkout), 'rev-list', '--count', 'HEAD'],
+        check=True, capture_output=True, text=True).stdout.strip()
+    assert commit_count == '1'
+
+
+def test_deploy_installs_git_backup_uploader():
+    deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+
+    assert 'scripts/hy2-backup-git.sh' in deploy
+    assert '/usr/local/sbin/hy2-backup-git.sh' in deploy

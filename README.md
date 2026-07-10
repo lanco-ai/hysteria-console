@@ -150,6 +150,20 @@ archives. Put `HY2_BACKUP_PASSPHRASE_FILE` and `HY2_BACKUP_REMOTE` in the
 root-only `/root/hysteria/backup.env`; configure rclone separately. Without a
 remote, daily local backups continue normally.
 
+A dedicated private Git repository is also supported. The uploader verifies
+every checksum, includes only `*.tar.gz.enc` plus portable checksum files, keeps
+the latest 14 archives, and force-pushes a single rolling snapshot so encrypted
+binary history cannot grow indefinitely:
+
+```bash
+HY2_BACKUP_PASSPHRASE_FILE=/root/hysteria/backup.pass
+HY2_BACKUP_GIT_REPO=https://github.com/OWNER/hy2-encrypted-backups.git
+HY2_BACKUP_GIT_KEEP=14
+```
+
+Keep the passphrase outside GitHub. The Git credential used by the timer should
+have access only to the private backup repository.
+
 Before restoring anything, dry-run the archive:
 
 ```bash

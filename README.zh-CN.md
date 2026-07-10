@@ -149,6 +149,18 @@ sudo HY2_BACKUP_PASSPHRASE_FILE=/root/hysteria/backup.pass /usr/local/sbin/hy2-b
 `HY2_BACKUP_PASSPHRASE_FILE` 和 `HY2_BACKUP_REMOTE` 写入仅 root 可读的
 `/root/hysteria/backup.env`，并单独配置 rclone。未配置远端时仍正常保留每日本地备份。
 
+也支持独立 Private Git 仓库。上传器会验证每份校验和，只保留
+`*.tar.gz.enc` 与可移植 SHA-256 文件，保存最近 14 份，并强制推送为单提交
+滚动快照，避免加密二进制的 Git 历史无限增长：
+
+```bash
+HY2_BACKUP_PASSPHRASE_FILE=/root/hysteria/backup.pass
+HY2_BACKUP_GIT_REPO=https://github.com/OWNER/hy2-encrypted-backups.git
+HY2_BACKUP_GIT_KEEP=14
+```
+
+解密口令必须保存在 GitHub 之外；定时器使用的 Git 凭据应仅能访问该私有备份仓库。
+
 真正恢复前，先做 dry-run 检查：
 
 ```bash
