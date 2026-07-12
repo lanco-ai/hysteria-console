@@ -222,13 +222,13 @@ def render_incidents(ctx, host, flash=''):
 </div>
 
 <div class="grid grid-2 mt-md">
-  <div class="card" style="padding:0;overflow:hidden;">
+  <div class="card card-flush scroll-x">
     <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
       <div class="bold">峰值小时相关用户</div><span class="small">Top {len(peak.get('users') or [])}</span>
     </div>
     <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>峰值小时流量</th></tr></thead><tbody>{peak_users}</tbody></table>
   </div>
-  <div class="card" style="padding:0;overflow:hidden;">
+  <div class="card card-flush scroll-x">
     <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
       <div class="bold">近期告警状态</div><span class="small">去重状态</span>
     </div>
@@ -236,7 +236,7 @@ def render_incidents(ctx, host, flash=''):
   </div>
 </div>
 
-<div class="card mt-md" style="padding:0;overflow:hidden;">
+<div class="card card-flush scroll-x mt-md">
   <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
     <div class="bold">处置候选用户</div>
     <div class="small">按近 24 小时流量排序；暂停/轮换会复用现有安全动作</div>

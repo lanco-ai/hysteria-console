@@ -164,7 +164,7 @@ def render_line_radar(ctx, now=None):
         ctx.subscription_profiles['default'],
     )
     return (
-        '<div class="card mt-md" style="padding:0;overflow:hidden;">'
+        '<div class="card card-flush scroll-x mt-md">'
         '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
         '<div><div class="bold">线路质量雷达</div>'
         f'<div class="small">近 {radar["window_hours"]} 小时协议占比 · 总量 {ctx.fmt_bytes(radar["total_bytes"])}</div></div>'
@@ -276,7 +276,7 @@ def render_cost_calibrator(ctx, now=None):
         f'<td style="padding-right:18px;">{html.escape(iface_text)}</td></tr>'
     )
     return (
-        '<div class="card mt-md" style="padding:0;overflow:hidden;">'
+        '<div class="card card-flush scroll-x mt-md">'
         '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
         '<div><div class="bold">成本校准器</div>'
         f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div></div>'

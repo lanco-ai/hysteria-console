@@ -409,13 +409,13 @@ def render_daily_usage(ctx, host, days=14):
     )
     earliest_recorded = min(daily.keys()) if daily else '—'
 
-    content = f'''<div class="grid grid-4">
+    content = f'''<div class="grid grid-4 hero-stats">
   <div class="card stat"><div class="k">{days} 天总流量</div><div class="v big">{ctx.fmt_bytes(overall_total)}</div><div class="accent-bar"></div></div>
   <div class="card stat"><div class="k">今日已用</div><div class="v">{ctx.fmt_bytes(today_total)}</div><div class="small">{today_key}</div></div>
   <div class="card stat"><div class="k">日均</div><div class="v">{ctx.fmt_bytes(avg_per_day)}</div></div>
   <div class="card stat"><div class="k">峰值日</div><div class="v">{ctx.fmt_bytes(peak_val) if peak_val else "—"}</div><div class="small">{peak_day or "—"}</div></div>
 </div>
-<div class="card mt-md" style="padding:14px 18px;">
+<div class="card mt-md section-head-card" style="padding:14px 18px;">
   <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
     <div>
       <div class="bold">每日流量明细 · 最近 {days} 天</div>
@@ -424,7 +424,7 @@ def render_daily_usage(ctx, host, days=14):
     <div class="row gap-sm">{switcher}</div>
   </div>
 </div>
-<div class="card mt-md scroll-x" style="padding:0;overflow:auto;">
+<div class="card card-flush mt-md scroll-x daily-table-card">
   <table class="table daily-table">
     <thead><tr>
       <th class="user-col" style="padding-left:18px;">用户</th>
@@ -481,30 +481,30 @@ def render_usage_page(ctx, host):
         '<span class="badge poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true">已加载</span>'
     )
 
-    content = f'''<div class="grid grid-4">
+    content = f'''<div class="grid grid-4 hero-stats">
   <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{ctx.fmt_bytes(stats["current_hour_bytes"])}</div><div class="small"><span data-role="usage-online">{stats["online"]}</span> 在线</div></div>
   <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{ctx.fmt_bytes(stats["today_bytes"])}</div><div class="small">昨日 <span data-role="usage-yesterday">{ctx.fmt_bytes(stats["yesterday_bytes"])}</span></div></div>
   <div class="card stat" data-stat="last_7d"><div class="k">近 7 天</div><div class="v">{ctx.fmt_bytes(stats["last_7d_bytes"])}</div><div class="small">日均 <span data-role="usage-7d-average">{ctx.fmt_bytes(stats["last_7d_bytes"] // 7)}</span></div></div>
   <div class="card stat" data-stat="cycle"><div class="k">本周期</div><div class="v">{ctx.fmt_bytes(stats["cycle_bytes"])}</div><div class="small" data-role="cycle-progress">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div></div>
 </div>
 
-<div class="card mt-md" style="padding:14px 18px;">
+<div class="card mt-md chart-card" style="padding:14px 18px;">
   <div class="bold">过去 7 天 · 每小时</div>
   <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
 </div>
 
-<div class="grid grid-2 mt-md">
-  <div class="card" style="padding:14px 18px;">
+<div class="grid grid-2 mt-md analytics-grid">
+  <div class="card chart-card" style="padding:14px 18px;">
     <div class="bold">7 天 × 24 小时 热图</div>
     <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
   </div>
-  <div class="card" style="padding:14px 0;">
+  <div class="card card-flush chart-card" style="padding:14px 0;">
     <div class="bold" style="padding:0 18px;">Top 5 · 近 24 小时</div>
     <div id="top-n-host" style="margin-top:10px;">{top_html}</div>
   </div>
 </div>
 
-<details class="card mt-md" style="padding:8px 18px;">
+<details class="card mt-md history-card" style="padding:8px 18px;">
   <summary style="cursor:pointer;">历史每日明细（可展开）</summary>
   <div style="margin-top:10px;">{historical}</div>
 </details>
@@ -561,18 +561,18 @@ def render_user_detail_page(ctx, uid, host):
     </h2>
     <div class="small faint">有效期：{html.escape(payload["expiry_label"])}</div>{note_line}
 
-<div class="grid grid-3">
+<div class="grid grid-3 hero-stats">
   <div class="card stat" data-stat="user_cycle"><div class="k">本周期</div><div class="v">{quota_line}</div></div>
   <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{ctx.fmt_bytes(payload["today_bytes"])}</div></div>
   <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v">{ctx.fmt_bytes(payload["current_hour_bytes"])}</div></div>
 </div>
 
-<div class="card mt-md" style="padding:14px 18px;">
+<div class="card mt-md chart-card" style="padding:14px 18px;">
   <div class="bold">7 天小时柱</div>
   <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
 </div>
 
-<div class="card mt-md" style="padding:14px 18px;">
+<div class="card mt-md chart-card" style="padding:14px 18px;">
   <div class="bold">个人 7×24 热图</div>
   <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
 </div>

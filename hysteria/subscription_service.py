@@ -665,6 +665,7 @@ def html_page(title, body, body_class=''):
         f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<meta name="color-scheme" content="dark">'
+        f'<meta name="theme-color" content="#07101f">'
         f'<title>{html.escape(title)}</title>'
         f'<link rel="stylesheet" href="/static/style.css">'
         f'</head><body{cls}>{body}</body></html>'
@@ -742,9 +743,9 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
     sub_html = f'<small>{html.escape(subtitle)}</small>' if subtitle else ''
     body = f'''<div class="app">
 <aside class="sidebar" id="sidebar">
-  <div class="sidebar-brand"><span class="logo">H</span><span>Hysteria</span></div>
+  <div class="sidebar-brand"><span class="logo">H</span><span class="sidebar-brand-copy"><strong>Hysteria</strong><small>Network Console</small></span></div>
   <nav class="sidebar-nav" aria-label="管理导航">
-    <div class="sidebar-section">管理</div>
+    <div class="sidebar-section">控制中心</div>
     {nav_items}
   </nav>
   <div class="sidebar-footer">
@@ -828,7 +829,7 @@ def flash_text(msg):
 
 def render_home(host):
     body = f'''<div class="wrap home-wrap">
-<div class="card elev inline-form auth-card" style="text-align:center;">
+<div class="card elev inline-form auth-card welcome-card" style="text-align:center;">
   <div class="auth-head" style="justify-content:center;border-bottom:0;padding-bottom:6px;margin-bottom:8px;">
     <span class="app-logo lg">H</span>
     <div style="text-align:left;">
@@ -844,7 +845,7 @@ def render_home(host):
 def render_login(host, msg=''):
     body = f'''<div class="wrap home-wrap">
 {render_alert(msg, 'err')}
-<div class="card elev inline-form auth-card">
+<div class="card elev inline-form auth-card login-card">
   <div class="auth-head">
     <span class="app-logo">H</span>
     <div>
@@ -1046,7 +1047,7 @@ def render_user_panel(host, base_url, user, token, cfg):
   start();'''
     body = f'''<div class="wrap">
 {disabled_banner}
-<div class="nav">
+<div class="nav user-panel-nav">
   <div class="row gap-sm">
     <span class="app-logo">H</span>
     <div>
@@ -1059,7 +1060,7 @@ def render_user_panel(host, base_url, user, token, cfg):
     <div class="small faint poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true" style="margin-top:4px;">实时刷新中…</div>
   </div>
 </div>
-<div class="grid grid-4">
+<div class="grid grid-4 hero-stats">
   <div class="card stat"><div class="k">本周期已用</div><div class="v big" data-role="used">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
   <div class="card stat"><div class="k">总流量</div><div class="v">{total_label}</div></div>
   <div class="card stat"><div class="k">剩余流量</div><div class="v" data-role="remain">{remain_label}</div></div>
@@ -1284,7 +1285,7 @@ def render_admin(host, base_url, flash=''):
     rows = ''.join(row_form(u, cfg, online, host, base_url, daily=daily, now=now) for u, cfg in users.items()) \
         or '<tr><td colspan="5" class="empty">暂无用户，使用下方表单创建第一个用户</td></tr>'
     content = f'''{alert}
-<div class="grid grid-3">
+<div class="grid grid-3 hero-stats">
   <div class="card stat"><div class="k">本周期总流量</div><div class="v big" id="total-used">{fmt_bytes(total_used)}</div><div class="small">{html.escape(cycle_range)}</div><div class="accent-bar"></div></div>
   <div class="card stat"><div class="k">计费周期</div><div class="v">{mk}</div><div class="small">每 {cycle_length} 天结算 · 第 {settlement_day} 日</div></div>
   <div class="card stat">
@@ -1298,10 +1299,10 @@ def render_admin(host, base_url, flash=''):
     </div>
   </div>
 </div>
-<div class="card mt-md scroll-x" style="padding:0;overflow:hidden;">
-  <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap;">
+<div class="card card-flush mt-md scroll-x users-card">
+  <div class="card-head">
     <div class="bold">用户列表</div>
-    <div class="row gap-sm" style="flex:1;justify-content:flex-end;flex-wrap:wrap;">
+    <div class="row gap-sm filter-toolbar" style="flex:1;justify-content:flex-end;flex-wrap:wrap;">
       <input id="user-filter" type="search" placeholder="搜索用户名…" aria-label="搜索用户名" autocomplete="off"
              class="user-filter-input" style="min-width:180px;max-width:260px;">
       <div class="row gap-sm filter-chips" role="group" aria-label="状态筛选">
@@ -1315,7 +1316,7 @@ def render_admin(host, base_url, flash=''):
   </div>
   <table class="table users-table" data-user-count="{len(users)}"><thead><tr><th style="padding-left:18px;">用户</th><th>30 天趋势</th><th>本周期用量</th><th>操作</th><th style="padding-right:18px;">链接</th></tr></thead><tbody>{rows}</tbody></table>
 </div>
-<div class="card mt-md">
+<div class="card mt-md create-user-card">
   <details class="summary-muted">
     <summary>新增用户</summary>
     <form method="post" action="/admin/add" class="inline-form mt-md">
