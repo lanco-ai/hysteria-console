@@ -3,7 +3,7 @@
 Background: a hysteria `/online` API hiccup (timeout, refused, parse error)
 caused the previous code path `online = get("/online") or {}` followed by
 `save_json(...)` to wipe online.json to `{}`. The cron tick runs every 5 s,
-and admin_poll.js polls /admin/usage.json every 5 s, so even brief hiccups
+and admin_poll.js polls /admin/overview.json every 5 s, so even brief hiccups
 flashed every device as offline across all UI surfaces. These tests pin the
 fix: failure keeps the previous snapshot; success overwrites it.
 """

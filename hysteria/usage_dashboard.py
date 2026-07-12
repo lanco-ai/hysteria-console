@@ -64,9 +64,10 @@ def entry_total(entry):
     return int(entry or 0)
 
 
-def load_hourly_totals(ctx, *, now):
+def load_hourly_totals(ctx, *, now, hourly=None):
     """Return retention-window {hour, bytes} entries, oldest first."""
-    hourly = ctx.load_json(ctx.usage_hourly_file, {})
+    if hourly is None:
+        hourly = ctx.load_json(ctx.usage_hourly_file, {})
     out = []
     for i in reversed(range(ctx.hourly_retention_hours)):
         h = now - timedelta(hours=i)
@@ -77,8 +78,9 @@ def load_hourly_totals(ctx, *, now):
     return out
 
 
-def load_heatmap_grid(ctx, *, now):
-    hourly = ctx.load_json(ctx.usage_hourly_file, {})
+def load_heatmap_grid(ctx, *, now, hourly=None):
+    if hourly is None:
+        hourly = ctx.load_json(ctx.usage_hourly_file, {})
     today = now.date()
     rows = []
     for d in reversed(range(7)):
@@ -94,9 +96,11 @@ def load_heatmap_grid(ctx, *, now):
     return rows
 
 
-def top_n_users(ctx, *, n=5, window_hours=24, now):
-    hourly = ctx.load_json(ctx.usage_hourly_file, {})
-    users = ctx.load_json(ctx.users_file, {})
+def top_n_users(ctx, *, n=5, window_hours=24, now, hourly=None, users=None):
+    if hourly is None:
+        hourly = ctx.load_json(ctx.usage_hourly_file, {})
+    if users is None:
+        users = ctx.load_json(ctx.users_file, {})
     known_users = set(users.keys())
 
     buckets = []
@@ -134,9 +138,11 @@ def top_n_users(ctx, *, n=5, window_hours=24, now):
     ]
 
 
-def aggregate_stats(ctx, *, now, online):
-    hourly = ctx.load_json(ctx.usage_hourly_file, {})
-    daily = ctx.load_json(ctx.usage_daily_file, {})
+def aggregate_stats(ctx, *, now, online, hourly=None, daily=None):
+    if hourly is None:
+        hourly = ctx.load_json(ctx.usage_hourly_file, {})
+    if daily is None:
+        daily = ctx.load_json(ctx.usage_daily_file, {})
 
     today_str = now.strftime("%Y-%m-%d")
     yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -208,14 +214,79 @@ def build_usage_csv(ctx, *, now, window='cycle'):
     return buf.getvalue()
 
 
-def build_usage_json_payload(ctx, *, now):
+def build_overview_json_payload(ctx, *, now):
+    """Small, high-frequency payload for the admin user table.
+
+    Deliberately excludes profile metadata, chart series, and sparkline SVG so
+    a five-second refresh remains cheap even as the user count grows.
+    """
     users = ctx.load_json(ctx.users_file, {})
     online = ctx.load_json(ctx.online_file, {})
     daily = ctx.load_json(ctx.usage_daily_file, {})
-    series = load_hourly_totals(ctx, now=now)
-    grid = load_heatmap_grid(ctx, now=now)
-    stats = aggregate_stats(ctx, now=now, online=online)
-    top = top_n_users(ctx, n=5, window_hours=24, now=now)
+    user_list = []
+    total_used = 0
+    for uid, cfg in users.items():
+        tx, rx, used = ctx.scaled_usage_for_user(uid, daily=daily, now=now)
+        total = ctx.user_total_quota(cfg)
+        total_used += used
+        user_list.append({
+            'user': uid,
+            'tx': tx,
+            'rx': rx,
+            'used': used,
+            'total': total,
+            'percent': ctx.pct(used, total),
+            'online': int(online.get(uid, 0)),
+        })
+    total_used += int(ctx.preserved_raw_for_cycle(now=now) * ctx.display_multiplier)
+    return {
+        'ts': now.isoformat(timespec='seconds'),
+        'total_used': total_used,
+        'users': user_list,
+    }
+
+
+def build_analytics_json_payload(ctx, *, now, include_charts=True):
+    """Payload for the analytics page, optionally omitting chart series.
+
+    Summary polls update the numeric cards every five seconds. The larger
+    chart arrays are requested separately at a lower cadence by the browser.
+    Loading each state file once also avoids duplicate transient allocations.
+    """
+    online = ctx.load_json(ctx.online_file, {})
+    hourly = ctx.load_json(ctx.usage_hourly_file, {})
+    daily = ctx.load_json(ctx.usage_daily_file, {})
+    payload = {
+        'ts': now.isoformat(timespec='seconds'),
+        'stats': aggregate_stats(
+            ctx, now=now, online=online, hourly=hourly, daily=daily,
+        ),
+    }
+    if include_charts:
+        users = ctx.load_json(ctx.users_file, {})
+        payload.update({
+            'hourly_totals': load_hourly_totals(ctx, now=now, hourly=hourly),
+            'heatmap': load_heatmap_grid(ctx, now=now, hourly=hourly),
+            'top_n': top_n_users(
+                ctx, n=5, window_hours=24, now=now,
+                hourly=hourly, users=users,
+            ),
+        })
+    return payload
+
+
+def build_usage_json_payload(ctx, *, now):
+    """Legacy all-in-one payload kept for API compatibility."""
+    users = ctx.load_json(ctx.users_file, {})
+    online = ctx.load_json(ctx.online_file, {})
+    daily = ctx.load_json(ctx.usage_daily_file, {})
+    hourly = ctx.load_json(ctx.usage_hourly_file, {})
+    series = load_hourly_totals(ctx, now=now, hourly=hourly)
+    grid = load_heatmap_grid(ctx, now=now, hourly=hourly)
+    stats = aggregate_stats(ctx, now=now, online=online, hourly=hourly, daily=daily)
+    top = top_n_users(
+        ctx, n=5, window_hours=24, now=now, hourly=hourly, users=users,
+    )
     user_list = []
     total_used = 0
     for uid, cfg in users.items():
@@ -251,7 +322,7 @@ def build_usage_json_payload(ctx, *, now):
     }
 
 
-def build_user_json_payload(ctx, uid, *, now):
+def build_user_json_payload(ctx, uid, *, now, include_charts=True):
     users = ctx.load_json(ctx.users_file, {})
     if uid not in users:
         return None
@@ -261,24 +332,7 @@ def build_user_json_payload(ctx, uid, *, now):
     online = ctx.load_json(ctx.online_file, {})
     hourly = ctx.load_json(ctx.usage_hourly_file, {})
 
-    bars = []
-    for i in reversed(range(ctx.hourly_retention_hours)):
-        h = now - timedelta(hours=i)
-        hk = hour_key(h)
-        v = entry_total((hourly.get(hk) or {}).get(uid))
-        bars.append({"hour": hk, "bytes": int(v * ctx.display_multiplier)})
-
-    heat_grid = []
     today = now.date()
-    for d in reversed(range(7)):
-        day = today - timedelta(days=d)
-        date_str = day.strftime("%Y-%m-%d")
-        hours = []
-        for hh in range(24):
-            v = entry_total((hourly.get(f"{date_str}T{hh:02d}") or {}).get(uid))
-            hours.append(int(v * ctx.display_multiplier))
-        heat_grid.append({"date": date_str, "hours": hours})
-
     daily = ctx.load_json(ctx.usage_daily_file, {})
     _tx, _rx, cycle_raw = ctx.cycle_raw_for_user(uid, daily, now=now)
 
@@ -289,7 +343,7 @@ def build_user_json_payload(ctx, uid, *, now):
     )
     cur_raw = entry_total((hourly.get(hour_key(now)) or {}).get(uid))
 
-    return {
+    payload = {
         "ts": now.isoformat(timespec="seconds"),
         "uid": uid,
         "metered": bool(cfg.get("metered", cfg.get("guest", False))),
@@ -305,10 +359,28 @@ def build_user_json_payload(ctx, uid, *, now):
         "quota_extra_bytes": int(user_compat.quota_extra_bytes(cfg)),
         "current_hour_bytes": int(cur_raw * ctx.display_multiplier),
         "today_bytes": int(today_raw * ctx.display_multiplier),
-        "hourly_bars": bars,
-        "heatmap": heat_grid,
         "recent_alerts": [],
     }
+    if include_charts:
+        bars = []
+        for i in reversed(range(ctx.hourly_retention_hours)):
+            h = now - timedelta(hours=i)
+            hk = hour_key(h)
+            v = entry_total((hourly.get(hk) or {}).get(uid))
+            bars.append({"hour": hk, "bytes": int(v * ctx.display_multiplier)})
+
+        heat_grid = []
+        for d in reversed(range(7)):
+            day = today - timedelta(days=d)
+            date_str = day.strftime("%Y-%m-%d")
+            hours = []
+            for hh in range(24):
+                v = entry_total((hourly.get(f"{date_str}T{hh:02d}") or {}).get(uid))
+                hours.append(int(v * ctx.display_multiplier))
+            heat_grid.append({"date": date_str, "hours": hours})
+        payload['hourly_bars'] = bars
+        payload['heatmap'] = heat_grid
+    return payload
 
 
 def daily_window_for_user(ctx, uid, daily, *, days=30, today=None):
@@ -450,7 +522,7 @@ def render_usage_page(ctx, host):
     from charts import hourly_bars_svg, mini_sparkline_svg, weekday_hour_heatmap_svg
 
     now = ctx.local_now()
-    payload = build_usage_json_payload(ctx, now=now)
+    payload = build_analytics_json_payload(ctx, now=now, include_charts=True)
     stats = payload["stats"]
     series = payload["hourly_totals"]
     grid = payload["heatmap"]
@@ -475,7 +547,6 @@ def render_usage_page(ctx, host):
         )
     top_html = "".join(top_rows) or '<div class="empty">暂无数据</div>'
 
-    historical = render_daily_table_collapsed(ctx, host)
     poll_controls = (
         '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
         '<span class="badge poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true">已加载</span>'
@@ -504,9 +575,12 @@ def render_usage_page(ctx, host):
   </div>
 </div>
 
-<details class="card mt-md history-card" style="padding:8px 18px;">
+<details class="card mt-md history-card" id="usage-history" style="padding:8px 18px;">
   <summary style="cursor:pointer;">历史每日明细（可展开）</summary>
-  <div style="margin-top:10px;">{historical}</div>
+  <div class="history-load-host" id="usage-history-host" data-url="/admin/usage-history"
+       aria-live="polite" aria-busy="false">
+    <div class="empty history-placeholder">展开后加载 30 天明细，减少首屏内存占用</div>
+  </div>
 </details>
 
 <div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>

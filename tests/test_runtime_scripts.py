@@ -258,6 +258,9 @@ def test_https_templates_preserve_acme_and_use_dedicated_port():
     assert 'listen __HY_HTTPS_PORT__ ssl;' in tls
     assert 'proxy_set_header X-Forwarded-Proto https;' in tls
     assert 'proxy_set_header X-Forwarded-Port $server_port;' in tls
+    assert 'gzip on;' in plain
+    assert 'gzip on;' in tls
+    assert 'application/json' in tls
 
 
 def test_deploy_installs_monitoring_fail2ban_and_journal_limits():

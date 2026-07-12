@@ -10,41 +10,45 @@ from subscription_service import fmt_bytes
 
 
 def mini_sparkline_svg(values, *, height=24):
-    """Render a series of (date, bytes) into a compact bar SVG.
+    """Render a series of (date, bytes) as a low-node compact line SVG.
 
-    Last entry carries the `today` class; zero-valued days render no bar.
-    Width/height come from the viewBox so the caller's CSS can size the SVG.
-
-    Output contract (relied on by the admin dashboard's polling JS):
-    - Outermost element is `<svg class="spark" ...>` — JS uses this class.
-    - Each non-empty bar is `<rect class="spark-bar [today]" ...>` — CSS uses these.
-    Default height=24 matches the legacy 30-day per-user-row sparkline; Top-N
-    rows pass height=14 for the compact variant.
+    The earlier bar version emitted up to 30 rect/title pairs per user. A
+    filled path, line path, and current-value dot preserve the trend while
+    keeping DOM cost constant as the history window grows.
     """
     n = len(values)
     label = f'{n} 天趋势' if n else ''
     if n == 0:
         return f'<svg class="spark" viewBox="0 0 0 {height}" aria-hidden="true"></svg>'
-    max_v = max((v for _, v in values), default=0) or 1
+    max_v = max((int(v) for _, v in values), default=0) or 1
     bar_w = 3
     gap = 1
     width = n * bar_w + (n - 1) * gap
-    parts = []
+    floor_y = max(1, height - 1)
+    draw_h = max(1, height - 2)
+    points = []
     for i, (dk, v) in enumerate(values):
-        if v <= 0:
-            continue
-        h = max(1, int(round(height * v / max_v)))
-        x = i * (bar_w + gap)
-        y = height - h
-        cls = 'spark-bar today' if i == n - 1 else 'spark-bar'
-        title = f'{dk}: {fmt_bytes(v)}'
-        parts.append(
-            f'<rect class="{cls}" x="{x}" y="{y}" width="{bar_w}" height="{h}">'
-            f'<title>{html.escape(title)}</title></rect>'
-        )
+        x = width / 2 if n == 1 else i * width / (n - 1)
+        y = floor_y - draw_h * max(0, int(v)) / max_v
+        points.append((x, max(1, min(floor_y, y))))
+    line_d = ' '.join(
+        ('M' if i == 0 else 'L') + f'{x:.2f},{y:.2f}'
+        for i, (x, y) in enumerate(points)
+    )
+    area_points = ' '.join(f'L{x:.2f},{y:.2f}' for x, y in points)
+    area_d = f'M0,{floor_y} {area_points} L{width},{floor_y} Z'
+    last_x, last_y = points[-1]
+    last_date, last_value = values[-1]
+    peak_date, peak_value = max(values, key=lambda item: int(item[1]))
+    title = (f'{n} 天趋势 · 最新 {last_date}: {fmt_bytes(int(last_value))} · '
+             f'峰值 {peak_date}: {fmt_bytes(int(peak_value))}')
     return (f'<svg class="spark" viewBox="0 0 {width} {height}" '
             f'aria-label="{html.escape(label)}">'
-            f'{"".join(parts)}</svg>')
+            f'<title>{html.escape(title)}</title>'
+            f'<path class="spark-area" d="{area_d}"/>'
+            f'<path class="spark-line" d="{line_d}" vector-effect="non-scaling-stroke"/>'
+            f'<circle class="spark-dot today" cx="{last_x:.2f}" cy="{last_y:.2f}" r="1.8"/>'
+            f'</svg>')
 
 
 def hourly_bars_svg(series, *, peak_hour=None, height=120, bar_w=3, gap=1):

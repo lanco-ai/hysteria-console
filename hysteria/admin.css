@@ -8,7 +8,7 @@
   --surface-2: #15243d;
   --surface-3: #1b2c48;
   --surface-hover: #1c2e4b;
-  --surface-glass: rgba(16, 28, 49, .78);
+  --surface-glass: rgba(16, 28, 49, .91);
 
   /* Borders */
   --hairline: rgba(148, 163, 184, .09);
@@ -337,7 +337,6 @@ svg[viewBox="0 0 24 24"] {
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, .025);
-  backdrop-filter: blur(10px);
   transition: border-color var(--transition), transform var(--transition), box-shadow var(--transition);
 }
 .card.elev { box-shadow: var(--shadow-lg), inset 0 1px 0 rgba(255, 255, 255, .04); }
@@ -419,6 +418,8 @@ svg[viewBox="0 0 24 24"] {
 .chart-card { background: rgba(15, 27, 47, .74); }
 .chart-card > .bold { font-size: 13px; }
 .history-card { background: rgba(15, 27, 47, .62); }
+.history-load-host { min-height: 70px; margin-top: 10px; }
+.history-placeholder { display: flex; min-height: 70px; align-items: center; justify-content: center; }
 .daily-table-card { background: rgba(15, 27, 47, .84); }
 
 /* Badges --------------------------------------------------------------- */
@@ -576,6 +577,46 @@ label.switch input { width: 16px; height: 16px; accent-color: var(--accent); }
 }
 .cycle-config-form input { min-height: 31px; padding: 5px 7px; font-variant-numeric: tabular-nums; }
 .inline-form-row { display: inline-flex; margin: 0; }
+.edit-user-control { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.edit-user-control .summary-preview { margin: 0; }
+.edit-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: min(620px, calc(100vw - 28px));
+  max-height: min(780px, calc(100vh - 32px));
+  padding: 0;
+  overflow: auto;
+  color: var(--text);
+  background: #101c31;
+  border: 1px solid rgba(157, 140, 255, .28);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  margin: auto;
+}
+.edit-dialog::backdrop { background: rgba(2, 7, 16, .78); }
+.edit-dialog-form { padding: 22px; }
+.dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.dialog-head h2 { margin: 2px 0 0; color: var(--text-strong); font-size: 20px; letter-spacing: -.025em; }
+.dialog-fields { gap: 13px; }
+.field-span-2 { grid-column: 1 / -1; }
+.dialog-options { display: flex; flex-wrap: wrap; gap: 10px 20px; margin-top: 18px; }
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  padding-top: 18px;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+}
 .code-area {
   width: 100%;
   padding: 16px;
@@ -842,11 +883,10 @@ code, .mono {
 }
 .user-panel-nav {
   padding: 14px 16px;
-  background: rgba(15, 27, 47, .72);
+  background: rgba(15, 27, 47, .9);
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: var(--shadow-sm);
-  backdrop-filter: blur(12px);
 }
 .profile-link {
   min-height: 78px;
@@ -893,8 +933,9 @@ code, .mono {
 
 /* Charts -------------------------------------------------------------- */
 .spark { display: block; }
-.spark-bar { fill: rgba(146, 164, 191, .62); }
-.spark-bar.today { fill: var(--accent-2); }
+.spark-area { fill: rgba(124, 108, 242, .13); }
+.spark-line { fill: none; stroke: #9d8cff; stroke-width: 1.35; stroke-linecap: round; stroke-linejoin: round; }
+.spark-dot { fill: #b9adff; stroke: #101c31; stroke-width: .75; }
 .spark-cell { min-width: 132px; padding-top: 16px; padding-bottom: 16px; }
 .hourly-bars, .heatmap { display: block; width: 100%; height: auto; overflow: visible; }
 .hourly-bars .bars .hourly-bar { fill: var(--accent-2); opacity: .82; }

@@ -13,6 +13,8 @@ def test_usage_dashboard_logic_lives_in_dedicated_module():
     import usage_dashboard
 
     assert usage_dashboard.build_usage_json_payload.__module__ == 'usage_dashboard'
+    assert usage_dashboard.build_overview_json_payload.__module__ == 'usage_dashboard'
+    assert usage_dashboard.build_analytics_json_payload.__module__ == 'usage_dashboard'
     assert usage_dashboard.render_usage_page.__module__ == 'usage_dashboard'
     assert usage_dashboard.render_user_detail_page.__module__ == 'usage_dashboard'
 
@@ -60,9 +62,38 @@ def test_build_usage_json_payload_schema(tmp_path, monkeypatch):
     assert {"tx", "rx", "used", "total", "percent", "online", "spark_html"} <= set(payload["users"][0])
 
 
+def test_lightweight_overview_payload_excludes_charts_and_profile_metadata(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    _seed_state(
+        tmp_path, monkeypatch,
+        users={"alice": {"metered": True, "note": "private", "monthly_quota_bytes": 1000}},
+        daily={"2026-05-08": {"alice": {"tx": 10, "rx": 20, "total": 30}}},
+        online={"alice": 1},
+    )
+    payload = ss._build_overview_json_payload(now=now)
+    assert set(payload) == {"ts", "total_used", "users"}
+    assert set(payload["users"][0]) == {
+        "user", "tx", "rx", "used", "total", "percent", "online",
+    }
+    assert "note" not in payload["users"][0]
+    assert "spark_html" not in payload["users"][0]
+
+
+def test_analytics_summary_payload_omits_chart_arrays(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    _seed_state(tmp_path, monkeypatch, users={"alice": {}}, online={"alice": 1})
+    summary = ss._build_analytics_json_payload(now=now, include_charts=False)
+    full = ss._build_analytics_json_payload(now=now, include_charts=True)
+    assert set(summary) == {"ts", "stats"}
+    assert {"hourly_totals", "heatmap", "top_n"} <= set(full)
+
+
 def test_usage_json_route_is_not_shadowed_by_legacy_handler():
     src = Path(ss.__file__).read_text(encoding="utf-8")
     assert src.count("if path == '/admin/usage.json':") == 1
+    assert src.count("if path == '/admin/overview.json':") == 1
+    assert src.count("if path == '/admin/analytics.json':") == 1
+    assert src.count("if path == '/admin/usage-history':") == 1
 
 
 def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):
@@ -76,7 +107,9 @@ def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):
     assert 'class="heatmap"' in html_out
     assert 'class="spark"' in html_out
     assert 'usage.js' in html_out
-    assert "<details" in html_out
+    assert 'id="usage-history"' in html_out
+    assert 'data-url="/admin/usage-history"' in html_out
+    assert 'daily-table-collapsed' not in html_out
     assert 'id="usage-refresh-now"' in html_out
     assert 'data-role="poll-status"' in html_out
 
@@ -116,6 +149,15 @@ def test_user_detail_json_unknown_user_returns_none(tmp_path, monkeypatch):
     _seed_state(tmp_path, monkeypatch, users={"alice": {}})
     now = datetime(2026, 5, 8, 14, tzinfo=SH)
     assert ss._build_user_json_payload("nobody", now=now) is None
+
+
+def test_user_detail_summary_payload_omits_chart_arrays(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 8, 14, tzinfo=SH)
+    _seed_state(tmp_path, monkeypatch, users={"alice": {}}, online={"alice": 1})
+    payload = ss._build_user_json_payload("alice", now=now, include_charts=False)
+    assert "hourly_bars" not in payload
+    assert "heatmap" not in payload
+    assert payload["online"] == 1
 
 
 def test_user_detail_page_renders_for_known_user(tmp_path, monkeypatch):
@@ -383,6 +425,25 @@ def test_refresh_usage_button_renders_in_admin(tmp_path, monkeypatch):
     assert '刷新流量' in out
 
 
+def test_admin_reuses_one_edit_form_for_all_user_rows(tmp_path, monkeypatch):
+    now = datetime(2026, 5, 14, 10, tzinfo=SH)
+    _seed_state(
+        tmp_path, monkeypatch,
+        users={"alice": {"note": 'safe "quoted" note'}, "bob": {}},
+    )
+    monkeypatch.setattr(ss, "META_FILE", tmp_path / "subscription_meta.json", raising=False)
+    (tmp_path / "subscription_meta.json").write_text("{}")
+    monkeypatch.setattr(ss, "local_now", lambda: now)
+    out = ss.render_admin("test-host", "http://test-host")
+    assert out.count('action="/admin/update"') == 1
+    assert out.count('class="btn secondary btn-sm edit-user"') == 2
+    assert 'id="user-edit-dialog"' in out
+    assert out.count('id="user-action-form"') == 1
+    assert '<form method="post" action="/admin/reset-usage"' not in out
+    assert 'name="quota_extra_gb"' in out
+    assert 'data-note="safe &quot;quoted&quot; note"' in out
+
+
 def test_save_json_is_atomic_against_crash(tmp_path, monkeypatch):
     """A failing serialize must not leave the target file truncated. Atomic-rename
     means the original survives intact and load_json doesn't fall back to {}."""
@@ -399,4 +460,3 @@ def test_save_json_is_atomic_against_crash(tmp_path, monkeypatch):
         pass
     # The previously-written file must still be readable; no truncation.
     assert json.loads(target.read_text())["good"] == "value"
-

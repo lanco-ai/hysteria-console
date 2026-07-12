@@ -424,9 +424,10 @@ def test_admin_row_shows_expiry_extra_and_note(tmp_path, monkeypatch):
     assert '加量 20 GB' in row
     assert '7 天后到期' in row
     assert 'paid through June' in row
-    assert 'name="quota_extra_gb"' in row
-    assert 'name="expires_at"' in row
-    assert 'name="note"' in row
+    assert 'data-quota-extra-gb="20"' in row
+    assert 'data-expires-at="2026-06-10"' in row
+    assert 'data-note="paid through June"' in row
+    assert 'action="/admin/update"' not in row
 
 
 def _seed_profile_template(tmp_path, monkeypatch):
@@ -908,8 +909,9 @@ def test_resume_expired_temporary_disables_reenables_user(tmp_path, monkeypatch)
 
 def test_admin_poll_js_confirms_destructive_admin_actions():
     text = (Path(ss.__file__).resolve().parent / 'admin_poll.js').read_text(encoding='utf-8')
-    assert "f.dataset.action==='rotate-user-token'" in text
-    assert "f.dataset.action==='disable-user'" in text
+    assert "action === 'rotate-user-token'" in text
+    assert "action === 'disable-user'" in text
+    assert 'ev.submitter || pendingUserAction' in text
 
 
 def test_alerts_test_kind_has_friendly_message():

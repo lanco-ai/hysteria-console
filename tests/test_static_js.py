@@ -22,7 +22,7 @@ def test_usage_page_has_manual_refresh_status_controls():
     text = (ROOT / "hysteria" / "usage.js").read_text(encoding="utf-8")
     assert 'getElementById("usage-refresh-now")' in text
     assert '[data-role="poll-status"]' in text
-    assert 'refreshBtn.addEventListener("click", tick)' in text
+    assert 'refreshBtn.addEventListener("click", function () { tick(true); })' in text
     assert 'setPollStatus("更新 " + stamp(), "is-live")' in text
 
 
@@ -39,3 +39,29 @@ def test_admin_poll_reports_errors_and_handles_user_list_changes():
     assert "刷新失败" in text
     assert "用户列表已变更" in text
     assert "data-user-count" in (ROOT / "hysteria" / "subscription_service.py").read_text(encoding="utf-8")
+
+
+def test_polling_uses_tiered_lightweight_endpoints():
+    admin = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")
+    usage = (ROOT / "hysteria" / "usage.js").read_text(encoding="utf-8")
+    assert "fetch('/admin/overview.json'" in admin
+    assert "spark_html" not in admin
+    assert 'return "/admin/analytics.json"' in usage
+    assert 'CHART_REFRESH_MS = 30000' in usage
+    assert '"?summary=1"' in usage
+    assert "function chartSignature" in usage
+
+
+def test_admin_uses_one_reusable_edit_dialog():
+    js = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")
+    service = (ROOT / "hysteria" / "subscription_service.py").read_text(encoding="utf-8")
+    assert "user-edit-dialog" in js
+    assert "function openEditDialog" in js
+    assert 'id="user-edit-dialog"' in service
+
+
+def test_usage_history_is_loaded_on_first_expand():
+    text = (ROOT / "hysteria" / "usage.js").read_text(encoding="utf-8")
+    assert 'getElementById("usage-history")' in text
+    assert 'historyDetails.addEventListener("toggle"' in text
+    assert 'fetch(historyHost.dataset.url || "/admin/usage-history"' in text

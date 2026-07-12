@@ -10,27 +10,28 @@ def test_empty_returns_minimal_svg():
     assert '<rect' not in out
 
 
-def test_zero_values_render_no_bars():
+def test_zero_values_render_constant_size_line():
     vals = [(f'2026-05-0{i+1}', 0) for i in range(5)]
     out = ss.sparkline_svg(vals)
-    assert out.count('<rect') == 0
+    assert out.count('<path') == 2
+    assert out.count('<circle') == 1
+    assert '<rect' not in out
 
 
-def test_today_bar_carries_today_class():
+def test_today_dot_carries_today_class():
     vals = [(f'2026-05-0{i+1}', i * 1_000_000) for i in range(1, 6)]
     out = ss.sparkline_svg(vals)
-    rects = re.findall(r'<rect[^>]*>', out)
-    assert any('today' in r for r in rects), 'last bar should carry today class'
-    assert sum('today' in r for r in rects) == 1, 'only one today bar'
+    dots = re.findall(r'<circle[^>]*>', out)
+    assert len(dots) == 1
+    assert 'today' in dots[0]
 
 
 def test_max_height_does_not_overflow():
     vals = [('2026-05-01', 100), ('2026-05-02', 200), ('2026-05-03', 50)]
     out = ss.sparkline_svg(vals, height=24)
-    # extract every height attr from rects
-    heights = [int(h) for h in re.findall(r'<rect[^>]*height="(\d+)"', out)]
-    assert max(heights) <= 24
-    assert all(h >= 1 for h in heights)
+    ys = [float(y) for y in re.findall(r'(?:,|cy=")([0-9]+(?:\.[0-9]+)?)', out)]
+    assert ys
+    assert all(0 <= y <= 24 for y in ys)
 
 
 def test_title_contains_date_and_bytes():

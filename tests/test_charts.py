@@ -9,17 +9,18 @@ def test_mini_sparkline_svg_empty_input_returns_empty_svg():
     assert "<rect" not in out
 
 
-def test_mini_sparkline_svg_renders_one_rect_per_nonzero_value():
+def test_mini_sparkline_svg_uses_constant_low_node_paths():
     values = [("2026-05-01", 100), ("2026-05-02", 0), ("2026-05-03", 50)]
     out = charts.mini_sparkline_svg(values)
-    rects = re.findall(r"<rect ", out)
-    assert len(rects) == 2  # zero day skipped
+    assert out.count("<path ") == 2
+    assert out.count("<circle ") == 1
+    assert "<rect" not in out
 
 
-def test_mini_sparkline_svg_marks_today_class_on_last_bar():
+def test_mini_sparkline_svg_marks_today_class_on_last_dot():
     values = [("2026-05-01", 100), ("2026-05-02", 50)]
     out = charts.mini_sparkline_svg(values)
-    assert 'class="spark-bar today"' in out
+    assert 'class="spark-dot today"' in out
 
 
 def test_mini_sparkline_svg_height_param_default_24():

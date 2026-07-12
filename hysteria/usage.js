@@ -6,12 +6,15 @@
   var pollUrl = (function () {
     var p = window.location.pathname;
     if (p.indexOf("/admin/user/") === 0) return p + ".json";
-    return "/admin/usage.json";
+    return "/admin/analytics.json";
   })();
 
   var tip = document.getElementById("usage-hover-tip");
   var refreshBtn = document.getElementById("usage-refresh-now");
   var pollStatus = document.querySelector('[data-role="poll-status"]');
+  var CHART_REFRESH_MS = 30000;
+  var lastChartsAt = Date.now();
+  var lastChartSignature = null;
 
   function fmtBytes(n) {
     var v = Math.max(0, Number(n) || 0);
@@ -200,15 +203,28 @@
     var maxValue = 0;
     arr.forEach(function (value) { maxValue = Math.max(maxValue, Number(value) || 0); });
     if (maxValue <= 0) maxValue = 1;
-    var bars = [];
+    var floorY = height - 1;
+    var drawH = height - 2;
+    var points = [];
     arr.forEach(function (value, i) {
       value = Math.max(0, Number(value) || 0);
-      if (!value) return;
-      var barH = Math.max(1, Math.round(height * value / maxValue));
-      bars.push('<rect class="spark-bar' + (i === n - 1 ? ' today' : '') + '" x="' + (i * (barW + gap)) +
-        '" y="' + (height - barH) + '" width="' + barW + '" height="' + barH + '"></rect>');
+      points.push({
+        x: n === 1 ? width / 2 : i * width / (n - 1),
+        y: Math.max(1, Math.min(floorY, floorY - drawH * value / maxValue))
+      });
     });
-    return '<svg class="spark" viewBox="0 0 ' + width + ' ' + height + '" aria-hidden="true">' + bars.join("") + '</svg>';
+    var line = points.map(function (p, i) {
+      return (i ? 'L' : 'M') + p.x.toFixed(2) + ',' + p.y.toFixed(2);
+    }).join(' ');
+    var area = 'M0,' + floorY + ' ' + points.map(function (p) {
+      return 'L' + p.x.toFixed(2) + ',' + p.y.toFixed(2);
+    }).join(' ') + ' L' + width + ',' + floorY + ' Z';
+    var last = points[points.length - 1];
+    return '<svg class="spark" viewBox="0 0 ' + width + ' ' + height + '" aria-hidden="true">' +
+      '<path class="spark-area" d="' + area + '"></path>' +
+      '<path class="spark-line" d="' + line + '" vector-effect="non-scaling-stroke"></path>' +
+      '<circle class="spark-dot today" cx="' + last.x.toFixed(2) + '" cy="' + last.y.toFixed(2) + '" r="1.8"></circle>' +
+      '</svg>';
   }
 
   function updateTopN(host, top) {
@@ -226,6 +242,37 @@
     }).join("");
   }
 
+  function chartSignature(data) {
+    // FNV-style rolling hash avoids allocating a large JSON string merely to
+    // decide whether hundreds of SVG nodes need rebuilding.
+    var hash = 2166136261;
+    function mixNumber(value) {
+      var n = Math.max(0, Number(value) || 0);
+      var lo = n >>> 0;
+      var hi = Math.floor(n / 4294967296) >>> 0;
+      hash = Math.imul((hash ^ lo) >>> 0, 16777619) >>> 0;
+      hash = Math.imul((hash ^ hi) >>> 0, 16777619) >>> 0;
+    }
+    function mixText(value) {
+      var s = String(value == null ? "" : value);
+      for (var i = 0; i < s.length; i++) {
+        hash = Math.imul((hash ^ s.charCodeAt(i)) >>> 0, 16777619) >>> 0;
+      }
+    }
+    var hourly = data.hourly_totals || data.hourly_bars || [];
+    hourly.forEach(function (item) { mixText(item.hour); mixNumber(item.bytes); });
+    (data.heatmap || []).forEach(function (row) {
+      mixText(row.date);
+      (row.hours || []).forEach(mixNumber);
+    });
+    (data.top_n || []).forEach(function (item) {
+      mixText(item.uid);
+      mixNumber(item.last_24h_bytes);
+      (item.spark || []).forEach(mixNumber);
+    });
+    return hash;
+  }
+
   function updatePayload(data) {
     if (!data) return;
     if (data.stats) {
@@ -237,7 +284,6 @@
       setText("[data-role=usage-yesterday]", fmtBytes(data.stats.yesterday_bytes));
       setText("[data-role=usage-7d-average]", fmtBytes(Math.floor((Number(data.stats.last_7d_bytes) || 0) / 7)));
       setText("[data-role=cycle-progress]", "第 " + data.stats.cycle_day + " / " + data.stats.cycle_total_days + " 天");
-      updateTopN(document.getElementById("top-n-host"), data.top_n);
     } else {
       setText("[data-stat=current_hour] .v", fmtBytes(data.current_hour_bytes));
       setText("[data-stat=today] .v", fmtBytes(data.today_bytes));
@@ -248,23 +294,63 @@
     }
 
     var hourly = data.hourly_totals || data.hourly_bars;
-    if (hourly) updateHourlyChart(document.querySelector("svg.hourly-bars"), hourly);
-    if (data.heatmap) updateHeatmap(document.querySelector("svg.heatmap"), data.heatmap, data.ts);
+    if (hourly || data.heatmap || data.top_n) {
+      var signature = chartSignature(data);
+      if (signature !== lastChartSignature) {
+        if (hourly) updateHourlyChart(document.querySelector("svg.hourly-bars"), hourly);
+        if (data.heatmap) updateHeatmap(document.querySelector("svg.heatmap"), data.heatmap, data.ts);
+        if (data.top_n) updateTopN(document.getElementById("top-n-host"), data.top_n);
+        lastChartSignature = signature;
+      }
+    }
   }
 
   // Initial hover wiring
   var bars = document.querySelectorAll("svg.hourly-bars");
   for (var i = 0; i < bars.length; i++) attachHover(bars[i]);
 
+  // The 30-day table is large and normally collapsed. Fetch it only after the
+  // user opens the section, then keep the loaded fragment for that page visit.
+  var historyDetails = document.getElementById("usage-history");
+  var historyHost = document.getElementById("usage-history-host");
+  var historyState = "idle";
+  function loadHistory() {
+    if (!historyHost || historyState === "loading" || historyState === "loaded") return;
+    historyState = "loading";
+    historyHost.setAttribute("aria-busy", "true");
+    historyHost.innerHTML = '<div class="empty history-placeholder">正在加载每日明细…</div>';
+    fetch(historyHost.dataset.url || "/admin/usage-history", {
+      credentials: "same-origin", cache: "no-store"
+    })
+      .then(function (r) {
+        if (!r.ok || r.redirected) throw new Error("history " + r.status);
+        return r.text();
+      })
+      .then(function (markup) {
+        historyHost.innerHTML = markup;
+        historyState = "loaded";
+      })
+      .catch(function () {
+        historyState = "idle";
+        historyHost.innerHTML = '<div class="empty history-placeholder">加载失败，收起后重新展开即可重试</div>';
+      })
+      .finally(function () { historyHost.setAttribute("aria-busy", "false"); });
+  }
+  if (historyDetails) historyDetails.addEventListener("toggle", function () {
+    if (historyDetails.open) loadHistory();
+  });
+
   // Polling
   var timer = null;
   var inflight = false;
-  function tick() {
+  function tick(forceCharts) {
     if (inflight) return;
+    var includeCharts = forceCharts === true || Date.now() - lastChartsAt >= CHART_REFRESH_MS;
+    var requestUrl = pollUrl + (includeCharts ? "" : "?summary=1");
     inflight = true;
     if (refreshBtn) refreshBtn.disabled = true;
     setPollStatus("刷新中", "is-live");
-    fetch(pollUrl, { credentials: "same-origin", cache: "no-store" })
+    fetch(requestUrl, { credentials: "same-origin", cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .catch(function () { return null; })
       .then(function (data) {
@@ -273,6 +359,7 @@
           return;
         }
         updatePayload(data);
+        if (includeCharts) lastChartsAt = Date.now();
         setPollStatus("更新 " + stamp(), "is-live");
       })
       .finally(function () {
@@ -293,7 +380,7 @@
     }
     setPollStatus("已暂停", "is-paused");
   }
-  if (refreshBtn) refreshBtn.addEventListener("click", tick);
+  if (refreshBtn) refreshBtn.addEventListener("click", function () { tick(true); });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) stop(); else start();
   });

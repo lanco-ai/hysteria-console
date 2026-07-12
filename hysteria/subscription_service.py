@@ -1138,9 +1138,8 @@ def render_user_panel(host, base_url, user, token, cfg):
 def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, now=None):
     tx, rx, used = scaled_usage_for_user(user, daily=daily, now=now)
     spark_cell = ''
-    # NOTE: 30-day sparkline is rendered in 3 places — keep them in sync:
-    # (1) here in row_form (initial page); (2) sparkline_svg() emits class="spark";
-    # (3) /admin/usage.json sends spark_html, JS finds [data-role="spark"] and sets innerHTML.
+    # Sparklines are initial-render only. The five-second overview payload
+    # intentionally excludes SVG so polling does not rebuild this cell.
     if daily is not None:
         spark_cell = f'<td class="spark-cell" data-label="30 天趋势" data-role="spark">{sparkline_svg(daily_window_for_user(user, daily, days=30))}</td>'
     total = user_total_quota(cfg)
@@ -1151,9 +1150,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     panel = f'{base_url}/panel/{user}?token={cfg.get("sub_token", "")}'
     sub_http = f'{base_url}/sub/{user}?token={cfg.get("sub_token", "")}'
     metered = user_compat.is_metered(cfg)
-    guest_checked = 'checked' if metered else ''
     tuic_allowed = user_compat.tuic_enabled(cfg)
-    tuic_checked = 'checked' if tuic_allowed else ''
     expiry = user_expiry_state(cfg, today=(now or local_now()).date())
     expires_at = expiry['expires_at']
     expired_badge = '<span class="badge badge-danger">已过期</span>' if expiry['expired'] else ''
@@ -1172,18 +1169,21 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     guest_preview = ' · 按量' if metered else ''
     quota_preview = '不限' if total <= 0 else f'{base_gb or 150} GB{extra_preview}'
     summary_preview = f'<span class="summary-preview">{quota_preview} · {max_devices or 2} 设备{guest_preview}{expires_preview}</span>'
+    expires_attr = html.escape(expires_at, quote=True)
+    note_attr = html.escape(note, quote=True)
     percent_label = '不限' if total <= 0 else f'{percent:.1f}%'
     if disabled:
-        toggle_form = (
-            '<form method="post" action="/admin/toggle-user" class="inline-form-row">'
-            f'<input type="hidden" name="user" value="{user_esc}">'
-            '<button class="btn ghost btn-sm" type="submit" title="恢复该用户的连接权限">启用</button></form>'
+        toggle_button = (
+            f'<button class="btn ghost btn-sm user-action" type="submit" form="user-action-form" '
+            f'name="user" value="{user_esc}" data-user="{user_esc}" formaction="/admin/toggle-user" '
+            'title="恢复该用户的连接权限">启用</button>'
         )
     else:
-        toggle_form = (
-            '<form method="post" action="/admin/toggle-user" class="inline-form-row" data-action="disable-user">'
-            f'<input type="hidden" name="user" value="{user_esc}">'
-            '<button class="btn ghost btn-sm" type="submit" title="临时停用：拒绝新连接并断开现有会话，不删除用户">暂停</button></form>'
+        toggle_button = (
+            f'<button class="btn ghost btn-sm user-action" type="submit" form="user-action-form" '
+            f'name="user" value="{user_esc}" data-user="{user_esc}" formaction="/admin/toggle-user" '
+            'data-action="disable-user" '
+            'title="临时停用：拒绝新连接并断开现有会话，不删除用户">暂停</button>'
         )
     online_n = int(online.get(user, 0) or 0)
     return f'''<tr data-user="{user_esc}" data-online="{online_n}" data-percent="{percent:.1f}">
@@ -1207,39 +1207,27 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
   <div class="small mt-sm" data-role="detail">{percent_label} · ↑{fmt_bytes(tx)} ↓{fmt_bytes(rx)}</div>
 </td>
 <td data-label="操作">
-<details>
-<summary>编辑套餐{summary_preview}</summary>
-<form method="post" action="/admin/update" class="inline-form">
-<input type="hidden" name="user" value="{user_esc}">
-<label>兼容连接密码（可选）</label><input name="password" type="password" placeholder="留空则不修改">
-<label class="mt-sm">设备数上限</label><input name="max_devices" type="number" min="1" value="{max_devices or 2}">
-<label class="mt-sm">本周期流量上限 (GB)</label><input name="quota_gb" type="number" min="1" value="{base_gb or 150}">
-<label class="mt-sm">加量包 (GB)</label><input name="quota_extra_gb" type="number" min="0" value="{extra_gb}">
-<label class="mt-sm">到期日</label><input name="expires_at" type="date" value="{html.escape(expires_at)}">
-	<label class="mt-sm">备注</label><input name="note" maxlength="200" value="{html.escape(note)}" placeholder="可选：续费状态/来源/说明">
-	<label class="switch mt-sm"><input type="checkbox" name="guest" {guest_checked}>按量用户（参与配额计量）</label>
-	<label class="switch mt-sm"><input type="checkbox" name="tuic_enabled" {tuic_checked}>允许 TUIC（TUIC 不参与单用户额度计量）</label>
-	<button class="btn mt-md" type="submit">保存</button>
-</form>
-</details>
+<div class="edit-user-control">
+  <button type="button" class="btn secondary btn-sm edit-user"
+          data-edit-user="{user_esc}" data-max-devices="{max_devices or 2}"
+          data-quota-gb="{base_gb or 150}" data-quota-extra-gb="{extra_gb}"
+          data-expires-at="{expires_attr}" data-note="{note_attr}"
+          data-metered="{'1' if metered else '0'}" data-tuic-enabled="{'1' if tuic_allowed else '0'}">编辑套餐</button>
+  {summary_preview}
+</div>
 <div class="row gap-sm mt-sm user-actions">
-  <form method="post" action="/admin/reset-usage" class="inline-form-row">
-    <input type="hidden" name="user" value="{user_esc}">
-    <button class="btn ghost btn-sm" type="submit" title="清空该用户已用流量，且从服务器总流量中扣除">清流量</button>
-  </form>
-  <form method="post" action="/admin/refresh-usage" class="inline-form-row">
-    <input type="hidden" name="user" value="{user_esc}">
-    <button class="btn ghost btn-sm" type="submit" title="清空该用户已用流量，但保留在服务器总流量中">刷新流量</button>
-  </form>
-  <form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token">
-    <input type="hidden" name="user" value="{user_esc}">
-    <button class="btn ghost btn-sm" type="submit" title="重置该用户订阅令牌，旧订阅/面板链接立即失效">重置订阅</button>
-  </form>
-  {toggle_form}
-  <form method="post" action="/admin/delete" class="inline-form-row" data-action="delete-user">
-    <input type="hidden" name="user" value="{user_esc}">
-    <button class="btn danger-btn btn-sm" type="submit">删除</button>
-  </form>
+  <button class="btn ghost btn-sm user-action" type="submit" form="user-action-form" name="user"
+          value="{user_esc}" data-user="{user_esc}" formaction="/admin/reset-usage"
+          title="清空该用户已用流量，且从服务器总流量中扣除">清流量</button>
+  <button class="btn ghost btn-sm user-action" type="submit" form="user-action-form" name="user"
+          value="{user_esc}" data-user="{user_esc}" formaction="/admin/refresh-usage"
+          title="清空该用户已用流量，但保留在服务器总流量中">刷新流量</button>
+  <button class="btn ghost btn-sm user-action" type="submit" form="user-action-form" name="user"
+          value="{user_esc}" data-user="{user_esc}" formaction="/admin/rotate-token" data-action="rotate-user-token"
+          title="重置该用户订阅令牌，旧订阅/面板链接立即失效">重置订阅</button>
+  {toggle_button}
+  <button class="btn danger-btn btn-sm user-action" type="submit" form="user-action-form" name="user"
+          value="{user_esc}" data-user="{user_esc}" formaction="/admin/delete" data-action="delete-user">删除</button>
 </div>
 </td>
 <td class="link-cell" data-label="链接">
@@ -1316,6 +1304,35 @@ def render_admin(host, base_url, flash=''):
   </div>
   <table class="table users-table" data-user-count="{len(users)}"><thead><tr><th style="padding-left:18px;">用户</th><th>30 天趋势</th><th>本周期用量</th><th>操作</th><th style="padding-right:18px;">链接</th></tr></thead><tbody>{rows}</tbody></table>
 </div>
+<dialog class="edit-dialog" id="user-edit-dialog" aria-labelledby="user-edit-title">
+  <form method="post" action="/admin/update" class="inline-form edit-dialog-form" id="user-edit-form">
+    <div class="dialog-head">
+      <div>
+        <div class="small faint">用户套餐</div>
+        <h2 id="user-edit-title">编辑用户</h2>
+      </div>
+      <button class="btn ghost btn-sm" type="button" data-dialog-close aria-label="关闭编辑窗口">关闭</button>
+    </div>
+    <input type="hidden" name="user">
+    <div class="grid grid-2 dialog-fields">
+      <div class="field-span-2"><label>兼容连接密码（可选）</label><input name="password" type="password" autocomplete="new-password" placeholder="留空则不修改"></div>
+      <div><label>设备数上限</label><input name="max_devices" type="number" min="1" required></div>
+      <div><label>本周期流量上限 (GB)</label><input name="quota_gb" type="number" min="1" required></div>
+      <div><label>加量包 (GB)</label><input name="quota_extra_gb" type="number" min="0" required></div>
+      <div><label>到期日</label><input name="expires_at" type="date"></div>
+      <div class="field-span-2"><label>备注</label><input name="note" maxlength="200" placeholder="可选：续费状态/来源/说明"></div>
+    </div>
+    <div class="dialog-options">
+      <label class="switch"><input type="checkbox" name="guest">按量用户（参与配额计量）</label>
+      <label class="switch"><input type="checkbox" name="tuic_enabled">允许 TUIC（TUIC 不参与单用户额度计量）</label>
+    </div>
+    <div class="dialog-actions">
+      <button class="btn secondary" type="button" data-dialog-close>取消</button>
+      <button class="btn" type="submit">保存更改</button>
+    </div>
+  </form>
+</dialog>
+<form method="post" id="user-action-form" hidden></form>
 <div class="card mt-md create-user-card">
   <details class="summary-muted">
     <summary>新增用户</summary>
@@ -1424,8 +1441,20 @@ def _build_usage_json_payload(*, now):
     return usage_dashboard.build_usage_json_payload(_usage_context(), now=now)
 
 
-def _build_user_json_payload(uid, *, now):
-    return usage_dashboard.build_user_json_payload(_usage_context(), uid, now=now)
+def _build_overview_json_payload(*, now):
+    return usage_dashboard.build_overview_json_payload(_usage_context(), now=now)
+
+
+def _build_analytics_json_payload(*, now, include_charts=True):
+    return usage_dashboard.build_analytics_json_payload(
+        _usage_context(), now=now, include_charts=include_charts,
+    )
+
+
+def _build_user_json_payload(uid, *, now, include_charts=True):
+    return usage_dashboard.build_user_json_payload(
+        _usage_context(), uid, now=now, include_charts=include_charts,
+    )
 
 
 def daily_window_for_user(uid, daily, *, days=30, today=None):
@@ -2328,13 +2357,48 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == '/admin/overview.json':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            payload = _build_overview_json_payload(now=local_now())
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                'application/json; charset=utf-8', send_payload,
+            )
+            return
+
+        if path == '/admin/analytics.json':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            summary_only = (q.get('summary') or ['0'])[0].lower() in ('1', 'true', 'yes')
+            payload = _build_analytics_json_payload(
+                now=local_now(), include_charts=not summary_only,
+            )
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                'application/json; charset=utf-8', send_payload,
+            )
+            return
+
+        if path == '/admin/usage-history':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            self.send_response_body(
+                200, _render_daily_table_collapsed(host),
+                'text/html; charset=utf-8', send_payload,
+            )
+            return
+
         if path == '/admin/usage.json':
             if not is_logged_in(self):
                 self.redirect('/login')
                 return
             payload = _build_usage_json_payload(now=local_now())
             self.send_response_body(
-                200, json.dumps(payload, ensure_ascii=False),
+                200, json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
                 'application/json; charset=utf-8', send_payload,
             )
             return
@@ -2398,13 +2462,16 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect('/login')
                 return
             uid = path[len('/admin/user/'):-len('.json')]
-            payload = _build_user_json_payload(uid, now=local_now())
+            summary_only = (q.get('summary') or ['0'])[0].lower() in ('1', 'true', 'yes')
+            payload = _build_user_json_payload(
+                uid, now=local_now(), include_charts=not summary_only,
+            )
             if payload is None:
                 self.send_response_body(404, '{"error":"not found"}',
                                         'application/json; charset=utf-8', send_payload)
                 return
             self.send_response_body(
-                200, json.dumps(payload, ensure_ascii=False),
+                200, json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
                 'application/json; charset=utf-8', send_payload,
             )
             return

@@ -27,8 +27,7 @@
       used: tr.querySelector('[data-role="used"]'),
       bar: tr.querySelector('[data-role="bar"]'),
       detail: tr.querySelector('[data-role="detail"]'),
-      spark: tr.querySelector('[data-role="spark"]'),
-      lastUsed: -1, lastOnline: -1, lastPercent: -1, lastSpark: '',
+      lastUsed: -1, lastOnline: -1, lastPercent: -1,
       online_n: online_n, percent_n: percent_n, lastUnlimited: null,
     });
   });
@@ -71,7 +70,7 @@
     inflight = true;
     setPollStatus('刷新中', 'is-live');
     try{
-      var r=await fetch('/admin/usage.json',{credentials:'same-origin',cache:'no-store'});
+      var r=await fetch('/admin/overview.json',{credentials:'same-origin',cache:'no-store'});
       if(!r.ok){ setPollStatus('刷新失败 · '+r.status, 'is-error'); return; }
       var d=await r.json();
       if (Array.isArray(d.users) && d.users.length !== index.size) {
@@ -98,10 +97,6 @@
           row.lastUnlimited = unlimited;
           statusChanged = true;
         }
-        if (u.spark_html && u.spark_html !== row.lastSpark) {
-          if (row.spark) row.spark.innerHTML = u.spark_html;
-          row.lastSpark = u.spark_html;
-        }
       });
       // Re-apply filter if any status-relevant field changed (and a status
       // chip is active, so the membership might shift).
@@ -121,23 +116,69 @@
   window.addEventListener('pagehide', stop);
   start();
 
+  // One edit dialog and one hidden action form replace all per-row forms. This
+  // keeps the table DOM small while preserving the same POST contracts.
+  var editDialog = document.getElementById('user-edit-dialog');
+  var editForm = document.getElementById('user-edit-form');
+  var editTitle = document.getElementById('user-edit-title');
+  var pendingUserAction = null;
+  function closeEditDialog(){
+    if (!editDialog) return;
+    if (typeof editDialog.close === 'function' && editDialog.open) editDialog.close();
+    else editDialog.removeAttribute('open');
+  }
+  function setEditValue(name, value){
+    if (!editForm) return;
+    var field = editForm.querySelector('[name="'+name+'"]');
+    if (field) field.value = value == null ? '' : String(value);
+  }
+  function openEditDialog(btn){
+    if (!editDialog || !editForm || !btn) return;
+    var user = btn.dataset.editUser || '';
+    setEditValue('user', user);
+    setEditValue('password', '');
+    setEditValue('max_devices', btn.dataset.maxDevices || '2');
+    setEditValue('quota_gb', btn.dataset.quotaGb || '150');
+    setEditValue('quota_extra_gb', btn.dataset.quotaExtraGb || '0');
+    setEditValue('expires_at', btn.dataset.expiresAt || '');
+    setEditValue('note', btn.dataset.note || '');
+    var metered = editForm.querySelector('[name="guest"]');
+    var tuic = editForm.querySelector('[name="tuic_enabled"]');
+    if (metered) metered.checked = btn.dataset.metered === '1';
+    if (tuic) tuic.checked = btn.dataset.tuicEnabled === '1';
+    if (editTitle) editTitle.textContent = '编辑 ' + user;
+    if (typeof editDialog.showModal === 'function') editDialog.showModal();
+    else editDialog.setAttribute('open', '');
+  }
+  function confirmAdminAction(action, name){
+    if (action === 'delete-user') return confirm('确认删除用户 '+name+'？此操作不可撤销。');
+    if (action === 'rotate-user-token') return confirm('确认重置用户 '+name+' 的订阅令牌？旧订阅/面板链接将立即失效。');
+    if (action === 'disable-user') return confirm('确认停用用户 '+name+'？将拒绝新连接并断开其现有会话。');
+    if (action === 'reset-all') return confirm('确认清空全部用户本周期已用流量？');
+    if (action === 'delete-rule') return confirm('确认删除此规则？');
+    return true;
+  }
+  document.addEventListener('click', function(ev){
+    var editBtn = ev.target.closest('.edit-user');
+    if (editBtn) { ev.preventDefault(); openEditDialog(editBtn); return; }
+    var actionBtn = ev.target.closest('.user-action');
+    if (actionBtn) { pendingUserAction = actionBtn; return; }
+    if (ev.target.closest('[data-dialog-close]')) { ev.preventDefault(); closeEditDialog(); }
+  });
+  if (editDialog) editDialog.addEventListener('click', function(ev){
+    if (ev.target === editDialog) closeEditDialog();
+  });
+
   document.addEventListener('submit', function(ev){
     var f=ev.target;
     if(!f || f.tagName!=='FORM') return;
-    if(f.dataset.action==='delete-user'){
-      var name=(f.closest('tr')||{}).dataset && f.closest('tr').dataset.user || '';
-      if(!confirm('确认删除用户 '+name+'？此操作不可撤销。')) ev.preventDefault();
-    } else if(f.dataset.action==='rotate-user-token'){
-      var rn=(f.closest('tr')||{}).dataset && f.closest('tr').dataset.user || '';
-      if(!confirm('确认重置用户 '+rn+' 的订阅令牌？旧订阅/面板链接将立即失效。')) ev.preventDefault();
-    } else if(f.dataset.action==='disable-user'){
-      var dn=(f.closest('tr')||{}).dataset && f.closest('tr').dataset.user || '';
-      if(!confirm('确认停用用户 '+dn+'？将拒绝新连接并断开其现有会话。')) ev.preventDefault();
-    } else if(f.dataset.action==='reset-all'){
-      if(!confirm('确认清空全部用户本周期已用流量？')) ev.preventDefault();
-    } else if(f.dataset.action==='delete-rule'){
-      if(!confirm('确认删除此规则？')) ev.preventDefault();
-    }
+    var submitter=ev.submitter || pendingUserAction;
+    pendingUserAction=null;
+    var row=f.closest('tr');
+    var name=(submitter && (submitter.dataset.user || submitter.value)) ||
+      f.dataset.user || (row && row.dataset.user) || '';
+    var action=(submitter && submitter.dataset.action) || f.dataset.action || '';
+    if(!confirmAdminAction(action, name)) ev.preventDefault();
   });
 
   document.addEventListener('click', function(ev){
