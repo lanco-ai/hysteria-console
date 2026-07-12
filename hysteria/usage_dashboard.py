@@ -478,14 +478,14 @@ def render_usage_page(ctx, host):
     historical = render_daily_table_collapsed(ctx, host)
     poll_controls = (
         '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
-        '<span class="badge poll-status" data-role="poll-status">已加载</span>'
+        '<span class="badge poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true">已加载</span>'
     )
 
     content = f'''<div class="grid grid-4">
-  <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{ctx.fmt_bytes(stats["current_hour_bytes"])}</div><div class="small">{stats["online"]} 在线</div></div>
-  <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{ctx.fmt_bytes(stats["today_bytes"])}</div><div class="small">昨日 {ctx.fmt_bytes(stats["yesterday_bytes"])}</div></div>
-  <div class="card stat" data-stat="last_7d"><div class="k">近 7 天</div><div class="v">{ctx.fmt_bytes(stats["last_7d_bytes"])}</div><div class="small">日均 {ctx.fmt_bytes(stats["last_7d_bytes"] // 7)}</div></div>
-  <div class="card stat" data-stat="cycle"><div class="k">本周期</div><div class="v">{ctx.fmt_bytes(stats["cycle_bytes"])}</div><div class="small">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div></div>
+  <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{ctx.fmt_bytes(stats["current_hour_bytes"])}</div><div class="small"><span data-role="usage-online">{stats["online"]}</span> 在线</div></div>
+  <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{ctx.fmt_bytes(stats["today_bytes"])}</div><div class="small">昨日 <span data-role="usage-yesterday">{ctx.fmt_bytes(stats["yesterday_bytes"])}</span></div></div>
+  <div class="card stat" data-stat="last_7d"><div class="k">近 7 天</div><div class="v">{ctx.fmt_bytes(stats["last_7d_bytes"])}</div><div class="small">日均 <span data-role="usage-7d-average">{ctx.fmt_bytes(stats["last_7d_bytes"] // 7)}</span></div></div>
+  <div class="card stat" data-stat="cycle"><div class="k">本周期</div><div class="v">{ctx.fmt_bytes(stats["cycle_bytes"])}</div><div class="small" data-role="cycle-progress">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div></div>
 </div>
 
 <div class="card mt-md" style="padding:14px 18px;">
@@ -552,19 +552,19 @@ def render_user_detail_page(ctx, uid, host):
     ) or '<div class="empty">无近期告警</div>'
     poll_controls = (
         '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
-        '<span class="badge poll-status" data-role="poll-status">已加载</span>'
+        '<span class="badge poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true">已加载</span>'
     )
 
     content = f'''<a class="back-link" href="/admin/usage">← 返回 /admin/usage</a>
     <h2 class="user-title">{html.escape(uid)} {badge}{state_badges}
-      <span class="small">{payload["online"]} / {payload["max_devices"]} 在线</span>
+      <span class="small"><span data-role="detail-online">{payload["online"]}</span> / {payload["max_devices"]} 在线</span>
     </h2>
     <div class="small faint">有效期：{html.escape(payload["expiry_label"])}</div>{note_line}
 
 <div class="grid grid-3">
-  <div class="card stat"><div class="k">本周期</div><div class="v">{quota_line}</div></div>
-  <div class="card stat"><div class="k">今日</div><div class="v">{ctx.fmt_bytes(payload["today_bytes"])}</div></div>
-  <div class="card stat"><div class="k">当小时</div><div class="v">{ctx.fmt_bytes(payload["current_hour_bytes"])}</div></div>
+  <div class="card stat" data-stat="user_cycle"><div class="k">本周期</div><div class="v">{quota_line}</div></div>
+  <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{ctx.fmt_bytes(payload["today_bytes"])}</div></div>
+  <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v">{ctx.fmt_bytes(payload["current_hour_bytes"])}</div></div>
 </div>
 
 <div class="card mt-md" style="padding:14px 18px;">

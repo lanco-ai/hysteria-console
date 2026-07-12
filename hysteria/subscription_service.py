@@ -743,7 +743,7 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
     body = f'''<div class="app">
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-brand"><span class="logo">H</span><span>Hysteria</span></div>
-  <nav class="sidebar-nav">
+  <nav class="sidebar-nav" aria-label="管理导航">
     <div class="sidebar-section">管理</div>
     {nav_items}
   </nav>
@@ -756,7 +756,7 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   <header class="topbar">
     <div class="topbar-inner">
       <div class="row gap-sm">
-        <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="切换侧边栏">{icon("menu")}</button>
+        <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="切换侧边栏" aria-controls="sidebar" aria-expanded="false">{icon("menu")}</button>
         <h1 class="page-title">{html.escape(page_title)}{sub_html}</h1>
       </div>
       <div class="topbar-actions">{topbar_extra}{badge_html}</div>
@@ -770,9 +770,16 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   var sb = document.getElementById('sidebar');
   var sc = document.getElementById('scrim');
   var bt = document.getElementById('sidebar-toggle');
-  function close() {{ sb.classList.remove('open'); document.body.classList.remove('sidebar-open'); }}
-  bt.addEventListener('click', function() {{ sb.classList.toggle('open'); document.body.classList.toggle('sidebar-open'); }});
+  if (!sb || !sc || !bt) return;
+  function setOpen(open) {{
+    sb.classList.toggle('open', open);
+    document.body.classList.toggle('sidebar-open', open);
+    bt.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }}
+  function close() {{ setOpen(false); }}
+  bt.addEventListener('click', function() {{ setOpen(!sb.classList.contains('open')); }});
   sc.addEventListener('click', close);
+  sb.querySelectorAll('a').forEach(function(link) {{ link.addEventListener('click', close); }});
   window.addEventListener('resize', function() {{ if (window.innerWidth > 880) close(); }});
 }})();
 </script>'''
@@ -791,11 +798,11 @@ def flash_text(msg):
     if msg.startswith('created '):
         return f'已创建用户：{msg.split(" ", 1)[1]}'
     if msg.startswith('reset usage '):
-        return f'已清除用户本月已用流量：{msg.split(" ", 2)[2]}'
+        return f'已清除用户本周期已用流量：{msg.split(" ", 2)[2]}'
     if msg == 'reset usage all':
-        return '已清除全部用户本月已用流量'
+        return '已清除全部用户本周期已用流量'
     if msg.startswith('refresh usage '):
-        return f'已刷新用户本月已用流量（服务器总流量不变）：{msg.split(" ", 2)[2]}'
+        return f'已刷新用户本周期已用流量（服务器总流量不变）：{msg.split(" ", 2)[2]}'
     if msg.startswith('deleted '):
         return f'已删除用户：{msg.split(" ", 1)[1]}'
     if msg.startswith('rotated '):
@@ -949,7 +956,11 @@ def render_user_panel(host, base_url, user, token, cfg):
     remain = max(total - used, 0) if total > 0 else -1
     online = int(load_json(ONLINE_FILE, {}).get(user, 0) or 0)
     percent = pct(used, total)
-    cls = 'danger' if percent >= 90 else ''
+    quota_unlimited = total <= 0
+    cls = 'unlimited' if quota_unlimited else ('danger' if percent >= 90 else '')
+    total_label = '不限' if quota_unlimited else fmt_bytes(total)
+    remain_label = '不限' if quota_unlimited else fmt_bytes(remain)
+    percent_label = '不限' if quota_unlimited else f'{percent:.2f}%'
     reset_date, days_left, cycle_len = _cycle_reset_info(now)
     spark = sparkline_svg(daily_window_for_user(user, daily, days=30, today=now.date()))
     sub_path = f'/sub/{user}?token={token}'
@@ -986,9 +997,18 @@ def render_user_panel(host, base_url, user, token, cfg):
     while (v >= 1024 && i < u.length - 1) {{ v /= 1024; i++; }}
     return v.toFixed(2) + ' ' + u[i];
   }}
+  function fmtQuota(n, total) {{
+    return Number(total) <= 0 ? '不限' : fmtBytes(n);
+  }}
   function setRole(role, txt) {{
     var el = document.querySelector('[data-role="' + role + '"]');
     if (el && txt !== undefined) el.textContent = txt;
+  }}
+  function setStatus(txt, cls) {{
+    if (!statusEl) return;
+    statusEl.textContent = txt;
+    statusEl.classList.remove('is-live', 'is-paused', 'is-error');
+    if (cls) statusEl.classList.add(cls);
   }}
   function stamp() {{
     return new Date().toLocaleTimeString([], {{ hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }});
@@ -997,26 +1017,31 @@ def render_user_panel(host, base_url, user, token, cfg):
   function tick() {{
     if (inflight) return;
     inflight = true;
-    fetch(pollUrl, {{ credentials: 'same-origin' }})
+    setStatus('刷新中', 'is-live');
+    fetch(pollUrl, {{ credentials: 'same-origin', cache: 'no-store' }})
       .then(function(r) {{ return r.ok ? r.json() : null; }})
       .catch(function() {{ return null; }})
       .then(function(d) {{
-        if (!d) {{ if (statusEl) statusEl.textContent = '刷新失败'; return; }}
+        if (!d) {{ setStatus('刷新失败', 'is-error'); return; }}
         setRole('used', fmtBytes(d.used_bytes));
-        setRole('remain', fmtBytes(d.remain_bytes));
+        setRole('remain', fmtQuota(d.remain_bytes, d.total_bytes));
         setRole('online', d.online);
         var p = Number(d.percent);
-        setRole('percent', p.toFixed(2) + '%');
+        setRole('percent', Number(d.total_bytes) <= 0 ? '不限' : p.toFixed(2) + '%');
         setRole('txrx', '上传 ' + fmtBytes(d.tx_bytes) + ' · 下载 ' + fmtBytes(d.rx_bytes));
         var bar = document.querySelector('[data-role="bar"]');
-        if (bar) {{ bar.style.width = p.toFixed(2) + '%'; bar.classList.toggle('danger', p >= 90); }}
-        if (statusEl) statusEl.textContent = '更新于 ' + stamp();
+        if (bar) {{
+          bar.style.width = Number(d.total_bytes) <= 0 ? '0%' : p.toFixed(2) + '%';
+          bar.classList.toggle('danger', Number(d.total_bytes) > 0 && p >= 90);
+          bar.classList.toggle('unlimited', Number(d.total_bytes) <= 0);
+        }}
+        setStatus('更新于 ' + stamp(), 'is-live');
       }})
       .finally(function() {{ inflight = false; }});
   }}
   function start() {{ if (!timer) {{ tick(); timer = setInterval(tick, 10000); }} }}
   function stop() {{ if (timer) {{ clearInterval(timer); timer = null; }} }}
-  document.addEventListener('visibilitychange', function() {{ if (document.hidden) stop(); else start(); }});
+  document.addEventListener('visibilitychange', function() {{ if (document.hidden) {{ stop(); setStatus('已暂停', 'is-paused'); }} else start(); }});
   window.addEventListener('pagehide', stop);
   start();'''
     body = f'''<div class="wrap">
@@ -1031,21 +1056,21 @@ def render_user_panel(host, base_url, user, token, cfg):
   </div>
   <div style="text-align:right;">
     <span class="badge">{html.escape(host)}</span>
-    <div class="small faint" data-role="poll-status" style="margin-top:4px;">实时刷新中…</div>
+    <div class="small faint poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true" style="margin-top:4px;">实时刷新中…</div>
   </div>
 </div>
 <div class="grid grid-4">
-  <div class="card stat"><div class="k">本月已用</div><div class="v big" data-role="used">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
-  <div class="card stat"><div class="k">总流量</div><div class="v">{fmt_bytes(total)}</div></div>
-  <div class="card stat"><div class="k">剩余流量</div><div class="v" data-role="remain">{fmt_bytes(remain)}</div></div>
+  <div class="card stat"><div class="k">本周期已用</div><div class="v big" data-role="used">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
+  <div class="card stat"><div class="k">总流量</div><div class="v">{total_label}</div></div>
+  <div class="card stat"><div class="k">剩余流量</div><div class="v" data-role="remain">{remain_label}</div></div>
   <div class="card stat"><div class="k">在线设备</div><div class="v"><span data-role="online">{online}</span> <span class="faint" style="font-size:14px;font-weight:500;">/ {max_devices_n}</span></div></div>
 </div>
 <div class="card mt-md">
   <div class="row" style="justify-content:space-between;margin-bottom:10px;">
     <div class="k" style="margin:0;">流量进度</div>
-    <div class="bold" style="font-variant-numeric:tabular-nums;" data-role="percent">{percent:.2f}%</div>
+    <div class="bold" style="font-variant-numeric:tabular-nums;" data-role="percent">{percent_label}</div>
   </div>
-  <div class="bar"><div class="fill {cls}" data-role="bar" style="width:{percent:.2f}%"></div></div>
+  <div class="bar"><div class="fill {cls}" data-role="bar" style="width:{'0' if quota_unlimited else f'{percent:.2f}'}%"></div></div>
   <div class="small mt-sm" data-role="txrx">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
   <div class="small mt-sm faint">本周期 {cycle_len} 天 · 重置于 {reset_date} · 还剩 {days_left} 天 · 有效期 {html.escape(expiry["label"])}</div>
 </div>
@@ -1092,9 +1117,10 @@ def render_user_panel(host, base_url, user, token, cfg):
     var btn = ev.target.closest ? ev.target.closest('[data-copy]') : null;
     if (!btn) return;
     var text = btn.getAttribute('data-copy');
-    if (!navigator.clipboard) {{ alert('当前环境不支持自动复制，请手动选中链接复制'); return; }}
+    function manualCopy() {{ if (window.prompt) window.prompt('自动复制不可用，请手动复制下面的链接', text); }}
+    if (!navigator.clipboard) {{ manualCopy(); return; }}
     navigator.clipboard.writeText(text).then(function() {{ flashCopied(btn); }})
-      .catch(function() {{ alert('复制失败，请手动复制'); }});
+      .catch(manualCopy);
   }});
   document.addEventListener('submit', function(ev) {{
     var f = ev.target;
@@ -1115,8 +1141,9 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     # (1) here in row_form (initial page); (2) sparkline_svg() emits class="spark";
     # (3) /admin/usage.json sends spark_html, JS finds [data-role="spark"] and sets innerHTML.
     if daily is not None:
-        spark_cell = f'<td class="spark-cell" data-role="spark">{sparkline_svg(daily_window_for_user(user, daily, days=30))}</td>'
+        spark_cell = f'<td class="spark-cell" data-label="30 天趋势" data-role="spark">{sparkline_svg(daily_window_for_user(user, daily, days=30))}</td>'
     total = user_total_quota(cfg)
+    quota_label = '不限' if total <= 0 else fmt_bytes(total)
     max_devices = int(cfg.get('max_devices', 0) or 0)
     base_gb = int(round(base_quota_bytes(cfg) / 1024 / 1024 / 1024)) if base_quota_bytes(cfg) > 0 else 0
     extra_gb = quota_extra_gb(cfg)
@@ -1134,15 +1161,17 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     note = str(cfg.get('note') or '')
     note_preview = f'<div class="small faint">{html.escape(note)}</div>' if note else ''
     percent = pct(used, total)
-    bar_cls = 'danger' if percent >= 90 else ''
-    bar_w = f'{percent:.1f}'
+    bar_cls = 'unlimited' if total <= 0 else ('danger' if percent >= 90 else '')
+    bar_w = '0.0' if total <= 0 else f'{percent:.1f}'
     user_esc = html.escape(user)
-    guest_badge = '<span class="badge badge-info">访客</span>' if metered else ''
+    guest_badge = '<span class="badge badge-info">按量</span>' if metered else ''
     tuic_badge = '<span class="badge">TUIC</span>' if tuic_allowed else '<span class="badge badge-danger">TUIC 关闭</span>'
     disabled = bool(cfg.get('disabled'))
     disabled_badge = '<span class="badge badge-danger">已停用</span>' if disabled else ''
-    guest_preview = ' · 访客' if metered else ''
-    summary_preview = f'<span class="summary-preview">{base_gb or 150} GB{extra_preview} · {max_devices or 2} 设备{guest_preview}{expires_preview}</span>'
+    guest_preview = ' · 按量' if metered else ''
+    quota_preview = '不限' if total <= 0 else f'{base_gb or 150} GB{extra_preview}'
+    summary_preview = f'<span class="summary-preview">{quota_preview} · {max_devices or 2} 设备{guest_preview}{expires_preview}</span>'
+    percent_label = '不限' if total <= 0 else f'{percent:.1f}%'
     if disabled:
         toggle_form = (
             '<form method="post" action="/admin/toggle-user" class="inline-form-row">'
@@ -1155,43 +1184,44 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
             f'<input type="hidden" name="user" value="{user_esc}">'
             '<button class="btn ghost btn-sm" type="submit" title="临时停用：拒绝新连接并断开现有会话，不删除用户">暂停</button></form>'
         )
-    return f'''<tr data-user="{user_esc}">
-<td>
+    online_n = int(online.get(user, 0) or 0)
+    return f'''<tr data-user="{user_esc}" data-online="{online_n}" data-percent="{percent:.1f}">
+<td data-label="用户">
   <div class="row gap-sm" style="flex-wrap:nowrap;">
-    <div class="user-avatar">{html.escape(user[:1].upper())}</div>
+    <div class="user-avatar" aria-hidden="true">{html.escape(user[:1].upper())}</div>
     <div style="min-width:0;">
       <div class="bold">{user_esc} {guest_badge}{tuic_badge}{disabled_badge}{expired_badge}</div>
-      <div class="small">在线 <span data-role="online">{online.get(user, 0)}</span> / {max_devices} 设备</div>
+      <div class="small">在线 <span data-role="online">{online_n}</span> / {max_devices} 设备</div>
       {note_preview}
     </div>
   </div>
 </td>
 {spark_cell}
-<td>
+<td data-label="本周期用量">
   <div class="row" style="justify-content:space-between;margin-bottom:4px;">
     <span class="bold" data-role="used">{fmt_bytes(used)}</span>
-    <span class="small">/ {fmt_bytes(total)}</span>
+    <span class="small">/ {quota_label}</span>
   </div>
   <div class="mini-bar"><div class="mini-fill {bar_cls}" data-role="bar" style="width:{bar_w}%"></div></div>
-  <div class="small mt-sm" data-role="detail">{percent:.1f}% · ↑{fmt_bytes(tx)} ↓{fmt_bytes(rx)}</div>
+  <div class="small mt-sm" data-role="detail">{percent_label} · ↑{fmt_bytes(tx)} ↓{fmt_bytes(rx)}</div>
 </td>
-<td>
+<td data-label="操作">
 <details>
 <summary>编辑套餐{summary_preview}</summary>
 <form method="post" action="/admin/update" class="inline-form">
 <input type="hidden" name="user" value="{user_esc}">
 <label>兼容连接密码（可选）</label><input name="password" type="password" placeholder="留空则不修改">
 <label class="mt-sm">设备数上限</label><input name="max_devices" type="number" min="1" value="{max_devices or 2}">
-<label class="mt-sm">月流量上限 (GB)</label><input name="quota_gb" type="number" min="1" value="{base_gb or 150}">
+<label class="mt-sm">本周期流量上限 (GB)</label><input name="quota_gb" type="number" min="1" value="{base_gb or 150}">
 <label class="mt-sm">加量包 (GB)</label><input name="quota_extra_gb" type="number" min="0" value="{extra_gb}">
 <label class="mt-sm">到期日</label><input name="expires_at" type="date" value="{html.escape(expires_at)}">
 	<label class="mt-sm">备注</label><input name="note" maxlength="200" value="{html.escape(note)}" placeholder="可选：续费状态/来源/说明">
-	<label class="switch mt-sm"><input type="checkbox" name="guest" {guest_checked}>客人用户（仅做标记，不影响认证）</label>
+	<label class="switch mt-sm"><input type="checkbox" name="guest" {guest_checked}>按量用户（参与配额计量）</label>
 	<label class="switch mt-sm"><input type="checkbox" name="tuic_enabled" {tuic_checked}>允许 TUIC（TUIC 不参与单用户额度计量）</label>
 	<button class="btn mt-md" type="submit">保存</button>
 </form>
 </details>
-<div class="row gap-sm mt-sm">
+<div class="row gap-sm mt-sm user-actions">
   <form method="post" action="/admin/reset-usage" class="inline-form-row">
     <input type="hidden" name="user" value="{user_esc}">
     <button class="btn ghost btn-sm" type="submit" title="清空该用户已用流量，且从服务器总流量中扣除">清流量</button>
@@ -1211,7 +1241,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
   </form>
 </div>
 </td>
-<td class="link-cell">
+<td class="link-cell" data-label="链接">
   <div class="link-row">
     <a href="{html.escape(panel)}" target="_blank" rel="noopener">{icon("dashboard")}<span>面板</span></a>
     <button type="button" class="btn ghost btn-sm copy-link" data-copy="{html.escape(panel)}" title="复制面板链接">{icon("copy")}</button>
@@ -1239,7 +1269,7 @@ def render_admin(host, base_url, flash=''):
     cycle_day = (now.date() - cycle_start.date()).days + 1
     cycle_range = f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")} · 第 {cycle_day}/{cycle_length} 天'
     settle_form = (
-        f'<form method="post" action="/admin/cycle-config" class="inline-form-row" style="margin:0;">'
+        f'<form method="post" action="/admin/cycle-config" class="inline-form-row cycle-config-form" style="margin:0;">'
         f'<label class="small" style="margin-right:6px;">结算日</label>'
         f'<input name="day" type="number" min="1" max="28" value="{settlement_day}" '
         f'style="width:60px;margin-right:6px;" required>'
@@ -1260,7 +1290,7 @@ def render_admin(host, base_url, flash=''):
   <div class="card stat">
     <div class="k">快速操作</div>
     <form method="post" action="/admin/reset-usage-all" data-action="reset-all" style="margin:6px 0 0;">
-      <button class="btn secondary btn-sm" type="submit">一键清空本周期已用</button>
+      <button class="btn secondary btn-sm" type="submit">一键清空本周期用量</button>
     </form>
     <div class="row gap-sm mt-sm">
       <a class="btn ghost btn-sm" href="/admin/usage.csv?window=cycle">导出本周期 CSV</a>
@@ -1272,18 +1302,18 @@ def render_admin(host, base_url, flash=''):
   <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);gap:12px;flex-wrap:wrap;">
     <div class="bold">用户列表</div>
     <div class="row gap-sm" style="flex:1;justify-content:flex-end;flex-wrap:wrap;">
-      <input id="user-filter" type="search" placeholder="搜索用户名…" autocomplete="off"
+      <input id="user-filter" type="search" placeholder="搜索用户名…" aria-label="搜索用户名" autocomplete="off"
              class="user-filter-input" style="min-width:180px;max-width:260px;">
       <div class="row gap-sm filter-chips" role="group" aria-label="状态筛选">
         <button type="button" class="chip active" data-filter="all">全部</button>
         <button type="button" class="chip" data-filter="online">在线</button>
         <button type="button" class="chip" data-filter="over">超 90%</button>
       </div>
-      <div class="small" id="filter-count" style="min-width:64px;text-align:right;">{len(users)} 个用户</div>
+      <div class="small" id="filter-count" style="min-width:64px;text-align:right;">{len(users)} / {len(users)} 个</div>
       <div class="small faint">实时 · 5 s</div>
     </div>
   </div>
-  <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>30 天趋势</th><th>本月用量</th><th>操作</th><th style="padding-right:18px;">链接</th></tr></thead><tbody>{rows}</tbody></table>
+  <table class="table users-table" data-user-count="{len(users)}"><thead><tr><th style="padding-left:18px;">用户</th><th>30 天趋势</th><th>本周期用量</th><th>操作</th><th style="padding-right:18px;">链接</th></tr></thead><tbody>{rows}</tbody></table>
 </div>
 <div class="card mt-md">
   <details class="summary-muted">
@@ -1292,13 +1322,13 @@ def render_admin(host, base_url, flash=''):
           <div class="grid grid-3">
             <div><label>用户名</label><input name="user" required></div>
             <div><label>兼容连接密码（可选）</label><input name="password" type="password" placeholder="默认仅用订阅 token 认证"></div>
-            <div><label>月流量上限 (GB)</label><input name="quota_gb" type="number" value="150" min="1"></div>
+            <div><label>本周期流量上限 (GB)</label><input name="quota_gb" type="number" value="150" min="1"></div>
             <div><label>加量包 (GB)</label><input name="quota_extra_gb" type="number" value="0" min="0"></div>
             <div><label>到期日</label><input name="expires_at" type="date"></div>
             <div><label>备注</label><input name="note" maxlength="200" placeholder="可选"></div>
           </div>
       <div class="row mt-md">
-	        <label class="switch"><input type="checkbox" name="guest" checked>客人用户</label>
+	        <label class="switch"><input type="checkbox" name="guest" checked>按量用户（参与配额计量）</label>
 	        <label class="switch"><input type="checkbox" name="tuic_enabled">允许 TUIC</label>
 	        <label class="switch"><input type="checkbox" name="reset_token">已存在则重置订阅令牌</label>
       </div>
@@ -1308,10 +1338,11 @@ def render_admin(host, base_url, flash=''):
 </div>
 <script src="/static/admin-poll.js" defer></script>
 '''
+    poll_status = '<span class="badge poll-status" data-role="admin-poll-status" aria-live="polite" aria-atomic="true">实时 · 5 s</span>'
     return render_admin_shell('dashboard', '总览', content,
                               badge=f'{len(users)} 个用户',
                               subtitle=f'{host} · 计费周期 {mk}',
-                              topbar_extra=settle_form)
+                              topbar_extra=settle_form + poll_status)
 
 
 def _action_label(action):
