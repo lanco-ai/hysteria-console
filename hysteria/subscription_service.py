@@ -15,6 +15,8 @@ import uuid
 import urllib.request
 
 import alerts
+import codex_dashboard
+import codex_quota
 import cost_calibrator
 import cycle as cycle_util
 import health
@@ -105,6 +107,8 @@ ADMIN_POLL_JS_BYTES = (_STATIC_DIR / 'admin_poll.js').read_bytes()
 ADMIN_POLL_JS_ETAG = '"' + hashlib.sha1(ADMIN_POLL_JS_BYTES).hexdigest()[:16] + '"'
 USAGE_JS_BYTES = (_STATIC_DIR / 'usage.js').read_bytes()
 USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
+CODEX_QUOTA_JS_BYTES = (_STATIC_DIR / 'codex_quota.js').read_bytes()
+CODEX_QUOTA_JS_ETAG = '"' + hashlib.sha1(CODEX_QUOTA_JS_BYTES).hexdigest()[:16] + '"'
 
 
 def load_json(path, default):
@@ -723,6 +727,7 @@ def back_to_admin(label='返回管理后台'):
 _SIDEBAR_NAV = [
     ('dashboard', '/admin', '总览', 'dashboard'),
     ('usage', '/admin/usage', '流量分析', 'chart'),
+    ('codex', '/admin/codex', 'Codex 额度', 'chart'),
     ('incidents', '/admin/incidents', '事故处理', 'pulse'),
     ('health', '/admin/health', '健康状态', 'pulse'),
     ('config', '/admin/config', '模板配置', 'config'),
@@ -1581,6 +1586,14 @@ def render_usage_page(host):
     return usage_dashboard.render_usage_page(_usage_context(), host)
 
 
+def render_codex_page(host):
+    payload = codex_quota.build_dashboard_payload(range_key='day')
+    return codex_dashboard.render_page(
+        payload,
+        render_admin_shell=render_admin_shell,
+    )
+
+
 def render_user_detail_page(uid, host):
     return usage_dashboard.render_user_detail_page(_usage_context(), uid, host)
 
@@ -2355,6 +2368,11 @@ class Handler(BaseHTTPRequestHandler):
                                'application/javascript; charset=utf-8', send_payload)
             return
 
+        if path == '/static/codex-quota.js':
+            self._serve_static(CODEX_QUOTA_JS_BYTES, CODEX_QUOTA_JS_ETAG,
+                               'application/javascript; charset=utf-8', send_payload)
+            return
+
         if path == '/':
             self.send_response_body(200, render_home(host), 'text/html; charset=utf-8', send_payload)
             return
@@ -2484,6 +2502,29 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response_body(
                 200, render_usage_page(host),
                 'text/html; charset=utf-8', send_payload,
+            )
+            return
+
+        if path == '/admin/codex':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            self.send_response_body(
+                200, render_codex_page(host),
+                'text/html; charset=utf-8', send_payload,
+            )
+            return
+
+        if path == '/admin/codex.json':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            range_key = (q.get('range') or ['day'])[0]
+            payload = codex_quota.build_dashboard_payload(range_key=range_key)
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                'application/json; charset=utf-8', send_payload,
+                extra_headers={'Cache-Control': 'no-store'},
             )
             return
 

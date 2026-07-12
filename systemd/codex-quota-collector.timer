@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect Codex account quota every 3 minutes
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=3min
+AccuracySec=10s
+Persistent=true
+Unit=codex-quota-collector.service
+
+[Install]
+WantedBy=timers.target

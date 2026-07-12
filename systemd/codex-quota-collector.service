@@ -1,0 +1,35 @@
+[Unit]
+Description=Collect Codex account quota history
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /root/hysteria/codex_quota.py collect
+WorkingDirectory=/root/hysteria
+User=root
+Group=root
+Environment=HOME=/root
+Environment=CODEX_HOME=/root/.codex
+TimeoutStartSec=45s
+Nice=10
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+ReadWritePaths=/root/hysteria/state /root/.codex
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+TasksMax=32
+MemoryHigh=192M
+MemoryMax=256M

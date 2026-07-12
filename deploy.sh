@@ -142,6 +142,8 @@ render "$REPO_DIR/hysteria/traffic_limiter.py"       "$HY_DIR/traffic_limiter.py
 render "$REPO_DIR/hysteria/alerts.py"                "$HY_DIR/alerts.py"
 render "$REPO_DIR/hysteria/anomaly.py"               "$HY_DIR/anomaly.py"
 render "$REPO_DIR/hysteria/charts.py"                "$HY_DIR/charts.py"
+render "$REPO_DIR/hysteria/codex_dashboard.py"       "$HY_DIR/codex_dashboard.py"
+render "$REPO_DIR/hysteria/codex_quota.py"           "$HY_DIR/codex_quota.py"
 render "$REPO_DIR/hysteria/cost_calibrator.py"       "$HY_DIR/cost_calibrator.py"
 render "$REPO_DIR/hysteria/cycle.py"                 "$HY_DIR/cycle.py"
 render "$REPO_DIR/hysteria/health.py"                "$HY_DIR/health.py"
@@ -159,6 +161,7 @@ render "$REPO_DIR/hysteria/display.py"               "$HY_DIR/display.py"
 render "$REPO_DIR/hysteria/timeutil.py"              "$HY_DIR/timeutil.py"
 install -m 644 "$REPO_DIR/hysteria/admin.css"        "$HY_DIR/admin.css"
 install -m 644 "$REPO_DIR/hysteria/admin_poll.js"    "$HY_DIR/admin_poll.js"
+install -m 644 "$REPO_DIR/hysteria/codex_quota.js"   "$HY_DIR/codex_quota.js"
 install -m 644 "$REPO_DIR/hysteria/usage.js"         "$HY_DIR/usage.js"
 chmod 700 "$HY_DIR"/*.py
 chmod 600 "$HY_DIR/config.yaml"
@@ -253,6 +256,8 @@ install -m 644 "$REPO_DIR/systemd/hysteria-server.service"           "$SYSTEMD_D
 install -m 644 "$REPO_DIR/systemd/hysteria-subscription.service"     "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.service"  "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.timer"    "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/codex-quota-collector.service"     "$SYSTEMD_DIR/"
+install -m 644 "$REPO_DIR/systemd/codex-quota-collector.timer"       "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hy2-backup.service"                "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hy2-backup.timer"                  "$SYSTEMD_DIR/"
 install -m 644 "$REPO_DIR/systemd/hysteria-porthop.service"          "$SYSTEMD_DIR/"
@@ -282,6 +287,7 @@ systemctl enable --now hysteria-tcp-mss.service
 systemctl enable --now hysteria-server.service
 systemctl enable --now hysteria-subscription.service
 systemctl enable --now hysteria-traffic-limiter.timer
+systemctl enable --now codex-quota-collector.timer
 systemctl enable --now hy2-backup.timer
 systemctl enable --now hy2-health-check.timer
 systemctl enable --now xray.service
@@ -293,6 +299,17 @@ systemctl restart hysteria-subscription.service
 systemctl restart xray.service
 systemctl restart tuic-server.service
 systemctl restart hysteria-traffic-limiter.timer
+if [[ -f "$HY_DIR/state/codex_quota.csv" ]]; then
+  PYTHONPATH="$HY_DIR" python3 "$HY_DIR/codex_quota.py" migrate-legacy \
+    --legacy-csv "$HY_DIR/state/codex_quota.csv" || \
+    warn "Legacy Codex quota history migration failed; the CSV was left untouched."
+fi
+if command -v codex >/dev/null 2>&1 && codex login status >/dev/null 2>&1; then
+  systemctl start codex-quota-collector.service || \
+    warn "Initial Codex quota collection failed; the timer will retry in 3 minutes."
+else
+  warn "Codex is not logged in; quota collection will start after 'codex login'."
+fi
 if [[ "$HY_ENABLE_HTTPS" == "1" ]]; then
   sleep 2
   systemctl start hy2-health-check.service
@@ -300,7 +317,7 @@ fi
 
 sleep 1
 log "Status:"
-for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer hy2-backup.timer hy2-health-check.timer hysteria-tcp-mss xray tuic-server; do
+for u in hysteria-server hysteria-subscription hysteria-traffic-limiter.timer codex-quota-collector.timer hy2-backup.timer hy2-health-check.timer hysteria-tcp-mss xray tuic-server; do
   printf '  %-40s %s\n' "$u" "$(systemctl is-active "$u" || true)"
 done
 
