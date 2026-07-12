@@ -1,6 +1,6 @@
-"""Tests for the four new features:
+"""Tests for the user-panel and admin experience features:
 
-A - QR code helper (render_qr_svg) on the user panel
+A - QR code helper and lazy profile-specific QR delivery on the user panel
 C - Admin user-table search/filter (smoke: chips render in the HTML;
     JS behavior is browser-level, exercised by hand)
 E - /admin/usage.csv export
@@ -67,32 +67,100 @@ def test_render_qr_svg_returns_empty_on_subprocess_error():
     assert ss.render_qr_svg('hello', _runner=runner) == ''
 
 
-def test_user_panel_includes_qr_block_when_helper_returns_svg(tmp_path, monkeypatch):
+def test_subscription_profile_urls_are_normalized_and_encoded():
+    assert ss.subscription_profile_url('https://h', 'alice', 'tok', 'default') == \
+        'https://h/sub/alice?token=tok'
+    assert ss.subscription_profile_url('https://h', 'alice', 'tok', 'work') == \
+        'https://h/sub/alice?token=tok&profile=work'
+    assert ss.subscription_profile_url('https://h', 'alice', 'tok&x', 'unknown') == \
+        'https://h/sub/alice?token=tok%26x'
+    assert ss.subscription_profile_qr_path('alice', 'tok', 'game') == \
+        '/panel/alice/qr.svg?token=tok&profile=game'
+
+
+def test_render_profile_qr_svg_uses_selected_subscription_url(monkeypatch):
+    captured = {}
+    def fake_render(value):
+        captured['value'] = value
+        return '<svg/>'
+
+    monkeypatch.setattr(ss, 'render_qr_svg', fake_render)
+    assert ss.render_profile_qr_svg('https://h', 'alice', 'tok', 'safe') == '<svg/>'
+    assert captured['value'] == 'https://h/sub/alice?token=tok&profile=safe'
+
+
+def test_user_panel_defers_qr_generation_until_requested(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
     (tmp_path / 'users.json').write_text(json.dumps({
         'alice': {'sub_token': 'tok123', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2},
     }))
-    monkeypatch.setattr(ss, 'render_qr_svg', lambda *a, **k: '<svg id="fake-qr"/>')
+    def should_not_render(*_a, **_k):
+        raise AssertionError('QR generation must be deferred to /panel/<user>/qr.svg')
+
+    monkeypatch.setattr(ss, 'render_qr_svg', should_not_render)
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok123',
                                 {'sub_token': 'tok123', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2})
-    assert '<svg id="fake-qr"/>' in page
-    assert 'qr-card' in page
+    assert 'id="profile-qr-image"' in page
+    image_tag = page.split('<img id="profile-qr-image"', 1)[1].split('>', 1)[0]
+    assert 'src=' not in image_tag
+    assert 'data-qr="/panel/alice/qr.svg?token=tok123"' in page
+    assert '二维码仅在这里按需生成' in page
 
 
-def test_user_panel_omits_qr_block_when_helper_returns_empty(tmp_path, monkeypatch):
-    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
-    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
-    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
-    (tmp_path / 'users.json').write_text(json.dumps({
-        'alice': {'sub_token': 'tok123', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2},
+def test_profile_qr_route_is_wired_before_generic_panel_route():
+    src = Path(ss.__file__).read_text(encoding='utf-8')
+    qr_pos = src.index("if path.startswith('/panel/') and path.endswith('/qr.svg'):")
+    panel_pos = src.index("if path.startswith('/panel/'):", qr_pos)
+    assert qr_pos < panel_pos
+
+
+def test_profile_qr_endpoint_validates_token_and_profile(tmp_path, monkeypatch):
+    import http.client
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    users_file = tmp_path / 'users.json'
+    users_file.write_text(json.dumps({
+        'alice': {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30},
     }))
-    monkeypatch.setattr(ss, 'render_qr_svg', lambda *a, **k: '')
-    page = ss.render_user_panel('h', 'http://h', 'alice', 'tok123',
-                                {'sub_token': 'tok123', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2})
-    assert 'qr-card' not in page
-    assert '订阅二维码' not in page
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+    captured = {}
+
+    def fake_qr(base_url, user, token, profile):
+        captured.update(base_url=base_url, user=user, token=token, profile=profile)
+        return '<svg id="profile-qr"/>'
+
+    monkeypatch.setattr(ss, 'render_profile_qr_svg', fake_qr)
+    server = ThreadingHTTPServer(('127.0.0.1', 0), ss.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
+        conn.request('GET', '/panel/alice/qr.svg?token=tok&profile=work',
+                     headers={'Host': 'panel.test'})
+        response = conn.getresponse()
+        body = response.read().decode()
+        assert response.status == 200
+        assert response.getheader('Content-Type').startswith('image/svg+xml')
+        assert response.getheader('Cache-Control') == 'private, max-age=300'
+        assert body == '<svg id="profile-qr"/>'
+        assert captured == {
+            'base_url': 'http://panel.test', 'user': 'alice',
+            'token': 'tok', 'profile': 'work',
+        }
+
+        conn.request('GET', '/panel/alice/qr.svg?token=wrong',
+                     headers={'Host': 'panel.test'})
+        denied = conn.getresponse()
+        denied.read()
+        assert denied.status == 403
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
 
 
 # ----- C: Admin table filter (smoke) ----------------------------------------
@@ -651,12 +719,17 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok',
                                 {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2})
 
-    assert '订阅模式' in page
+    assert '快速导入' in page
+    assert '复制当前模式链接' in page
+    assert 'id="profile-show-qr"' in page
+    assert 'data-profile-option' in page
+    assert 'data-profile="default"' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=game' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=work' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=lowdata' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=safe' in page
     assert '模板更新时间' in page
+    assert "function selectProfile(option)" in page
 
 
 def test_protocol_hourly_accumulator_records_source_totals(tmp_path, monkeypatch):

@@ -894,23 +894,77 @@ def render_qr_svg(text, *, _runner=None):
     return svg
 
 
+def subscription_profile_url(base_url, user, token, profile='default'):
+    """Return the canonical subscription URL for one normalized profile."""
+    key = normalize_subscription_profile(profile)
+    params = {'token': token}
+    if key != 'default':
+        params['profile'] = key
+    return f'{base_url}/sub/{user}?{urlencode(params)}'
+
+
+def subscription_profile_qr_path(user, token, profile='default'):
+    key = normalize_subscription_profile(profile)
+    params = {'token': token}
+    if key != 'default':
+        params['profile'] = key
+    return f'/panel/{user}/qr.svg?{urlencode(params)}'
+
+
+def render_profile_qr_svg(base_url, user, token, profile='default'):
+    return render_qr_svg(subscription_profile_url(base_url, user, token, profile))
+
+
 def render_subscription_profile_links(base_url, user, token):
     items = []
     for key in SUBSCRIPTION_PROFILE_ORDER:
         meta = SUBSCRIPTION_PROFILES[key]
-        suffix = '' if key == 'default' else f'&profile={key}'
-        url = f'{base_url}/sub/{user}?token={token}{suffix}'
+        url = subscription_profile_url(base_url, user, token, key)
+        qr_path = subscription_profile_qr_path(user, token, key)
+        selected = key == 'default'
         items.append(
-            f'<a class="btn secondary profile-link" href="{html.escape(url)}">'
+            f'<a class="btn secondary profile-link{" selected" if selected else ""}" '
+            f'href="{html.escape(url, quote=True)}" data-profile-option data-profile="{key}" '
+            f'data-profile-label="{html.escape(meta["label"], quote=True)}" '
+            f'data-profile-desc="{html.escape(meta["desc"], quote=True)}" '
+            f'data-profile-url="{html.escape(url, quote=True)}" '
+            f'data-profile-qr="{html.escape(qr_path, quote=True)}" '
+            f'aria-current="{"true" if selected else "false"}">'
             f'<span>{html.escape(meta["label"])}</span>'
             f'<small>{html.escape(meta["desc"])}</small></a>'
         )
+    default_meta = SUBSCRIPTION_PROFILES['default']
+    default_url = subscription_profile_url(base_url, user, token, 'default')
+    default_qr = subscription_profile_qr_path(user, token, 'default')
     return (
-        '<div class="card mt-md">'
-        '<div class="k">订阅模式</div>'
-        '<div class="small">同一个账号可按场景导入不同策略，默认模式保持后台模板原样。'
-        f'模板更新时间：{html.escape(subscription_template_mtime() or "未知")}。</div>'
-        f'<div class="profile-links mt-md">{"".join(items)}</div>'
+        '<div class="card mt-md import-assistant">'
+        '<div class="import-head">'
+        '<div><div class="k">快速导入</div>'
+        '<div class="small">先选择使用场景，再复制链接到客户端；跨设备时可按需显示二维码。'
+        f'模板更新时间：{html.escape(subscription_template_mtime() or "未知")}。</div></div>'
+        f'<span class="badge" id="profile-selected-badge">{html.escape(default_meta["label"])}</span>'
+        '</div>'
+        f'<div class="profile-links mt-md" role="group" aria-label="选择订阅模式">{"".join(items)}</div>'
+        '<div class="import-selected mt-md" aria-live="polite">'
+        '<div class="import-selected-copy">'
+        '<div class="small faint">当前模式</div>'
+        f'<div class="bold" id="profile-selected-title">{html.escape(default_meta["label"])}</div>'
+        f'<div class="small" id="profile-selected-desc">{html.escape(default_meta["desc"])}</div>'
+        '</div>'
+        '<div class="row gap-sm import-actions">'
+        f'<button class="btn" type="button" id="profile-copy" data-copy="{html.escape(default_url, quote=True)}">'
+        f'{icon("copy")}<span>复制当前模式链接</span></button>'
+        f'<a class="btn secondary" id="profile-open" href="{html.escape(default_url, quote=True)}">'
+        f'{icon("open")}<span>打开配置</span></a>'
+        f'<button class="btn ghost" type="button" id="profile-show-qr" '
+        f'data-qr="{html.escape(default_qr, quote=True)}" aria-expanded="false" aria-controls="profile-qr-panel">'
+        '<span>显示二维码</span></button>'
+        '</div></div>'
+        '<div class="profile-qr-panel" id="profile-qr-panel" hidden>'
+        '<div class="qr-wrap"><img id="profile-qr-image" width="220" height="220" '
+        'alt="当前订阅模式二维码"></div>'
+        '<div class="small faint" id="profile-qr-status" role="status" aria-live="polite">在另一台设备上用客户端扫码导入；二维码仅在这里按需生成。</div>'
+        '</div>'
         '</div>'
     )
 
@@ -978,14 +1032,7 @@ def render_user_panel(host, base_url, user, token, cfg):
         disabled_banner = '<div class="err">账号已停用，请联系管理员</div>'
     elif is_expired:
         disabled_banner = '<div class="err">账号已到期，请联系管理员续费</div>'
-    qr_svg = render_qr_svg(sub_http)
-    qr_block = ''
-    if qr_svg:
-        qr_block = f'''<div class="card mt-md qr-card">
-  <div class="k">订阅二维码</div>
-  <div class="small">用客户端 App 扫码即可导入（Clash / 小火箭 等）</div>
-  <div class="qr-wrap">{qr_svg}</div>
-</div>'''
+    import_assistant = render_subscription_profile_links(base_url, user, token)
     # Suspended accounts get a 403 from /panel/<user>.json, so don't emit the
     # live-refresh loop (it would just spam '刷新失败'). The embedded URL escapes
     # '<' so a malicious username can't break out of the <script> element.
@@ -1075,6 +1122,7 @@ def render_user_panel(host, base_url, user, token, cfg):
   <div class="small mt-sm" data-role="txrx">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
   <div class="small mt-sm faint">本周期 {cycle_len} 天 · 重置于 {reset_date} · 还剩 {days_left} 天 · 有效期 {html.escape(expiry["label"])}</div>
 </div>
+{import_assistant}
 <div class="card mt-md">
   <div class="k">近 30 天用量趋势</div>
   <div class="panel-trend">{spark}</div>
@@ -1102,11 +1150,50 @@ def render_user_panel(host, base_url, user, token, cfg):
     <div class="small mt-sm faint">重置后旧链接立即失效，需用新链接重新订阅。</div>
   </div>
 </div>
-{qr_block}
-{render_subscription_profile_links(base_url, user, token)}
 </div>
 <script>
 (function() {{
+  var profileOptions = document.querySelectorAll('[data-profile-option]');
+  var profileBadge = document.getElementById('profile-selected-badge');
+  var profileTitle = document.getElementById('profile-selected-title');
+  var profileDesc = document.getElementById('profile-selected-desc');
+  var profileCopy = document.getElementById('profile-copy');
+  var profileOpen = document.getElementById('profile-open');
+  var profileShowQr = document.getElementById('profile-show-qr');
+  var profileQrPanel = document.getElementById('profile-qr-panel');
+  var profileQrImage = document.getElementById('profile-qr-image');
+  var profileQrStatus = document.getElementById('profile-qr-status');
+  function setQrStatus(text) {{ if (profileQrStatus) profileQrStatus.textContent = text; }}
+  function selectProfile(option) {{
+    if (!option) return;
+    profileOptions.forEach(function(item) {{
+      var selected = item === option;
+      item.classList.toggle('selected', selected);
+      item.setAttribute('aria-current', selected ? 'true' : 'false');
+    }});
+    var label = option.getAttribute('data-profile-label') || '';
+    var desc = option.getAttribute('data-profile-desc') || '';
+    var url = option.getAttribute('data-profile-url') || option.href || '';
+    var qr = option.getAttribute('data-profile-qr') || '';
+    if (profileBadge) profileBadge.textContent = label;
+    if (profileTitle) profileTitle.textContent = label;
+    if (profileDesc) profileDesc.textContent = desc;
+    if (profileCopy) profileCopy.setAttribute('data-copy', url);
+    if (profileOpen) profileOpen.setAttribute('href', url);
+    if (profileShowQr) profileShowQr.setAttribute('data-qr', qr);
+    if (profileQrPanel && !profileQrPanel.hidden && profileQrImage) {{
+      setQrStatus('二维码生成中…');
+      profileQrImage.src = qr;
+    }} else if (profileQrImage) {{
+      profileQrImage.removeAttribute('src');
+    }}
+  }}
+  if (profileQrImage) {{
+    profileQrImage.addEventListener('load', function() {{ setQrStatus('二维码已生成，可在另一台设备上扫码导入。'); }});
+    profileQrImage.addEventListener('error', function() {{
+      setQrStatus('二维码暂不可用，请使用“复制当前模式链接”导入。');
+    }});
+  }}
   function flashCopied(btn) {{
     var label = btn.querySelector('span');
     var prev = label ? label.textContent : '';
@@ -1115,6 +1202,25 @@ def render_user_panel(host, base_url, user, token, cfg):
     setTimeout(function() {{ if (label) label.textContent = prev; btn.disabled = false; }}, 1400);
   }}
   document.addEventListener('click', function(ev) {{
+    var option = ev.target.closest ? ev.target.closest('[data-profile-option]') : null;
+    if (option) {{ ev.preventDefault(); selectProfile(option); return; }}
+    var qrButton = ev.target.closest ? ev.target.closest('#profile-show-qr') : null;
+    if (qrButton && profileQrPanel && profileQrImage) {{
+      ev.preventDefault();
+      var opening = profileQrPanel.hidden;
+      profileQrPanel.hidden = !opening;
+      qrButton.setAttribute('aria-expanded', opening ? 'true' : 'false');
+      var qrLabel = qrButton.querySelector('span');
+      if (qrLabel) qrLabel.textContent = opening ? '隐藏二维码' : '显示二维码';
+      if (opening) {{
+        setQrStatus('二维码生成中…');
+        profileQrImage.src = qrButton.getAttribute('data-qr') || '';
+      }} else {{
+        profileQrImage.removeAttribute('src');
+        setQrStatus('在另一台设备上用客户端扫码导入；二维码仅在这里按需生成。');
+      }}
+      return;
+    }}
     var btn = ev.target.closest ? ev.target.closest('[data-copy]') : null;
     if (!btn) return;
     var text = btn.getAttribute('data-copy');
@@ -2299,6 +2405,30 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if send_payload:
                 self.wfile.write(payload)
+            return
+
+        if path.startswith('/panel/') and path.endswith('/qr.svg'):
+            user = path[len('/panel/'):-len('/qr.svg')]
+            token = (q.get('token') or [''])[0]
+            cfg = check_user_token(user, token)
+            if not cfg:
+                self.send_response_body(403, '无权限访问', send_body=send_payload)
+                return
+            if cfg.get('disabled'):
+                self.send_response_body(403, '账号已停用', send_body=send_payload)
+                return
+            if user_compat.is_expired(cfg, today=local_now().date()):
+                self.send_response_body(403, '账号已到期', send_body=send_payload)
+                return
+            profile = normalize_subscription_profile((q.get('profile') or ['default'])[0])
+            svg = render_profile_qr_svg(base_url, user, token, profile)
+            if not svg:
+                self.send_response_body(503, '二维码暂不可用', send_body=send_payload)
+                return
+            self.send_response_body(
+                200, svg, 'image/svg+xml; charset=utf-8', send_payload,
+                extra_headers={'Cache-Control': 'private, max-age=300'},
+            )
             return
 
         if path.startswith('/panel/') and path.endswith('.json'):

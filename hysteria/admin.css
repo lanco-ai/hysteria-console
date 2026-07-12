@@ -898,21 +898,50 @@ code, .mono {
   white-space: normal;
 }
 .profile-link small { color: var(--text-faint); font-size: 10.5px; font-weight: 520; line-height: 1.4; }
+.profile-link.selected, .profile-link.selected:hover {
+  color: var(--text-strong);
+  background: rgba(124, 108, 242, .16);
+  border-color: rgba(157, 140, 255, .48);
+  box-shadow: inset 0 0 0 1px rgba(157, 140, 255, .08);
+}
+.import-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.import-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px;
+  background: rgba(7, 16, 31, .36);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+}
+.import-selected-copy { min-width: 150px; }
+.import-selected-copy .bold { margin: 2px 0; color: var(--text-strong); }
+.import-actions { justify-content: flex-end; flex-wrap: wrap; }
+.profile-qr-panel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 18px;
+  padding: 16px;
+  margin-top: 12px;
+  background: rgba(7, 16, 31, .28);
+  border: 1px solid var(--hairline);
+  border-radius: 13px;
+}
+.profile-qr-panel[hidden] { display: none; }
+.profile-qr-panel .qr-wrap {
+  display: flex;
+  width: fit-content;
+  padding: 12px;
+  background: white;
+  border-radius: 13px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .18);
+}
+.profile-qr-panel img { display: block; width: min(220px, 54vw); height: auto; aspect-ratio: 1; }
 .summary-preview { margin-left: 8px; color: var(--text-faint); font-size: 11px; font-weight: 500; }
 .panel-trend { padding-top: 10px; }
 .panel-trend svg.spark { width: 100%; height: 64px; }
-.qr-card .qr-wrap {
-  display: flex;
-  justify-content: center;
-  width: fit-content;
-  max-width: 100%;
-  padding: 18px;
-  margin-top: 14px;
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, .2);
-}
-.qr-card .qr-wrap svg { display: block; width: min(220px, 60vw); height: auto; }
 
 /* Health -------------------------------------------------------------- */
 .health-ok { border-color: rgba(61, 215, 164, .14); }
@@ -1142,6 +1171,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .card.stat { min-height: 116px; }
   .stat .v.big, .big { font-size: 29px; }
   .profile-links { grid-template-columns: 1fr; }
+  .import-head { align-items: center; }
+  .import-selected { align-items: flex-start; flex-direction: column; }
+  .import-actions { width: 100%; justify-content: flex-start; }
+  .profile-qr-panel { grid-template-columns: 1fr; justify-items: start; }
   .nav { align-items: flex-start; }
   .top-row { grid-template-columns: minmax(0, 1fr) auto; }
   .top-spark { display: none; }
