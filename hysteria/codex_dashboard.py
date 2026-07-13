@@ -127,9 +127,9 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
   <section class="card codex-chart-card codex-chart-card-v2 mt-md">
     <header class="codex-chart-head">
       <div>
-        <div class="k">WEEKLY QUOTA TIMELINE</div>
-        <h3>周额度余量与变化时刻</h3>
-        <p>只有额度真实变化时才显示周额度节点；节点旁数字为变化后余额，引导线会落到下方准确时间。</p>
+        <div class="k">WEEKLY QUOTA TREND</div>
+        <h3>周额度阶梯趋势</h3>
+        <p>横线表示额度保持不变，阶梯跳转表示实际变化；底部事件标签同时给出时间和变化后余额。</p>
       </div>
       <div class="codex-range-switch" role="group" aria-label="图表时间范围">
         <button type="button" class="active" data-range="day" aria-pressed="true">日</button>
@@ -138,20 +138,33 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
         <button type="button" data-range="year" aria-pressed="false">年</button>
       </div>
     </header>
-    <div class="codex-chart-legend" aria-label="图例">
-      <span><i class="series-week"></i>每周窗口</span>
-      <span><i class="event-guide"></i>变化时刻</span>
-      <span data-series="five-hour"><i class="series-five"></i>5 小时窗口</span>
-      <span class="codex-chart-summary" data-role="chart-summary">等待数据</span>
+    <div class="codex-chart-overview">
+      <div class="codex-chart-stat is-primary">
+        <span>当前周额度</span>
+        <strong data-role="chart-current">{_percent((windows.get('weekly') or {}).get('remaining_percent'))}</strong>
+      </div>
+      <div class="codex-chart-stat">
+        <span>视图净变化</span>
+        <strong data-role="chart-net-change">—</strong>
+      </div>
+      <div class="codex-chart-stat">
+        <span>额度变化次数</span>
+        <strong data-role="chart-change-count">—</strong>
+      </div>
+      <div class="codex-chart-key" aria-label="图例">
+        <span><i class="series-week"></i>周额度</span>
+        <span data-series="five-hour"><i class="series-five"></i>5 小时额度</span>
+        <small class="codex-chart-summary" data-role="chart-summary">等待数据</small>
+      </div>
     </div>
     <div class="codex-chart-frame" id="codex-chart-frame">
-      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1200 500" role="img" aria-label="Codex 周额度余量与变化时刻折线图"></svg>
+      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1200 470" role="img" aria-label="Codex 周额度阶梯趋势和变化事件图"></svg>
       <div class="codex-chart-empty" id="codex-chart-empty">采集第一条数据后，这里会自动形成趋势图</div>
       <div class="codex-chart-tooltip" id="codex-chart-tooltip" hidden></div>
     </div>
     <footer class="codex-chart-foot">
       <span data-role="history-start">历史记录：等待首采</span>
-      <span>变化节点代表实际额度变动；悬停可查看任意 3 分钟采样的余额和变化量</span>
+      <span>事件线连接变化节点与“时间 · 变化后余额”；悬停仍可查看任意采样详情</span>
     </footer>
   </section>
 

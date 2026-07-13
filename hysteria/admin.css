@@ -1187,40 +1187,46 @@ code, .mono {
 }
 .codex-range-switch button:hover { color: #18243a; background: #fff; }
 .codex-range-switch button.active { color: white; background: var(--codex-week); box-shadow: 0 7px 16px rgba(8, 127, 131, .24); }
-.codex-chart-legend { display: flex; align-items: center; gap: 20px; padding: 12px 27px; color: #4f6076; background: #f5f7fa; border-top: 1px solid #e4e9f0; border-bottom: 1px solid #dfe5ed; font-size: 11.5px; font-weight: 650; }
-.codex-chart-legend > span { display: inline-flex; align-items: center; gap: 7px; }
-.codex-chart-legend i, .codex-chart-tooltip i { display: inline-block; width: 22px; height: 0; background: transparent; border-top: 3px dashed var(--codex-five); border-radius: 0; }
-.codex-chart-legend i.series-week, .codex-chart-tooltip i.series-week { height: 4px; background: var(--codex-week); border: 0; border-radius: 999px; }
-.codex-chart-legend i.event-guide {
-  position: relative;
-  width: 17px;
-  height: 17px;
-  border: 0;
+.codex-chart-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(132px, 180px)) minmax(240px, 1fr);
+  align-items: stretch;
+  gap: 10px;
+  padding: 13px 27px;
+  background: #f6f8fb;
+  border-top: 1px solid #e4e9f0;
+  border-bottom: 1px solid #dfe5ed;
 }
-.codex-chart-legend i.event-guide::before { content: ""; position: absolute; top: 4px; bottom: 0; left: 8px; width: 1px; background: rgba(8, 127, 131, .48); }
-.codex-chart-legend i.event-guide::after { content: ""; position: absolute; top: 1px; left: 4px; width: 7px; height: 7px; background: #fff; border: 2px solid var(--codex-week); border-radius: 50%; }
-.codex-chart-summary { margin-left: auto; color: #718198; font-variant-numeric: tabular-nums; }
-.codex-chart-frame { position: relative; min-height: 370px; overflow-x: auto; overflow-y: hidden; background: var(--codex-paper); scrollbar-color: #c1ccd9 transparent; }
-.codex-quota-chart { display: block; width: 100%; min-width: 860px; height: auto; background: var(--codex-paper); touch-action: pan-x; cursor: crosshair; }
+.codex-chart-stat { display: flex; min-height: 58px; justify-content: center; flex-direction: column; gap: 3px; padding: 9px 13px; background: #fff; border: 1px solid #e0e6ee; border-radius: 11px; }
+.codex-chart-stat.is-primary { background: var(--codex-week-soft); border-color: #c7e3e1; }
+.codex-chart-stat span { color: #718095; font-size: 9.5px; font-weight: 720; letter-spacing: .035em; }
+.codex-chart-stat strong { color: var(--codex-ink); font-size: 20px; font-weight: 790; font-variant-numeric: tabular-nums; letter-spacing: -.035em; line-height: 1.05; }
+.codex-chart-stat.is-primary strong { color: var(--codex-week-dark); }
+.codex-chart-key { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: 15px; color: #53647a; font-size: 10.5px; font-weight: 650; }
+.codex-chart-key > span { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; }
+.codex-chart-key i, .codex-chart-tooltip i { display: inline-block; width: 22px; height: 0; background: transparent; border-top: 3px dashed var(--codex-five); border-radius: 0; }
+.codex-chart-key i.series-week, .codex-chart-tooltip i.series-week { height: 4px; background: var(--codex-week); border: 0; border-radius: 999px; }
+.codex-chart-summary { min-width: 0; margin-left: 4px; overflow: hidden; color: #7a8799; font-size: 10px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.codex-chart-frame { position: relative; min-height: 350px; overflow-x: auto; overflow-y: hidden; background: #fff; scrollbar-color: #c1ccd9 transparent; }
+.codex-quota-chart { display: block; width: 100%; min-width: 900px; height: auto; background: var(--codex-paper); touch-action: pan-x; cursor: crosshair; }
 .codex-grid-line { stroke: #dce3ec; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .codex-tick { stroke: #a8b4c3; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .codex-axis-label { fill: #526176; font-family: var(--font-sans); font-size: 10px; font-variant-numeric: tabular-nums; }
 .codex-axis-baseline { stroke: #aeb9c7; stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.codex-series-area.series-week { fill: #e8f4f3; fill-opacity: .76; stroke: none; }
 .codex-series-line { fill: none; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 .codex-series-line.series-five { stroke: var(--codex-five); stroke-width: 2.5; stroke-dasharray: 9 7; }
-.codex-series-line.series-week { stroke: var(--codex-week); stroke-width: 3.5; stroke-dasharray: none; }
-.codex-node { vector-effect: non-scaling-stroke; }
-.codex-node.series-five { fill: #fff; stroke: var(--codex-five); stroke-width: 1.7; }
-.codex-week-event-line { stroke: rgba(8, 127, 131, .36); stroke-width: 1.25; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
-.codex-week-event-guide rect { fill: #eff8f7; stroke: #badfdd; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.codex-series-line.series-week { stroke: var(--codex-week); stroke-width: 3.25; stroke-dasharray: none; }
+.codex-low-zone-label rect { fill: #fff; stroke: #f1cbd1; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.codex-low-zone-label text { fill: #a94659; font-family: var(--font-sans); font-size: 10px; font-weight: 720; }
+.codex-week-event-line { stroke: rgba(8, 127, 131, .28); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.codex-week-event-guide rect { fill: #fff; stroke: #bfdedc; stroke-width: 1; vector-effect: non-scaling-stroke; }
 .codex-week-event-guide text { fill: var(--codex-week-dark); font-family: var(--font-sans); font-size: 10.5px; font-weight: 720; font-variant-numeric: tabular-nums; }
-.codex-week-event-node { fill: #fff; stroke: var(--codex-week); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.codex-week-event-node { fill: #fff; stroke: var(--codex-week); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.codex-week-event-node.is-highlighted { fill: var(--codex-week); stroke: #fff; stroke-width: 2.5; }
 .codex-week-event-guide.is-reset .codex-week-event-line { stroke-dasharray: none; stroke-width: 1.8; }
-.codex-week-event-guide.is-reset rect { fill: #fff; stroke-width: 1.5; }
+.codex-week-event-guide.is-reset rect { stroke: var(--codex-week); stroke-width: 1.4; }
 .codex-week-event-node.is-reset { fill: var(--codex-week); stroke: #fff; stroke-width: 2.5; }
-.codex-week-event-value line { stroke: var(--codex-week); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
-.codex-week-event-guide .codex-week-event-value rect { fill: var(--codex-week); stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.codex-week-event-guide .codex-week-event-value text { fill: #fff; font-size: 11px; font-weight: 800; letter-spacing: -.01em; }
 .codex-crosshair line { stroke: rgba(33, 48, 68, .38); stroke-width: 1; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
 .codex-crosshair circle { fill: #fff; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .codex-crosshair circle.series-five { stroke: var(--codex-five); }
@@ -1402,8 +1408,9 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .codex-chart-head { align-items: flex-start; flex-direction: column; }
   .codex-range-switch { width: 100%; }
   .codex-range-switch button { flex: 1; }
-  .codex-chart-legend { gap: 11px; flex-wrap: wrap; }
-  .codex-chart-summary { width: 100%; margin-left: 0; }
+  .codex-chart-overview { grid-template-columns: repeat(3, minmax(90px, 1fr)); }
+  .codex-chart-key { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
+  .codex-chart-summary { flex-basis: 100%; margin-left: 0; }
   .codex-chart-foot { align-items: flex-start; flex-direction: column; gap: 5px; }
   .codex-dashboard.is-week-only .codex-records-table { min-width: 620px; }
 
@@ -1463,8 +1470,11 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   .codex-quota-card { min-height: 232px; padding: 20px; }
   .codex-quota-value { font-size: 45px; }
   .codex-context-card { padding: 15px; }
-  .codex-chart-head, .codex-chart-legend, .codex-chart-foot { padding-right: 17px; padding-left: 17px; }
-  .codex-quota-chart { min-width: 760px; }
+  .codex-chart-head, .codex-chart-overview, .codex-chart-foot { padding-right: 17px; padding-left: 17px; }
+  .codex-chart-overview { gap: 7px; }
+  .codex-chart-stat { min-height: 54px; padding: 8px 9px; }
+  .codex-chart-stat strong { font-size: 17px; }
+  .codex-quota-chart { min-width: 920px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

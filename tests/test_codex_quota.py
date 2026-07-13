@@ -239,8 +239,11 @@ def test_dashboard_page_contains_interactive_chart_and_missing_window_copy():
     assert 'data-range="year"' in page
     assert 'id="codex-quota-chart"' in page
     assert 'class="codex-dashboard is-week-only"' in page
-    assert 'viewBox="0 0 1200 500"' in page
-    assert '周额度余量与变化时刻' in page
+    assert 'viewBox="0 0 1200 470"' in page
+    assert '周额度阶梯趋势' in page
+    assert 'data-role="chart-current"' in page
+    assert 'data-role="chart-net-change"' in page
+    assert 'data-role="chart-change-count"' in page
     assert 'data-series="five-hour"' in page
     assert 'data-col="five-hour"' in page
     assert 'data-role="records-body"' in page
@@ -294,27 +297,30 @@ def test_codex_frontend_is_framework_free_and_pauses_background_fetches():
     assert 'setTimeout(function () { load(false); }' in script
     assert 'setInterval(updateCountdowns, 1000)' in script
     assert 'AbortController' in script
-    assert 'fill="#fbfcfe"' in script
+    assert 'fill="#ffffff"' in script
     assert 'stroke="#7467e8"' in script
     assert 'stroke="#087f83"' in script
     assert 'function renderRecords(data)' in script
-    assert 'MAX_VISIBLE_DOTS = 32' in script
-    assert 'Math.ceil(validIndices.length / MAX_VISIBLE_DOTS)' in script
+    assert 'function stepSeriesFor(key, start, end)' in script
+    assert 'line += " H" + x + " V" + y' in script
     assert 'function weeklyChangeEvents()' in script
     assert 'function selectWeeklyGuides(events, start, end)' in script
-    assert 'function eventValuePosition(x, y, width, height, plotBottom, placed)' in script
-    assert 'MIN_EVENT_LABEL_GAP = 92' in script
+    assert 'function eventTimeLabel(epoch, value)' in script
+    assert 'MIN_EVENT_LABEL_GAP = 128' in script
     assert 'codex-week-event-line' in script
-    assert 'codex-week-event-value' in script
-    assert 'escapeHtml(percent(event.value))' in script
+    assert 'codex-series-area series-week' in script
+    assert 'time + " · " + result' in script
     assert 'circlesFor("weekly_remaining"' not in script
-    assert '周额度变化 · 标注 ' in script
+    assert '个事件标签 · ' in script
     assert 'event.clientY - frameRect.top' in script
     assert 'positionTooltip(nearestIndex(ts), event)' in script
     assert 'tooltip.style.top = "16px"' not in script
     assert '.codex-dashboard.is-week-only [data-quota="five_hour"]' in styles
+    assert '.codex-chart-overview' in styles
+    assert '.codex-series-area.series-week' in styles
     assert '.codex-week-event-guide text' in styles
+    assert '.codex-week-event-node.is-highlighted' in styles
     assert '.codex-week-event-node.is-reset' in styles
-    assert '.codex-week-event-guide .codex-week-event-value text' in styles
+    assert 'codex-week-event-value' not in styles
     assert 'React' not in script
     assert 'new Chart(' not in script

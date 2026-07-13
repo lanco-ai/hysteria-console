@@ -24,12 +24,11 @@
   var RANGE_SECONDS = {day: 86400, week: 604800, month: 2678400, year: 31622400};
   var RANGE_LABELS = {day: "24 小时", week: "7 天", month: "31 天", year: "1 年"};
   var WIDTH = 1200;
-  var HEIGHT = 500;
-  var MARGIN = {top: 34, right: 34, bottom: 96, left: 70};
+  var HEIGHT = 470;
+  var MARGIN = {top: 30, right: 34, bottom: 88, left: 70};
   var PLOT_W = WIDTH - MARGIN.left - MARGIN.right;
   var PLOT_H = HEIGHT - MARGIN.top - MARGIN.bottom;
-  var MAX_VISIBLE_DOTS = 32;
-  var MIN_EVENT_LABEL_GAP = 92;
+  var MIN_EVENT_LABEL_GAP = 128;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
@@ -166,40 +165,39 @@
     return d.toLocaleDateString("zh-CN", {month: "2-digit", day: "2-digit"});
   }
 
-  function pathFor(key, start, end) {
-    var path = [];
-    var drawing = false;
+  function stepSeriesFor(key, start, end) {
+    var lineSegments = [];
+    var areaSegments = [];
+    var line = "";
+    var area = "";
+    var lastX = null;
+    var baseline = HEIGHT - MARGIN.bottom;
+
+    function flush() {
+      if (!line) return;
+      lineSegments.push(line);
+      areaSegments.push(area + " L" + lastX + "," + baseline + " Z");
+      line = "";
+      area = "";
+      lastX = null;
+    }
+
     points.forEach(function (point) {
       var value = numberOrNull(point[key]);
-      if (value === null) { drawing = false; return; }
+      if (value === null) { flush(); return; }
       var x = xAt(Number(point.ts), start, end).toFixed(2);
       var y = yAt(value).toFixed(2);
-      path.push((drawing ? "L" : "M") + x + "," + y);
-      drawing = true;
+      if (!line) {
+        line = "M" + x + "," + y;
+        area = "M" + x + "," + baseline + " L" + x + "," + y;
+      } else {
+        line += " H" + x + " V" + y;
+        area += " H" + x + " V" + y;
+      }
+      lastX = x;
     });
-    return path.join(" ");
-  }
-
-  function circlesFor(key, seriesClass, start, end) {
-    var radius = 4;
-    var color = seriesClass === "series-five" ? "#7467e8" : "#087f83";
-    var fill = seriesClass === "series-five" ? color : "#ffffff";
-    var out = [];
-    var validIndices = [];
-    points.forEach(function (point, index) {
-      if (numberOrNull(point[key]) !== null) validIndices.push(index);
-    });
-    var step = Math.max(1, Math.ceil(validIndices.length / MAX_VISIBLE_DOTS));
-    validIndices.forEach(function (index, visibleIndex) {
-      if (visibleIndex % step !== 0 && visibleIndex !== validIndices.length - 1) return;
-      var point = points[index];
-      var value = numberOrNull(point[key]);
-      out.push('<circle class="codex-node ' + seriesClass + '" data-index="' + index +
-        '" cx="' + xAt(Number(point.ts), start, end).toFixed(2) + '" cy="' + yAt(value).toFixed(2) +
-        '" r="' + radius + '" fill="' + fill + '" stroke="' + color +
-        '" stroke-width="2"></circle>');
-    });
-    return out.join("");
+    flush();
+    return {line: lineSegments.join(" "), area: areaSegments.join(" ")};
   }
 
   function weeklyChangeEvents() {
@@ -243,44 +241,16 @@
     return selected.sort(function (a, b) { return a.ts - b.ts; });
   }
 
-  function eventTimeLabel(epoch) {
+  function eventTimeLabel(epoch, value) {
     var d = new Date(epoch * 1000);
     var time = d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", hour12: false});
-    if (range === "day") return {top: time, bottom: "", width: 64};
+    var result = percent(value);
+    if (range === "day") return {top: time + " · " + result, bottom: "", width: 96};
     var date = d.toLocaleDateString("zh-CN", {
       year: range === "year" ? "2-digit" : undefined,
       month: "2-digit", day: "2-digit"
     });
-    return {top: date, bottom: time, width: range === "year" ? 88 : 76};
-  }
-
-  function eventValuePosition(x, y, width, height, plotBottom, placed) {
-    var preferLeft = x > WIDTH - MARGIN.right - width - 18;
-    var sides = preferLeft ? ["left", "right"] : ["right", "left"];
-    var offsets = [0, -30, 30, -58, 58];
-    var fallback = null;
-    for (var sideIndex = 0; sideIndex < sides.length; sideIndex++) {
-      var side = sides[sideIndex];
-      var boxX = side === "left" ? x - width - 12 : x + 12;
-      if (boxX < MARGIN.left || boxX + width > WIDTH - MARGIN.right) continue;
-      for (var offsetIndex = 0; offsetIndex < offsets.length; offsetIndex++) {
-        var centerY = Math.max(MARGIN.top + height / 2,
-          Math.min(plotBottom - height / 2, y + offsets[offsetIndex]));
-        var candidate = {x: boxX, y: centerY - height / 2, width: width, height: height, side: side};
-        if (!fallback) fallback = candidate;
-        var overlaps = placed.some(function (other) {
-          return candidate.x < other.x + other.width + 6 && candidate.x + candidate.width + 6 > other.x &&
-            candidate.y < other.y + other.height + 5 && candidate.y + candidate.height + 5 > other.y;
-        });
-        if (!overlaps) {
-          placed.push(candidate);
-          return candidate;
-        }
-      }
-    }
-    fallback = fallback || {x: Math.max(MARGIN.left, x - width - 12), y: y - height / 2, width: width, height: height, side: "left"};
-    placed.push(fallback);
-    return fallback;
+    return {top: date, bottom: time + " · " + result, width: range === "year" ? 110 : 100};
   }
 
   function renderWeeklyEventLayer(start, end) {
@@ -291,41 +261,28 @@
     var plotBottom = HEIGHT - MARGIN.bottom;
     var guides = [];
     var nodes = [];
-    var valueLabels = [];
 
     weeklyEvents.forEach(function (event) {
       var x = xAt(event.ts, start, end);
       var y = yAt(event.value);
       var resetClass = event.delta > 0 ? " is-reset" : "";
+      var highlightClass = guideMap[event.index] ? " is-highlighted" : "";
       if (guideMap[event.index]) {
-        var label = eventTimeLabel(event.ts);
+        var label = eventTimeLabel(event.ts, event.value);
         var labelX = Math.max(MARGIN.left + label.width / 2, Math.min(WIDTH - MARGIN.right - label.width / 2, x));
         var labelY = plotBottom + (label.bottom ? 10 : 13);
         var labelH = label.bottom ? 42 : 28;
-        var valueW = 54;
-        var valueH = 24;
-        var valuePosition = eventValuePosition(x, y, valueW, valueH, plotBottom, valueLabels);
-        var valueX = valuePosition.x;
-        var valueCenterY = valuePosition.y + valueH / 2;
-        var valueOnLeft = valuePosition.side === "left";
-        var valueEdgeX = valueOnLeft ? valueX + valueW : valueX;
         guides.push('<g class="codex-week-event-guide' + resetClass + '" data-index="' + event.index + '">' +
-          '<line class="codex-week-event-line" x1="' + x.toFixed(2) + '" y1="' + (y + 7).toFixed(2) +
+          '<line class="codex-week-event-line" x1="' + x.toFixed(2) + '" y1="' + (y + 6).toFixed(2) +
           '" x2="' + x.toFixed(2) + '" y2="' + (plotBottom + 7) + '"></line>' +
           '<rect x="' + (labelX - label.width / 2).toFixed(2) + '" y="' + labelY + '" width="' + label.width +
           '" height="' + labelH + '" rx="9"></rect>' +
           '<text x="' + labelX.toFixed(2) + '" y="' + (labelY + 18) + '" text-anchor="middle">' + escapeHtml(label.top) +
           (label.bottom ? '<tspan x="' + labelX.toFixed(2) + '" dy="15">' + escapeHtml(label.bottom) + '</tspan>' : '') +
-          '</text>' +
-          '<g class="codex-week-event-value"><line x1="' + (x + (valueOnLeft ? -5 : 5)).toFixed(2) + '" y1="' + y.toFixed(2) +
-          '" x2="' + valueEdgeX.toFixed(2) + '" y2="' + valueCenterY.toFixed(2) + '"></line>' +
-          '<rect x="' + valueX.toFixed(2) + '" y="' + (valueCenterY - valueH / 2).toFixed(2) + '" width="' + valueW +
-          '" height="' + valueH + '" rx="12"></rect>' +
-          '<text x="' + (valueX + valueW / 2).toFixed(2) + '" y="' + (valueCenterY + 4).toFixed(2) +
-          '" text-anchor="middle">' + escapeHtml(percent(event.value)) + '</text></g></g>');
+          '</text></g>');
       }
-      nodes.push('<circle class="codex-week-event-node' + resetClass + '" data-index="' + event.index +
-        '" cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + (guideMap[event.index] ? 5 : 3.5) + '"></circle>');
+      nodes.push('<circle class="codex-week-event-node' + resetClass + highlightClass + '" data-index="' + event.index +
+        '" cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + (guideMap[event.index] ? 4.5 : 2.4) + '"></circle>');
     });
     return {guides: guides.join(""), nodes: nodes.join("")};
   }
@@ -347,24 +304,6 @@
     return (n > 0 ? "+" : "−") + percent(Math.abs(n));
   }
 
-  function latestLabel(key, label, color, start, end, offset) {
-    for (var i = points.length - 1; i >= 0; i--) {
-      var value = numberOrNull(points[i][key]);
-      if (value === null) continue;
-      var x = xAt(Number(points[i].ts), start, end);
-      var y = Math.max(MARGIN.top + 13, Math.min(HEIGHT - MARGIN.bottom - 13, yAt(value) + offset));
-      var boxW = 112;
-      var boxX = Math.min(x + 12, WIDTH - MARGIN.right - boxW);
-      if (boxX < x + 5) boxX = Math.max(MARGIN.left, x - boxW - 12);
-      return '<g class="codex-latest-label"><rect x="' + boxX.toFixed(2) + '" y="' + (y - 14).toFixed(2) +
-        '" width="' + boxW + '" height="28" rx="14" fill="#ffffff" stroke="' + color +
-        '" stroke-width="2"></rect><text x="' + (boxX + boxW / 2).toFixed(2) + '" y="' + (y + 5).toFixed(2) +
-        '" text-anchor="middle" fill="' + color + '" font-size="13" font-weight="750">' +
-        escapeHtml(label + " " + percent(value)) + '</text></g>';
-    }
-    return "";
-  }
-
   function renderChart(data) {
     points = Array.isArray(data.points) ? data.points.slice().sort(function (a, b) { return Number(a.ts) - Number(b.ts); }) : [];
     activeTipIndex = -1;
@@ -372,13 +311,14 @@
     var end = numberOrNull(data.generated_at) || Math.floor(Date.now() / 1000);
     var start = end - (RANGE_SECONDS[range] || RANGE_SECONDS.day);
     var parts = [
-      '<title>Codex 每周额度余量与变化时刻</title>',
-      '<desc>折线展示剩余额度；强调节点表示周额度发生变化，节点旁标注变化后余额，垂直引导线连接到对应的准确时间。</desc>',
-      '<rect x="0" y="0" width="' + WIDTH + '" height="' + HEIGHT + '" fill="#fbfcfe"></rect>',
+      '<title>Codex 周额度阶梯趋势</title>',
+      '<desc>阶梯面积图展示周额度余量；变化节点通过垂直引导线连接到底部标签，标签同时显示变化时间和变化后余额。</desc>',
+      '<rect x="0" y="0" width="' + WIDTH + '" height="' + HEIGHT + '" fill="#ffffff"></rect>',
       '<rect x="' + MARGIN.left + '" y="' + yAt(20).toFixed(2) + '" width="' + PLOT_W +
-        '" height="' + (HEIGHT - MARGIN.bottom - yAt(20)).toFixed(2) + '" fill="#fff3f4"></rect>',
-      '<text x="' + (MARGIN.left + 10) + '" y="' + (yAt(20) + 18).toFixed(2) +
-        '" fill="#b43b52" font-size="12" font-weight="700">低额度注意区 · 20% 以下</text>'
+        '" height="' + (HEIGHT - MARGIN.bottom - yAt(20)).toFixed(2) + '" fill="#fff6f6"></rect>',
+      '<g class="codex-low-zone-label"><rect x="' + (MARGIN.left + 10) + '" y="' + (yAt(20) + 10).toFixed(2) +
+        '" width="90" height="22" rx="11"></rect><text x="' + (MARGIN.left + 55) + '" y="' +
+        (yAt(20) + 25).toFixed(2) + '" text-anchor="middle">≤20% 注意区</text></g>'
     ];
     [0, 25, 50, 75, 100].forEach(function (value) {
       var y = yAt(value).toFixed(2);
@@ -400,18 +340,16 @@
     parts.push('<line class="codex-axis-baseline" x1="' + MARGIN.left + '" y1="' + (HEIGHT - MARGIN.bottom) +
       '" x2="' + (WIDTH - MARGIN.right) + '" y2="' + (HEIGHT - MARGIN.bottom) + '"></line>');
     var showFiveHour = Boolean(data.windows && data.windows.five_hour && data.windows.five_hour.available);
-    var fivePath = showFiveHour ? pathFor("five_hour_remaining", start, end) : "";
-    var weekPath = pathFor("weekly_remaining", start, end);
+    var fiveSeries = showFiveHour ? stepSeriesFor("five_hour_remaining", start, end) : {line: "", area: ""};
+    var weekSeries = stepSeriesFor("weekly_remaining", start, end);
     var eventLayer = renderWeeklyEventLayer(start, end);
+    if (weekSeries.area) parts.push('<path class="codex-series-area series-week" d="' + weekSeries.area + '"></path>');
     parts.push(eventLayer.guides);
-    if (fivePath) parts.push('<path class="codex-series-line series-five" d="' + fivePath +
+    if (fiveSeries.line) parts.push('<path class="codex-series-line series-five" d="' + fiveSeries.line +
       '" fill="none" stroke="#7467e8" stroke-width="3" stroke-dasharray="9 7" stroke-linecap="round" stroke-linejoin="round"></path>');
-    if (weekPath) parts.push('<path class="codex-series-line series-week" d="' + weekPath +
+    if (weekSeries.line) parts.push('<path class="codex-series-line series-week" d="' + weekSeries.line +
       '" fill="none" stroke="#087f83" stroke-width="4.25" stroke-linecap="round" stroke-linejoin="round"></path>');
-    if (showFiveHour) parts.push(circlesFor("five_hour_remaining", "series-five", start, end));
     parts.push(eventLayer.nodes);
-    if (showFiveHour) parts.push(latestLabel("five_hour_remaining", "5H", "#7467e8", start, end, -18));
-    if (!weeklyGuides.length) parts.push(latestLabel("weekly_remaining", "周额度", "#087f83", start, end, 18));
     parts.push('<g id="codex-crosshair" class="codex-crosshair" visibility="hidden"><line x1="0" y1="' + MARGIN.top +
       '" x2="0" y2="' + (HEIGHT - MARGIN.bottom) + '" stroke="#26364d" stroke-width="1.5" stroke-dasharray="5 4"></line>' +
       '<circle class="series-five" cx="0" cy="0" r="6" fill="#ffffff" stroke="#7467e8" stroke-width="3" visibility="hidden"></circle>' +
@@ -419,9 +357,20 @@
     svg.innerHTML = parts.join("");
     svg.__chartDomain = {start: start, end: end};
     if (empty) empty.hidden = points.length > 0;
+    var firstWeek = null;
+    var lastWeek = null;
+    points.forEach(function (point) {
+      var value = numberOrNull(point.weekly_remaining);
+      if (value === null) return;
+      if (firstWeek === null) firstWeek = value;
+      lastWeek = value;
+    });
+    setText('[data-role="chart-current"]', lastWeek === null ? "—" : percent(lastWeek));
+    setText('[data-role="chart-net-change"]', firstWeek === null || lastWeek === null ? "—" : signedPercent(lastWeek - firstWeek));
+    setText('[data-role="chart-change-count"]', weeklyEvents.length + " 次");
     var summary = selectOne('[data-role="chart-summary"]');
-    if (summary) summary.textContent = points.length ? points.length + " 个采样 · " + weeklyEvents.length +
-      " 次周额度变化 · 标注 " + weeklyGuides.length + " 个时刻 · " + (RANGE_LABELS[range] || "") : "当前范围暂无数据";
+    if (summary) summary.textContent = points.length ? points.length + " 个采样 · " + weeklyGuides.length +
+      " 个事件标签 · " + (RANGE_LABELS[range] || "") : "当前范围暂无数据";
   }
 
   function renderRecords(data) {
