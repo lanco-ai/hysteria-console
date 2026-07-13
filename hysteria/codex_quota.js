@@ -26,6 +26,7 @@
   var MARGIN = {top: 30, right: 34, bottom: 58, left: 70};
   var PLOT_W = WIDTH - MARGIN.left - MARGIN.right;
   var PLOT_H = HEIGHT - MARGIN.top - MARGIN.bottom;
+  var MAX_VISIBLE_DOTS = 48;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
@@ -176,13 +177,19 @@
   }
 
   function circlesFor(key, seriesClass, start, end) {
-    var radius = points.length > 380 ? 2.2 : points.length > 180 ? 2.7 : 3.8;
+    var radius = 4;
     var color = seriesClass === "series-five" ? "#6d5dfc" : "#008f9c";
     var fill = seriesClass === "series-five" ? color : "#ffffff";
     var out = [];
+    var validIndices = [];
     points.forEach(function (point, index) {
+      if (numberOrNull(point[key]) !== null) validIndices.push(index);
+    });
+    var step = Math.max(1, Math.ceil(validIndices.length / MAX_VISIBLE_DOTS));
+    validIndices.forEach(function (index, visibleIndex) {
+      if (visibleIndex % step !== 0 && visibleIndex !== validIndices.length - 1) return;
+      var point = points[index];
       var value = numberOrNull(point[key]);
-      if (value === null) return;
       out.push('<circle class="codex-node ' + seriesClass + '" data-index="' + index +
         '" cx="' + xAt(Number(point.ts), start, end).toFixed(2) + '" cy="' + yAt(value).toFixed(2) +
         '" r="' + radius + '" fill="' + fill + '" stroke="' + color +
@@ -257,7 +264,8 @@
     svg.__chartDomain = {start: start, end: end};
     if (empty) empty.hidden = points.length > 0;
     var summary = selectOne('[data-role="chart-summary"]');
-    if (summary) summary.textContent = points.length ? points.length + " 个节点 · " + (RANGE_LABELS[range] || "") : "当前范围暂无数据";
+    if (summary) summary.textContent = points.length ? points.length + " 个采样 · " +
+      (points.length > MAX_VISIBLE_DOTS ? "圆点已抽稀 · " : "") + (RANGE_LABELS[range] || "") : "当前范围暂无数据";
   }
 
   function renderRecords(data) {
@@ -294,7 +302,7 @@
     return low;
   }
 
-  function positionTooltip(index) {
+  function positionTooltip(index, event) {
     if (index < 0 || !points[index] || !svg.__chartDomain) return;
     var point = points[index];
     var x = xAt(Number(point.ts), svg.__chartDomain.start, svg.__chartDomain.end);
@@ -324,12 +332,20 @@
     }
     tooltip.hidden = false;
     var frameRect = frame.getBoundingClientRect();
-    var svgRect = svg.getBoundingClientRect();
-    var screenX = svgRect.left - frameRect.left + x / WIDTH * svgRect.width;
     var tooltipW = tooltip.offsetWidth || 190;
-    var left = Math.max(8, Math.min(frameRect.width - tooltipW - 8, screenX + 12));
+    var tooltipH = tooltip.offsetHeight || 112;
+    var cursorX = event ? event.clientX - frameRect.left + frame.scrollLeft : frame.scrollLeft + frame.clientWidth / 2;
+    var cursorY = event ? event.clientY - frameRect.top : frame.clientHeight / 2;
+    var minLeft = frame.scrollLeft + 8;
+    var maxLeft = frame.scrollLeft + frame.clientWidth - tooltipW - 8;
+    var left = cursorX + 16;
+    if (left > maxLeft) left = cursorX - tooltipW - 16;
+    left = Math.max(minLeft, Math.min(maxLeft, left));
+    var top = cursorY + 16;
+    if (top + tooltipH > frame.clientHeight - 8) top = cursorY - tooltipH - 16;
+    top = Math.max(8, Math.min(frame.clientHeight - tooltipH - 8, top));
     tooltip.style.left = left + "px";
-    tooltip.style.top = "16px";
+    tooltip.style.top = top + "px";
   }
 
   function pointerMove(event) {
@@ -339,7 +355,7 @@
     if (x < MARGIN.left || x > WIDTH - MARGIN.right) return hideTooltip();
     var ratio = (x - MARGIN.left) / PLOT_W;
     var ts = svg.__chartDomain.start + ratio * (svg.__chartDomain.end - svg.__chartDomain.start);
-    positionTooltip(nearestIndex(ts));
+    positionTooltip(nearestIndex(ts), event);
   }
 
   function hideTooltip() {

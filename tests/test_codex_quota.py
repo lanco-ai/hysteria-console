@@ -282,5 +282,10 @@ def test_codex_frontend_is_framework_free_and_pauses_background_fetches():
     assert 'stroke="#6d5dfc"' in script
     assert 'stroke="#008f9c"' in script
     assert 'function renderRecords(data)' in script
+    assert 'MAX_VISIBLE_DOTS = 48' in script
+    assert 'Math.ceil(validIndices.length / MAX_VISIBLE_DOTS)' in script
+    assert 'event.clientY - frameRect.top' in script
+    assert 'positionTooltip(nearestIndex(ts), event)' in script
+    assert 'tooltip.style.top = "16px"' not in script
     assert 'React' not in script
     assert 'new Chart(' not in script
