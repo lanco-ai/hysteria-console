@@ -78,6 +78,10 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
     reset_credits_copy = str(reset_credits) if isinstance(reset_credits, int) else '—'
     last_success = _date_time(freshness.get('last_success_at'))
     last_error = freshness.get('last_error')
+    week_only_class = (
+        ' is-week-only'
+        if not bool((windows.get('five_hour') or {}).get('available')) else ''
+    )
     error_html = (
         f'<div class="codex-collector-error" id="codex-collector-error">'
         f'<strong>最近一次采集失败</strong><span>{_esc(last_error)}</span></div>'
@@ -86,13 +90,13 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
     )
 
     script_version = f'?v={_esc(asset_version)}' if asset_version else ''
-    content = f'''<div class="codex-dashboard" id="codex-dashboard" data-endpoint="/admin/codex.json">
+    content = f'''<div class="codex-dashboard{week_only_class}" id="codex-dashboard" data-endpoint="/admin/codex.json">
   {error_html}
   <section class="codex-intro codex-intro-v2">
     <div>
       <span class="codex-eyebrow">CODEX USAGE INTELLIGENCE</span>
       <h2>额度中心</h2>
-      <p>同时追踪短周期与周周期余量，自动计算重置时间并保留历史趋势。</p>
+      <p>以每周额度为主，自动标记真实变化与准确时间；短周期窗口出现时同步展示。</p>
     </div>
     <div class="codex-live-cluster">
       <span class="badge poll-status {status_class}" data-role="collector-status">{status_text}</span>
@@ -101,8 +105,8 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
   </section>
 
   <div class="codex-primary-grid">
-    {_window_card('five_hour', windows.get('five_hour') or {}, tone='violet')}
     {_window_card('weekly', windows.get('weekly') or {}, tone='cyan')}
+    {_window_card('five_hour', windows.get('five_hour') or {}, tone='violet')}
   </div>
 
   <div class="grid grid-3 codex-context-grid mt-md">
@@ -123,9 +127,9 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
   <section class="card codex-chart-card codex-chart-card-v2 mt-md">
     <header class="codex-chart-head">
       <div>
-        <div class="k">QUOTA TREND</div>
-        <h3>额度余量趋势</h3>
-        <p>纵轴固定为 0–100%，浅红区域表示余量低于 20%。每个圆点均可悬停查看精确值。</p>
+        <div class="k">WEEKLY QUOTA TIMELINE</div>
+        <h3>周额度余量与变化时刻</h3>
+        <p>只有额度真实变化时才显示周额度节点；带引导线的节点会落到下方准确时间，全部采样仍可悬停查看。</p>
       </div>
       <div class="codex-range-switch" role="group" aria-label="图表时间范围">
         <button type="button" class="active" data-range="day" aria-pressed="true">日</button>
@@ -135,18 +139,19 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
       </div>
     </header>
     <div class="codex-chart-legend" aria-label="图例">
-      <span><i class="series-five"></i>5 小时窗口</span>
       <span><i class="series-week"></i>每周窗口</span>
+      <span><i class="event-guide"></i>变化时刻</span>
+      <span data-series="five-hour"><i class="series-five"></i>5 小时窗口</span>
       <span class="codex-chart-summary" data-role="chart-summary">等待数据</span>
     </div>
     <div class="codex-chart-frame" id="codex-chart-frame">
-      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1200 460" role="img" aria-label="Codex 剩余额度历史折线图"></svg>
+      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1200 500" role="img" aria-label="Codex 周额度余量与变化时刻折线图"></svg>
       <div class="codex-chart-empty" id="codex-chart-empty">采集第一条数据后，这里会自动形成趋势图</div>
       <div class="codex-chart-tooltip" id="codex-chart-tooltip" hidden></div>
     </div>
     <footer class="codex-chart-foot">
       <span data-role="history-start">历史记录：等待首采</span>
-      <span>日图保留 3 分钟粒度；更长视角自动聚合，降低内存与传输开销</span>
+      <span>变化节点代表实际额度变动；悬停可查看任意 3 分钟采样的余额和变化量</span>
     </footer>
   </section>
 
@@ -160,7 +165,7 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
     </header>
     <div class="scroll-x">
       <table class="codex-records-table">
-        <thead><tr><th>采集时间</th><th>5 小时余额</th><th>周余额</th><th>5 小时重置</th><th>周额度重置</th></tr></thead>
+        <thead><tr><th>采集时间</th><th>周余额</th><th>周额度重置</th><th data-col="five-hour">5 小时余额</th><th data-col="five-hour">5 小时重置</th></tr></thead>
         <tbody data-role="records-body"><tr><td colspan="5" class="empty">等待采集数据</td></tr></tbody>
       </table>
     </div>
@@ -182,6 +187,6 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
         'Codex 额度',
         content,
         badge=f'Codex {plan_label}',
-        subtitle='5 小时与周额度趋势',
+        subtitle='周额度变化与重置时间',
         topbar_extra=topbar_extra,
     )

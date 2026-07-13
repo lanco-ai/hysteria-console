@@ -19,14 +19,17 @@
   var countdownTimer = null;
   var requestSerial = 0;
   var activeTipIndex = -1;
+  var weeklyEvents = [];
+  var weeklyGuides = [];
   var RANGE_SECONDS = {day: 86400, week: 604800, month: 2678400, year: 31622400};
   var RANGE_LABELS = {day: "24 小时", week: "7 天", month: "31 天", year: "1 年"};
   var WIDTH = 1200;
-  var HEIGHT = 460;
-  var MARGIN = {top: 30, right: 34, bottom: 58, left: 70};
+  var HEIGHT = 500;
+  var MARGIN = {top: 34, right: 34, bottom: 96, left: 70};
   var PLOT_W = WIDTH - MARGIN.left - MARGIN.right;
   var PLOT_H = HEIGHT - MARGIN.top - MARGIN.bottom;
-  var MAX_VISIBLE_DOTS = 48;
+  var MAX_VISIBLE_DOTS = 32;
+  var MIN_EVENT_LABEL_GAP = 92;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
@@ -133,6 +136,7 @@
     var freshness = data.freshness || {};
     var account = data.account || {};
     var windows = data.windows || {};
+    root.classList.toggle("is-week-only", !Boolean(windows.five_hour && windows.five_hour.available));
     updateWindow("five_hour", windows.five_hour || {});
     updateWindow("weekly", windows.weekly || {});
     setCollectorStatus(freshness.status);
@@ -178,7 +182,7 @@
 
   function circlesFor(key, seriesClass, start, end) {
     var radius = 4;
-    var color = seriesClass === "series-five" ? "#6d5dfc" : "#008f9c";
+    var color = seriesClass === "series-five" ? "#7467e8" : "#087f83";
     var fill = seriesClass === "series-five" ? color : "#ffffff";
     var out = [];
     var validIndices = [];
@@ -196,6 +200,108 @@
         '" stroke-width="2"></circle>');
     });
     return out.join("");
+  }
+
+  function weeklyChangeEvents() {
+    var events = [];
+    var previous = null;
+    points.forEach(function (point, index) {
+      var value = numberOrNull(point.weekly_remaining);
+      if (value === null) return;
+      if (previous && Math.abs(value - previous.value) >= 0.001) {
+        events.push({
+          index: index,
+          ts: Number(point.ts),
+          value: value,
+          delta: Math.round((value - previous.value) * 100) / 100
+        });
+      }
+      previous = {value: value, index: index};
+    });
+    return events;
+  }
+
+  function selectWeeklyGuides(events, start, end) {
+    if (!events.length) return [];
+    var maxGuides = Math.max(4, Math.floor(PLOT_W / MIN_EVENT_LABEL_GAP));
+    var candidates = events.slice().sort(function (a, b) {
+      var aReset = a.delta > 0 ? 1 : 0;
+      var bReset = b.delta > 0 ? 1 : 0;
+      if (aReset !== bReset) return bReset - aReset;
+      if (Math.abs(a.delta) !== Math.abs(b.delta)) return Math.abs(b.delta) - Math.abs(a.delta);
+      return b.ts - a.ts;
+    });
+    var selected = [];
+    candidates.some(function (event) {
+      var x = xAt(event.ts, start, end);
+      var overlaps = selected.some(function (other) {
+        return Math.abs(x - xAt(other.ts, start, end)) < MIN_EVENT_LABEL_GAP;
+      });
+      if (!overlaps) selected.push(event);
+      return selected.length >= maxGuides;
+    });
+    return selected.sort(function (a, b) { return a.ts - b.ts; });
+  }
+
+  function eventTimeLabel(epoch) {
+    var d = new Date(epoch * 1000);
+    var time = d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", hour12: false});
+    if (range === "day") return {top: time, bottom: "", width: 64};
+    var date = d.toLocaleDateString("zh-CN", {
+      year: range === "year" ? "2-digit" : undefined,
+      month: "2-digit", day: "2-digit"
+    });
+    return {top: date, bottom: time, width: range === "year" ? 88 : 76};
+  }
+
+  function renderWeeklyEventLayer(start, end) {
+    weeklyEvents = weeklyChangeEvents();
+    weeklyGuides = selectWeeklyGuides(weeklyEvents, start, end);
+    var guideMap = {};
+    weeklyGuides.forEach(function (event) { guideMap[event.index] = true; });
+    var plotBottom = HEIGHT - MARGIN.bottom;
+    var guides = [];
+    var nodes = [];
+
+    weeklyEvents.forEach(function (event) {
+      var x = xAt(event.ts, start, end);
+      var y = yAt(event.value);
+      var resetClass = event.delta > 0 ? " is-reset" : "";
+      if (guideMap[event.index]) {
+        var label = eventTimeLabel(event.ts);
+        var labelX = Math.max(MARGIN.left + label.width / 2, Math.min(WIDTH - MARGIN.right - label.width / 2, x));
+        var labelY = plotBottom + (label.bottom ? 10 : 13);
+        var labelH = label.bottom ? 42 : 28;
+        guides.push('<g class="codex-week-event-guide' + resetClass + '" data-index="' + event.index + '">' +
+          '<line class="codex-week-event-line" x1="' + x.toFixed(2) + '" y1="' + (y + 7).toFixed(2) +
+          '" x2="' + x.toFixed(2) + '" y2="' + (plotBottom + 7) + '"></line>' +
+          '<rect x="' + (labelX - label.width / 2).toFixed(2) + '" y="' + labelY + '" width="' + label.width +
+          '" height="' + labelH + '" rx="9"></rect>' +
+          '<text x="' + labelX.toFixed(2) + '" y="' + (labelY + 18) + '" text-anchor="middle">' + escapeHtml(label.top) +
+          (label.bottom ? '<tspan x="' + labelX.toFixed(2) + '" dy="15">' + escapeHtml(label.bottom) + '</tspan>' : '') +
+          '</text></g>');
+      }
+      nodes.push('<circle class="codex-week-event-node' + resetClass + '" data-index="' + event.index +
+        '" cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + (guideMap[event.index] ? 5 : 3.5) + '"></circle>');
+    });
+    return {guides: guides.join(""), nodes: nodes.join("")};
+  }
+
+  function weeklyDeltaAt(index) {
+    var current = points[index] ? numberOrNull(points[index].weekly_remaining) : null;
+    if (current === null) return null;
+    for (var i = index - 1; i >= 0; i--) {
+      var previous = numberOrNull(points[i].weekly_remaining);
+      if (previous !== null) return Math.round((current - previous) * 100) / 100;
+    }
+    return null;
+  }
+
+  function signedPercent(value) {
+    var n = numberOrNull(value);
+    if (n === null) return "";
+    if (Math.abs(n) < 0.001) return "0%";
+    return (n > 0 ? "+" : "−") + percent(Math.abs(n));
   }
 
   function latestLabel(key, label, color, start, end, offset) {
@@ -223,49 +329,56 @@
     var end = numberOrNull(data.generated_at) || Math.floor(Date.now() / 1000);
     var start = end - (RANGE_SECONDS[range] || RANGE_SECONDS.day);
     var parts = [
-      '<rect x="0" y="0" width="' + WIDTH + '" height="' + HEIGHT + '" fill="#f7f9fc"></rect>',
+      '<title>Codex 每周额度余量与变化时刻</title>',
+      '<desc>折线展示剩余额度；强调节点表示周额度发生变化，垂直引导线连接到对应的准确时间。</desc>',
+      '<rect x="0" y="0" width="' + WIDTH + '" height="' + HEIGHT + '" fill="#fbfcfe"></rect>',
       '<rect x="' + MARGIN.left + '" y="' + yAt(20).toFixed(2) + '" width="' + PLOT_W +
-        '" height="' + (HEIGHT - MARGIN.bottom - yAt(20)).toFixed(2) + '" fill="#fff0f2"></rect>',
+        '" height="' + (HEIGHT - MARGIN.bottom - yAt(20)).toFixed(2) + '" fill="#fff3f4"></rect>',
       '<text x="' + (MARGIN.left + 10) + '" y="' + (yAt(20) + 18).toFixed(2) +
-        '" fill="#c2415c" font-size="12" font-weight="700">低额度注意区</text>'
+        '" fill="#b43b52" font-size="12" font-weight="700">低额度注意区 · 20% 以下</text>'
     ];
     [0, 25, 50, 75, 100].forEach(function (value) {
       var y = yAt(value).toFixed(2);
       parts.push('<line class="codex-grid-line" x1="' + MARGIN.left + '" y1="' + y + '" x2="' + (WIDTH - MARGIN.right) +
-        '" y2="' + y + '" stroke="#cfd8e6" stroke-width="1"></line>');
+        '" y2="' + y + '" stroke="#dce3ec" stroke-width="1"></line>');
       parts.push('<text class="codex-axis-label y" x="' + (MARGIN.left - 14) + '" y="' + (Number(y) + 5) +
-        '" text-anchor="end" fill="#44546a" font-size="13" font-weight="650">' + value + '%</text>');
+        '" text-anchor="end" fill="#526176" font-size="13" font-weight="650">' + value + '%</text>');
     });
     for (var i = 0; i < 5; i++) {
       var tickTs = start + (end - start) * i / 4;
       var x = xAt(tickTs, start, end).toFixed(2);
       parts.push('<line x1="' + x + '" y1="' + MARGIN.top + '" x2="' + x + '" y2="' + (HEIGHT - MARGIN.bottom) +
-        '" stroke="#e7ebf2" stroke-width="1"></line>');
+        '" stroke="#edf0f5" stroke-width="1"></line>');
       parts.push('<line class="codex-tick" x1="' + x + '" y1="' + (HEIGHT - MARGIN.bottom) + '" x2="' + x +
         '" y2="' + (HEIGHT - MARGIN.bottom + 7) + '" stroke="#8291a7" stroke-width="1.5"></line>');
-      parts.push('<text class="codex-axis-label x" x="' + x + '" y="' + (HEIGHT - 20) +
-        '" text-anchor="middle" fill="#44546a" font-size="13" font-weight="650">' + escapeHtml(xLabel(tickTs)) + '</text>');
+      parts.push('<text class="codex-axis-label x" x="' + x + '" y="' + (HEIGHT - 16) +
+        '" text-anchor="middle" fill="#526176" font-size="13" font-weight="650">' + escapeHtml(xLabel(tickTs)) + '</text>');
     }
-    var fivePath = pathFor("five_hour_remaining", start, end);
+    parts.push('<line class="codex-axis-baseline" x1="' + MARGIN.left + '" y1="' + (HEIGHT - MARGIN.bottom) +
+      '" x2="' + (WIDTH - MARGIN.right) + '" y2="' + (HEIGHT - MARGIN.bottom) + '"></line>');
+    var showFiveHour = Boolean(data.windows && data.windows.five_hour && data.windows.five_hour.available);
+    var fivePath = showFiveHour ? pathFor("five_hour_remaining", start, end) : "";
     var weekPath = pathFor("weekly_remaining", start, end);
+    var eventLayer = renderWeeklyEventLayer(start, end);
+    parts.push(eventLayer.guides);
     if (fivePath) parts.push('<path class="codex-series-line series-five" d="' + fivePath +
-      '" fill="none" stroke="#6d5dfc" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>');
+      '" fill="none" stroke="#7467e8" stroke-width="3" stroke-dasharray="9 7" stroke-linecap="round" stroke-linejoin="round"></path>');
     if (weekPath) parts.push('<path class="codex-series-line series-week" d="' + weekPath +
-      '" fill="none" stroke="#008f9c" stroke-width="4" stroke-dasharray="11 7" stroke-linecap="round" stroke-linejoin="round"></path>');
-    parts.push(circlesFor("five_hour_remaining", "series-five", start, end));
-    parts.push(circlesFor("weekly_remaining", "series-week", start, end));
-    parts.push(latestLabel("five_hour_remaining", "5H", "#6d5dfc", start, end, -18));
-    parts.push(latestLabel("weekly_remaining", "周", "#008f9c", start, end, 18));
+      '" fill="none" stroke="#087f83" stroke-width="4.25" stroke-linecap="round" stroke-linejoin="round"></path>');
+    if (showFiveHour) parts.push(circlesFor("five_hour_remaining", "series-five", start, end));
+    parts.push(eventLayer.nodes);
+    if (showFiveHour) parts.push(latestLabel("five_hour_remaining", "5H", "#7467e8", start, end, -18));
+    parts.push(latestLabel("weekly_remaining", "周额度", "#087f83", start, end, 18));
     parts.push('<g id="codex-crosshair" class="codex-crosshair" visibility="hidden"><line x1="0" y1="' + MARGIN.top +
       '" x2="0" y2="' + (HEIGHT - MARGIN.bottom) + '" stroke="#26364d" stroke-width="1.5" stroke-dasharray="5 4"></line>' +
-      '<circle class="series-five" cx="0" cy="0" r="6" fill="#ffffff" stroke="#6d5dfc" stroke-width="3" visibility="hidden"></circle>' +
-      '<circle class="series-week" cx="0" cy="0" r="6" fill="#ffffff" stroke="#008f9c" stroke-width="3" visibility="hidden"></circle></g>');
+      '<circle class="series-five" cx="0" cy="0" r="6" fill="#ffffff" stroke="#7467e8" stroke-width="3" visibility="hidden"></circle>' +
+      '<circle class="series-week" cx="0" cy="0" r="6" fill="#ffffff" stroke="#087f83" stroke-width="3" visibility="hidden"></circle></g>');
     svg.innerHTML = parts.join("");
     svg.__chartDomain = {start: start, end: end};
     if (empty) empty.hidden = points.length > 0;
     var summary = selectOne('[data-role="chart-summary"]');
-    if (summary) summary.textContent = points.length ? points.length + " 个采样 · " +
-      (points.length > MAX_VISIBLE_DOTS ? "圆点已抽稀 · " : "") + (RANGE_LABELS[range] || "") : "当前范围暂无数据";
+    if (summary) summary.textContent = points.length ? points.length + " 个采样 · " + weeklyEvents.length +
+      " 次周额度变化 · 标注 " + weeklyGuides.length + " 个时刻 · " + (RANGE_LABELS[range] || "") : "当前范围暂无数据";
   }
 
   function renderRecords(data) {
@@ -273,19 +386,20 @@
     var count = selectOne('[data-role="records-count"]');
     if (!host) return;
     var rows = Array.isArray(data.points) ? data.points.slice(-12).reverse() : [];
+    var weekOnly = root.classList.contains("is-week-only");
     if (count) count.textContent = rows.length + " 条";
     if (!rows.length) {
-      host.innerHTML = '<tr><td colspan="5" class="empty">当前范围暂无采集数据</td></tr>';
+      host.innerHTML = '<tr><td colspan="' + (weekOnly ? 3 : 5) + '" class="empty">当前范围暂无采集数据</td></tr>';
       return;
     }
     host.innerHTML = rows.map(function (row) {
       var five = numberOrNull(row.five_hour_remaining);
       var week = numberOrNull(row.weekly_remaining);
       return '<tr><td><time>' + escapeHtml(dateTime(row.ts, true)) + '</time></td>' +
-        '<td><strong class="record-value five">' + escapeHtml(percent(five)) + '</strong></td>' +
         '<td><strong class="record-value week">' + escapeHtml(percent(week)) + '</strong></td>' +
-        '<td>' + escapeHtml(dateTime(row.five_hour_resets_at, false)) + '</td>' +
-        '<td>' + escapeHtml(dateTime(row.weekly_resets_at, false)) + '</td></tr>';
+        '<td>' + escapeHtml(dateTime(row.weekly_resets_at, false)) + '</td>' +
+        '<td data-col="five-hour"><strong class="record-value five">' + escapeHtml(percent(five)) + '</strong></td>' +
+        '<td data-col="five-hour">' + escapeHtml(dateTime(row.five_hour_resets_at, false)) + '</td></tr>';
     }).join("");
   }
 
@@ -306,8 +420,9 @@
     if (index < 0 || !points[index] || !svg.__chartDomain) return;
     var point = points[index];
     var x = xAt(Number(point.ts), svg.__chartDomain.start, svg.__chartDomain.end);
-    var five = numberOrNull(point.five_hour_remaining);
+    var five = root.classList.contains("is-week-only") ? null : numberOrNull(point.five_hour_remaining);
     var week = numberOrNull(point.weekly_remaining);
+    var weekDelta = weeklyDeltaAt(index);
     var crosshair = document.getElementById("codex-crosshair");
     if (crosshair) {
       crosshair.setAttribute("visibility", "visible");
@@ -326,9 +441,13 @@
     }
     if (activeTipIndex !== index) {
       activeTipIndex = index;
-      tooltip.innerHTML = '<time>' + escapeHtml(dateTime(point.ts, true)) + '</time>' +
-        '<span><i class="series-five"></i>5 小时 <strong>' + escapeHtml(percent(five)) + '</strong></span>' +
-        '<span><i class="series-week"></i>周额度 <strong>' + escapeHtml(percent(week)) + '</strong></span>';
+      var tooltipHtml = '<time>' + escapeHtml(dateTime(point.ts, true)) + '</time>';
+      if (five !== null) tooltipHtml += '<span><i class="series-five"></i>5 小时 <strong>' + escapeHtml(percent(five)) + '</strong></span>';
+      tooltipHtml += '<span><i class="series-week"></i>周额度 <strong>' + escapeHtml(percent(week)) + '</strong></span>';
+      if (weekDelta !== null) tooltipHtml += '<span class="event-change"><i></i>' +
+        (Math.abs(weekDelta) >= 0.001 ? '较上次变化' : '本次采样') + '<strong>' +
+        (Math.abs(weekDelta) >= 0.001 ? escapeHtml(signedPercent(weekDelta)) : '无变化') + '</strong></span>';
+      tooltip.innerHTML = tooltipHtml;
     }
     tooltip.hidden = false;
     var frameRect = frame.getBoundingClientRect();

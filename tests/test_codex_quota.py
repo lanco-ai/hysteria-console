@@ -238,10 +238,25 @@ def test_dashboard_page_contains_interactive_chart_and_missing_window_copy():
     assert 'data-range="day"' in page
     assert 'data-range="year"' in page
     assert 'id="codex-quota-chart"' in page
+    assert 'class="codex-dashboard is-week-only"' in page
+    assert 'viewBox="0 0 1200 500"' in page
+    assert '周额度余量与变化时刻' in page
+    assert 'data-series="five-hour"' in page
+    assert 'data-col="five-hour"' in page
     assert 'data-role="records-body"' in page
     assert '最近采集明细' in page
     assert '当前账户响应中未提供这个额度窗口' in page
     assert '<script src="/static/codex-quota.js?v=abc123" defer></script>' in page
+
+    payload['windows']['five_hour'] = {
+        'label': '5 小时额度', 'available': True,
+        'used_percent': 20, 'remaining_percent': 80,
+        'resets_at': 1_800_001_000,
+    }
+    page_with_both = codex_dashboard.render_page(
+        payload, render_admin_shell=shell, asset_version='abc123',
+    )
+    assert 'class="codex-dashboard is-week-only"' not in page_with_both
 
 
 def test_codex_routes_static_asset_and_nav_are_wired():
@@ -271,6 +286,7 @@ def test_timer_and_deploy_use_three_minute_one_shot_collector():
 
 def test_codex_frontend_is_framework_free_and_pauses_background_fetches():
     script = Path('hysteria/codex_quota.js').read_text(encoding='utf-8')
+    styles = Path('hysteria/admin.css').read_text(encoding='utf-8')
 
     assert 'RANGE_SECONDS = {day:' in script
     assert 'svg.addEventListener("pointermove", pointerMove)' in script
@@ -278,14 +294,23 @@ def test_codex_frontend_is_framework_free_and_pauses_background_fetches():
     assert 'setTimeout(function () { load(false); }' in script
     assert 'setInterval(updateCountdowns, 1000)' in script
     assert 'AbortController' in script
-    assert 'fill="#f7f9fc"' in script
-    assert 'stroke="#6d5dfc"' in script
-    assert 'stroke="#008f9c"' in script
+    assert 'fill="#fbfcfe"' in script
+    assert 'stroke="#7467e8"' in script
+    assert 'stroke="#087f83"' in script
     assert 'function renderRecords(data)' in script
-    assert 'MAX_VISIBLE_DOTS = 48' in script
+    assert 'MAX_VISIBLE_DOTS = 32' in script
     assert 'Math.ceil(validIndices.length / MAX_VISIBLE_DOTS)' in script
+    assert 'function weeklyChangeEvents()' in script
+    assert 'function selectWeeklyGuides(events, start, end)' in script
+    assert 'MIN_EVENT_LABEL_GAP = 92' in script
+    assert 'codex-week-event-line' in script
+    assert 'circlesFor("weekly_remaining"' not in script
+    assert '周额度变化 · 标注 ' in script
     assert 'event.clientY - frameRect.top' in script
     assert 'positionTooltip(nearestIndex(ts), event)' in script
     assert 'tooltip.style.top = "16px"' not in script
+    assert '.codex-dashboard.is-week-only [data-quota="five_hour"]' in styles
+    assert '.codex-week-event-guide text' in styles
+    assert '.codex-week-event-node.is-reset' in styles
     assert 'React' not in script
     assert 'new Chart(' not in script
