@@ -302,8 +302,11 @@ def test_codex_frontend_is_framework_free_and_pauses_background_fetches():
     assert 'Math.ceil(validIndices.length / MAX_VISIBLE_DOTS)' in script
     assert 'function weeklyChangeEvents()' in script
     assert 'function selectWeeklyGuides(events, start, end)' in script
+    assert 'function eventValuePosition(x, y, width, height, plotBottom, placed)' in script
     assert 'MIN_EVENT_LABEL_GAP = 92' in script
     assert 'codex-week-event-line' in script
+    assert 'codex-week-event-value' in script
+    assert 'escapeHtml(percent(event.value))' in script
     assert 'circlesFor("weekly_remaining"' not in script
     assert '周额度变化 · 标注 ' in script
     assert 'event.clientY - frameRect.top' in script
@@ -312,5 +315,6 @@ def test_codex_frontend_is_framework_free_and_pauses_background_fetches():
     assert '.codex-dashboard.is-week-only [data-quota="five_hour"]' in styles
     assert '.codex-week-event-guide text' in styles
     assert '.codex-week-event-node.is-reset' in styles
+    assert '.codex-week-event-guide .codex-week-event-value text' in styles
     assert 'React' not in script
     assert 'new Chart(' not in script

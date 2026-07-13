@@ -129,7 +129,7 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
       <div>
         <div class="k">WEEKLY QUOTA TIMELINE</div>
         <h3>周额度余量与变化时刻</h3>
-        <p>只有额度真实变化时才显示周额度节点；带引导线的节点会落到下方准确时间，全部采样仍可悬停查看。</p>
+        <p>只有额度真实变化时才显示周额度节点；节点旁数字为变化后余额，引导线会落到下方准确时间。</p>
       </div>
       <div class="codex-range-switch" role="group" aria-label="图表时间范围">
         <button type="button" class="active" data-range="day" aria-pressed="true">日</button>
