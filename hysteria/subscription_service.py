@@ -665,13 +665,14 @@ def is_logged_in(handler):
 
 def html_page(title, body, body_class=''):
     cls = f' class="{body_class}"' if body_class else ''
+    css_version = BASE_CSS_ETAG.strip('"')
     return (
         f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<meta name="color-scheme" content="dark">'
         f'<meta name="theme-color" content="#07101f">'
         f'<title>{html.escape(title)}</title>'
-        f'<link rel="stylesheet" href="/static/style.css">'
+        f'<link rel="stylesheet" href="/static/style.css?v={css_version}">'
         f'</head><body{cls}>{body}</body></html>'
     )
 
@@ -1591,6 +1592,7 @@ def render_codex_page(host):
     return codex_dashboard.render_page(
         payload,
         render_admin_shell=render_admin_shell,
+        asset_version=CODEX_QUOTA_JS_ETAG.strip('"'),
     )
 
 

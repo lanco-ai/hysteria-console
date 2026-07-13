@@ -15,6 +15,9 @@ def _setup(tmp_path, daily, usage, users, online, monkeypatch, alerts_cfg=None):
     monkeypatch.setattr(tl, 'USAGE_DAILY_FILE', str(tmp_path / 'usage_daily.json'),
                         raising=False)
     Path(tl.USAGE_DAILY_FILE).write_text(__import__('json').dumps(daily))
+    monkeypatch.setattr(tl, 'META_FILE', str(tmp_path / 'subscription_meta.json'),
+                        raising=False)
+    Path(tl.META_FILE).write_text('{}')
 
     import alerts
     state_path = tmp_path / 'alert_state.json'

@@ -230,14 +230,18 @@ def test_dashboard_page_contains_interactive_chart_and_missing_window_copy():
         captured.update(active=active, title=title, kwargs=kwargs)
         return content
 
-    page = codex_dashboard.render_page(payload, render_admin_shell=shell)
+    page = codex_dashboard.render_page(
+        payload, render_admin_shell=shell, asset_version='abc123',
+    )
 
     assert captured['active'] == 'codex'
     assert 'data-range="day"' in page
     assert 'data-range="year"' in page
     assert 'id="codex-quota-chart"' in page
+    assert 'data-role="records-body"' in page
+    assert '最近采集明细' in page
     assert '当前账户响应中未提供这个额度窗口' in page
-    assert '<script src="/static/codex-quota.js" defer></script>' in page
+    assert '<script src="/static/codex-quota.js?v=abc123" defer></script>' in page
 
 
 def test_codex_routes_static_asset_and_nav_are_wired():
@@ -274,5 +278,9 @@ def test_codex_frontend_is_framework_free_and_pauses_background_fetches():
     assert 'setTimeout(function () { load(false); }' in script
     assert 'setInterval(updateCountdowns, 1000)' in script
     assert 'AbortController' in script
+    assert 'fill="#f7f9fc"' in script
+    assert 'stroke="#6d5dfc"' in script
+    assert 'stroke="#008f9c"' in script
+    assert 'function renderRecords(data)' in script
     assert 'React' not in script
     assert 'new Chart(' not in script

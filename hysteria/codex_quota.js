@@ -21,9 +21,9 @@
   var activeTipIndex = -1;
   var RANGE_SECONDS = {day: 86400, week: 604800, month: 2678400, year: 31622400};
   var RANGE_LABELS = {day: "24 小时", week: "7 天", month: "31 天", year: "1 年"};
-  var WIDTH = 1000;
-  var HEIGHT = 360;
-  var MARGIN = {top: 20, right: 22, bottom: 45, left: 54};
+  var WIDTH = 1200;
+  var HEIGHT = 460;
+  var MARGIN = {top: 30, right: 34, bottom: 58, left: 70};
   var PLOT_W = WIDTH - MARGIN.left - MARGIN.right;
   var PLOT_H = HEIGHT - MARGIN.top - MARGIN.bottom;
 
@@ -176,16 +176,37 @@
   }
 
   function circlesFor(key, seriesClass, start, end) {
-    var radius = points.length > 380 ? 1.55 : points.length > 180 ? 1.9 : 2.5;
+    var radius = points.length > 380 ? 2.2 : points.length > 180 ? 2.7 : 3.8;
+    var color = seriesClass === "series-five" ? "#6d5dfc" : "#008f9c";
+    var fill = seriesClass === "series-five" ? color : "#ffffff";
     var out = [];
     points.forEach(function (point, index) {
       var value = numberOrNull(point[key]);
       if (value === null) return;
       out.push('<circle class="codex-node ' + seriesClass + '" data-index="' + index +
         '" cx="' + xAt(Number(point.ts), start, end).toFixed(2) + '" cy="' + yAt(value).toFixed(2) +
-        '" r="' + radius + '"></circle>');
+        '" r="' + radius + '" fill="' + fill + '" stroke="' + color +
+        '" stroke-width="2"></circle>');
     });
     return out.join("");
+  }
+
+  function latestLabel(key, label, color, start, end, offset) {
+    for (var i = points.length - 1; i >= 0; i--) {
+      var value = numberOrNull(points[i][key]);
+      if (value === null) continue;
+      var x = xAt(Number(points[i].ts), start, end);
+      var y = Math.max(MARGIN.top + 13, Math.min(HEIGHT - MARGIN.bottom - 13, yAt(value) + offset));
+      var boxW = 112;
+      var boxX = Math.min(x + 12, WIDTH - MARGIN.right - boxW);
+      if (boxX < x + 5) boxX = Math.max(MARGIN.left, x - boxW - 12);
+      return '<g class="codex-latest-label"><rect x="' + boxX.toFixed(2) + '" y="' + (y - 14).toFixed(2) +
+        '" width="' + boxW + '" height="28" rx="14" fill="#ffffff" stroke="' + color +
+        '" stroke-width="2"></rect><text x="' + (boxX + boxW / 2).toFixed(2) + '" y="' + (y + 5).toFixed(2) +
+        '" text-anchor="middle" fill="' + color + '" font-size="13" font-weight="750">' +
+        escapeHtml(label + " " + percent(value)) + '</text></g>';
+    }
+    return "";
   }
 
   function renderChart(data) {
@@ -194,30 +215,70 @@
     tooltip.hidden = true;
     var end = numberOrNull(data.generated_at) || Math.floor(Date.now() / 1000);
     var start = end - (RANGE_SECONDS[range] || RANGE_SECONDS.day);
-    var parts = [];
+    var parts = [
+      '<rect x="0" y="0" width="' + WIDTH + '" height="' + HEIGHT + '" fill="#f7f9fc"></rect>',
+      '<rect x="' + MARGIN.left + '" y="' + yAt(20).toFixed(2) + '" width="' + PLOT_W +
+        '" height="' + (HEIGHT - MARGIN.bottom - yAt(20)).toFixed(2) + '" fill="#fff0f2"></rect>',
+      '<text x="' + (MARGIN.left + 10) + '" y="' + (yAt(20) + 18).toFixed(2) +
+        '" fill="#c2415c" font-size="12" font-weight="700">低额度注意区</text>'
+    ];
     [0, 25, 50, 75, 100].forEach(function (value) {
       var y = yAt(value).toFixed(2);
-      parts.push('<line class="codex-grid-line" x1="' + MARGIN.left + '" y1="' + y + '" x2="' + (WIDTH - MARGIN.right) + '" y2="' + y + '"></line>');
-      parts.push('<text class="codex-axis-label y" x="' + (MARGIN.left - 10) + '" y="' + (Number(y) + 4) + '" text-anchor="end">' + value + '%</text>');
+      parts.push('<line class="codex-grid-line" x1="' + MARGIN.left + '" y1="' + y + '" x2="' + (WIDTH - MARGIN.right) +
+        '" y2="' + y + '" stroke="#cfd8e6" stroke-width="1"></line>');
+      parts.push('<text class="codex-axis-label y" x="' + (MARGIN.left - 14) + '" y="' + (Number(y) + 5) +
+        '" text-anchor="end" fill="#44546a" font-size="13" font-weight="650">' + value + '%</text>');
     });
     for (var i = 0; i < 5; i++) {
       var tickTs = start + (end - start) * i / 4;
       var x = xAt(tickTs, start, end).toFixed(2);
-      parts.push('<line class="codex-tick" x1="' + x + '" y1="' + (HEIGHT - MARGIN.bottom) + '" x2="' + x + '" y2="' + (HEIGHT - MARGIN.bottom + 5) + '"></line>');
-      parts.push('<text class="codex-axis-label x" x="' + x + '" y="' + (HEIGHT - 16) + '" text-anchor="middle">' + escapeHtml(xLabel(tickTs)) + '</text>');
+      parts.push('<line x1="' + x + '" y1="' + MARGIN.top + '" x2="' + x + '" y2="' + (HEIGHT - MARGIN.bottom) +
+        '" stroke="#e7ebf2" stroke-width="1"></line>');
+      parts.push('<line class="codex-tick" x1="' + x + '" y1="' + (HEIGHT - MARGIN.bottom) + '" x2="' + x +
+        '" y2="' + (HEIGHT - MARGIN.bottom + 7) + '" stroke="#8291a7" stroke-width="1.5"></line>');
+      parts.push('<text class="codex-axis-label x" x="' + x + '" y="' + (HEIGHT - 20) +
+        '" text-anchor="middle" fill="#44546a" font-size="13" font-weight="650">' + escapeHtml(xLabel(tickTs)) + '</text>');
     }
     var fivePath = pathFor("five_hour_remaining", start, end);
     var weekPath = pathFor("weekly_remaining", start, end);
-    if (fivePath) parts.push('<path class="codex-series-line series-five" d="' + fivePath + '"></path>');
-    if (weekPath) parts.push('<path class="codex-series-line series-week" d="' + weekPath + '"></path>');
+    if (fivePath) parts.push('<path class="codex-series-line series-five" d="' + fivePath +
+      '" fill="none" stroke="#6d5dfc" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></path>');
+    if (weekPath) parts.push('<path class="codex-series-line series-week" d="' + weekPath +
+      '" fill="none" stroke="#008f9c" stroke-width="4" stroke-dasharray="11 7" stroke-linecap="round" stroke-linejoin="round"></path>');
     parts.push(circlesFor("five_hour_remaining", "series-five", start, end));
     parts.push(circlesFor("weekly_remaining", "series-week", start, end));
-    parts.push('<g id="codex-crosshair" class="codex-crosshair" visibility="hidden"><line x1="0" y1="' + MARGIN.top + '" x2="0" y2="' + (HEIGHT - MARGIN.bottom) + '"></line><circle class="series-five" cx="0" cy="0" r="4" visibility="hidden"></circle><circle class="series-week" cx="0" cy="0" r="4" visibility="hidden"></circle></g>');
+    parts.push(latestLabel("five_hour_remaining", "5H", "#6d5dfc", start, end, -18));
+    parts.push(latestLabel("weekly_remaining", "周", "#008f9c", start, end, 18));
+    parts.push('<g id="codex-crosshair" class="codex-crosshair" visibility="hidden"><line x1="0" y1="' + MARGIN.top +
+      '" x2="0" y2="' + (HEIGHT - MARGIN.bottom) + '" stroke="#26364d" stroke-width="1.5" stroke-dasharray="5 4"></line>' +
+      '<circle class="series-five" cx="0" cy="0" r="6" fill="#ffffff" stroke="#6d5dfc" stroke-width="3" visibility="hidden"></circle>' +
+      '<circle class="series-week" cx="0" cy="0" r="6" fill="#ffffff" stroke="#008f9c" stroke-width="3" visibility="hidden"></circle></g>');
     svg.innerHTML = parts.join("");
     svg.__chartDomain = {start: start, end: end};
     if (empty) empty.hidden = points.length > 0;
     var summary = selectOne('[data-role="chart-summary"]');
     if (summary) summary.textContent = points.length ? points.length + " 个节点 · " + (RANGE_LABELS[range] || "") : "当前范围暂无数据";
+  }
+
+  function renderRecords(data) {
+    var host = selectOne('[data-role="records-body"]');
+    var count = selectOne('[data-role="records-count"]');
+    if (!host) return;
+    var rows = Array.isArray(data.points) ? data.points.slice(-12).reverse() : [];
+    if (count) count.textContent = rows.length + " 条";
+    if (!rows.length) {
+      host.innerHTML = '<tr><td colspan="5" class="empty">当前范围暂无采集数据</td></tr>';
+      return;
+    }
+    host.innerHTML = rows.map(function (row) {
+      var five = numberOrNull(row.five_hour_remaining);
+      var week = numberOrNull(row.weekly_remaining);
+      return '<tr><td><time>' + escapeHtml(dateTime(row.ts, true)) + '</time></td>' +
+        '<td><strong class="record-value five">' + escapeHtml(percent(five)) + '</strong></td>' +
+        '<td><strong class="record-value week">' + escapeHtml(percent(week)) + '</strong></td>' +
+        '<td>' + escapeHtml(dateTime(row.five_hour_resets_at, false)) + '</td>' +
+        '<td>' + escapeHtml(dateTime(row.weekly_resets_at, false)) + '</td></tr>';
+    }).join("");
   }
 
   function nearestIndex(ts) {
@@ -305,6 +366,7 @@
     payload = data;
     updateSummary(data);
     renderChart(data);
+    renderRecords(data);
     updateCountdowns();
   }
 

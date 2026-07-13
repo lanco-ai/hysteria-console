@@ -20,6 +20,7 @@ def test_usage_routes_wired_in_dispatcher():
     assert "/admin/usage" in text
     assert "/admin/user/" in text
     assert "/static/usage.js" in text
+    assert '/static/style.css?v=' in text
 
 
 def test_render_usage_page_smoke(tmp_path, monkeypatch):

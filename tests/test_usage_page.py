@@ -28,12 +28,14 @@ def _seed_state(tmp_path, monkeypatch, *, users=None, hourly=None, daily=None,
     monkeypatch.setattr(ss, "USAGE_HOURLY_FILE", tmp_path / "usage_hourly.json", raising=False)
     monkeypatch.setattr(ss, "USAGE_PRESERVED_FILE", tmp_path / "usage_preserved.json", raising=False)
     monkeypatch.setattr(ss, "ONLINE_FILE", tmp_path / "online.json", raising=False)
+    monkeypatch.setattr(ss, "META_FILE", tmp_path / "subscription_meta.json", raising=False)
     (tmp_path / "users.json").write_text(json.dumps(users or {}))
     (tmp_path / "usage.json").write_text(json.dumps(usage or {}))
     (tmp_path / "usage_daily.json").write_text(json.dumps(daily or {}))
     (tmp_path / "usage_hourly.json").write_text(json.dumps(hourly or {}))
     (tmp_path / "usage_preserved.json").write_text(json.dumps(preserved or {}))
     (tmp_path / "online.json").write_text(json.dumps(online or {}))
+    (tmp_path / "subscription_meta.json").write_text("{}")
 
 
 def test_build_usage_json_payload_schema(tmp_path, monkeypatch):

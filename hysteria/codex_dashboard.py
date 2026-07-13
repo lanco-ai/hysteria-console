@@ -67,7 +67,7 @@ def _window_card(key, window, *, tone):
 </section>'''
 
 
-def render_page(payload, *, render_admin_shell):
+def render_page(payload, *, render_admin_shell, asset_version=''):
     windows = payload.get('windows') or {}
     account = payload.get('account') or {}
     freshness = payload.get('freshness') or {}
@@ -85,13 +85,14 @@ def render_page(payload, *, render_admin_shell):
         '<div class="codex-collector-error" id="codex-collector-error" hidden></div>'
     )
 
+    script_version = f'?v={_esc(asset_version)}' if asset_version else ''
     content = f'''<div class="codex-dashboard" id="codex-dashboard" data-endpoint="/admin/codex.json">
   {error_html}
-  <section class="codex-intro">
+  <section class="codex-intro codex-intro-v2">
     <div>
-      <span class="codex-eyebrow">CODEX CAPACITY</span>
-      <h2>额度变化，一眼看清</h2>
-      <p>服务器每 3 分钟通过本机 Codex 登录态采集一次。只保存额度百分比与重置时间，不保存凭据或原始响应。</p>
+      <span class="codex-eyebrow">CODEX USAGE INTELLIGENCE</span>
+      <h2>额度中心</h2>
+      <p>同时追踪短周期与周周期余量，自动计算重置时间并保留历史趋势。</p>
     </div>
     <div class="codex-live-cluster">
       <span class="badge poll-status {status_class}" data-role="collector-status">{status_text}</span>
@@ -119,12 +120,12 @@ def render_page(payload, *, render_admin_shell):
     </section>
   </div>
 
-  <section class="card codex-chart-card mt-md">
+  <section class="card codex-chart-card codex-chart-card-v2 mt-md">
     <header class="codex-chart-head">
       <div>
-        <div class="k">REMAINING QUOTA</div>
-        <h3>历史余额趋势</h3>
-        <p>纵轴固定为 0–100%，每个圆点代表一个聚合后的采集节点。</p>
+        <div class="k">QUOTA TREND</div>
+        <h3>额度余量趋势</h3>
+        <p>纵轴固定为 0–100%，浅红区域表示余量低于 20%。每个圆点均可悬停查看精确值。</p>
       </div>
       <div class="codex-range-switch" role="group" aria-label="图表时间范围">
         <button type="button" class="active" data-range="day" aria-pressed="true">日</button>
@@ -134,12 +135,12 @@ def render_page(payload, *, render_admin_shell):
       </div>
     </header>
     <div class="codex-chart-legend" aria-label="图例">
-      <span><i class="series-five"></i>5 小时剩余</span>
-      <span><i class="series-week"></i>周额度剩余</span>
+      <span><i class="series-five"></i>5 小时窗口</span>
+      <span><i class="series-week"></i>每周窗口</span>
       <span class="codex-chart-summary" data-role="chart-summary">等待数据</span>
     </div>
     <div class="codex-chart-frame" id="codex-chart-frame">
-      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1000 360" role="img" aria-label="Codex 剩余额度历史折线图"></svg>
+      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1200 460" role="img" aria-label="Codex 剩余额度历史折线图"></svg>
       <div class="codex-chart-empty" id="codex-chart-empty">采集第一条数据后，这里会自动形成趋势图</div>
       <div class="codex-chart-tooltip" id="codex-chart-tooltip" hidden></div>
     </div>
@@ -149,12 +150,28 @@ def render_page(payload, *, render_admin_shell):
     </footer>
   </section>
 
+  <section class="card codex-records-card mt-md">
+    <header class="codex-records-head">
+      <div>
+        <div class="k">RECENT SAMPLES</div>
+        <h3>最近采集明细</h3>
+      </div>
+      <span class="badge gray" data-role="records-count">0 条</span>
+    </header>
+    <div class="scroll-x">
+      <table class="codex-records-table">
+        <thead><tr><th>采集时间</th><th>5 小时余额</th><th>周余额</th><th>5 小时重置</th><th>周额度重置</th></tr></thead>
+        <tbody data-role="records-body"><tr><td colspan="5" class="empty">等待采集数据</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="codex-data-note mt-md">
     <span class="codex-data-note-mark">i</span>
     <div><strong>关于额度窗口</strong><p>面板按窗口时长识别 5 小时与周额度。若 Codex 当前账户响应暂时不提供某个窗口，会显示“未提供”，不会用旧数据或推算值冒充实时余额。</p></div>
   </section>
 </div>
-<script src="/static/codex-quota.js" defer></script>'''
+<script src="/static/codex-quota.js{script_version}" defer></script>'''
 
     topbar_extra = (
         '<button class="btn secondary btn-sm" id="codex-refresh-now" type="button">'
