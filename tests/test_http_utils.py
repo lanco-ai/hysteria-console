@@ -46,3 +46,56 @@ def test_safe_base_url_rejects_invalid_forwarded_port():
         'https://panel.example.com'
     assert http_utils.safe_base_url('panel.example.com', 'https', '70000') == \
         'https://panel.example.com'
+
+
+def test_same_origin_post_accepts_matching_origin():
+    handler = _Handler(None)
+    handler.headers.update({
+        'Host': 'panel.example.com:9444',
+        'Origin': 'https://panel.example.com:9444',
+    })
+
+    assert http_utils.is_same_origin_post(handler) is True
+
+
+def test_same_origin_post_rejects_mismatched_origin_without_fetch_metadata():
+    handler = _Handler(None)
+    handler.headers.update({
+        'Host': 'panel.example.com:9444',
+        'Origin': 'https://other.example.com',
+    })
+
+    assert http_utils.is_same_origin_post(handler) is False
+
+
+def test_same_origin_fetch_metadata_handles_null_origin_from_proxy_or_privacy_mode():
+    handler = _Handler(None)
+    handler.headers.update({
+        'Host': 'panel.example.com:9444',
+        'Origin': 'null',
+        'Sec-Fetch-Site': 'same-origin',
+    })
+
+    assert http_utils.is_same_origin_post(handler) is True
+
+
+def test_cross_site_fetch_metadata_is_rejected_even_with_matching_origin():
+    handler = _Handler(None)
+    handler.headers.update({
+        'Host': 'panel.example.com:9444',
+        'Origin': 'https://panel.example.com:9444',
+        'Sec-Fetch-Site': 'cross-site',
+    })
+
+    assert http_utils.is_same_origin_post(handler) is False
+
+
+def test_user_initiated_fetch_metadata_allows_null_origin():
+    handler = _Handler(None)
+    handler.headers.update({
+        'Host': 'panel.example.com:9444',
+        'Origin': 'null',
+        'Sec-Fetch-Site': 'none',
+    })
+
+    assert http_utils.is_same_origin_post(handler) is True

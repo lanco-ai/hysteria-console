@@ -81,9 +81,17 @@ def _url_matches_request_host(handler, raw_url):
 def is_same_origin_post(handler):
     """Best-effort CSRF guard for browser-driven POSTs.
 
-    Browsers send Origin on modern form POSTs; Referer is a fallback. Missing
-    headers are allowed so local scripts and older clients keep working.
+    Modern browsers provide Sec-Fetch-Site from network-layer request context;
+    unlike a normal form field it cannot be forged by page JavaScript.  Prefer
+    that signal so reverse proxies and privacy modes that emit ``Origin: null``
+    do not reject a genuine same-origin admin form.  Origin/Referer remain the
+    fallback for older browsers and local scripts keep their legacy behavior.
     """
+    fetch_site = str(handler.headers.get('Sec-Fetch-Site') or '').strip().lower()
+    if fetch_site == 'cross-site':
+        return False
+    if fetch_site in ('same-origin', 'none'):
+        return True
     origin = handler.headers.get('Origin')
     if origin is not None:
         return _url_matches_request_host(handler, origin)
