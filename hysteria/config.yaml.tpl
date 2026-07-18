@@ -5,8 +5,9 @@ tls:
   key: /root/hysteria/server.key
 
 auth:
-  type: command
-  command: /root/hysteria/auth_backend.py
+  type: http
+  http:
+    url: http://127.0.0.1:8082/auth
 
 obfs:
   type: salamander

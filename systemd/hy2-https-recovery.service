@@ -1,0 +1,37 @@
+[Unit]
+Description=Recover interrupted hy2 HTTPS activation before nginx
+After=local-fs.target
+Before=nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hy2-enable-https.sh --recover-only
+SuccessExitStatus=2
+User=root
+Group=root
+UMask=0077
+TimeoutStartSec=45
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadOnlyPaths=/usr/local/sbin /usr/local/share/hy2
+ReadWritePaths=/etc/nginx /etc/systemd/system -/etc/letsencrypt -/var/lib/hysteria/https-activation-recovery -/var/log/nginx
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER
+SystemCallArchitectures=native
+TasksMax=32
+MemoryMax=128M
+
+[Install]
+RequiredBy=nginx.service

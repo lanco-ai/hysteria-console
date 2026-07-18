@@ -164,9 +164,10 @@ def render_line_radar(ctx, now=None):
         ctx.subscription_profiles['default'],
     )
     return (
-        '<div class="card card-flush scroll-x mt-md">'
+        '<div class="card card-flush scroll-x mt-md" tabindex="0" '
+        'aria-label="线路质量雷达，可横向滚动">'
         '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
-        '<div><div class="bold">线路质量雷达</div>'
+        '<div><h2 class="section-title">线路质量雷达</h2>'
         f'<div class="small">近 {radar["window_hours"]} 小时协议占比 · 总量 {ctx.fmt_bytes(radar["total_bytes"])}</div></div>'
         f'<div class="badge">推荐：{html.escape(rec["label"])} · {html.escape(radar["reason"])}</div>'
         '</div>'
@@ -219,8 +220,9 @@ def render_cost_calibrator(ctx, now=None):
     if summary['confidence'] in ('medium', 'high') and summary.get('suggested_multiplier') is not None:
         advice = '可应用为运行时倍率'
         apply_form = (
-            '<form method="post" action="/admin/cost-multiplier/apply" class="inline-form-row">'
-            '<button class="btn secondary btn-sm" type="submit">应用建议倍率</button>'
+            '<form method="post" action="/admin/cost-multiplier/apply" class="inline-form-row" '
+            'data-confirm="应用建议倍率会修改运行时流量倍率并重启面板服务，确认继续？">'
+            '<button class="btn danger-btn btn-sm" type="submit">应用建议倍率</button>'
             '</form>'
         )
     window_rows = ''.join(
@@ -276,9 +278,10 @@ def render_cost_calibrator(ctx, now=None):
         f'<td style="padding-right:18px;">{html.escape(iface_text)}</td></tr>'
     )
     return (
-        '<div class="card card-flush scroll-x mt-md">'
+        '<div class="card card-flush scroll-x mt-md" tabindex="0" '
+        'aria-label="成本校准数据，可横向滚动">'
         '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
-        '<div><div class="bold">成本校准器</div>'
+        '<div><h2 class="section-title">成本校准器</h2>'
         f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div></div>'
         f'<div class="row gap-sm"><div class="badge">{html.escape(advice)}</div>{apply_form}</div>'
         '</div>'
@@ -286,17 +289,18 @@ def render_cost_calibrator(ctx, now=None):
         '<table class="table"><thead><tr><th style="padding-left:18px;">窗口</th><th>总量建议</th><th>出站建议</th><th>纳入流量</th><th>样本</th><th style="padding-right:18px;">置信度</th></tr></thead>'
         f'<tbody>{window_rows}</tbody></table>'
         '<div style="padding:0 18px 14px;">'
-        '<form method="post" action="/admin/cost-multiplier/auto" class="inline-form">'
+        '<form method="post" action="/admin/cost-multiplier/auto" class="inline-form" '
+        'data-confirm="保存后，启用的自动策略可在满足条件时修改运行时倍率并重启面板服务，确认继续？">'
         '<div class="grid grid-3">'
         f'<label class="switch"><input type="checkbox" name="enabled" {checked}>自动调倍率</label>'
-        '<div><label>依据</label><select name="mode">'
+        '<div><label for="multiplier-auto-mode">依据</label><select id="multiplier-auto-mode" name="mode">'
         f'<option value="total" {mode_total}>公网 RX+TX 总量</option>'
         f'<option value="egress" {mode_egress}>公网 TX 出站</option>'
         '</select></div>'
-        f'<div><label>最低置信度</label><select name="min_confidence">{conf_opts}</select></div>'
-        f'<div><label>最大单次变化 (%)</label><input name="max_delta_percent" type="number" min="1" max="100" value="{float(policy["max_delta_percent"]):.0f}"></div>'
-        f'<div><label>最小变化 (%)</label><input name="min_delta_percent" type="number" min="0" max="50" value="{float(policy["min_delta_percent"]):.0f}"></div>'
-        f'<div><label>冷却时间 (小时)</label><input name="cooldown_hours" type="number" min="1" max="168" value="{float(policy["cooldown_hours"]):.0f}"></div>'
+        f'<div><label for="multiplier-auto-confidence">最低置信度</label><select id="multiplier-auto-confidence" name="min_confidence">{conf_opts}</select></div>'
+        f'<div><label for="multiplier-auto-max-delta">最大单次变化 (%)</label><input id="multiplier-auto-max-delta" name="max_delta_percent" type="number" min="1" max="100" value="{float(policy["max_delta_percent"]):.0f}"></div>'
+        f'<div><label for="multiplier-auto-min-delta">最小变化 (%)</label><input id="multiplier-auto-min-delta" name="min_delta_percent" type="number" min="0" max="50" value="{float(policy["min_delta_percent"]):.0f}"></div>'
+        f'<div><label for="multiplier-auto-cooldown">冷却时间 (小时)</label><input id="multiplier-auto-cooldown" name="cooldown_hours" type="number" min="1" max="168" value="{float(policy["cooldown_hours"]):.0f}"></div>'
         '</div>'
         '<button class="btn secondary btn-sm mt-md" type="submit">保存自动策略</button>'
         '</form>'

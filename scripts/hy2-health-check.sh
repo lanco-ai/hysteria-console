@@ -4,26 +4,37 @@ set -euo pipefail
 HY_DIR="${HY2_HY_DIR:-/root/hysteria}"
 BACKUP_DIR="${HY2_BACKUP_DIR:-$HY_DIR/backups}"
 HTTPS_PORT="${HY2_HTTPS_PORT:-}"
+TLS_SITE_CONF="${HY2_TLS_SITE_CONF:-/etc/nginx/sites-enabled/hysteria-panel-https.conf}"
+HTTPS_REQUIRED_FILE="${HY2_HTTPS_REQUIRED_FILE:-$HY_DIR/state/https_required}"
+HTTPS_RENEWAL_PENDING="${HY2_HTTPS_RENEWAL_PENDING:-/var/lib/hysteria/https-activation-recovery/renewal-pending}"
 MAX_BACKUP_AGE="${HY2_MAX_BACKUP_AGE_SECONDS:-129600}"
 MIN_DISK_FREE_PCT="${HY2_MIN_DISK_FREE_PCT:-15}"
 failed=0
 
 if [[ -z "$HTTPS_PORT" ]]; then
   HTTPS_PORT="$(awk '$1 == "listen" && $3 == "ssl;" {gsub(/;/, "", $2); print $2; exit}' \
-    /etc/nginx/sites-enabled/hysteria-panel-https.conf 2>/dev/null || true)"
+    "$TLS_SITE_CONF" 2>/dev/null || true)"
   HTTPS_PORT="${HTTPS_PORT:-9444}"
 fi
 
 ok() { printf 'OK: %s\n' "$*"; }
 bad() { printf 'ERROR: %s\n' "$*" >&2; failed=1; }
 
-for unit in hysteria-server.service hysteria-subscription.service tuic-server.service xray.service nginx.service; do
+for unit in hysteria-auth.service hysteria-server.service hysteria-subscription.service tuic-server.service xray.service nginx.service; do
   if systemctl is-active --quiet "$unit"; then
     ok "$unit active"
   else
     bad "$unit is not active"
   fi
 done
+
+if curl --fail --silent --show-error --noproxy '*' \
+  --connect-timeout 1 --max-time 3 \
+  http://127.0.0.1:8082/readyz >/dev/null; then
+  ok "hysteria authentication dependencies ready"
+else
+  bad "hysteria authentication dependencies are not ready"
+fi
 
 free_pct="$(df -P / | awk 'NR==2 {gsub(/%/, "", $5); print 100-$5}')"
 if [[ "$free_pct" =~ ^[0-9]+$ ]] && (( free_pct >= MIN_DISK_FREE_PCT )); then
@@ -56,21 +67,42 @@ if [[ -f "$git_marker" ]]; then
   fi
 fi
 
-panel_cert="$(find /etc/letsencrypt/live -mindepth 2 -maxdepth 2 -name fullchain.pem -type l -print -quit 2>/dev/null || true)"
-panel_target=""
-if [[ -n "$panel_cert" ]] && openssl x509 -checkend 86400 -noout -in "$panel_cert" >/dev/null 2>&1; then
-  panel_target="$(basename "$(dirname "$panel_cert")")"
-  ok "panel certificate valid for more than 24h"
-else
-  bad "panel certificate missing or expires within 24h"
+https_required=0
+if [[ -f "$HTTPS_REQUIRED_FILE" || -e "$TLS_SITE_CONF" || -L "$TLS_SITE_CONF" ]]; then
+  https_required=1
 fi
 
-if [[ -n "$panel_target" ]] && curl --fail --silent --show-error --max-time 5 \
-  --resolve "${panel_target}:${HTTPS_PORT}:127.0.0.1" \
-  "https://${panel_target}:${HTTPS_PORT}/" >/dev/null; then
-  ok "local HTTPS endpoint reachable on ${HTTPS_PORT}/tcp"
+if (( https_required )); then
+  if [[ -e "$HTTPS_RENEWAL_PENDING" || -L "$HTTPS_RENEWAL_PENDING" ]]; then
+    bad "certificate renewal activation is pending recovery"
+  fi
+  if systemctl is-active --quiet snap.certbot.renew.timer; then
+    ok "certificate renewal timer active"
+  else
+    bad "certificate renewal timer is not active"
+  fi
+
+  panel_target="$(awk '$1 == "server_name" {gsub(/;/, "", $2); print $2; exit}' \
+    "$TLS_SITE_CONF" 2>/dev/null || true)"
+  panel_cert="$(awk '$1 == "ssl_certificate" {gsub(/;/, "", $2); print $2; exit}' \
+    "$TLS_SITE_CONF" 2>/dev/null || true)"
+  if [[ -n "$panel_target" && -n "$panel_cert" && -r "$panel_cert" ]] \
+    && openssl x509 -checkend 86400 -noout -in "$panel_cert" >/dev/null 2>&1; then
+    ok "panel certificate valid for more than 24h"
+  else
+    bad "configured panel certificate missing or expires within 24h"
+  fi
+
+  if [[ -n "$panel_target" ]] && curl --fail --silent --show-error --max-time 5 \
+    --noproxy '*' --connect-timeout 2 \
+    --resolve "${panel_target}:${HTTPS_PORT}:127.0.0.1" \
+    "https://${panel_target}:${HTTPS_PORT}/" >/dev/null; then
+    ok "local HTTPS endpoint reachable on ${HTTPS_PORT}/tcp"
+  else
+    bad "local HTTPS endpoint unavailable on ${HTTPS_PORT}/tcp"
+  fi
 else
-  bad "local HTTPS endpoint unavailable on ${HTTPS_PORT}/tcp"
+  ok "panel HTTPS intentionally not required"
 fi
 
 if (( failed )); then

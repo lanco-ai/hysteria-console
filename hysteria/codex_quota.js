@@ -29,6 +29,7 @@
   var PLOT_W = WIDTH - MARGIN.left - MARGIN.right;
   var PLOT_H = HEIGHT - MARGIN.top - MARGIN.bottom;
   var MIN_EVENT_LABEL_GAP = 128;
+  var REQUEST_TIMEOUT_MS = 10000;
 
   function escapeHtml(value) {
     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
@@ -51,8 +52,9 @@
     var n = numberOrNull(epoch);
     if (n === null || n <= 0) return "未提供";
     return new Date(n * 1000).toLocaleString("zh-CN", {
-      month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-      second: withSeconds ? "2-digit" : undefined, hour12: false
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+      second: withSeconds ? "2-digit" : undefined, hour12: false,
+      timeZone: "UTC", timeZoneName: "short"
     });
   }
 
@@ -92,7 +94,15 @@
     setText('[data-role="remaining-small"]', percent(remaining), card);
     setText('[data-role="used"]', percent(used), card);
     var bar = selectOne('[data-role="bar"]', card);
-    if (bar) bar.style.width = available && remaining !== null ? Math.max(0, Math.min(100, remaining)) + "%" : "0%";
+    var value = available && remaining !== null ? Math.max(0, Math.min(100, remaining)) : 0;
+    if (bar) {
+      bar.style.width = value + "%";
+      var progress = bar.parentElement;
+      if (progress) {
+        progress.setAttribute("aria-valuenow", String(value));
+        progress.setAttribute("aria-valuetext", available ? percent(remaining) : "未提供");
+      }
+    }
     var reset = selectOne('[data-role="reset-time"]', card);
     if (reset) {
       var epoch = available ? numberOrNull(data.resets_at) : null;
@@ -107,7 +117,7 @@
     var states = {
       live: ["采集正常", "is-live"], delayed: ["采集延迟", "is-paused"],
       stale: ["数据过期", "is-error"], error: ["采集异常", "is-error"],
-      empty: ["等待首采", "is-paused"]
+      empty: ["等待首采", "is-paused"], auth: ["登录已失效", "is-error"]
     };
     var state = states[status] || ["状态未知", "is-paused"];
     badge.textContent = state[0];
@@ -115,7 +125,7 @@
     badge.classList.add(state[1]);
   }
 
-  function updateError(error) {
+  function updateError(error, loginRequired) {
     var host = document.getElementById("codex-collector-error");
     if (!host) return;
     if (!error) {
@@ -125,9 +135,17 @@
     }
     var strong = document.createElement("strong");
     var span = document.createElement("span");
-    strong.textContent = "最近一次采集失败";
+    strong.textContent = loginRequired ? "登录状态已失效" : "最近一次采集失败";
     span.textContent = String(error);
-    host.replaceChildren(strong, span);
+    if (loginRequired) {
+      var loginLink = document.createElement("a");
+      loginLink.className = "btn secondary btn-sm";
+      loginLink.href = "/login";
+      loginLink.textContent = "重新登录";
+      host.replaceChildren(strong, span, loginLink);
+    } else {
+      host.replaceChildren(strong, span);
+    }
     host.hidden = false;
   }
 
@@ -160,9 +178,9 @@
 
   function xLabel(epoch) {
     var d = new Date(epoch * 1000);
-    if (range === "day") return d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", hour12: false});
-    if (range === "year") return d.toLocaleDateString("zh-CN", {year: "numeric", month: "2-digit"});
-    return d.toLocaleDateString("zh-CN", {month: "2-digit", day: "2-digit"});
+    if (range === "day") return d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC"});
+    if (range === "year") return d.toLocaleDateString("zh-CN", {year: "numeric", month: "2-digit", timeZone: "UTC"});
+    return d.toLocaleDateString("zh-CN", {month: "2-digit", day: "2-digit", timeZone: "UTC"});
   }
 
   function stepSeriesFor(key, start, end) {
@@ -243,12 +261,12 @@
 
   function eventTimeLabel(epoch, value) {
     var d = new Date(epoch * 1000);
-    var time = d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", hour12: false});
+    var time = d.toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC"});
     var result = percent(value);
     if (range === "day") return {top: time + " · " + result, bottom: "", width: 96};
     var date = d.toLocaleDateString("zh-CN", {
       year: range === "year" ? "2-digit" : undefined,
-      month: "2-digit", day: "2-digit"
+      month: "2-digit", day: "2-digit", timeZone: "UTC"
     });
     return {top: date, bottom: time + " · " + result, width: range === "year" ? 110 : 100};
   }
@@ -308,6 +326,13 @@
     points = Array.isArray(data.points) ? data.points.slice().sort(function (a, b) { return Number(a.ts) - Number(b.ts); }) : [];
     activeTipIndex = -1;
     tooltip.hidden = true;
+    svg.setAttribute("tabindex", points.length ? "0" : "-1");
+    svg.setAttribute(
+      "aria-label",
+      points.length
+        ? "Codex 周额度阶梯趋势和变化事件图；聚焦后可用方向键浏览采样"
+        : "Codex 周额度趋势图；当前范围暂无采样"
+    );
     var end = numberOrNull(data.generated_at) || Math.floor(Date.now() / 1000);
     var start = end - (RANGE_SECONDS[range] || RANGE_SECONDS.day);
     var parts = [
@@ -499,31 +524,81 @@
 
   function schedulePoll(seconds) {
     if (pollTimer) clearTimeout(pollTimer);
+    pollTimer = null;
+    if (document.hidden) return;
     pollTimer = setTimeout(function () { load(false); }, Math.max(30, Number(seconds) || 180) * 1000);
+  }
+
+  function startCountdowns() {
+    if (document.hidden || countdownTimer) return;
+    updateCountdowns();
+    countdownTimer = setInterval(updateCountdowns, 1000);
+  }
+
+  function stopCountdowns() {
+    if (!countdownTimer) return;
+    clearInterval(countdownTimer);
+    countdownTimer = null;
   }
 
   function load(manual) {
     if (document.hidden && !manual) { schedulePoll(180); return; }
     var serial = ++requestSerial;
     if (requestController) requestController.abort();
-    requestController = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    requestController = controller;
+    var timedOut = false;
+    var timeoutId = null;
     if (refreshBtn) refreshBtn.disabled = true;
-    fetch(endpoint + "?range=" + encodeURIComponent(range), {
+    var request = fetch(endpoint + "?range=" + encodeURIComponent(range), {
       credentials: "same-origin", cache: "no-store",
-      signal: requestController ? requestController.signal : undefined,
+      signal: controller ? controller.signal : undefined,
       headers: {"Accept": "application/json"}
-    }).then(function (response) {
-      if (!response.ok || (response.headers.get("content-type") || "").indexOf("application/json") < 0) throw new Error("额度接口不可用");
+    });
+    var timeout = new Promise(function (_resolve, reject) {
+      timeoutId = setTimeout(function () {
+        timedOut = true;
+        if (controller) controller.abort();
+        var error = new Error("额度接口响应超时");
+        error.name = "TimeoutError";
+        reject(error);
+      }, REQUEST_TIMEOUT_MS);
+    });
+    Promise.race([request, timeout]).then(function (response) {
+      if (response.status === 401) {
+        var authError = new Error("登录已失效，请重新登录");
+        authError.code = "login_required";
+        throw authError;
+      }
+      if (!response.ok || (response.headers.get("content-type") || "").indexOf("application/json") < 0) {
+        throw new Error("额度接口不可用");
+      }
       return response.json();
     }).then(function (data) {
       if (serial !== requestSerial) return;
       applyPayload(data);
       schedulePoll(data.poll_interval_seconds || 180);
     }).catch(function (error) {
-      if (error && error.name === "AbortError") return;
+      if (error && error.name === "AbortError" && !timedOut) return;
+      if (error && error.code === "login_required") {
+        setCollectorStatus("auth");
+        updateError("登录已失效；重新登录后即可继续查看额度。", true);
+        if (pollTimer) {
+          clearTimeout(pollTimer);
+          pollTimer = null;
+        }
+        return;
+      }
       setCollectorStatus("error");
+      updateError(
+        timedOut || (error && error.name === "TimeoutError")
+          ? "额度接口响应超时，请检查网络后重试。"
+          : "额度接口暂不可用，请稍后重试。"
+      );
       schedulePoll(180);
     }).finally(function () {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (requestController === controller) requestController = null;
       if (serial === requestSerial && refreshBtn) refreshBtn.disabled = false;
     });
   }
@@ -544,16 +619,42 @@
   svg.addEventListener("pointermove", pointerMove);
   svg.addEventListener("pointerdown", pointerMove);
   svg.addEventListener("pointerleave", hideTooltip);
+  svg.addEventListener("focus", function () {
+    if (!points.length) return;
+    positionTooltip(activeTipIndex >= 0 ? activeTipIndex : points.length - 1, null);
+  });
+  svg.addEventListener("blur", hideTooltip);
+  svg.addEventListener("keydown", function (event) {
+    if (!points.length) return;
+    var next = activeTipIndex < 0 ? points.length - 1 : activeTipIndex;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next++;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next--;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = points.length - 1;
+    else return;
+    event.preventDefault();
+    positionTooltip(Math.max(0, Math.min(points.length - 1, next)), null);
+  });
   if (refreshBtn) refreshBtn.addEventListener("click", function () { load(true); });
   document.addEventListener("visibilitychange", function () {
-    if (!document.hidden) load(false);
+    if (document.hidden) {
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+      stopCountdowns();
+      if (requestController) requestController.abort();
+    } else {
+      startCountdowns();
+      load(false);
+    }
   });
   window.addEventListener("pagehide", function () {
     if (pollTimer) clearTimeout(pollTimer);
-    if (countdownTimer) clearInterval(countdownTimer);
+    stopCountdowns();
     if (requestController) requestController.abort();
   });
 
-  countdownTimer = setInterval(updateCountdowns, 1000);
+  startCountdowns();
   load(true);
 })();

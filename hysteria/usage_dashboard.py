@@ -13,6 +13,19 @@ from datetime import datetime, timedelta
 import user_compat
 
 
+def configured_max_devices(cfg, default=2):
+    if not isinstance(cfg, dict):
+        return default
+    raw = cfg["max_devices"] if "max_devices" in cfg else default
+    if isinstance(raw, bool):
+        return default
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 0 else default
+
+
 @dataclass(frozen=True)
 class UsageDashboardContext:
     display_multiplier: float
@@ -36,6 +49,8 @@ class UsageDashboardContext:
     pct: object
     fmt_bytes: object
     render_admin_shell: object
+    asset_version: str
+    user_revision: object = None
 
 
 def scale_daily_entry(ctx, entry):
@@ -237,6 +252,12 @@ def build_overview_json_payload(ctx, *, now):
             'total': total,
             'percent': ctx.pct(used, total),
             'online': int(online.get(uid, 0)),
+            'revision': (
+                ctx.user_revision(cfg)
+                if callable(ctx.user_revision)
+                else ''
+            ),
+            'disabled': bool(cfg.get('disabled')),
         })
     total_used += int(ctx.preserved_raw_for_cycle(now=now) * ctx.display_multiplier)
     return {
@@ -353,7 +374,7 @@ def build_user_json_payload(ctx, uid, *, now, include_charts=True):
         "expiry_label": expiry["label"],
         "note": str(cfg.get("note") or ""),
         "online": int(online.get(uid, 0) or 0),
-        "max_devices": int(cfg.get("max_devices", 2)),
+        "max_devices": configured_max_devices(cfg),
         "cycle_used_bytes": int(cycle_raw * ctx.display_multiplier),
         "cycle_quota_bytes": int(ctx.user_total_quota(cfg)),
         "quota_extra_bytes": int(user_compat.quota_extra_bytes(cfg)),
@@ -490,7 +511,7 @@ def render_daily_usage(ctx, host, days=14):
 <div class="card mt-md section-head-card" style="padding:14px 18px;">
   <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
     <div>
-      <div class="bold">每日流量明细 · 最近 {days} 天</div>
+      <h2 class="section-title">每日流量明细 · 最近 {days} 天</h2>
       <div class="small">最早数据：{earliest_recorded} · 保留 {ctx.daily_retention_days} 天</div>
     </div>
     <div class="row gap-sm">{switcher}</div>
@@ -549,7 +570,8 @@ def render_usage_page(ctx, host):
 
     poll_controls = (
         '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
-        '<span class="badge poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true">已加载</span>'
+        '<span class="badge poll-status" data-role="poll-status">自动更新 · 30 s</span>'
+        '<span class="sr-only" id="usage-poll-announcer" role="status" aria-live="polite"></span>'
     )
 
     content = f'''<div class="grid grid-4 hero-stats">
@@ -560,17 +582,17 @@ def render_usage_page(ctx, host):
 </div>
 
 <div class="card mt-md chart-card" style="padding:14px 18px;">
-  <div class="bold">过去 7 天 · 每小时</div>
+  <h2 class="section-title">过去 7 天 · 每小时</h2>
   <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
 </div>
 
 <div class="grid grid-2 mt-md analytics-grid">
   <div class="card chart-card" style="padding:14px 18px;">
-    <div class="bold">7 天 × 24 小时 热图</div>
+    <h2 class="section-title">7 天 × 24 小时 热图</h2>
     <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
   </div>
   <div class="card card-flush chart-card" style="padding:14px 0;">
-    <div class="bold" style="padding:0 18px;">Top 5 · 近 24 小时</div>
+    <h2 class="section-title" style="padding:0 18px;">Top 5 · 近 24 小时</h2>
     <div id="top-n-host" style="margin-top:10px;">{top_html}</div>
   </div>
 </div>
@@ -583,8 +605,9 @@ def render_usage_page(ctx, host):
   </div>
 </details>
 
-<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
-<script src="/static/usage.js" defer></script>
+<div class="hover-tip" id="usage-hover-tip" role="status" aria-live="polite"
+     aria-atomic="true" style="display:none;position:absolute;"></div>
+<script src="/static/usage.js?v={html.escape(ctx.asset_version, quote=True)}" defer></script>
 '''
     return ctx.render_admin_shell(
         'usage', '流量分析', content,
@@ -618,6 +641,13 @@ def render_user_detail_page(ctx, uid, host):
                   f'{ctx.fmt_bytes(payload["cycle_quota_bytes"])}'
                   if payload["cycle_quota_bytes"] else
                   f'{ctx.fmt_bytes(payload["cycle_used_bytes"])} (无限)')
+    device_status = (
+        f'在线 <span data-role="detail-online">{payload["online"]}</span>'
+        ' · 设备上限：无限制'
+        if payload["max_devices"] == 0 else
+        f'在线 <span data-role="detail-online">{payload["online"]}</span>'
+        f' / 上限 {payload["max_devices"]}'
+    )
 
     alert_html = "".join(
         f'<div class="alert-row">{html.escape(a.get("ts", ""))} — '
@@ -626,12 +656,13 @@ def render_user_detail_page(ctx, uid, host):
     ) or '<div class="empty">无近期告警</div>'
     poll_controls = (
         '<button class="btn ghost btn-sm" type="button" id="usage-refresh-now">立即刷新</button>'
-        '<span class="badge poll-status" data-role="poll-status" aria-live="polite" aria-atomic="true">已加载</span>'
+        '<span class="badge poll-status" data-role="poll-status">自动更新 · 30 s</span>'
+        '<span class="sr-only" id="usage-poll-announcer" role="status" aria-live="polite"></span>'
     )
 
     content = f'''<a class="back-link" href="/admin/usage">← 返回 /admin/usage</a>
     <h2 class="user-title">{html.escape(uid)} {badge}{state_badges}
-      <span class="small"><span data-role="detail-online">{payload["online"]}</span> / {payload["max_devices"]} 在线</span>
+      <span class="small">{device_status}</span>
     </h2>
     <div class="small faint">有效期：{html.escape(payload["expiry_label"])}</div>{note_line}
 
@@ -642,22 +673,23 @@ def render_user_detail_page(ctx, uid, host):
 </div>
 
 <div class="card mt-md chart-card" style="padding:14px 18px;">
-  <div class="bold">7 天小时柱</div>
+  <h3 class="section-title">7 天小时柱</h3>
   <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
 </div>
 
 <div class="card mt-md chart-card" style="padding:14px 18px;">
-  <div class="bold">个人 7×24 热图</div>
+  <h3 class="section-title">个人 7×24 热图</h3>
   <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
 </div>
 
 <div class="card mt-md" style="padding:14px 18px;">
-  <div class="bold">最近告警</div>
+  <h3 class="section-title">最近告警</h3>
   <div style="margin-top:10px;">{alert_html}</div>
 </div>
 
-<div class="hover-tip" id="usage-hover-tip" style="display:none;position:absolute;"></div>
-<script src="/static/usage.js" defer></script>
+<div class="hover-tip" id="usage-hover-tip" role="status" aria-live="polite"
+     aria-atomic="true" style="display:none;position:absolute;"></div>
+<script src="/static/usage.js?v={html.escape(ctx.asset_version, quote=True)}" defer></script>
 '''
     return ctx.render_admin_shell(
         'usage', f'{uid} · 用量画像', content,
@@ -682,7 +714,7 @@ def render_daily_table_collapsed(ctx, host):
         rows_html.append(f'<tr><th>{html.escape(uid)}</th>{"".join(cells)}</tr>')
 
     headers = "".join(f'<th>{dk[5:]}</th>' for dk in window)
-    return (f'<div class="scroll-x">'
+    return (f'<div class="scroll-x" tabindex="0" aria-label="每日用量明细，可横向滚动">'
             f'<table class="table daily-table-collapsed">'
             f'<thead><tr><th>用户</th>{headers}</tr></thead>'
             f'<tbody>{"".join(rows_html) or f"<tr><td colspan={days + 1}>暂无数据</td></tr>"}</tbody>'

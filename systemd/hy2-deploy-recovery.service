@@ -1,0 +1,55 @@
+[Unit]
+Description=Recover an interrupted hy2 outer deployment
+After=local-fs.target
+Before=nginx.service hysteria-porthop.service hysteria-tcp-mss.service
+Before=hysteria-auth.service hysteria-server.service
+Before=hysteria-subscription.service hysteria-traffic-limiter.service
+Before=hysteria-traffic-limiter.timer xray.service tuic-server.service
+Before=hy2-https-recovery.service codex-quota-collector.service
+Before=codex-quota-collector.timer hy2-backup.service hy2-backup.timer
+Before=hy2-health-check.service hy2-health-check.timer
+Before=snap.certbot.renew.timer fail2ban.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hy2-lock-exec.py \
+  --lock-file /run/hy2-locks/deploy.lock \
+  --timeout 0 \
+  --success-if-locked \
+  --marker-env HY2_DEPLOY_LOCK_MARKER \
+  -- /usr/local/sbin/hy2-deploy-recovery.py recover
+RemainAfterExit=yes
+User=root
+Group=root
+UMask=0077
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadWritePaths=-/root/hysteria
+ReadWritePaths=/usr/local /etc /var/lib/hysteria -/var/log/xray
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_NET_ADMIN CAP_SYS_ADMIN
+SystemCallArchitectures=native
+TasksMax=64
+MemoryMax=384M
+
+[Install]
+RequiredBy=nginx.service hysteria-porthop.service hysteria-tcp-mss.service
+RequiredBy=hysteria-auth.service hysteria-server.service
+RequiredBy=hysteria-subscription.service hysteria-traffic-limiter.service
+RequiredBy=hysteria-traffic-limiter.timer xray.service tuic-server.service
+RequiredBy=hy2-https-recovery.service codex-quota-collector.service
+RequiredBy=codex-quota-collector.timer hy2-backup.service hy2-backup.timer
+RequiredBy=hy2-health-check.service hy2-health-check.timer
+RequiredBy=snap.certbot.renew.timer fail2ban.service

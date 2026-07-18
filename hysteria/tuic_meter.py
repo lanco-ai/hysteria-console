@@ -202,7 +202,7 @@ def _delta(current, previous):
 
 
 def counter_delta(current, *, port, state_file=STATE_FILE):
-    state = state_store.load_json(state_file, {}) or {}
+    state = state_store.load_json_strict(state_file, {}) or {}
     try:
         state_port = int(state.get("port") or 0)
     except (TypeError, ValueError):

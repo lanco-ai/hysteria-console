@@ -52,7 +52,9 @@ def _window_card(key, window, *, tone):
     </div>
     <span class="codex-window-orb" aria-hidden="true"></span>
   </div>
-  <div class="bar codex-quota-bar" aria-label="剩余额度">
+  <div class="bar codex-quota-bar" role="progressbar" aria-label="{_esc(window.get('label'))}剩余额度"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="{width:.2f}"
+       aria-valuetext="{_esc(_percent(remaining))}">
     <div class="fill" data-role="bar" style="width:{width:.2f}%"></div>
   </div>
   <div class="codex-quota-meta">
@@ -83,10 +85,12 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
         if not bool((windows.get('five_hour') or {}).get('available')) else ''
     )
     error_html = (
-        f'<div class="codex-collector-error" id="codex-collector-error">'
+        f'<div class="codex-collector-error" id="codex-collector-error" '
+        f'role="alert" aria-live="assertive" aria-atomic="true">'
         f'<strong>最近一次采集失败</strong><span>{_esc(last_error)}</span></div>'
         if last_error else
-        '<div class="codex-collector-error" id="codex-collector-error" hidden></div>'
+        '<div class="codex-collector-error" id="codex-collector-error" '
+        'role="alert" aria-live="assertive" aria-atomic="true" hidden></div>'
     )
 
     script_version = f'?v={_esc(asset_version)}' if asset_version else ''
@@ -99,7 +103,8 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
       <p>以每周额度为主，自动标记真实变化与准确时间；短周期窗口出现时同步展示。</p>
     </div>
     <div class="codex-live-cluster">
-      <span class="badge poll-status {status_class}" data-role="collector-status">{status_text}</span>
+      <span class="badge poll-status {status_class}" data-role="collector-status"
+            role="status" aria-live="polite" aria-atomic="true">{status_text}</span>
       <span class="small" data-role="last-success">最近采集：{_esc(last_success)}</span>
     </div>
   </section>
@@ -111,15 +116,15 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
 
   <div class="grid grid-3 codex-context-grid mt-md">
     <section class="card codex-context-card">
-      <span class="codex-context-icon">P</span>
+      <span class="codex-context-icon" aria-hidden="true">P</span>
       <div><div class="k">当前方案</div><div class="v" data-role="plan-type">{_esc(plan_label)}</div><div class="small">额度组 <span data-role="limit-id">{_esc(account.get('limit_id') or 'codex')}</span></div></div>
     </section>
     <section class="card codex-context-card">
-      <span class="codex-context-icon">↻</span>
+      <span class="codex-context-icon" aria-hidden="true">↻</span>
       <div><div class="k">采集节奏</div><div class="v">3 分钟</div><div class="small">下次采集 <strong data-role="next-poll">计算中</strong></div></div>
     </section>
     <section class="card codex-context-card">
-      <span class="codex-context-icon">R</span>
+      <span class="codex-context-icon" aria-hidden="true">R</span>
       <div><div class="k">可用重置次数</div><div class="v" data-role="reset-credits">{_esc(reset_credits_copy)}</div><div class="small">由 Codex 当前账户响应提供</div></div>
     </section>
   </div>
@@ -157,14 +162,17 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
         <small class="codex-chart-summary" data-role="chart-summary">等待数据</small>
       </div>
     </div>
-    <div class="codex-chart-frame" id="codex-chart-frame">
-      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1200 470" role="img" aria-label="Codex 周额度阶梯趋势和变化事件图"></svg>
+    <div class="codex-chart-frame" id="codex-chart-frame" tabindex="0" aria-label="额度趋势图，可横向滚动">
+      <svg id="codex-quota-chart" class="codex-quota-chart" viewBox="0 0 1200 470"
+           role="img" tabindex="-1" aria-describedby="codex-chart-tooltip"
+           aria-label="Codex 周额度阶梯趋势和变化事件图；聚焦后可用方向键浏览采样"></svg>
       <div class="codex-chart-empty" id="codex-chart-empty">采集第一条数据后，这里会自动形成趋势图</div>
-      <div class="codex-chart-tooltip" id="codex-chart-tooltip" hidden></div>
+      <div class="codex-chart-tooltip" id="codex-chart-tooltip" role="status"
+           aria-live="polite" aria-atomic="true" hidden></div>
     </div>
     <footer class="codex-chart-foot">
       <span data-role="history-start">历史记录：等待首采</span>
-      <span>事件线连接变化节点与“时间 · 变化后余额”；悬停仍可查看任意采样详情</span>
+      <span>事件线连接变化节点与“时间 · 变化后余额”；悬停或聚焦图表后使用方向键可查看任意采样详情</span>
     </footer>
   </section>
 
@@ -176,7 +184,7 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
       </div>
       <span class="badge gray" data-role="records-count">0 条</span>
     </header>
-    <div class="scroll-x">
+    <div class="scroll-x" tabindex="0" aria-label="Codex 最近采集明细，可横向滚动">
       <table class="codex-records-table">
         <thead><tr><th>采集时间</th><th>周余额</th><th>周额度重置</th><th data-col="five-hour">5 小时余额</th><th data-col="five-hour">5 小时重置</th></tr></thead>
         <tbody data-role="records-body"><tr><td colspan="5" class="empty">等待采集数据</td></tr></tbody>

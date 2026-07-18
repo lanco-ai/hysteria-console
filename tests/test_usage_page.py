@@ -76,6 +76,7 @@ def test_lightweight_overview_payload_excludes_charts_and_profile_metadata(tmp_p
     assert set(payload) == {"ts", "total_used", "users"}
     assert set(payload["users"][0]) == {
         "user", "tx", "rx", "used", "total", "percent", "online",
+        "revision", "disabled",
     }
     assert "note" not in payload["users"][0]
     assert "spark_html" not in payload["users"][0]
@@ -228,7 +229,9 @@ def test_aggregate_stats_cycle_uses_daily_sum(tmp_path, monkeypatch):
                 daily=daily, usage=usage)
     stats = ss._aggregate_stats(now=now, online={})
     expected_raw = 1_000_000_000 + 2_000_000_000 + 500_000_000
-    assert stats["cycle_bytes"] == int(expected_raw * ss.DISPLAY_MULTIPLIER)
+    assert stats["cycle_bytes"] == int(
+        expected_raw * ss.current_display_multiplier()
+    )
 
 
 def test_zero_cycle_daily_hourly_clears_user_within_cycle(tmp_path, monkeypatch):
@@ -395,7 +398,9 @@ def test_refresh_then_new_usage_accumulates_on_top_of_preserved(tmp_path, monkey
     monkeypatch.setattr(ss, "local_now", lambda: now)
     stats = ss._aggregate_stats(now=now, online={})
     expected_raw = 1_000_000_000 + 200_000_000
-    assert stats["cycle_bytes"] == int(expected_raw * ss.DISPLAY_MULTIPLIER)
+    assert stats["cycle_bytes"] == int(
+        expected_raw * ss.current_display_multiplier()
+    )
 
 
 def test_preserved_bucket_is_cycle_scoped_and_gcs_old_keys(tmp_path, monkeypatch):
@@ -422,8 +427,8 @@ def test_refresh_usage_button_renders_in_admin(tmp_path, monkeypatch):
                 users={"alice": {"metered": True, "monthly_quota_bytes": 1_000_000_000}})
     monkeypatch.setattr(ss, "local_now", lambda: now)
     out = ss.render_admin("test-host", "http://test-host")
-    assert 'action="/admin/reset-usage"' in out
-    assert 'action="/admin/refresh-usage"' in out
+    assert 'formaction="/admin/reset-usage?revision=' in out
+    assert 'formaction="/admin/refresh-usage?revision=' in out
     assert '刷新流量' in out
 
 

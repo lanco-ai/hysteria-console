@@ -12,7 +12,12 @@
   var tip = document.getElementById("usage-hover-tip");
   var refreshBtn = document.getElementById("usage-refresh-now");
   var pollStatus = document.querySelector('[data-role="poll-status"]');
-  var CHART_REFRESH_MS = 30000;
+  var pollAnnouncer = document.getElementById("usage-poll-announcer");
+  var CHART_REFRESH_MS = 90000;
+  var REQUEST_TIMEOUT_MS = 10000;
+  var POLL_BASE_MS = 30000;
+  var POLL_MAX_MS = 240000;
+  var RETRY_JITTER_MS = 4000;
   var lastChartsAt = Date.now();
   var lastChartSignature = null;
 
@@ -32,23 +37,69 @@
   }
 
   function attachHover(svg) {
-    if (!svg || !tip || svg.__hyHoverBound) return;
+    if (!svg || !tip) return;
+    var hasBars = Boolean(svg.querySelector("rect.hourly-bar"));
+    svg.setAttribute("tabindex", hasBars ? "0" : "-1");
+    svg.setAttribute("role", "img");
+    if (hasBars) svg.setAttribute("aria-describedby", "usage-hover-tip");
+    else {
+      svg.removeAttribute("aria-describedby");
+      var label = (svg.getAttribute("aria-label") || "小时流量").split("；")[0];
+      svg.setAttribute("aria-label", label + "均为 0");
+    }
+    if (svg.__hyHoverBound) return;
     svg.__hyHoverBound = true;
+    svg.__hyBarIndex = -1;
+    function showBar(target, event) {
+      if (!target) return;
+      var hour = target.getAttribute("data-hour") || "";
+      var bytes = target.getAttribute("data-bytes") || "0";
+      tip.textContent = hour.replace("T", " ") + " · " + fmtBytes(bytes);
+      tip.style.display = "block";
+      if (event) {
+        tip.style.left = (event.pageX + 10) + "px";
+        tip.style.top = (event.pageY - 28) + "px";
+      } else {
+        var rect = target.getBoundingClientRect();
+        var scrollX = window.scrollX || window.pageXOffset || 0;
+        var scrollY = window.scrollY || window.pageYOffset || 0;
+        tip.style.left = (rect.left + scrollX + rect.width / 2 + 10) + "px";
+        tip.style.top = (rect.top + scrollY - 32) + "px";
+      }
+    }
+    function hideBar() {
+      tip.style.display = "none";
+    }
     svg.addEventListener("mousemove", function (e) {
       var t = e.target;
       if (!t || t.tagName !== "rect" || !t.classList.contains("hourly-bar")) {
-        tip.style.display = "none";
+        hideBar();
         return;
       }
-      var hour = t.getAttribute("data-hour") || "";
-      var bytes = t.getAttribute("data-bytes") || "0";
-      tip.textContent = hour.replace("T", " ") + " · " + fmtBytes(bytes);
-      tip.style.display = "block";
-      tip.style.left = (e.pageX + 10) + "px";
-      tip.style.top = (e.pageY - 28) + "px";
+      showBar(t, e);
     });
-    svg.addEventListener("mouseleave", function () {
-      tip.style.display = "none";
+    svg.addEventListener("mouseleave", hideBar);
+    svg.addEventListener("focus", function () {
+      var bars = svg.querySelectorAll("rect.hourly-bar");
+      if (!bars.length) return;
+      svg.__hyBarIndex = svg.__hyBarIndex < 0
+        ? bars.length - 1
+        : Math.max(0, Math.min(bars.length - 1, svg.__hyBarIndex));
+      showBar(bars[svg.__hyBarIndex]);
+    });
+    svg.addEventListener("blur", hideBar);
+    svg.addEventListener("keydown", function (event) {
+      var bars = svg.querySelectorAll("rect.hourly-bar");
+      if (!bars.length) return;
+      var next = svg.__hyBarIndex < 0 ? 0 : svg.__hyBarIndex;
+      if (event.key === "ArrowRight" || event.key === "ArrowDown") next++;
+      else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next--;
+      else if (event.key === "Home") next = 0;
+      else if (event.key === "End") next = bars.length - 1;
+      else return;
+      event.preventDefault();
+      svg.__hyBarIndex = Math.max(0, Math.min(bars.length - 1, next));
+      showBar(bars[svg.__hyBarIndex]);
     });
   }
 
@@ -63,9 +114,29 @@
     pollStatus.classList.remove("is-live", "is-paused", "is-error");
     if (cls) pollStatus.classList.add(cls);
   }
+  function announce(text) {
+    if (pollAnnouncer && pollAnnouncer.textContent !== text) pollAnnouncer.textContent = text;
+  }
 
   function stamp() {
     return new Date().toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
+  function fetchWithTimeout(url, options) {
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var requestOptions = Object.assign({}, options || {});
+    if (controller) requestOptions.signal = controller.signal;
+    var timeoutId = null;
+    var timeoutError = new Error("request timeout");
+    timeoutError.code = "timeout";
+    var timeoutPromise = new Promise(function (_resolve, reject) {
+      timeoutId = setTimeout(function () {
+        reject(timeoutError);
+        if (controller) controller.abort();
+      }, REQUEST_TIMEOUT_MS);
+    });
+    return Promise.race([fetch(url, requestOptions), timeoutPromise])
+      .finally(function () { if (timeoutId) clearTimeout(timeoutId); });
   }
 
   function updateHourlyChart(svg, series) {
@@ -128,11 +199,34 @@
     }
 
     svg.setAttribute("viewBox", "0 0 " + width + " " + (height + labelStrip));
-    svg.setAttribute("aria-label", "过去 " + n + " 小时流量");
+    svg.setAttribute("aria-label", "过去 " + n + " 小时流量；聚焦后可用方向键浏览非零采样");
+    svg.setAttribute("role", "img");
     svg.innerHTML = '<g class="day-separators">' + separators.join("") + '</g>' +
       '<g class="bars">' + bars.join("") + '</g>' +
       '<g class="day-labels">' + labels.join("") + '</g>';
     attachHover(svg);
+  }
+
+  function updateHeatmapTable(grid, timestamp) {
+    var host = document.querySelector('[data-role="heatmap-data-body"]');
+    if (!host) return;
+    if (!Array.isArray(grid) || !grid.length) {
+      host.innerHTML = '<tr><td colspan="25" class="empty">当前范围暂无每小时数据</td></tr>';
+      return;
+    }
+    var currentKey = String(timestamp || "").slice(0, 13);
+    var todayIndex = grid.length - 1;
+    host.innerHTML = grid.map(function (row, rowIndex) {
+      var date = String(row.date || "");
+      var hours = Array.isArray(row.hours) ? row.hours : [];
+      var cells = [];
+      for (var hour = 0; hour < 24; hour++) {
+        var future = rowIndex === todayIndex && currentKey.slice(0, 10) === date &&
+          Number(currentKey.slice(11, 13)) < hour;
+        cells.push("<td>" + (future ? "—" : escapeHtml(fmtBytes(hours[hour]))) + "</td>");
+      }
+      return '<tr><th scope="row">' + escapeHtml(date) + '</th>' + cells.join("") + "</tr>";
+    }).join("");
   }
 
   function updateHeatmap(svg, grid, timestamp) {
@@ -140,7 +234,10 @@
     var rows = grid.length;
     if (!rows) {
       svg.setAttribute("viewBox", "0 0 0 0");
+      svg.setAttribute("role", "img");
+      svg.setAttribute("aria-label", "7 天小时热图；当前暂无数据");
       svg.innerHTML = "";
+      updateHeatmapTable(grid, timestamp);
       return;
     }
     var cellW = 20;
@@ -175,7 +272,8 @@
         var x = labelW + c * cellW;
         var yCell = r * cellH + 1;
         var cls = future ? "heat-cell future" : "heat-cell";
-        var opacity = future ? "" : ' opacity="' + (0.05 + 0.95 * value / maxValue).toFixed(2) + '"';
+        var heatOpacity = value <= 0 ? 0.16 : 0.60 + 0.40 * value / maxValue;
+        var opacity = future ? "" : ' opacity="' + heatOpacity.toFixed(2) + '"';
         var title = date + " " + ("0" + c).slice(-2) + " · " + fmtBytes(value);
         parts.push('<rect class="' + cls + '" x="' + x + '" y="' + yCell +
           '" width="' + (cellW - 1) + '" height="' + (cellH - 2) + '"' + opacity +
@@ -188,8 +286,10 @@
         '" text-anchor="middle">' + h + '</text>');
     });
     svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-    svg.setAttribute("aria-label", "7 天小时热图");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "7 天小时热图；详细数值见下方可展开数据表");
     svg.innerHTML = parts.join("");
+    updateHeatmapTable(grid, timestamp);
   }
 
   function sparklineSvg(values) {
@@ -319,7 +419,7 @@
     historyState = "loading";
     historyHost.setAttribute("aria-busy", "true");
     historyHost.innerHTML = '<div class="empty history-placeholder">正在加载每日明细…</div>';
-    fetch(historyHost.dataset.url || "/admin/usage-history", {
+    fetchWithTimeout(historyHost.dataset.url || "/admin/usage-history", {
       credentials: "same-origin", cache: "no-store"
     })
       .then(function (r) {
@@ -330,9 +430,12 @@
         historyHost.innerHTML = markup;
         historyState = "loaded";
       })
-      .catch(function () {
+      .catch(function (error) {
         historyState = "idle";
-        historyHost.innerHTML = '<div class="empty history-placeholder">加载失败，收起后重新展开即可重试</div>';
+        var label = error && error.code === "timeout" ? "请求超时" : "加载失败";
+        historyHost.innerHTML = '<div class="empty history-placeholder">' + label + ' <button class="btn ghost btn-sm" id="usage-history-retry" type="button">重试</button></div>';
+        var retry = document.getElementById("usage-history-retry");
+        if (retry) retry.addEventListener("click", loadHistory);
       })
       .finally(function () { historyHost.setAttribute("aria-busy", "false"); });
   }
@@ -343,44 +446,94 @@
   // Polling
   var timer = null;
   var inflight = false;
+  var running = false;
+  var consecutiveFailures = 0;
+  function retryDelay() {
+    var exponent = Math.min(consecutiveFailures, 3);
+    var base = Math.min(POLL_MAX_MS, POLL_BASE_MS * Math.pow(2, exponent));
+    var jitter = consecutiveFailures ? Math.floor(Math.random() * (RETRY_JITTER_MS + 1)) : 0;
+    return Math.min(POLL_MAX_MS, base + jitter);
+  }
+  function clearScheduled() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
+  }
+  function scheduleNext() {
+    if (!running || document.hidden || timer) return;
+    timer = setTimeout(function () {
+      timer = null;
+      tick();
+    }, retryDelay());
+  }
   function tick(forceCharts) {
     if (inflight) return;
+    clearScheduled();
     var includeCharts = forceCharts === true || Date.now() - lastChartsAt >= CHART_REFRESH_MS;
     var requestUrl = pollUrl + (includeCharts ? "" : "?summary=1");
     inflight = true;
     if (refreshBtn) refreshBtn.disabled = true;
     setPollStatus("刷新中", "is-live");
-    fetch(requestUrl, { credentials: "same-origin", cache: "no-store" })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .catch(function () { return null; })
-      .then(function (data) {
-        if (!data) {
-          setPollStatus("刷新失败", "is-error");
-          return;
+    var loginRequired = false;
+    fetchWithTimeout(requestUrl, {
+      credentials: "same-origin", cache: "no-store"
+    })
+      .then(function (r) {
+        var redirectedToLogin = false;
+        if (r.redirected) {
+          try { redirectedToLogin = new URL(r.url, window.location.origin).pathname === "/login"; }
+          catch (_error) { redirectedToLogin = false; }
         }
+        if (r.status === 401 || redirectedToLogin) {
+          loginRequired = true;
+          stop();
+          setPollStatus("登录已失效", "is-error");
+          announce("登录已失效，请重新登录");
+          return null;
+        }
+        if (!r.ok) {
+          var httpError = new Error("usage " + r.status);
+          httpError.code = "http";
+          throw httpError;
+        }
+        return r.json();
+      })
+      .then(function (data) {
+        if (!data) return;
         updatePayload(data);
         if (includeCharts) lastChartsAt = Date.now();
-        setPollStatus("更新 " + stamp(), "is-live");
+        consecutiveFailures = 0;
+        if (running) setPollStatus("更新 " + stamp(), "is-live");
+      })
+      .catch(function (error) {
+        if (loginRequired || (!running && document.hidden)) return;
+        consecutiveFailures = Math.min(consecutiveFailures + 1, 8);
+        var timedOut = error && error.code === "timeout";
+        setPollStatus((timedOut ? "请求超时" : "刷新失败") + " · 可点立即刷新", "is-error");
+        announce((timedOut ? "用量数据请求超时" : "用量数据更新失败") + "，可立即刷新，系统也会稍后自动重试");
       })
       .finally(function () {
         inflight = false;
         if (refreshBtn) refreshBtn.disabled = false;
+        scheduleNext();
       });
   }
   function start() {
-    if (!timer) {
-      tick();
-      timer = setInterval(tick, 5000);
-    }
+    if (running) return;
+    running = true;
+    consecutiveFailures = 0;
+    if (!inflight) tick();
   }
   function stop() {
-    if (timer) {
-      clearInterval(timer);
-      timer = null;
-    }
+    running = false;
+    clearScheduled();
     setPollStatus("已暂停", "is-paused");
   }
-  if (refreshBtn) refreshBtn.addEventListener("click", function () { tick(true); });
+  if (refreshBtn) refreshBtn.addEventListener("click", function () {
+    consecutiveFailures = 0;
+    tick(true);
+  });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) stop(); else start();
   });

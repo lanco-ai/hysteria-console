@@ -114,8 +114,15 @@ def hourly_bars_svg(series, *, peak_hour=None, height=120, bar_w=3, gap=1):
         cursor += run
     label_svg = f'<g class="day-labels">{"".join(label_parts)}</g>'
 
+    interactive = bool(bars)
+    accessibility = (
+        'tabindex="0" aria-describedby="usage-hover-tip" '
+        f'aria-label="过去 {n} 小时流量；聚焦后可用方向键浏览非零采样"'
+        if interactive else
+        f'tabindex="-1" aria-label="过去 {n} 小时流量均为 0"'
+    )
     return (f'<svg class="hourly-bars" viewBox="0 0 {width} {total_h}" '
-            f'aria-label="过去 {n} 小时流量">'
+            f'role="img" {accessibility}>'
             f'{sep_svg}{bar_svg}{label_svg}</svg>')
 
 
@@ -163,17 +170,22 @@ def weekday_hour_heatmap_svg(grid, *, current_hour_iso=None,
             is_future = (r == today_idx
                          and cur_hour_of_day is not None
                          and c > cur_hour_of_day)
+            hour_label = f'{row["date"]} {c:02d}:00'
             if is_future:
                 parts.append(
                     f'<rect class="heat-cell future" x="{x}" y="{y}" '
-                    f'width="{cell_w - 1}" height="{cell_h - 2}"/>'
+                    f'width="{cell_w - 1}" height="{cell_h - 2}">'
+                    f'<title>{html.escape(hour_label)} · 尚未发生</title></rect>'
                 )
             else:
-                op = 0.05 + 0.95 * (v / max_v)
+                # Non-zero cells must remain distinguishable from the dark
+                # surface even when one outlier dominates the scale.
+                op = 0.16 if v <= 0 else 0.60 + 0.40 * (v / max_v)
                 parts.append(
                     f'<rect class="heat-cell" x="{x}" y="{y}" '
                     f'width="{cell_w - 1}" height="{cell_h - 2}" '
-                    f'opacity="{op:.2f}"/>'
+                    f'opacity="{op:.2f}"><title>{html.escape(hour_label)} · '
+                    f'{html.escape(fmt_bytes(int(v)))}</title></rect>'
                 )
 
     for h in (0, 4, 8, 12, 16, 20, 23):
@@ -184,5 +196,38 @@ def weekday_hour_heatmap_svg(grid, *, current_hour_iso=None,
             f'text-anchor="middle">{h}</text>'
         )
 
-    return (f'<svg class="heatmap" viewBox="0 0 {width} {height}" '
-            f'aria-label="7 天小时热图">{"".join(parts)}</svg>')
+    table_headers = ''.join(
+        f'<th scope="col">{hour:02d}</th>' for hour in range(24)
+    )
+    table_rows = []
+    for r, row in enumerate(grid):
+        cells = []
+        for hour, value in enumerate(row["hours"]):
+            is_future = (
+                r == today_idx
+                and cur_hour_of_day is not None
+                and hour > cur_hour_of_day
+            )
+            cells.append(
+                f'<td>{"—" if is_future else html.escape(fmt_bytes(int(value)))}</td>'
+            )
+        table_rows.append(
+            f'<tr><th scope="row">{html.escape(str(row["date"]))}</th>'
+            f'{"".join(cells)}</tr>'
+        )
+    data_table = (
+        '<details class="heatmap-data-details mt-sm">'
+        '<summary>查看每小时数据表</summary>'
+        '<div class="scroll-x heatmap-data-scroll" tabindex="0" '
+        'aria-label="7 天每小时流量数据，可横向滚动">'
+        '<table class="table heatmap-data-table">'
+        '<caption class="sr-only">7 天每小时流量；列标题为 00 至 23 时</caption>'
+        f'<thead><tr><th scope="col">日期</th>{table_headers}</tr></thead>'
+        f'<tbody data-role="heatmap-data-body">{"".join(table_rows)}</tbody>'
+        '</table></div></details>'
+    )
+    return (
+        f'<svg class="heatmap" viewBox="0 0 {width} {height}" role="img" '
+        f'aria-label="7 天小时热图；详细数值见下方可展开数据表">'
+        f'{"".join(parts)}</svg>{data_table}'
+    )

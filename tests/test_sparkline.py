@@ -72,5 +72,6 @@ def test_admin_render_loads_poll_script_as_external_script(tmp_path, monkeypatch
     (tmp_path / 'online.json').write_text('{}')
 
     out = ss.render_admin('panel.example.com', 'http://panel.example.com')
-    assert '<script src="/static/admin-poll.js" defer></script>' in out
-    assert '<script>\n<script src="/static/admin-poll.js" defer></script>' not in out
+    expected = f'<script src="/static/admin-poll.js?v={ss.ADMIN_POLL_JS_ETAG.strip(chr(34))}" defer></script>'
+    assert expected in out
+    assert '<script>\n<script src="/static/admin-poll.js' not in out

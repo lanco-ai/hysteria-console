@@ -4,6 +4,81 @@ Centralizes the `metered` / `guest` alias mapping so callers don't hardcode the
 fallback chain. See CONTEXT.md `### User types` for the canonical vocabulary.
 """
 from datetime import date, datetime
+import re
+import uuid
+
+_USERNAME_RE = re.compile(r'^[A-Za-z0-9_.-]{1,64}$')
+
+
+def is_valid_username(value):
+    return bool(
+        isinstance(value, str)
+        and _USERNAME_RE.fullmatch(value)
+        and not value.endswith('.json')
+    )
+
+
+def authorization_config_error(cfg):
+    """Return a reason when persisted auth/quota fields are structurally unsafe.
+
+    Missing fields remain valid for legacy/unmetered users. Present fields are
+    strict so malformed expiry or quota data can never degrade into unlimited
+    access.
+    """
+    if not isinstance(cfg, dict):
+        return 'user config must be an object'
+    for field in (
+        'disabled',
+        'metered',
+        'guest',
+        'tuic_enabled',
+        'panel_password_must_change',
+    ):
+        if field in cfg and not isinstance(cfg[field], bool):
+            return f'{field} must be a boolean'
+    for field in (
+        'monthly_quota_bytes',
+        'quota_extra_bytes',
+        'max_devices',
+    ):
+        if field not in cfg:
+            continue
+        value = cfg[field]
+        if isinstance(value, bool):
+            return f'{field} must be a non-negative integer'
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return f'{field} must be a non-negative integer'
+        if parsed < 0 or (
+            isinstance(value, str) and str(parsed) != value.strip()
+        ):
+            return f'{field} must be a non-negative integer'
+    for field in (
+        'sub_token',
+        'vless_uuid',
+        'password_hash',
+        'panel_pass_hash',
+    ):
+        if field in cfg and cfg[field] is not None and not isinstance(
+            cfg[field], str
+        ):
+            return f'{field} must be a string'
+    raw_uuid = cfg.get('vless_uuid')
+    if raw_uuid not in (None, ''):
+        try:
+            uuid.UUID(str(raw_uuid))
+        except (ValueError, AttributeError, TypeError):
+            return 'vless_uuid must be a valid UUID'
+    if cfg.get('expires_at') not in (None, '') and parse_expiry_date(
+        cfg.get('expires_at')
+    ) is None:
+        return 'expires_at must be an ISO date'
+    if cfg.get('disabled_until') not in (None, '') and parse_disabled_until(
+        cfg.get('disabled_until')
+    ) is None:
+        return 'disabled_until must be an ISO datetime'
+    return None
 
 
 def is_metered(cfg):

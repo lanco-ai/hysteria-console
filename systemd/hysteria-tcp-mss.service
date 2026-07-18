@@ -7,6 +7,35 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/usr/local/sbin/hysteria-tcp-mss.sh
 RemainAfterExit=yes
+User=root
+Group=root
+TimeoutStartSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+# iptables serializes writers with /run/xtables.lock.
+ReadWritePaths=/run
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+# Keep the host network namespace: these rules must affect live traffic.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+SystemCallArchitectures=native
+TasksMax=16
+MemoryMax=64M
 
 [Install]
 WantedBy=multi-user.target

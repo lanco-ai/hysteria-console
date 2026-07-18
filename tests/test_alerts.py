@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 
 import alerts
+import pytest
+import state_store
 
 
 # ---------- config loading -----------------------------------------------------
@@ -31,11 +33,12 @@ def test_load_state_returns_empty_when_missing(tmp_path):
     assert s == {k: {} for k in alerts._STATE_KEYS}
 
 
-def test_load_state_resets_on_corruption(tmp_path):
+def test_load_state_rejects_corruption_without_resetting(tmp_path):
     p = tmp_path / 'corrupt.json'
     p.write_text('garbage')
-    s = alerts.load_state(p)
-    assert s == {k: {} for k in alerts._STATE_KEYS}
+    with pytest.raises(state_store.InvalidJsonState):
+        alerts.load_state(p)
+    assert p.read_text() == 'garbage'
 
 
 def test_load_state_fills_missing_keys(tmp_path):
@@ -44,6 +47,33 @@ def test_load_state_fills_missing_keys(tmp_path):
     s = alerts.load_state(p)
     assert s['quota_80'] == {'alice': '2026-05'}
     assert all(s[k] == {} for k in alerts._STATE_KEYS if k != 'quota_80')
+
+
+@pytest.mark.parametrize(
+    'value',
+    [
+        [],
+        {'quota_80': []},
+        {'quota_80': {'alice': ''}},
+        {'quota_80': {'alice': {'key': '2026-05'}}},
+        {'quota_80': {'alice': {
+            'key': '2026-05',
+            'token': 'claim',
+            'claimed_at': float('inf'),
+        }}},
+    ],
+)
+def test_load_state_rejects_invalid_shapes(tmp_path, value):
+    p = tmp_path / 'invalid.json'
+    p.write_text(json.dumps(value))
+    with pytest.raises(state_store.InvalidJsonState):
+        alerts.load_state(p)
+
+
+def test_load_state_accepts_structured_future_bucket(tmp_path):
+    p = tmp_path / 'future.json'
+    p.write_text(json.dumps({'future_kind': {'alice': 'v1'}}))
+    assert alerts.load_state(p)['future_kind'] == {'alice': 'v1'}
 
 
 def test_save_and_reload_state_roundtrip(tmp_path):

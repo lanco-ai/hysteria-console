@@ -1,0 +1,49 @@
+[Unit]
+Description=Hysteria Loopback Authentication Backend
+Wants=network-online.target
+After=network-online.target
+Before=hysteria-server.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /root/hysteria/auth_service.py
+ExecStartPost=/usr/bin/curl --fail --silent --show-error --noproxy * --max-time 2 --retry 5 --retry-delay 1 --retry-connrefused http://127.0.0.1:8082/livez
+ExecStartPost=/usr/local/sbin/hysteria-auth-recover.sh recover
+WorkingDirectory=/root/hysteria
+User=root
+Group=root
+Restart=on-failure
+RestartSec=2
+TimeoutStartSec=15
+TimeoutStopSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadOnlyPaths=/root/hysteria
+ReadWritePaths=/root/hysteria/state
+ProtectHostname=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+LimitNOFILE=256
+TasksMax=32
+MemoryHigh=128M
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

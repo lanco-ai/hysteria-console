@@ -1,8 +1,8 @@
 {
   "log": {
     "loglevel": "warning",
-    "access": "/var/log/xray/access.log",
-    "error": "/var/log/xray/error.log"
+    "access": "/var/log/xray/hy2-access.log",
+    "error": "/var/log/xray/hy2-error.log"
   },
   "stats": {},
   "api": {
@@ -45,13 +45,7 @@
       "port": 443,
       "protocol": "vless",
       "settings": {
-        "clients": [
-          {
-            "id": "__XRAY_CLIENT_UUID__",
-            "email": "me",
-            "flow": "xtls-rprx-vision"
-          }
-        ],
+        "clients": [],
         "decryption": "none"
       },
       "streamSettings": {
@@ -87,13 +81,7 @@
       "port": 8443,
       "protocol": "vless",
       "settings": {
-        "clients": [
-          {
-            "id": "__XRAY_CLIENT_UUID__",
-            "email": "me-backup",
-            "flow": "xtls-rprx-vision"
-          }
-        ],
+        "clients": [],
         "decryption": "none"
       },
       "streamSettings": {

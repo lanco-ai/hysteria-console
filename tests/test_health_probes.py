@@ -9,7 +9,7 @@ import subscription_service as ss
 def test_probe_cron_fresh(tmp_path, monkeypatch):
     f = tmp_path / 'usage.json'
     f.write_text('{}')
-    monkeypatch.setattr(ss, 'USAGE_FILE', f, raising=False)
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', f, raising=False)
     out = ss.probe_cron_heartbeat()
     assert out['ok'] is True
     assert '秒前' in out['label']
@@ -21,13 +21,15 @@ def test_probe_cron_stale(tmp_path, monkeypatch):
     f.write_text('{}')
     old = (datetime.now() - timedelta(seconds=600)).timestamp()
     os.utime(f, (old, old))
-    monkeypatch.setattr(ss, 'USAGE_FILE', f, raising=False)
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', f, raising=False)
     out = ss.probe_cron_heartbeat()
     assert out['ok'] is False
 
 
 def test_probe_cron_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(ss, 'USAGE_FILE', tmp_path / 'nope.json', raising=False)
+    monkeypatch.setattr(
+        ss, 'USAGE_DAILY_FILE', tmp_path / 'nope.json', raising=False,
+    )
     out = ss.probe_cron_heartbeat()
     assert out['ok'] is False
     assert out['label'] == '未知'
@@ -52,6 +54,71 @@ def test_probe_systemd_missing():
         out = ss.probe_systemd('xray.service')
         assert out['ok'] is False
         assert out['label'] == '未知'
+
+
+class _ReadinessResponse:
+    def __init__(
+        self,
+        status=200,
+        body=b'{"ok":true}',
+        content_type='application/json',
+    ):
+        self.status = status
+        self._body = body
+        self._content_type = content_type
+
+    def read(self, _limit):
+        return self._body
+
+    def getheader(self, name):
+        assert name == 'Content-Type'
+        return self._content_type
+
+
+class _ReadinessConnection:
+    def __init__(self, response):
+        self.response = response
+        self.request_args = None
+        self.closed = False
+
+    def request(self, *args, **kwargs):
+        self.request_args = (args, kwargs)
+
+    def getresponse(self):
+        return self.response
+
+    def close(self):
+        self.closed = True
+
+
+def test_probe_auth_readiness_requires_bounded_json_success():
+    connection = _ReadinessConnection(_ReadinessResponse())
+
+    out = health.probe_auth_readiness(
+        connection_factory=lambda host, port, timeout: connection
+    )
+
+    assert out == {'ok': True, 'label': '就绪'}
+    assert connection.request_args[0] == ('GET', '/readyz')
+    assert connection.closed
+
+
+def test_probe_auth_readiness_fails_closed_on_shallow_or_malformed_response():
+    cases = [
+        _ReadinessResponse(status=503, body=b'{"ok":false}'),
+        _ReadinessResponse(body=b'{"ok":false}'),
+        _ReadinessResponse(body=b'not-json'),
+        _ReadinessResponse(content_type='text/plain'),
+        _ReadinessResponse(body=b'{' + (b'x' * 4096)),
+    ]
+
+    for response in cases:
+        connection = _ReadinessConnection(response)
+        result = health.probe_auth_readiness(
+            connection_factory=lambda host, port, timeout: connection
+        )
+        assert result['ok'] is False
+        assert connection.closed
 
 
 def test_probe_disk():
@@ -133,6 +200,106 @@ def test_probe_cert_openssl_failure():
         out = ss.probe_cert(path='/dev/null')
     assert out['ok'] is False
     assert out['label'] == '未知'
+
+
+def test_panel_tls_probe_distinguishes_optional_and_required_absence(tmp_path):
+    site = tmp_path / 'panel-tls.conf'
+    marker = tmp_path / 'https_required'
+
+    assert health.probe_panel_tls(site, marker) == {
+        'ok': True,
+        'label': '未启用',
+    }
+    marker.write_text('required\n', encoding='utf-8')
+    assert health.probe_panel_tls(site, marker) == {
+        'ok': False,
+        'label': '配置缺失',
+    }
+
+
+def test_certbot_renewal_probe_is_conditional_on_https_requirement(tmp_path):
+    marker = tmp_path / 'https_required'
+    calls = []
+
+    def runner(command, **_kwargs):
+        calls.append(command)
+        return type('R', (), {'stdout': 'inactive\n', 'returncode': 3})()
+
+    recovery = tmp_path / 'renewal-pending'
+    assert health.probe_certbot_renewal(
+        marker,
+        recovery_marker=recovery,
+        runner=runner,
+    ) == {
+        'ok': True,
+        'label': '未要求',
+    }
+    assert calls == []
+
+    marker.write_text('required\n', encoding='utf-8')
+    assert health.probe_certbot_renewal(
+        marker,
+        recovery_marker=recovery,
+        runner=runner,
+    ) == {
+        'ok': False,
+        'label': 'inactive',
+    }
+    assert calls == [[
+        'systemctl',
+        'is-active',
+        'snap.certbot.renew.timer',
+    ]]
+
+    recovery.write_text('transaction\n', encoding='utf-8')
+    assert health.probe_certbot_renewal(
+        marker,
+        recovery_marker=recovery,
+        runner=runner,
+    ) == {
+        'ok': False,
+        'label': '待恢复',
+    }
+    assert len(calls) == 1
+
+
+def test_panel_tls_probe_checks_the_certificate_selected_by_nginx(tmp_path):
+    certificate = tmp_path / 'fullchain.pem'
+    certificate.write_text('fixture\n', encoding='utf-8')
+    site = tmp_path / 'panel-tls.conf'
+    site.write_text(
+        f'server {{\n  ssl_certificate {certificate};\n}}\n',
+        encoding='utf-8',
+    )
+    seen = []
+
+    def runner(command, **_kwargs):
+        seen.append(command)
+        return type('R', (), {
+            'stdout': 'notAfter=May  5 12:34:56 2099 GMT\n',
+            'returncode': 0,
+        })()
+
+    result = health.probe_panel_tls(
+        site,
+        tmp_path / 'not-required',
+        runner=runner,
+    )
+
+    assert result['ok'] is True
+    assert seen[0][-1] == str(certificate)
+
+
+def test_panel_tls_probe_rejects_ambiguous_certificate_directive(tmp_path):
+    site = tmp_path / 'panel-tls.conf'
+    site.write_text(
+        'ssl_certificate relative.pem;\n',
+        encoding='utf-8',
+    )
+
+    assert health.probe_panel_tls(
+        site, tmp_path / 'not-required'
+    ) == {'ok': False, 'label': '配置异常'}
 
 
 def test_probe_hysteria_update_marks_urgent_bad():

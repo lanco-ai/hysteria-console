@@ -35,6 +35,7 @@ class IncidentConsoleContext:
     render_alert: object
     flash_text: object
     render_admin_shell: object
+    user_revision: object = None
 
 
 def _last_window_hour_keys(ctx, now, hours=24):
@@ -104,6 +105,11 @@ def _incident_user_rows(ctx, *, now, hourly, daily, users, online, hours=24, lim
         expiry = ctx.user_expiry_state(cfg, today=now.date())
         rows.append({
             'user': uid,
+            'revision': (
+                ctx.user_revision(cfg)
+                if callable(ctx.user_revision)
+                else ''
+            ),
             'last_24h_bytes': int(raw_total * ctx.display_multiplier),
             'cycle_used_bytes': int(cycle_raw * ctx.display_multiplier),
             'quota_bytes': int(quota),
@@ -179,13 +185,17 @@ def render_incidents(ctx, host, flash=''):
         )
         actions = (
             '<div class="row gap-sm">'
-            '<form method="post" action="/admin/pause-user" class="inline-form-row" data-action="disable-user">'
+            '<form method="post" action="/admin/pause-user" class="inline-form-row" data-action="disable-user" '
+            f'data-confirm="暂停 {user_esc} 1 小时会立即拒绝新连接并断开现有会话，确认继续？">'
             f'<input type="hidden" name="user" value="{user_esc}">'
+            f'<input type="hidden" name="user_revision" value="{html.escape(row.get("revision") or "", quote=True)}">'
             '<input type="hidden" name="minutes" value="60">'
             '<input type="hidden" name="next" value="/admin/incidents">'
             '<button class="btn ghost btn-sm" type="submit">暂停 1 小时</button></form>'
-            '<form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token">'
+            '<form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token" '
+            f'data-confirm="轮换 {user_esc} 的 Token 会立即作废旧订阅和面板链接，确认继续？">'
             f'<input type="hidden" name="user" value="{user_esc}">'
+            f'<input type="hidden" name="user_revision" value="{html.escape(row.get("revision") or "", quote=True)}">'
             '<input type="hidden" name="next" value="/admin/incidents">'
             '<button class="btn ghost btn-sm" type="submit">轮换 Token</button></form>'
             f'<a class="btn ghost btn-sm" href="/admin/user/{user_esc}">画像</a>'
@@ -222,23 +232,26 @@ def render_incidents(ctx, host, flash=''):
 </div>
 
 <div class="grid grid-2 mt-md">
-  <div class="card card-flush scroll-x">
+  <div class="card card-flush scroll-x" tabindex="0"
+       aria-label="峰值小时相关用户，可横向滚动">
     <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-      <div class="bold">峰值小时相关用户</div><span class="small">Top {len(peak.get('users') or [])}</span>
+      <h2 class="section-title">峰值小时相关用户</h2><span class="small">Top {len(peak.get('users') or [])}</span>
     </div>
     <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>峰值小时流量</th></tr></thead><tbody>{peak_users}</tbody></table>
   </div>
-  <div class="card card-flush scroll-x">
+  <div class="card card-flush scroll-x" tabindex="0"
+       aria-label="近期告警状态，可横向滚动">
     <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-      <div class="bold">近期告警状态</div><span class="small">去重状态</span>
+      <h2 class="section-title">近期告警状态</h2><span class="small">去重状态</span>
     </div>
     <table class="table"><thead><tr><th style="padding-left:18px;">类型</th><th>用户</th><th style="padding-right:18px;">键</th></tr></thead><tbody>{alert_rows}</tbody></table>
   </div>
 </div>
 
-<div class="card card-flush scroll-x mt-md">
+<div class="card card-flush scroll-x mt-md" tabindex="0"
+     aria-label="处置候选用户，可横向滚动">
   <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-    <div class="bold">处置候选用户</div>
+    <h2 class="section-title">处置候选用户</h2>
     <div class="small">按近 24 小时流量排序；暂停/轮换会复用现有安全动作</div>
   </div>
   <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>24h 流量</th><th>周期用量</th><th>状态</th><th style="padding-right:18px;">操作</th></tr></thead><tbody>{''.join(user_rows)}</tbody></table>

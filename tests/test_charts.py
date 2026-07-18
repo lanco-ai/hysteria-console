@@ -92,8 +92,9 @@ def test_heatmap_svg_dashes_future_cells_in_today_row():
 def test_heatmap_svg_intensity_proportional_to_value():
     grid = [{"date": f"2026-05-0{i+2}", "hours": [j for j in range(24)]} for i in range(7)]
     out = charts.weekday_hour_heatmap_svg(grid, current_hour_iso=None)
-    assert 'opacity="0.05"' in out or 'opacity="0.10"' in out
-    assert 'opacity="1.00"' in out or 'opacity="0.95"' in out
+    assert 'opacity="0.16"' in out
+    assert 'opacity="0.60"' in out or 'opacity="0.62"' in out
+    assert 'opacity="1.00"' in out
 
 
 def test_heatmap_svg_handles_all_zero_input():

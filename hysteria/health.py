@@ -1,5 +1,6 @@
 """Read-only health probes for the admin status page."""
 import html
+import http.client
 import json
 import os
 import re
@@ -9,6 +10,49 @@ import time
 from datetime import datetime
 from pathlib import Path
 from stat import S_IMODE
+
+
+def probe_auth_readiness(
+    *,
+    host='127.0.0.1',
+    port=8082,
+    path='/readyz',
+    timeout=3,
+    connection_factory=http.client.HTTPConnection,
+):
+    """Require the loopback auth bridge and its persisted dependencies."""
+    connection = None
+    try:
+        connection = connection_factory(host, port, timeout=timeout)
+        connection.request(
+            'GET',
+            path,
+            headers={
+                'Accept': 'application/json',
+                'Connection': 'close',
+            },
+        )
+        response = connection.getresponse()
+        body = response.read(4097)
+        content_type = str(response.getheader('Content-Type') or '')
+        if (
+            response.status != 200
+            or len(body) > 4096
+            or not content_type.lower().startswith('application/json')
+        ):
+            return {'ok': False, 'label': '未就绪'}
+        payload = json.loads(body.decode('utf-8'))
+        if not isinstance(payload, dict) or payload.get('ok') is not True:
+            return {'ok': False, 'label': '未就绪'}
+        return {'ok': True, 'label': '就绪'}
+    except Exception:
+        return {'ok': False, 'label': '不可达'}
+    finally:
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
 
 
 def probe_cron_heartbeat(path):
@@ -56,6 +100,65 @@ def probe_cert(path, *, runner=subprocess.run, environ=None, utcnow=datetime.utc
         return {'ok': days > 14, 'label': f'{days} 天剩余'}
     except Exception:
         return {'ok': False, 'label': '未知'}
+
+
+def probe_panel_tls(
+    site_config,
+    required_marker,
+    *,
+    runner=subprocess.run,
+    environ=None,
+    utcnow=datetime.utcnow,
+):
+    """Report the certificate selected by the active panel TLS vhost."""
+    site = Path(site_config)
+    required = Path(required_marker).is_file()
+    if not site.exists() and not site.is_symlink():
+        return {
+            'ok': not required,
+            'label': '配置缺失' if required else '未启用',
+        }
+    try:
+        if site.stat().st_size > 64 * 1024:
+            return {'ok': False, 'label': '配置异常'}
+        config = site.read_text(encoding='utf-8')
+        match = re.search(
+            r'(?m)^\s*ssl_certificate\s+([^;\r\n]+);\s*$',
+            config,
+        )
+        if match is None:
+            return {'ok': False, 'label': '配置异常'}
+        certificate = match.group(1).strip()
+        if (
+            not certificate.startswith('/')
+            or len(certificate) > 4096
+            or any(char.isspace() for char in certificate)
+        ):
+            return {'ok': False, 'label': '配置异常'}
+    except (OSError, UnicodeError):
+        return {'ok': False, 'label': '配置异常'}
+    return probe_cert(
+        certificate,
+        runner=runner,
+        environ=environ,
+        utcnow=utcnow,
+    )
+
+
+def probe_certbot_renewal(
+    required_marker,
+    *,
+    recovery_marker=(
+        '/var/lib/hysteria/https-activation-recovery/renewal-pending'
+    ),
+    runner=subprocess.run,
+):
+    """Require the Certbot renewal timer only for HTTPS-required installs."""
+    if not Path(required_marker).is_file():
+        return {'ok': True, 'label': '未要求'}
+    if os.path.lexists(recovery_marker):
+        return {'ok': False, 'label': '待恢复'}
+    return probe_systemd('snap.certbot.renew.timer', runner=runner)
 
 
 def probe_online(path, *, load_json):
@@ -140,8 +243,13 @@ def probe_recent_backup(path, *, max_age_hours=30, disk_usage=shutil.disk_usage)
 
 
 def health_card(title, probe_result):
-    cls = 'ok' if probe_result['ok'] else 'bad'
+    is_ok = bool(probe_result['ok'])
+    cls = 'ok' if is_ok else 'bad'
+    status = '正常' if is_ok else '异常'
+    badge_cls = 'badge-info' if is_ok else 'badge-danger'
     return (f'<div class="card stat health-{cls}">'
             f'<div class="k">{html.escape(title)}</div>'
             f'<div class="v">{html.escape(probe_result["label"])}</div>'
+            f'<div class="small"><span class="badge {badge_cls} health-status">'
+            f'状态：{status}</span></div>'
             f'</div>')

@@ -10,6 +10,7 @@ These are unit-level checks; the integration paths are kept tight so
 they don't require a real qrencode binary or a real HTTP listener.
 """
 import csv as _csv
+from concurrent.futures import ThreadPoolExecutor
 import io
 import json
 import sys
@@ -23,6 +24,20 @@ import yaml
 import subscription_service as ss
 
 SH = ZoneInfo("Asia/Shanghai")
+
+
+def _write_meta(path):
+    Path(path).write_text(
+        json.dumps({
+            'admin_user': 'admin',
+            'admin_pass_hash': 'test-only',
+            'admin_token': 'test-token',
+            'settlement_day': 1,
+            'cycle_length_days': 30,
+            'cycle_anchor_date': '2026-01-01',
+        }),
+        encoding='utf-8',
+    )
 
 
 # ----- A: QR helper ---------------------------------------------------------
@@ -96,6 +111,7 @@ def test_user_panel_defers_qr_generation_until_requested(tmp_path, monkeypatch):
     (tmp_path / 'users.json').write_text(json.dumps({
         'alice': {'sub_token': 'tok123', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2},
     }))
+    (tmp_path / 'usage_daily.json').write_text('{}')
     def should_not_render(*_a, **_k):
         raise AssertionError('QR generation must be deferred to /panel/<user>/qr.svg')
 
@@ -107,6 +123,223 @@ def test_user_panel_defers_qr_generation_until_requested(tmp_path, monkeypatch):
     assert 'src=' not in image_tag
     assert 'data-qr="/panel/alice/qr.svg?token=tok123"' in page
     assert '二维码仅在这里按需生成' in page
+
+
+# ----- B: End-user password login ------------------------------------------
+
+def test_home_and_user_login_page_expose_separate_user_entry():
+    home = ss.render_home('panel.test')
+    login = ss.render_user_login('panel.test')
+
+    assert 'href="/user/login"' in home
+    assert '用户登录' in home
+    assert 'action="/user/login"' in login
+    assert 'autocomplete="username"' in login
+    assert 'autocomplete="current-password"' in login
+    assert '管理员登录' not in login
+
+
+def test_user_session_cookie_is_separate_from_admin_cookie(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USER_SESSIONS_FILE', tmp_path / 'user_sessions.json')
+    sid = ss.create_user_session('alice')
+
+    assert ss.get_user_sessions()[sid]['user'] == 'alice'
+    assert ss.user_session_cookie(sid).startswith('usid=')
+    assert ss.clear_user_session_cookie().startswith('usid=;')
+    assert not ss.user_session_cookie(sid).startswith('sid=')
+
+
+def test_user_password_login_reaches_clean_panel_url(tmp_path, monkeypatch):
+    import http.client
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    users_file = tmp_path / 'users.json'
+    sessions_file = tmp_path / 'user_sessions.json'
+    meta_file = tmp_path / 'meta.json'
+    users_file.write_text(json.dumps({
+        'alice': {
+            'sub_token': 'SECRET-TOKEN',
+            'panel_pass_hash': ss.hash_secret('correct horse'),
+            'monthly_quota_bytes': 1 << 30,
+            'max_devices': 2,
+        },
+    }))
+    meta_file.write_text(json.dumps({
+        'admin_user': 'admin',
+        'admin_pass_hash': ss.hash_secret('admin password'),
+        'admin_token': 'admin-token',
+    }))
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+    monkeypatch.setattr(ss, 'USER_SESSIONS_FILE', sessions_file)
+    monkeypatch.setattr(ss, 'META_FILE', meta_file)
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    ss._user_login_failures.clear()
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), ss.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
+        payload = 'username=alice&password=correct+horse'
+        conn.request(
+            'POST', '/user/login', body=payload,
+            headers={
+                'Host': 'panel.test',
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Length': str(len(payload)),
+            },
+        )
+        response = conn.getresponse()
+        response.read()
+        cookie = response.getheader('Set-Cookie')
+        assert response.status == 302
+        assert response.getheader('Location') == '/user/panel'
+        assert cookie.startswith('usid=')
+        assert 'SECRET-TOKEN' not in response.getheader('Location')
+
+        conn.request('GET', '/user/panel', headers={
+            'Host': 'panel.test', 'Cookie': cookie.split(';', 1)[0],
+        })
+        panel = conn.getresponse()
+        body = panel.read().decode()
+        assert panel.status == 200
+        assert '用户面板' in body
+        assert '/user/panel.json' in body
+        assert 'href="/user/change-password"' in body
+        assert 'method="post" action="/user/logout"' in body
+
+        conn.request('GET', '/user/panel', headers={'Host': 'panel.test'})
+        denied = conn.getresponse()
+        denied.read()
+        assert denied.status == 302
+        assert denied.getheader('Location') == '/user/login'
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_user_must_change_initial_password_before_opening_panel(tmp_path, monkeypatch):
+    import http.client
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    users_file = tmp_path / 'users.json'
+    sessions_file = tmp_path / 'user_sessions.json'
+    meta_file = tmp_path / 'meta.json'
+    users_file.write_text(json.dumps({
+        'alice': {
+            'sub_token': 'tok',
+            'panel_pass_hash': ss.hash_secret('12345678'),
+            'panel_password_must_change': True,
+            'monthly_quota_bytes': 1 << 30,
+            'max_devices': 2,
+        },
+    }))
+    meta_file.write_text(json.dumps({
+        'admin_user': 'admin',
+        'admin_pass_hash': ss.hash_secret('admin password'),
+        'admin_token': 'admin-token',
+    }))
+    monkeypatch.setattr(ss, 'USERS_FILE', users_file)
+    monkeypatch.setattr(ss, 'USER_SESSIONS_FILE', sessions_file)
+    monkeypatch.setattr(ss, 'META_FILE', meta_file)
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    ss._user_login_failures.clear()
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), ss.Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
+        login = 'username=alice&password=12345678'
+        conn.request('POST', '/user/login', body=login, headers={
+            'Host': 'panel.test',
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': str(len(login)),
+        })
+        response = conn.getresponse()
+        response.read()
+        old_cookie = response.getheader('Set-Cookie').split(';', 1)[0]
+        old_sid = old_cookie.split('=', 1)[1]
+        assert response.status == 302
+        assert response.getheader('Location') == '/user/change-password'
+
+        conn.request('GET', '/user/panel', headers={
+            'Host': 'panel.test', 'Cookie': old_cookie,
+        })
+        forced = conn.getresponse()
+        forced.read()
+        assert forced.status == 302
+        assert forced.getheader('Location') == '/user/change-password'
+
+        conn.request('GET', '/user/change-password', headers={
+            'Host': 'panel.test', 'Cookie': old_cookie,
+        })
+        change_page = conn.getresponse()
+        body = change_page.read().decode()
+        assert change_page.status == 200
+        assert 'action="/user/change-password"' in body
+        assert '当前密码' in body
+        assert '新密码' in body
+
+        change = 'current=12345678&new=a-new-password&confirm=a-new-password'
+        conn.request('POST', '/user/change-password', body=change, headers={
+            'Host': 'panel.test',
+            'Cookie': old_cookie,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': str(len(change)),
+        })
+        changed = conn.getresponse()
+        changed.read()
+        new_cookie = changed.getheader('Set-Cookie').split(';', 1)[0]
+        assert changed.status == 302
+        assert changed.getheader('Location') == '/user/panel'
+        assert new_cookie != old_cookie
+
+        cfg = json.loads(users_file.read_text())['alice']
+        assert ss.verify_secret('a-new-password', cfg['panel_pass_hash'])
+        assert not cfg.get('panel_password_must_change')
+        assert old_sid not in ss.get_user_sessions()
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_user_change_password_rejects_reusing_current_password(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    cfg = {'panel_pass_hash': ss.hash_secret('12345678')}
+    (tmp_path / 'users.json').write_text(json.dumps({'alice': cfg}))
+
+    page = ss.render_user_change_password('panel.test', 'alice', msg='new password same')
+
+    assert '新密码不能与当前密码相同' in page
+
+
+def test_admin_user_forms_keep_panel_and_connection_passwords_separate(tmp_path, monkeypatch):
+    monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
+    monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
+    monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
+    monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'users.json').write_text(json.dumps({
+        'alice': {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2},
+    }))
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    _write_meta(tmp_path / 'meta.json')
+
+    page = ss.render_admin('panel.test', 'https://panel.test')
+
+    assert page.count('name="panel_password"') == 2
+    assert page.count('name="password"') == 2
+    assert '用户面板登录密码' in page
+    assert '代理连接密码' in page
 
 
 def test_profile_qr_route_is_wired_before_generic_panel_route():
@@ -144,7 +377,7 @@ def test_profile_qr_endpoint_validates_token_and_profile(tmp_path, monkeypatch):
         body = response.read().decode()
         assert response.status == 200
         assert response.getheader('Content-Type').startswith('image/svg+xml')
-        assert response.getheader('Cache-Control') == 'private, max-age=300'
+        assert response.getheader('Cache-Control') == 'private, no-store'
         assert body == '<svg id="profile-qr"/>'
         assert captured == {
             'base_url': 'http://panel.test', 'user': 'alice',
@@ -173,6 +406,8 @@ def test_admin_table_renders_filter_chips_and_search_input(tmp_path, monkeypatch
     (tmp_path / 'users.json').write_text(json.dumps({
         'alice': {'sub_token': 't1', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2},
     }))
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    _write_meta(tmp_path / 'meta.json')
     out = ss.render_admin('test-host', 'http://test-host')
     assert 'id="user-filter"' in out
     assert 'filter-chips' in out
@@ -285,6 +520,7 @@ def test_user_panel_renders_rotate_token_form_with_current_token(tmp_path, monke
     (tmp_path / 'users.json').write_text(json.dumps({
         'alice': {'sub_token': 'tokABC', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2},
     }))
+    (tmp_path / 'usage_daily.json').write_text('{}')
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tokABC',
                                 {'sub_token': 'tokABC', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2})
     assert '/panel/alice/rotate-token' in page
@@ -349,6 +585,10 @@ def test_user_panel_wires_live_refresh_poll(tmp_path, monkeypatch):
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '/panel/alice.json?token=tok' in page
+    assert "function retryDelay()" in page
+    assert "function scheduleNext()" in page
+    assert "setInterval(tick" not in page
+    assert "activeController" in page
     for role in ('used', 'remain', 'online', 'percent', 'bar', 'txrx', 'poll-status'):
         assert f'data-role="{role}"' in page
 
@@ -360,7 +600,8 @@ def test_build_panel_json_payload_schema_and_values(tmp_path, monkeypatch):
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 10_000_000_000, 'max_devices': 2}
     payload = ss._build_panel_json_payload('alice', cfg, now=now)
     assert set(payload) == {'ts', 'used_bytes', 'total_bytes', 'remain_bytes',
-                            'tx_bytes', 'rx_bytes', 'online', 'percent'}
+                            'tx_bytes', 'rx_bytes', 'online', 'max_devices',
+                            'percent'}
     assert payload['used_bytes'] == int(1_000_000 * ss.DISPLAY_MULTIPLIER)
     assert payload['total_bytes'] == 10_000_000_000
     assert payload['remain_bytes'] == payload['total_bytes'] - payload['used_bytes']
@@ -445,10 +686,12 @@ def test_apply_rule_pack_to_user_writes_clash_overrides(tmp_path, monkeypatch):
 def test_admin_row_has_rotate_and_suspend_for_enabled_user(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    _write_meta(tmp_path / 'meta.json')
     cfg = {'sub_token': 't', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     row = ss.row_form('alice', cfg, {}, 'host', 'http://host')
-    assert 'action="/admin/rotate-token"' in row
-    assert 'action="/admin/toggle-user"' in row
+    assert 'formaction="/admin/rotate-token?revision=' in row
+    assert 'formaction="/admin/toggle-user?revision=' in row
     assert '>暂停</button>' in row
     assert 'data-action="disable-user"' in row
     assert '已停用' not in row
@@ -457,6 +700,8 @@ def test_admin_row_has_rotate_and_suspend_for_enabled_user(tmp_path, monkeypatch
 def test_admin_row_shows_enable_button_and_badge_for_disabled_user(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    _write_meta(tmp_path / 'meta.json')
     cfg = {'sub_token': 't', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2, 'disabled': True}
     row = ss.row_form('alice', cfg, {}, 'host', 'http://host')
     assert '>启用</button>' in row
@@ -476,6 +721,8 @@ def test_user_total_quota_includes_extra_package():
 def test_admin_row_shows_expiry_extra_and_note(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'META_FILE', tmp_path / 'meta.json')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    _write_meta(tmp_path / 'meta.json')
     monkeypatch.setattr(
         ss, 'local_now',
         lambda: datetime(2026, 6, 3, 10, tzinfo=SH),
@@ -714,6 +961,7 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
     (tmp_path / 'users.json').write_text(json.dumps({'alice': {'sub_token': 'tok'}}))
+    (tmp_path / 'usage_daily.json').write_text('{}')
     monkeypatch.setattr(ss, 'render_qr_svg', lambda *a, **k: '')
 
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok',
@@ -831,7 +1079,7 @@ def test_apply_suggested_display_multiplier_writes_runtime_state(tmp_path, monke
     state = json.loads((tmp_path / 'display_multiplier.json').read_text())
     assert result == 'multiplier_applied'
     assert state['multiplier'] == 2.0
-    assert state['previous_multiplier'] == ss.DISPLAY_MULTIPLIER
+    assert state['previous_multiplier'] == ss.display_config.DEPLOYED_DISPLAY_MULTIPLIER
     assert state['actor'] == 'tester'
 
 
@@ -1028,10 +1276,119 @@ def test_auth_backend_allows_enabled_user(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().out == 'alice'
 
 
+def test_auth_backend_fails_closed_on_corrupt_quota_state(
+    tmp_path, monkeypatch, capsys
+):
+    import auth_backend as ab
+    users = tmp_path / 'users.json'
+    meta = tmp_path / 'meta.json'
+    daily = tmp_path / 'usage_daily.json'
+    users.write_text(json.dumps({
+        'alice': {
+            'sub_token': 'SECRET',
+            'metered': True,
+            'monthly_quota_bytes': 1 << 30,
+        },
+    }))
+    meta.write_text(json.dumps({'settlement_day': 1}))
+    daily.write_text('{"broken":')
+    monkeypatch.setattr(ab, 'USERS_FILE', str(users))
+    monkeypatch.setattr(ab, 'META_FILE', str(meta))
+    monkeypatch.setattr(ab, 'USAGE_DAILY_FILE', str(daily))
+    monkeypatch.setattr(sys, 'argv', ['auth_backend.py', 'hysteria', 'alice:SECRET'])
+
+    with pytest.raises(SystemExit) as exc:
+        ab.main()
+
+    assert exc.value.code == 1
+    assert capsys.readouterr().out == ''
+    assert daily.read_text() == '{"broken":'
+
+
+def test_auth_backend_fails_closed_when_online_api_and_snapshot_are_unusable(
+    tmp_path, monkeypatch
+):
+    import auth_backend as ab
+    users = tmp_path / 'users.json'
+    meta = tmp_path / 'meta.json'
+    daily = tmp_path / 'usage_daily.json'
+    online = tmp_path / 'online.json'
+    users.write_text(json.dumps({
+        'alice': {
+            'sub_token': 'SECRET',
+            'metered': True,
+            'monthly_quota_bytes': 1 << 30,
+            'max_devices': 1,
+        },
+    }))
+    meta.write_text(json.dumps({'settlement_day': 1}))
+    daily.write_text('{}')
+    online.write_text('not-json')
+    monkeypatch.setattr(ab, 'USERS_FILE', str(users))
+    monkeypatch.setattr(ab, 'META_FILE', str(meta))
+    monkeypatch.setattr(ab, 'USAGE_DAILY_FILE', str(daily))
+    monkeypatch.setattr(ab, 'ONLINE_SNAPSHOT_FILE', str(online))
+    monkeypatch.setattr(
+        ab.http.client, 'HTTPConnection',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError('offline')),
+    )
+    monkeypatch.setattr(sys, 'argv', ['auth_backend.py', 'hysteria', 'alice:SECRET'])
+
+    with pytest.raises(SystemExit) as exc:
+        ab.main()
+
+    assert exc.value.code == 1
+
+
 # ----- Code-review fixes (F1..F13) ------------------------------------------
 
 # F1: traffic_limiter cron must keep suspended users OUT of the xray plan and
 #     re-kick them if online, every tick (durable suspend).
+
+
+def test_traffic_limiter_preflights_state_before_clearing_source_counters(
+    tmp_path, monkeypatch
+):
+    import state_store
+    import traffic_limiter as tl
+
+    paths = {
+        'USERS_FILE': tmp_path / 'users.json',
+        'META_FILE': tmp_path / 'meta.json',
+        'USAGE_FILE': tmp_path / 'usage.json',
+        'USAGE_DAILY_FILE': tmp_path / 'usage_daily.json',
+        'USAGE_HOURLY_FILE': tmp_path / 'usage_hourly.json',
+        'PROTOCOL_USAGE_HOURLY_FILE': tmp_path / 'protocol_hourly.json',
+        'ONLINE_SNAPSHOT_FILE': tmp_path / 'online.json',
+        'RESET_STATE_FILE': tmp_path / 'reset.json',
+        'COST_CALIBRATION_FILE': tmp_path / 'cost.json',
+        'DISPLAY_MULTIPLIER_STATE_FILE': tmp_path / 'display.json',
+        'MULTIPLIER_AUTO_POLICY_FILE': tmp_path / 'auto.json',
+        'USAGE_LOCK_FILE': tmp_path / 'usage.lock',
+    }
+    for name, path in paths.items():
+        monkeypatch.setattr(tl, name, str(path), raising=False)
+    monkeypatch.setattr(tl.tuic_meter, 'STATE_FILE', str(tmp_path / 'tuic-meter.json'))
+    paths['USERS_FILE'].write_text('{}')
+    paths['META_FILE'].write_text('{}')
+    paths['USAGE_FILE'].write_text('{"corrupt":')
+    destructive_calls = []
+    monkeypatch.setattr(tl, 'get', lambda path: destructive_calls.append(path) or {})
+    monkeypatch.setattr(
+        tl, 'get_xray_traffic',
+        lambda: destructive_calls.append('xray-reset') or {},
+    )
+    monkeypatch.setattr(
+        tl, 'get_tuic_traffic',
+        lambda: destructive_calls.append('tuic-baseline') or {},
+    )
+
+    with pytest.raises(state_store.InvalidJsonState):
+        tl.main()
+
+    assert destructive_calls == []
+    assert paths['USAGE_FILE'].read_text() == '{"corrupt":'
+
 
 def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
     import traffic_limiter as tl
@@ -1045,9 +1402,19 @@ def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
     monkeypatch.setattr(tl, 'RESET_STATE_FILE', str(tmp_path / 'reset.json'), raising=False)
     monkeypatch.setattr(tl, 'USAGE_LOCK_FILE', str(tmp_path / 'usage.lock'), raising=False)
     (tmp_path / 'users.json').write_text(json.dumps({
-        'alice': {'vless_uuid': 'uuid-A'},
-        'bob': {'vless_uuid': 'uuid-B', 'disabled': True},
+        'alice': {
+            'vless_uuid': '11111111-1111-4111-8111-111111111111',
+        },
+        'bob': {
+            'vless_uuid': '22222222-2222-4222-8222-222222222222',
+            'disabled': True,
+        },
     }))
+    (tmp_path / 'usage.json').write_text('{}')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    meta = tmp_path / 'meta.json'
+    meta.write_text('{}')
+    monkeypatch.setattr(tl, 'META_FILE', str(meta), raising=False)
 
     # /traffic empty, /online shows bob online (must be kicked).
     results = [{}, {'bob': 3}]
@@ -1069,7 +1436,7 @@ def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
 
     plan = captured['plan']
     assert plan['bob'] is None, 'disabled user must be removed from both inbounds'
-    assert plan['alice'] == 'uuid-A'
+    assert plan['alice'] == '11111111-1111-4111-8111-111111111111'
     assert captured['kick'] == ['bob'], 'an online disabled user must be re-kicked each tick'
 
 
@@ -1086,9 +1453,19 @@ def test_cron_excludes_expired_user_from_xray_plan(tmp_path, monkeypatch):
     monkeypatch.setattr(tl, 'USAGE_LOCK_FILE', str(tmp_path / 'usage.lock'), raising=False)
     monkeypatch.setattr(tl, 'local_now', lambda: datetime(2026, 6, 3, 8, tzinfo=SH))
     (tmp_path / 'users.json').write_text(json.dumps({
-        'alice': {'vless_uuid': 'uuid-A'},
-        'bob': {'vless_uuid': 'uuid-B', 'expires_at': '2026-06-02'},
+        'alice': {
+            'vless_uuid': '11111111-1111-4111-8111-111111111111',
+        },
+        'bob': {
+            'vless_uuid': '22222222-2222-4222-8222-222222222222',
+            'expires_at': '2026-06-02',
+        },
     }))
+    (tmp_path / 'usage.json').write_text('{}')
+    (tmp_path / 'usage_daily.json').write_text('{}')
+    meta = tmp_path / 'meta.json'
+    meta.write_text('{}')
+    monkeypatch.setattr(tl, 'META_FILE', str(meta), raising=False)
 
     results = [{}, {'bob': 1}]
     monkeypatch.setattr(tl, 'get', lambda _p: results.pop(0))
@@ -1107,7 +1484,9 @@ def test_cron_excludes_expired_user_from_xray_plan(tmp_path, monkeypatch):
     tl.main()
 
     assert captured['plan']['bob'] is None
-    assert captured['plan']['alice'] == 'uuid-A'
+    assert captured['plan']['alice'] == (
+        '11111111-1111-4111-8111-111111111111'
+    )
     assert captured['kick'] == ['bob']
 
 
@@ -1161,7 +1540,7 @@ def test_render_user_panel_enabled_still_has_poll(tmp_path, monkeypatch):
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert 'var pollUrl' in page
-    assert '账号已停用' not in page
+    assert '<div class="err"' not in page
 
 
 # F3: /admin/add reset-token construction preserves `disabled`.
@@ -1342,6 +1721,43 @@ def test_ensure_meta_does_not_overwrite_or_write_file_when_password_exists(tmp_p
     meta = ss.ensure_meta()
     assert meta['admin_pass_hash'] == existing_hash, 'must not overwrite existing password'
     assert not (tmp_path / 'admin_initial_password.txt').exists()
+
+
+def test_concurrent_meta_initialization_uses_one_retrievable_password(
+    tmp_path, monkeypatch
+):
+    meta_path = tmp_path / 'subscription_meta.json'
+    monkeypatch.setattr(ss, 'META_FILE', meta_path)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _index: ss.ensure_meta(), range(8)))
+
+    hashes = {result['admin_pass_hash'] for result in results}
+    assert len(hashes) == 1
+    stored = json.loads(meta_path.read_text(encoding='utf-8'))
+    assert stored['admin_pass_hash'] in hashes
+    line = [
+        row for row in (tmp_path / 'admin_initial_password.txt')
+        .read_text(encoding='utf-8').splitlines()
+        if row and not row.startswith('#')
+    ][-1]
+    _user, _separator, password = line.partition(':')
+    assert ss.verify_secret(password, stored['admin_pass_hash'])
+
+
+def test_meta_initialization_fails_before_creating_inaccessible_admin(
+    tmp_path, monkeypatch
+):
+    meta_path = tmp_path / 'subscription_meta.json'
+    monkeypatch.setattr(ss, 'META_FILE', meta_path)
+    monkeypatch.setattr(
+        ss, '_write_initial_admin_password', lambda *_args: False,
+    )
+
+    with pytest.raises(ss.state_store.StateStoreError):
+        ss.ensure_meta()
+
+    assert not meta_path.exists()
 
 
 def test_fire_test_alert_dispatches_on_background_thread(monkeypatch):

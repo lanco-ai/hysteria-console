@@ -7,12 +7,18 @@ StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/env python3 /root/hysteria/subscription_service.py
+ExecStart=/usr/bin/python3 /root/hysteria/subscription_service.py
 WorkingDirectory=/root/hysteria
 User=root
 Group=hy2-xray
 Restart=on-failure
 RestartSec=2
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+UMask=0077
+TasksMax=96
+MemoryHigh=384M
+MemoryMax=512M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

@@ -1,0 +1,39 @@
+[Unit]
+Description=Recover hy2 immediately after a deployment owner exits
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hy2-lock-exec.py \
+  --lock-file /run/hy2-locks/deploy.lock \
+  --wait \
+  --marker-env HY2_DEPLOY_LOCK_MARKER \
+  -- /usr/local/sbin/hy2-deploy-recovery.py recover
+# Re-arm the consumer gate after both success and failure. If recovery failed,
+# the next consumer start must retry recovery and inherit its failure instead
+# of bypassing an already-active boot gate.
+ExecStopPost=/usr/bin/systemctl stop hy2-deploy-recovery.service
+User=root
+Group=root
+UMask=0077
+TimeoutStartSec=infinity
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ReadWritePaths=-/root/hysteria
+ReadWritePaths=/usr/local /etc /var/lib/hysteria -/var/log/xray
+ProtectHostname=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=CAP_CHOWN CAP_DAC_OVERRIDE CAP_FOWNER CAP_NET_ADMIN CAP_SYS_ADMIN
+SystemCallArchitectures=native
+TasksMax=64
+MemoryMax=384M

@@ -5,9 +5,14 @@ After=network-online.target hysteria-server.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/env python3 /root/hysteria/traffic_limiter.py
+ExecStart=/usr/bin/python3 /root/hysteria/traffic_limiter.py
 User=root
 Group=hy2-xray
+UMask=0077
+TimeoutStartSec=75s
+TasksMax=64
+MemoryHigh=192M
+MemoryMax=256M
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict

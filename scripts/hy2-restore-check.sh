@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 HY_DIR="${HY2_HY_DIR:-/root/hysteria}"
 archive="${1:-}"
+MAX_ARCHIVE_BYTES="${HY2_RESTORE_MAX_ARCHIVE_BYTES:-335544320}"
+MAX_MEMBERS="${HY2_RESTORE_MAX_MEMBERS:-4096}"
+MAX_FILE_BYTES="${HY2_RESTORE_MAX_FILE_BYTES:-67108864}"
+MAX_TOTAL_BYTES="${HY2_RESTORE_MAX_TOTAL_BYTES:-268435456}"
 
 if [[ -z "$archive" ]]; then
   printf 'Usage: %s /path/to/hy2-backup.tar.gz[.enc]\n' "$0" >&2
@@ -14,13 +19,126 @@ if [[ ! -f "$archive" ]]; then
 fi
 
 work="$(mktemp -d)"
-manifest="$work/manifest.txt"
-tarball="$archive"
+staged_archive="$work/archive.input"
+tarball="$staged_archive"
+extract_root="$work/extracted"
 
 cleanup() {
   rm -rf "$work"
 }
 trap cleanup EXIT
+
+checksum_file="$archive.sha256"
+if [[ ! -f "$checksum_file" ]]; then
+  printf 'Checksum sidecar not found: %s\n' "$checksum_file" >&2
+  exit 2
+fi
+
+# Validate the sidecar grammar and referenced name before calculating the
+# digest. Never pass an untrusted sidecar directly to `sha256sum -c`: doing so
+# would let it select a different local path.
+#
+# Hash and copy through the same source descriptor. The exact bytes covered by
+# the checksum become the private snapshot used below, so replacing or
+# modifying the source archive cannot create a validation/extraction
+# time-of-check/time-of-use gap.
+python3 - "$archive" "$staged_archive" "$checksum_file" \
+  "$(basename -- "$archive")" "$MAX_ARCHIVE_BYTES" <<'PY'
+import hashlib
+import hmac
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+archive = Path(sys.argv[1])
+staged_archive = Path(sys.argv[2])
+sidecar = Path(sys.argv[3])
+archive_name = sys.argv[4]
+
+try:
+    max_archive_bytes = int(sys.argv[5])
+except ValueError:
+    print('HY2_RESTORE_MAX_ARCHIVE_BYTES must be a positive integer', file=sys.stderr)
+    raise SystemExit(2)
+if max_archive_bytes < 1:
+    print('HY2_RESTORE_MAX_ARCHIVE_BYTES must be a positive integer', file=sys.stderr)
+    raise SystemExit(2)
+
+try:
+    raw = sidecar.read_bytes()
+except OSError as exc:
+    print(f'Cannot read checksum sidecar: {sidecar} ({exc})', file=sys.stderr)
+    raise SystemExit(2)
+
+if len(raw) > 4096:
+    print(f'Invalid checksum sidecar: {sidecar}', file=sys.stderr)
+    raise SystemExit(2)
+try:
+    lines = raw.decode('ascii').splitlines()
+except UnicodeDecodeError:
+    print(f'Invalid checksum sidecar: {sidecar}', file=sys.stderr)
+    raise SystemExit(2)
+if len(lines) != 1:
+    print(f'Invalid checksum sidecar: {sidecar}', file=sys.stderr)
+    raise SystemExit(2)
+
+match = re.fullmatch(r'([0-9a-fA-F]{64}) ([ *])(.+)', lines[0])
+if match is None:
+    print(f'Invalid checksum sidecar: {sidecar}', file=sys.stderr)
+    raise SystemExit(2)
+
+referenced_name = match.group(3)
+if (
+    referenced_name != archive_name
+    or '/' in referenced_name
+    or '\\' in referenced_name
+    or referenced_name in {'.', '..'}
+):
+    print(
+        'Checksum sidecar must reference the archive basename only',
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+digest = hashlib.sha256()
+copied = 0
+try:
+    with archive.open('rb') as source:
+        source_stat = os.fstat(source.fileno())
+        if not stat.S_ISREG(source_stat.st_mode):
+            print(f'Archive is not a regular file: {archive}', file=sys.stderr)
+            raise SystemExit(2)
+        if source_stat.st_size > max_archive_bytes:
+            print(
+                f'Archive exceeds the '
+                f'{max_archive_bytes}-byte compressed-size limit',
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+        with staged_archive.open('xb') as output:
+            for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                copied += len(chunk)
+                if copied > max_archive_bytes:
+                    print(
+                        f'Archive exceeds the '
+                        f'{max_archive_bytes}-byte compressed-size limit',
+                        file=sys.stderr,
+                    )
+                    raise SystemExit(1)
+                digest.update(chunk)
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+except OSError as exc:
+    print(f'Cannot stage archive: {archive} ({exc})', file=sys.stderr)
+    raise SystemExit(2)
+
+if not hmac.compare_digest(digest.hexdigest().lower(), match.group(1).lower()):
+    print(f'Checksum mismatch for archive: {archive}', file=sys.stderr)
+    raise SystemExit(1)
+PY
 
 pass_arg=()
 if [[ "$archive" == *.enc ]]; then
@@ -38,30 +156,173 @@ if [[ "$archive" == *.enc ]]; then
   fi
   tarball="$work/archive.tar.gz"
   openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 \
-    -in "$archive" -out "$tarball" "${pass_arg[@]}"
+    -in "$staged_archive" -out "$tarball" "${pass_arg[@]}"
 fi
 
-tar -tzf "$tarball" > "$manifest"
-
-python3 - "$manifest" <<'PY'
-from pathlib import Path
+python3 - "$tarball" "$extract_root" \
+  "$MAX_ARCHIVE_BYTES" "$MAX_MEMBERS" "$MAX_FILE_BYTES" "$MAX_TOTAL_BYTES" <<'PY'
+import os
+import re
 import sys
+import tarfile
+from pathlib import Path
 
-manifest = Path(sys.argv[1])
-bad = []
-for raw in manifest.read_text(encoding='utf-8').splitlines():
-    p = raw.strip()
-    parts = [part for part in p.split('/') if part]
-    if not p or p.startswith('/') or '..' in parts:
-        bad.append(p)
-if bad:
-    print('Unsafe archive paths:', ', '.join(bad), file=sys.stderr)
+archive_path = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+limit_names = (
+    'HY2_RESTORE_MAX_ARCHIVE_BYTES',
+    'HY2_RESTORE_MAX_MEMBERS',
+    'HY2_RESTORE_MAX_FILE_BYTES',
+    'HY2_RESTORE_MAX_TOTAL_BYTES',
+)
+limits = []
+for name, raw in zip(limit_names, sys.argv[3:]):
+    try:
+        value = int(raw)
+    except ValueError:
+        print(f'{name} must be a positive integer', file=sys.stderr)
+        raise SystemExit(2)
+    if value < 1:
+        print(f'{name} must be a positive integer', file=sys.stderr)
+        raise SystemExit(2)
+    limits.append(value)
+
+max_archive_bytes, max_members, max_file_bytes, max_total_bytes = limits
+
+
+def reject(reason):
+    print(f'Unsafe archive: {reason}', file=sys.stderr)
     raise SystemExit(1)
+
+
+def checked_parts(name):
+    if not name:
+        reject('member name is empty')
+    if len(name.encode('utf-8', errors='surrogateescape')) > 4096:
+        reject('member path exceeds 4096 bytes')
+    if name.startswith('/') or '\\' in name or re.match(r'^[A-Za-z]:', name):
+        reject(f'absolute or platform-ambiguous path: {name!r}')
+    candidate = name.rstrip('/')
+    parts = candidate.split('/')
+    if not candidate or any(part in {'', '.', '..'} for part in parts):
+        reject(f'path traversal or non-canonical path: {name!r}')
+    if any(
+        len(part.encode('utf-8', errors='surrogateescape')) > 255
+        for part in parts
+    ):
+        reject(f'path component exceeds 255 bytes: {name!r}')
+    return tuple(parts)
+
+
+try:
+    compressed_size = archive_path.stat().st_size
+except OSError as exc:
+    reject(f'cannot stat archive ({exc})')
+if compressed_size > max_archive_bytes:
+    reject(
+        f'archive exceeds the {max_archive_bytes}-byte compressed-size limit'
+    )
+
+members = []
+paths = {}
+total_size = 0
+try:
+    with tarfile.open(archive_path, mode='r:gz') as archive_handle:
+        for member_count, member in enumerate(archive_handle, start=1):
+            if member_count > max_members:
+                reject(f'member count exceeds the {max_members}-member limit')
+
+            parts = checked_parts(member.name)
+            if parts in paths:
+                reject(f'duplicate member path: {member.name!r}')
+
+            if member.isdir():
+                if member.size != 0:
+                    reject(f'directory has a non-zero payload: {member.name!r}')
+                kind = 'directory'
+            elif member.isfile():
+                kind = 'file'
+                if member.size < 0:
+                    reject(f'file has a negative size: {member.name!r}')
+                if member.size > max_file_bytes:
+                    reject(
+                        f'file exceeds the {max_file_bytes}-byte limit: '
+                        f'{member.name!r}'
+                    )
+                total_size += member.size
+                if total_size > max_total_bytes:
+                    reject(
+                        f'total file size exceeds the '
+                        f'{max_total_bytes}-byte limit'
+                    )
+            else:
+                # This rejects symlinks, hardlinks, character/block devices,
+                # FIFOs, sockets, and unknown/vendor-specific entry types.
+                reject(f'unsupported member type: {member.name!r}')
+
+            paths[parts] = kind
+            members.append((member, parts, kind))
+
+        if not members:
+            reject('archive has no members')
+
+        file_paths = {parts for parts, kind in paths.items() if kind == 'file'}
+        for parts in paths:
+            for depth in range(1, len(parts)):
+                if parts[:depth] in file_paths:
+                    reject(
+                        'regular file is also the parent of another member: '
+                        f'{"/".join(parts[:depth])!r}'
+                    )
+
+        # Extraction starts only after the complete member table has passed
+        # type, path, count, and expanded-size validation.
+        destination.mkdir(mode=0o700)
+        for _member, parts, kind in sorted(
+            members, key=lambda item: len(item[1])
+        ):
+            if kind == 'directory':
+                destination.joinpath(*parts).mkdir(
+                    mode=0o700,
+                    parents=True,
+                    exist_ok=True,
+                )
+
+        for member, parts, kind in members:
+            if kind != 'file':
+                continue
+            target = destination.joinpath(*parts)
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            source = archive_handle.extractfile(member)
+            if source is None:
+                reject(f'cannot read regular file payload: {member.name!r}')
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, 'O_NOFOLLOW'):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(target, flags, 0o600)
+            remaining = member.size
+            try:
+                with source, os.fdopen(fd, 'wb', closefd=True) as output:
+                    while remaining:
+                        chunk = source.read(min(1024 * 1024, remaining))
+                        if not chunk:
+                            reject(
+                                f'truncated regular file payload: '
+                                f'{member.name!r}'
+                            )
+                        output.write(chunk)
+                        remaining -= len(chunk)
+            except BaseException:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
+except (tarfile.TarError, OSError, EOFError) as exc:
+    reject(f'cannot safely read or extract tar archive ({exc})')
 PY
 
-tar -xzf "$tarball" -C "$work"
-
-python3 - "$work" "$HY_DIR" <<'PY'
+python3 - "$extract_root" "$HY_DIR" <<'PY'
 import json
 import sys
 from pathlib import Path

@@ -113,6 +113,43 @@ def test_quota_does_not_refire_same_month(tmp_path, monkeypatch):
     assert len(sent) == 1
 
 
+def test_quota_transport_failure_is_retryable_next_tick(tmp_path, monkeypatch):
+    today = datetime(2026, 5, 15)
+    quota = 30 * GiB
+    raw = int(0.90 * quota / tl._DM)
+    daily = {
+        today.strftime('%Y-%m-%d'): {
+            'alice': {'tx': 0, 'rx': raw, 'total': raw},
+        },
+    }
+    sent, success_opener, state_path = _setup(
+        tmp_path, daily=daily, usage={},
+        users={'alice': {'guest': True, 'monthly_quota_bytes': quota}},
+        online={}, monkeypatch=monkeypatch,
+        alerts_cfg={'webhook': {'url': 'https://example.invalid/'}},
+    )
+
+    class FailingOpener:
+        def urlopen(self, _req, timeout=None):
+            del timeout
+            raise OSError('temporary failure')
+
+    users = {'alice': {'guest': True, 'monthly_quota_bytes': quota}}
+    tl.check_alerts(
+        users=users, now=today, month_key='2026-05',
+        daily=daily, _opener=FailingOpener(),
+    )
+    assert 'alice' not in __import__('json').loads(
+        state_path.read_text()
+    )['quota_80']
+
+    tl.check_alerts(
+        users=users, now=today, month_key='2026-05',
+        daily=daily, _opener=success_opener,
+    )
+    assert len(sent) == 1
+
+
 def test_expiry_soon_alert_fires_once_per_expiry_date(tmp_path, monkeypatch):
     today = datetime(2026, 6, 3)
     sent, opener, _ = _setup(
