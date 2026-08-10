@@ -434,6 +434,19 @@ def test_recovery_removes_a_newly_created_artifact(recovery):
     assert not artifact.exists()
 
 
+def test_remove_absent_artifact_allows_an_absent_parent(recovery):
+    artifact = recovery["artifact_dir"] / "missing-parent" / "legacy.conf"
+    recovery["prepare_and_snapshot"]([artifact])
+
+    removed = recovery["run"]("remove", "--path", artifact)
+
+    assert removed.returncode == 0, removed.stderr
+    assert not artifact.exists()
+    completed = recovery["run"]("complete")
+    assert completed.returncode == 0, completed.stderr
+    assert recovery["run"]("status").stdout.strip() == "clean"
+
+
 def test_recovery_restores_an_original_symlink_generation(recovery):
     artifact = recovery["artifact_dir"] / "enabled.conf"
     artifact.symlink_to("../available/original.conf")

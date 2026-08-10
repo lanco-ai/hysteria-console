@@ -1762,12 +1762,21 @@ def _after(
     if not isinstance(pending_commit, dict) or pending_commit.get("path") != path:
         raise RecoveryError("Deployment commit does not match the write-ahead journal.")
     _fsync_regular(path)
-    _fsync_parent(path)
     current, _ = _generation(path)
     if current != pending_commit["replacement_generation"]:
         raise RecoveryError(
             f"Committed artifact does not match its replacement generation: {path}"
         )
+    parent = os.path.dirname(path)
+    try:
+        os.lstat(parent)
+    except FileNotFoundError:
+        if current != ABSENT_GENERATION:
+            raise RecoveryError(
+                f"Committed artifact parent disappeared: {parent}"
+            )
+    else:
+        _fsync_parent(path)
     _cleanup_candidate_from_pending(pending_commit)
     payload["committed"].append(path)
     payload["pending_commit"] = None
@@ -1823,7 +1832,8 @@ def _remove(
         os.unlink(args.path)
     except FileNotFoundError:
         pass
-    _fsync_parent(args.path)
+    else:
+        _fsync_parent(args.path)
     _after(
         argparse.Namespace(path=args.path),
         recovery_root=recovery_root,
