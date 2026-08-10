@@ -473,6 +473,18 @@ def test_success_atomically_activates_expected_files_and_link(activation):
     _assert_no_transaction_debris(paths.values())
 
 
+def test_production_redirect_probe_waits_for_nginx_worker_handoff():
+    helper = HELPER.read_text(encoding="utf-8")
+    final_reload = helper.index(
+        'reload nginx.service; then\n'
+        '  die "nginx reload failed while activating the HTTPS redirect."'
+    )
+    grace_period = helper.index('/usr/bin/sleep 1', final_reload)
+    redirect_probe = helper.index('\nprobe_redirect_once() {', grace_period)
+
+    assert final_reload < grace_period < redirect_probe
+
+
 @pytest.mark.parametrize("commit_prefix", (1, 2, 3, 4, 5))
 def test_sigkill_after_every_commit_prefix_is_recovered_on_restart(
     activation,

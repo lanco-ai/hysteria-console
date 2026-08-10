@@ -1305,9 +1305,15 @@ def test_watchdog_is_nonblocking_rearmed_and_not_runtime_managed():
     assert "/usr/local/sbin/hy2-deploy-recovery.py recover" in unit
     assert "TimeoutStartSec=infinity" in unit
     assert (
-        "ExecStopPost=/usr/bin/systemctl stop "
+        "ExecStopPost=/usr/bin/systemctl "
+        "--job-mode=ignore-dependencies stop "
         "hy2-deploy-recovery.service"
         in unit
+    )
+    assert (
+        "ExecStopPost=/usr/bin/systemctl stop "
+        "hy2-deploy-recovery.service"
+        not in unit
     )
     assert "Before=" not in unit
     assert "RequiredBy=" not in unit

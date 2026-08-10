@@ -1785,6 +1785,16 @@ if ! "$systemctl_bin" reload nginx.service; then
   die "nginx reload failed while activating the HTTPS redirect."
 fi
 
+# systemctl considers the reload job complete once nginx has accepted the
+# signal, while an immediately following loopback request can still reach an
+# old worker serving the bootstrap 503 configuration.  Let the worker
+# generation switch settle before enforcing three consecutive fail-closed
+# readiness observations.  Isolated tests use command doubles and need no
+# real-worker grace period.
+if [[ "$test_mode" == 0 ]]; then
+  /usr/bin/sleep 1
+fi
+
 probe_redirect_once() {
   local probe_path="/__hy2_https_activation_probe__"
   local expected_location="https://$target:$https_port$probe_path"
@@ -1812,7 +1822,7 @@ try:
     )
     response = connection.getresponse()
     if response.status != 308:
-        raise SystemExit("unexpected redirect status")
+        raise SystemExit(f"unexpected redirect status: {response.status}")
     if response.getheader("Location") != expected_location:
         raise SystemExit("unexpected redirect location")
 finally:

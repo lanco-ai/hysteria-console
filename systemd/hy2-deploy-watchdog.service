@@ -12,7 +12,11 @@ ExecStart=/usr/local/sbin/hy2-lock-exec.py \
 # Re-arm the consumer gate after both success and failure. If recovery failed,
 # the next consumer start must retry recovery and inherit its failure instead
 # of bypassing an already-active boot gate.
-ExecStopPost=/usr/bin/systemctl stop hy2-deploy-recovery.service
+# Re-arm the oneshot without propagating a stop job through its reverse
+# dependency consumers.  A normal stop would take every freshly deployed
+# service down on a first-host install because none of them were active in the
+# old snapshot.
+ExecStopPost=/usr/bin/systemctl --job-mode=ignore-dependencies stop hy2-deploy-recovery.service
 User=root
 Group=root
 UMask=0077
