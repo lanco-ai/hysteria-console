@@ -90,7 +90,6 @@ declare -a DEPLOY_MANAGED_UNITS=(
   hy2-health-check.timer
   hy2-health-check.service
   xray.service
-  xray@.service
   tuic-server.service
   snap.certbot.renew.timer
   fail2ban.service
@@ -971,6 +970,9 @@ bootstrap_install_atomic 644 \
 bootstrap_install_atomic 644 \
   "$REPO_DIR/systemd/hy2-deploy-watchdog.service" \
   "$SYSTEMD_DIR/hy2-deploy-watchdog.service"
+# systemd requires every non-optional ReadWritePaths= parent to exist before
+# it can construct the watchdog's mount namespace on a fresh host.
+install -d -o root -g root -m 700 /var/lib/hysteria
 systemctl daemon-reload
 systemctl enable hy2-deploy-recovery.service
 

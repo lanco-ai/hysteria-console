@@ -341,6 +341,7 @@ def test_new_install_has_no_unmanaged_bootstrap_proxy_client():
 
     assert "XRAY_CLIENT_UUID" not in deploy
     assert "XRAY_CLIENT_UUID" not in env_example
+    assert "HY_CERTBOT_EMAIL=''" in env_example
     assert "__XRAY_CLIENT_UUID__" not in template
     assert template.count('"clients": []') == 2
 
@@ -456,6 +457,13 @@ def test_xray_migration_preserves_legacy_logs_and_rejects_instances():
     assert reject < snapshot
     assert "'xray@*.service'" in deploy
     assert not (ROOT / "systemd" / "xray@.service").exists()
+    managed_units = re.search(
+        r"(?ms)^declare -a DEPLOY_MANAGED_UNITS=\(\n(?P<body>.*?)^\)$",
+        deploy,
+    )
+    assert managed_units
+    assert "xray.service" in managed_units.group("body")
+    assert "xray@.service" not in managed_units.group("body")
     assert (
         '"$SYSTEMD_DIR/xray.service.d/10-donot_touch_multi_conf.conf"'
         in deploy

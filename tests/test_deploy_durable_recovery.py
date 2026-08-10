@@ -840,6 +840,10 @@ def test_deploy_outer_gate_prepare_and_watchdog_precede_mutation():
         "systemctl --no-block start hy2-deploy-watchdog.service",
         bootstrap,
     )
+    recovery_state_root = deploy.index(
+        "install -d -o root -g root -m 700 /var/lib/hysteria",
+        bootstrap,
+    )
     waiting = deploy.index("activating|active)", watchdog)
     prepared_flag = deploy.index(
         "\nDURABLE_RECOVERY_PREPARED=1\n",
@@ -853,7 +857,14 @@ def test_deploy_outer_gate_prepare_and_watchdog_precede_mutation():
     apt = deploy.index("apt-get update -y", capture)
 
     assert deploy_lock < https_lock < outer_gate < https_gate
-    assert https_gate < validation < bootstrap < watchdog < waiting
+    assert (
+        https_gate
+        < validation
+        < bootstrap
+        < recovery_state_root
+        < watchdog
+        < waiting
+    )
     assert waiting < prepared_flag < prepare < capture < apt
     assert (
         'die "Pending outer deployment could not be recovered; '

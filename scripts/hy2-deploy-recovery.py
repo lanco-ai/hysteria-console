@@ -195,7 +195,6 @@ EXACT_ALLOWED_UNITS = {
     "hy2-health-check.timer",
     "hy2-health-check.service",
     "xray.service",
-    "xray@.service",
     "tuic-server.service",
     "snap.certbot.renew.timer",
     "fail2ban.service",
