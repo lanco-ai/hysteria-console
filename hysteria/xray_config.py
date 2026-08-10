@@ -183,6 +183,8 @@ def _save_config(path, cfg):
                         XRAY_BIN,
                         'run',
                         '-test',
+                        '-format',
+                        'json',
                         '-config',
                         tmp_name,
                     ],

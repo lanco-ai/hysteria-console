@@ -113,6 +113,36 @@ def test_save_config_is_atomic(tmp_path):
     assert not (p.parent / (p.name + '.tmp')).exists(), 'temp file must be renamed away'
 
 
+def test_save_live_config_native_validation_pins_json_format(
+    tmp_path,
+    monkeypatch,
+):
+    p = _make_cfg(tmp_path)
+    calls = []
+
+    def successful_validation(command, **kwargs):
+        calls.append((command, kwargs))
+        return type('Result', (), {'returncode': 0})()
+
+    monkeypatch.setattr(xc, 'PRODUCTION_CONFIG_FILE', p)
+    monkeypatch.setattr(xc, 'XRAY_BIN', '/test/xray')
+    monkeypatch.setattr(xc.subprocess, 'run', successful_validation)
+
+    xc._save_config(p, {'inbounds': []})
+
+    assert len(calls) == 1
+    command, _kwargs = calls[0]
+    assert command[:6] == [
+        '/test/xray',
+        'run',
+        '-test',
+        '-format',
+        'json',
+        '-config',
+    ]
+    assert command[6].endswith('.tmp')
+
+
 def test_save_config_sets_restricted_permissions(tmp_path):
     p = _make_cfg(tmp_path)
 

@@ -279,6 +279,21 @@ def _inside(path: str, root: str) -> bool:
         return False
 
 
+def _is_trusted_syslog_directory(path: str, metadata: os.stat_result) -> bool:
+    if (
+        path != "/var/log"
+        or not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != 0
+        or stat.S_IMODE(metadata.st_mode) != 0o775
+    ):
+        return False
+    try:
+        return metadata.st_gid == grp.getgrnam("syslog").gr_gid
+    except KeyError:
+        return False
+
+
 def _validate_existing_parent_chain(
     path: str,
     *,
@@ -309,25 +324,14 @@ def _validate_existing_parent_chain(
         except FileNotFoundError:
             break
         mode = stat.S_IMODE(metadata.st_mode)
-        trusted_syslog_parent = False
         # Ubuntu's rsyslog tmpfiles policy deliberately keeps /var/log
         # root:syslog 0775. Admit only that exact platform-owned parent, and
         # only while validating the one allowlisted Xray log directory.
-        if (
+        trusted_syslog_parent = (
             allow_syslog_parent
             and not test_mode
-            and current == "/var/log"
-            and stat.S_ISDIR(metadata.st_mode)
-            and not stat.S_ISLNK(metadata.st_mode)
-            and metadata.st_uid == 0
-            and mode == 0o775
-        ):
-            try:
-                trusted_syslog_parent = (
-                    metadata.st_gid == grp.getgrnam("syslog").gr_gid
-                )
-            except KeyError:
-                trusted_syslog_parent = False
+            and _is_trusted_syslog_directory(current, metadata)
+        )
         if (
             not stat.S_ISDIR(metadata.st_mode)
             or stat.S_ISLNK(metadata.st_mode)
@@ -420,21 +424,43 @@ def _validate_log_dir(
     return path
 
 
-def _safe_directory(path: str, description: str, *, root_only: bool) -> os.stat_result:
+def _safe_directory(
+    path: str,
+    description: str,
+    *,
+    root_only: bool,
+    allow_syslog_parent: bool = False,
+) -> os.stat_result:
     metadata = os.lstat(path)
     if not stat.S_ISDIR(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
         raise RecoveryError(f"{description} must be a real directory.")
     if metadata.st_uid != 0:
         raise RecoveryError(f"{description} must be owned by root.")
     forbidden = 0o077 if root_only else 0o022
-    if stat.S_IMODE(metadata.st_mode) & forbidden:
+    trusted_syslog_parent = (
+        allow_syslog_parent
+        and not root_only
+        and _is_trusted_syslog_directory(path, metadata)
+    )
+    if stat.S_IMODE(metadata.st_mode) & forbidden and not trusted_syslog_parent:
         qualifier = "root-only" if root_only else "not group/world writable"
         raise RecoveryError(f"{description} must be {qualifier}.")
     return metadata
 
 
-def _open_directory(path: str, description: str, *, root_only: bool) -> int:
-    _safe_directory(path, description, root_only=root_only)
+def _open_directory(
+    path: str,
+    description: str,
+    *,
+    root_only: bool,
+    allow_syslog_parent: bool = False,
+) -> int:
+    _safe_directory(
+        path,
+        description,
+        root_only=root_only,
+        allow_syslog_parent=allow_syslog_parent,
+    )
     flags = (
         os.O_RDONLY
         | getattr(os, "O_DIRECTORY", 0)
@@ -447,16 +473,24 @@ def _open_directory(path: str, description: str, *, root_only: bool) -> int:
         raise RecoveryError(f"Could not open {description.lower()} safely.") from exc
 
 
-def _fsync_directory(path: str) -> None:
-    fd = _open_directory(path, "Directory", root_only=False)
+def _fsync_directory(path: str, *, allow_syslog_parent: bool = False) -> None:
+    fd = _open_directory(
+        path,
+        "Directory",
+        root_only=False,
+        allow_syslog_parent=allow_syslog_parent,
+    )
     try:
         os.fsync(fd)
     finally:
         os.close(fd)
 
 
-def _fsync_parent(path: str) -> None:
-    _fsync_directory(os.path.dirname(path))
+def _fsync_parent(path: str, *, allow_syslog_parent: bool = False) -> None:
+    _fsync_directory(
+        os.path.dirname(path),
+        allow_syslog_parent=allow_syslog_parent,
+    )
 
 
 def _fsync_regular(path: str) -> None:
@@ -1231,11 +1265,11 @@ def _restore_runtime(
             os.chown(path, state_value["uid"], state_value["gid"])
             os.chmod(path, state_value["mode"])
             _fsync_directory(path)
-            _fsync_parent(path)
+            _fsync_parent(path, allow_syslog_parent=True)
         else:
             try:
                 os.rmdir(path)
-                _fsync_parent(path)
+                _fsync_parent(path, allow_syslog_parent=True)
             except FileNotFoundError:
                 pass
             except OSError as exc:

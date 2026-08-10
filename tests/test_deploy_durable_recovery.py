@@ -65,6 +65,7 @@ def test_standard_ubuntu_syslog_parent_is_the_only_writable_exception(
 ):
     namespace = runpy.run_path(str(HELPER))
     validate = namespace["_validate_existing_parent_chain"]
+    safe_directory = namespace["_safe_directory"]
     recovery_error = namespace["RecoveryError"]
     fake_stat = SimpleNamespace(
         st_mode=stat.S_IFDIR | 0o775,
@@ -95,11 +96,23 @@ def test_standard_ubuntu_syslog_parent_is_the_only_writable_exception(
         test_root=None,
         allow_syslog_parent=True,
     )
+    safe_directory(
+        "/var/log",
+        "Directory",
+        root_only=False,
+        allow_syslog_parent=True,
+    )
     with pytest.raises(recovery_error, match="parent chain is unsafe"):
         validate(
             "/var/log/xray",
             test_mode=False,
             test_root=None,
+        )
+    with pytest.raises(recovery_error, match="not group/world writable"):
+        safe_directory(
+            "/var/log",
+            "Directory",
+            root_only=False,
         )
 
 
