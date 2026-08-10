@@ -889,6 +889,10 @@ def test_deploy_outer_gate_prepare_and_watchdog_precede_mutation():
         "install -d -o root -g root -m 700 /var/lib/hysteria",
         bootstrap,
     )
+    xray_log_root = deploy.index(
+        "install -d -o root -g root -m 755 /var/log/xray",
+        recovery_state_root,
+    )
     waiting = deploy.index("activating|active)", watchdog)
     prepared_flag = deploy.index(
         "\nDURABLE_RECOVERY_PREPARED=1\n",
@@ -907,6 +911,7 @@ def test_deploy_outer_gate_prepare_and_watchdog_precede_mutation():
         < validation
         < bootstrap
         < recovery_state_root
+        < xray_log_root
         < watchdog
         < waiting
     )

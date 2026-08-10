@@ -308,6 +308,7 @@ def test_deploy_preserves_runtime_xray_config_and_exactly_reconciles_clients():
         not in deploy
     )
     assert 'render "$REPO_DIR/xray/config.json.tpl" "$XRAY_CANDIDATE"' in deploy
+    assert 'xray run -test -format json -c "$XRAY_CANDIDATE"' in deploy
     assert "xray_config.initialize_from_file(" in deploy
     assert "with state_store.file_lock(usage_lock):" in deploy
     assert "tuic_config.sync_user_plan(users, access_plan)" in deploy

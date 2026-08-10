@@ -973,6 +973,12 @@ bootstrap_install_atomic 644 \
 # systemd requires every non-optional ReadWritePaths= parent to exist before
 # it can construct the watchdog's mount namespace on a fresh host.
 install -d -o root -g root -m 700 /var/lib/hysteria
+# Treat the dedicated log directory as bootstrap infrastructure. Xray's test
+# mode opens its configured log files, so a later rollback must restore this
+# directory's metadata instead of trying to remove a newly non-empty path.
+if [[ ! -e /var/log/xray && ! -L /var/log/xray ]]; then
+  install -d -o root -g root -m 755 /var/log/xray
+fi
 systemctl daemon-reload
 systemctl enable hy2-deploy-recovery.service
 
@@ -1693,7 +1699,7 @@ log "Preparing and validating the Xray template candidate..."
 XRAY_CANDIDATE="$(mktemp "$XRAY_ETC/.config.json.candidate.XXXXXX")"
 chmod 600 "$XRAY_CANDIDATE"
 render "$REPO_DIR/xray/config.json.tpl" "$XRAY_CANDIDATE"
-xray run -test -c "$XRAY_CANDIDATE"
+xray run -test -format json -c "$XRAY_CANDIDATE"
 
 # ---------- 6. Runtime state initialization ----------
 # One outer lock protects canonical users plus both derived proxy configs.
