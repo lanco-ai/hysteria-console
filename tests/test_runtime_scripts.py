@@ -403,10 +403,19 @@ def test_deploy_installs_tuic_meter_module_and_nftables():
 
 def test_deploy_installs_and_enables_backup_timer():
     deploy = (ROOT / 'deploy.sh').read_text(encoding='utf-8')
+    service = (ROOT / 'systemd/hy2-backup.service').read_text(encoding='utf-8')
 
     assert 'systemd/hy2-backup.service' in deploy
     assert 'systemd/hy2-backup.timer' in deploy
     assert 'systemctl enable --now hy2-backup.timer' in deploy
+    read_write_paths = next(
+        line for line in service.splitlines()
+        if line.startswith('ReadWritePaths=')
+    )
+    assert read_write_paths.removeprefix('ReadWritePaths=').split() == [
+        '/root/hysteria',
+        '/usr/local/etc/xray/config.json.lock',
+    ]
 
 
 def test_deploy_installs_xray_logrotate_config():
