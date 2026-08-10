@@ -180,12 +180,18 @@ def test_https_recovery_unit_is_transactionally_installed_and_enabled():
         '"$SYSTEMD_DIR/hy2-https-recovery.service"'
     )
     install_entry = (
-        'install_atomic 644 '
+        '\ninstall_atomic 644 '
         '"$REPO_DIR/systemd/hy2-https-recovery.service" \\\n'
+        '  "$SYSTEMD_DIR/hy2-https-recovery.service"'
+    )
+    bootstrap_entry = (
+        'bootstrap_install_atomic 644 \\\n'
+        '  "$REPO_DIR/systemd/hy2-https-recovery.service" \\\n'
         '  "$SYSTEMD_DIR/hy2-https-recovery.service"'
     )
     capture = deploy.index("\ncapture_service_state\n")
     snapshot = deploy.index("\nbegin_durable_artifact_snapshot\n")
+    bootstrap = deploy.index(bootstrap_entry)
     install = deploy.index(install_entry)
     daemon_reload = deploy.index("systemctl daemon-reload", install)
     enable = deploy.index(
@@ -193,7 +199,9 @@ def test_https_recovery_unit_is_transactionally_installed_and_enabled():
         daemon_reload,
     )
 
-    assert capture < snapshot < install < daemon_reload < enable
+    nginx_start = deploy.index("systemctl enable --now nginx")
+    assert bootstrap < capture < snapshot < install < daemon_reload < enable
+    assert bootstrap < nginx_start
     assert "enable --now hy2-https-recovery.service" not in deploy
 
     required_units = re.search(

@@ -970,6 +970,12 @@ bootstrap_install_atomic 644 \
 bootstrap_install_atomic 644 \
   "$REPO_DIR/systemd/hy2-deploy-watchdog.service" \
   "$SYSTEMD_DIR/hy2-deploy-watchdog.service"
+# An already-installed nginx unit requires this recovery gate.  Upgrade the
+# gate before nginx is started or reloaded below so it can safely recognize the
+# HTTPS lock held by this deployment instead of deadlocking on that same lock.
+bootstrap_install_atomic 644 \
+  "$REPO_DIR/systemd/hy2-https-recovery.service" \
+  "$SYSTEMD_DIR/hy2-https-recovery.service"
 # systemd requires every non-optional ReadWritePaths= parent to exist before
 # it can construct the watchdog's mount namespace on a fresh host.
 install -d -o root -g root -m 700 /var/lib/hysteria

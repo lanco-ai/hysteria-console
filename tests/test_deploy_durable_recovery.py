@@ -948,12 +948,13 @@ def test_deploy_outer_gate_prepare_and_watchdog_precede_mutation():
         in deploy[outer_gate:https_gate]
     )
     bootstrap_block = deploy[bootstrap:prepared_flag]
-    assert bootstrap_block.count("bootstrap_install_atomic ") == 4
+    assert bootstrap_block.count("bootstrap_install_atomic ") == 5
     for destination in (
         "/usr/local/sbin/hy2-lock-exec.py",
         "/usr/local/sbin/hy2-deploy-recovery.py",
         '"$SYSTEMD_DIR/hy2-deploy-recovery.service"',
         '"$SYSTEMD_DIR/hy2-deploy-watchdog.service"',
+        '"$SYSTEMD_DIR/hy2-https-recovery.service"',
     ):
         assert destination in bootstrap_block
     assert "enable --now hy2-deploy-recovery.service" not in deploy
