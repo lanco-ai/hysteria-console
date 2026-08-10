@@ -5,6 +5,7 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+ExecCondition=/usr/bin/codex login status
 ExecStart=/usr/bin/python3 /root/hysteria/codex_quota.py collect
 WorkingDirectory=/root/hysteria
 User=root

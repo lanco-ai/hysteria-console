@@ -279,6 +279,7 @@ def test_timer_and_deploy_use_three_minute_one_shot_collector():
     assert 'OnUnitActiveSec=3min' in timer
     assert 'Persistent=true' in timer
     assert 'Type=oneshot' in service
+    assert 'ExecCondition=/usr/bin/codex login status' in service
     assert '/root/hysteria/codex_quota.py collect' in service
     assert 'MemoryMax=256M' in service
     assert 'ReadWritePaths=/root/hysteria/state -/root/.codex' in service
