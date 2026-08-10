@@ -31,6 +31,12 @@ CONFIG_GROUP = 'hy2-xray'
 CONFIG_MODE = 0o640
 INBOUND_PORTS = (443, 8443)
 PRIMARY_PORT = 443
+MANAGED_ACCESS_LOG = '/var/log/xray/hy2-access.log'
+MANAGED_ERROR_LOG = '/var/log/xray/hy2-error.log'
+LEGACY_MANAGED_LOG_PATHS = {
+    'access': ('/var/log/xray/access.log', MANAGED_ACCESS_LOG),
+    'error': ('/var/log/xray/error.log', MANAGED_ERROR_LOG),
+}
 # ``@`` is outside the creatable username alphabet, so a primary user such as
 # ``alice-backup`` can never collide with a generated backup identity.
 BACKUP_SUFFIX = '@hy2-backup.invalid'
@@ -380,6 +386,26 @@ def _apply_managed_plan(cfg, plan):
     return changed
 
 
+def _migrate_legacy_managed_log_paths(cfg):
+    """Move only the repository's former default Xray log paths.
+
+    Existing configs are preserved across deployments because they contain
+    dynamic clients and may contain operator-managed settings.  The hardened
+    Xray service can write only to its pre-created ``hy2-*`` log files, so the
+    two exact paths used by older releases must follow that one-time rename.
+    Arbitrary custom paths and malformed/missing log sections remain untouched.
+    """
+    log_config = cfg.get('log')
+    if not isinstance(log_config, dict):
+        return False
+    changed = False
+    for field, (legacy_path, managed_path) in LEGACY_MANAGED_LOG_PATHS.items():
+        if log_config.get(field) == legacy_path:
+            log_config[field] = managed_path
+            changed = True
+    return changed
+
+
 def sync_user(username, vless_uuid, *, path=None):
     """Ensure `username` is present in every vless inbound under both ports
     with the given uuid. Returns True when a proxy reload is required, either
@@ -423,13 +449,11 @@ def apply_user_plan(plan, *, path=None, prune_unknown=False):
     """
     p = Path(path) if path else CONFIG_FILE
     with state_store.file_lock(_config_lock_path(p)):
-        if not plan and not prune_unknown:
-            return _has_reload_pending(p)
         cfg = _load_config(p)
+        changed = _migrate_legacy_managed_log_paths(cfg)
         if prune_unknown:
-            changed = _apply_managed_plan(cfg, plan)
+            changed = _apply_managed_plan(cfg, plan) or changed
         else:
-            changed = False
             for username, vless_uuid in plan.items():
                 uid = str(vless_uuid or '').strip()
                 if uid:

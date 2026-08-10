@@ -73,6 +73,39 @@ def test_apply_user_plan_empty_plan_returns_false(tmp_path):
     assert xc.apply_user_plan({}, path=p) is False
 
 
+def test_apply_user_plan_migrates_only_legacy_managed_log_paths(tmp_path):
+    p = _make_cfg(tmp_path)
+    cfg = json.loads(p.read_text())
+    cfg['log'] = {
+        'loglevel': 'warning',
+        'access': '/var/log/xray/access.log',
+        'error': '/var/log/xray/error.log',
+    }
+    p.write_text(json.dumps(cfg))
+
+    assert xc.apply_user_plan({}, path=p) is True
+
+    updated = json.loads(p.read_text())
+    assert updated['log'] == {
+        'loglevel': 'warning',
+        'access': xc.MANAGED_ACCESS_LOG,
+        'error': xc.MANAGED_ERROR_LOG,
+    }
+
+
+def test_apply_user_plan_preserves_custom_log_paths(tmp_path):
+    p = _make_cfg(tmp_path)
+    cfg = json.loads(p.read_text())
+    cfg['log'] = {
+        'access': '/srv/log/xray-access.log',
+        'error': '/srv/log/xray-error.log',
+    }
+    p.write_text(json.dumps(cfg))
+
+    assert xc.apply_user_plan({}, path=p) is False
+    assert json.loads(p.read_text())['log'] == cfg['log']
+
+
 def test_apply_user_plan_reads_file_only_once(tmp_path, monkeypatch):
     p = _make_cfg(tmp_path)
     plan = {f'user{i}': f'uuid-{i}' for i in range(50)}
