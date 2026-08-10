@@ -5,7 +5,12 @@ Before=nginx.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/hy2-enable-https.sh --recover-only
+ExecStart=/usr/local/sbin/hy2-lock-exec.py \
+  --lock-file /run/hy2-locks/https-activation.lock \
+  --timeout 0 \
+  --success-if-locked \
+  --marker-env HY2_HTTPS_LOCK_MARKER \
+  -- /usr/local/sbin/hy2-enable-https.sh --recover-only
 SuccessExitStatus=2
 User=root
 Group=root

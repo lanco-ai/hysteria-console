@@ -636,8 +636,13 @@ def test_recovery_unit_is_a_required_pre_nginx_fail_closed_gate():
     assert "Before=nginx.service" in unit
     assert "RequiredBy=nginx.service" in unit
     assert "ConditionPathExists=" not in unit
+    assert "ExecStart=/usr/local/sbin/hy2-lock-exec.py" in unit
+    assert "--lock-file /run/hy2-locks/https-activation.lock" in unit
+    assert "--timeout 0" in unit
+    assert "--success-if-locked" in unit
+    assert "--marker-env HY2_HTTPS_LOCK_MARKER" in unit
     assert (
-        "ExecStart=/usr/local/sbin/hy2-enable-https.sh --recover-only"
+        "-- /usr/local/sbin/hy2-enable-https.sh --recover-only"
     ) in unit
     assert "SuccessExitStatus=2" in unit
     for directive in (
