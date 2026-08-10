@@ -19,6 +19,7 @@ the exact replacement generation recorded before the mutation.
 from __future__ import annotations
 
 import argparse
+import grp
 import hashlib
 import json
 import os
@@ -283,6 +284,7 @@ def _validate_existing_parent_chain(
     *,
     test_mode: bool,
     test_root: str | None,
+    allow_syslog_parent: bool = False,
 ) -> None:
     """Reject symlinked or writable ancestors without requiring leaf parents.
 
@@ -306,11 +308,31 @@ def _validate_existing_parent_chain(
             metadata = os.lstat(current)
         except FileNotFoundError:
             break
+        mode = stat.S_IMODE(metadata.st_mode)
+        trusted_syslog_parent = False
+        # Ubuntu's rsyslog tmpfiles policy deliberately keeps /var/log
+        # root:syslog 0775. Admit only that exact platform-owned parent, and
+        # only while validating the one allowlisted Xray log directory.
+        if (
+            allow_syslog_parent
+            and not test_mode
+            and current == "/var/log"
+            and stat.S_ISDIR(metadata.st_mode)
+            and not stat.S_ISLNK(metadata.st_mode)
+            and metadata.st_uid == 0
+            and mode == 0o775
+        ):
+            try:
+                trusted_syslog_parent = (
+                    metadata.st_gid == grp.getgrnam("syslog").gr_gid
+                )
+            except KeyError:
+                trusted_syslog_parent = False
         if (
             not stat.S_ISDIR(metadata.st_mode)
             or stat.S_ISLNK(metadata.st_mode)
             or metadata.st_uid != 0
-            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or (mode & 0o022 and not trusted_syslog_parent)
         ):
             raise RecoveryError(
                 f"Artifact parent chain is unsafe at: {current}"
@@ -390,9 +412,10 @@ def _validate_log_dir(
     elif path not in ALLOWED_LOG_DIRS:
         raise RecoveryError(f"Unsupported deployment log directory: {path}")
     _validate_existing_parent_chain(
-        os.path.join(path, ".hy2-log-dir-probe"),
+        path,
         test_mode=test_mode,
         test_root=test_root,
+        allow_syslog_parent=True,
     )
     return path
 

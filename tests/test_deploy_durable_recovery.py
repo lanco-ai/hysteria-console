@@ -2,11 +2,13 @@ import ast
 import json
 import os
 import re
+import runpy
 import stat
 import subprocess
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,6 +58,49 @@ def _shell_array(script, name):
         for line in match.group("body").splitlines()
         if line.strip()
     }
+
+
+def test_standard_ubuntu_syslog_parent_is_the_only_writable_exception(
+    monkeypatch,
+):
+    namespace = runpy.run_path(str(HELPER))
+    validate = namespace["_validate_existing_parent_chain"]
+    recovery_error = namespace["RecoveryError"]
+    fake_stat = SimpleNamespace(
+        st_mode=stat.S_IFDIR | 0o775,
+        st_uid=0,
+        st_gid=111,
+    )
+    monkeypatch.setattr(
+        validate.__globals__["grp"],
+        "getgrnam",
+        lambda name: SimpleNamespace(gr_gid=111),
+    )
+    real_lstat = validate.__globals__["os"].lstat
+
+    def standard_ubuntu_lstat(path):
+        if path == "/var/log":
+            return fake_stat
+        return real_lstat(path)
+
+    monkeypatch.setattr(
+        validate.__globals__["os"],
+        "lstat",
+        standard_ubuntu_lstat,
+    )
+
+    validate(
+        "/var/log/xray",
+        test_mode=False,
+        test_root=None,
+        allow_syslog_parent=True,
+    )
+    with pytest.raises(recovery_error, match="parent chain is unsafe"):
+        validate(
+            "/var/log/xray",
+            test_mode=False,
+            test_root=None,
+        )
 
 
 @pytest.fixture
