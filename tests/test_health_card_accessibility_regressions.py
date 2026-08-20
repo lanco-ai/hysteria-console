@@ -19,14 +19,21 @@ def test_health_card_exposes_visible_status_and_escapes_context() -> None:
         {"ok": False, "label": "剩余 < 14 天"},
     )
 
-    assert 'class="card stat health-ok"' in healthy
-    assert 'class="badge badge-info health-status">状态：正常</span>' in healthy
+    # Row-level identity is preserved via data-health.
+    assert 'data-health="&lt;磁盘&gt;"' in healthy
+    assert 'data-health="证书"' in unhealthy
+    # The status string lives in a small badge (not in a Serif value).
+    assert '<span class="bold">&lt;磁盘&gt;</span>' in healthy
+    assert '<span class="badge">剩余 42%（要求 &gt; 15%）</span>' in healthy
+    assert '<span class="badge badge-danger">剩余 &lt; 14 天</span>' in unhealthy
+    # Context text is HTML-escaped.
     assert "&lt;磁盘&gt;" in healthy
     assert "剩余 42%（要求 &gt; 15%）" in healthy
-
-    assert 'class="card stat health-bad"' in unhealthy
-    assert 'class="badge badge-danger health-status">状态：异常</span>' in unhealthy
     assert "剩余 &lt; 14 天" in unhealthy
+    # Row markup, no card wrapper.
+    assert healthy.startswith("<tr")
+    assert healthy.rstrip().endswith("</tr>")
+    assert "<div" not in healthy
 
 
 def test_ssr_and_live_fragment_render_text_status_for_every_card(
@@ -62,9 +69,34 @@ def test_ssr_and_live_fragment_render_text_status_for_every_card(
     fragment = ss.render_health_fragment()
     page = ss.render_health("panel.test")
 
-    assert fragment.count('class="badge badge-info health-status"') == 14
-    assert fragment.count('class="badge badge-danger health-status"') == 1
-    assert fragment.count("状态：正常") == 14
-    assert fragment.count("状态：异常") == 1
+    # Fragment is bare rows for tbody.innerHTML — no outer <tbody>.
+    assert "<tbody" not in fragment.lower()
+    assert "</tbody" not in fragment.lower()
+    # Each probe renders exactly one row, identified by data-health.
+    assert fragment.count("<tr") == 15
+    assert fragment.count("data-health=") == 15
+    for probe_title in (
+        "CRON 心跳",
+        "鉴权服务",
+        "鉴权依赖",
+        "Hysteria",
+        "Xray",
+        "TUIC",
+        "限流 Timer",
+        "TLS 证书",
+        "面板 HTTPS",
+        "证书自动续期",
+        "在线用户",
+        "Xray 配置权限",
+        "Hysteria 更新",
+        "最近备份",
+        "磁盘",
+    ):
+        assert f'data-health="{probe_title}"' in fragment
+    # Healthy probes use neutral badge, the unhealthy disk probe uses danger.
+    assert fragment.count('<span class="badge">') == 14
+    assert fragment.count('<span class="badge badge-danger">') == 1
     assert "剩余 5%（要求 &gt; 15%）" in fragment
+    # Fragment rows are embedded inside the SSR page tbody.
+    assert "<tbody>" in page
     assert fragment in page

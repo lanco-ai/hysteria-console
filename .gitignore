@@ -13,3 +13,11 @@ __pycache__/
 *.tar.gz.sha256
 backups/
 .superpowers/
+
+# Local backup files
+*.bak
+*.bak-*
+
+# Local deployment helpers
+check-sync.sh
+deploy-sync.sh

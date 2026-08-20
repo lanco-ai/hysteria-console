@@ -31,6 +31,7 @@ class IncidentConsoleContext:
     build_line_radar: object
     summarize_cost_calibration: object
     render_line_radar: object
+    render_line_radar_summary: object
     render_cost_calibrator: object
     render_alert: object
     flash_text: object
@@ -170,12 +171,27 @@ def render_incidents(ctx, host, flash=''):
         radar['recommendation'],
         ctx.subscription_profiles['default'],
     )
+    affected_users = len(peak.get('users') or [])
+    active_alerts = len(payload['alerts'])
 
+    # --- Peak-hour related users ---
     peak_users = ''.join(
-        f'<tr><td>{html.escape(u["user"])}</td><td>{ctx.fmt_bytes(u["bytes"])}</td></tr>'
+        f'<tr><td class="mono">{html.escape(u["user"])}</td>'
+        f'<td><span class="mono">{ctx.fmt_bytes(u["bytes"])}</span></td></tr>'
         for u in peak.get('users') or []
     ) or '<tr><td colspan="2" class="empty">峰值小时暂无用户流量</td></tr>'
 
+    # --- Recent alert states ---
+    alert_rows = ''.join(
+        '<tr>'
+        f'<td>{html.escape(a["label"])}</td>'
+        f'<td class="mono">{html.escape(a["user"])}</td>'
+        f'<td><code>{html.escape(a["key"])}</code></td>'
+        '</tr>'
+        for a in payload['alerts']
+    ) or '<tr><td colspan="3" class="empty">暂无告警状态</td></tr>'
+
+    # --- Action candidate users ---
     user_rows = []
     for row in payload['users']:
         user_esc = html.escape(row['user'])
@@ -184,81 +200,146 @@ def render_incidents(ctx, host, flash=''):
             if row.get('quota_bytes') else '不限额'
         )
         actions = (
-            '<div class="row gap-sm">'
-            '<form method="post" action="/admin/pause-user" class="inline-form-row" data-action="disable-user" '
+            '<div class="incident-actions">'
+            '<form method="post" action="/admin/pause-user" class="inline-form-row" '
             f'data-confirm="暂停 {user_esc} 1 小时会立即拒绝新连接并断开现有会话，确认继续？">'
             f'<input type="hidden" name="user" value="{user_esc}">'
             f'<input type="hidden" name="user_revision" value="{html.escape(row.get("revision") or "", quote=True)}">'
             '<input type="hidden" name="minutes" value="60">'
             '<input type="hidden" name="next" value="/admin/incidents">'
-            '<button class="btn ghost btn-sm" type="submit">暂停 1 小时</button></form>'
-            '<form method="post" action="/admin/rotate-token" class="inline-form-row" data-action="rotate-user-token" '
+            '<button class="btn secondary btn-sm" type="submit">暂停 1 小时</button></form>'
+            '<form method="post" action="/admin/rotate-token" class="inline-form-row" '
             f'data-confirm="轮换 {user_esc} 的 Token 会立即作废旧订阅和面板链接，确认继续？">'
             f'<input type="hidden" name="user" value="{user_esc}">'
             f'<input type="hidden" name="user_revision" value="{html.escape(row.get("revision") or "", quote=True)}">'
             '<input type="hidden" name="next" value="/admin/incidents">'
-            '<button class="btn ghost btn-sm" type="submit">轮换 Token</button></form>'
+            '<button class="btn secondary btn-sm" type="submit">轮换 Token</button></form>'
             f'<a class="btn ghost btn-sm" href="/admin/user/{user_esc}">画像</a>'
             '</div>'
         )
         user_rows.append(
             '<tr>'
-            f'<td style="padding-left:18px;"><div class="bold">{user_esc}</div>'
+            f'<td><div class="bold">{user_esc}</div>'
             f'<div class="small faint">{html.escape(row.get("note") or row.get("expiry_label") or "")}</div></td>'
-            f'<td>{ctx.fmt_bytes(row["last_24h_bytes"])}</td>'
-            f'<td>{ctx.fmt_bytes(row["cycle_used_bytes"])} · {quota_text}</td>'
+            f'<td><span class="mono">{ctx.fmt_bytes(row["last_24h_bytes"])}</span></td>'
+            f'<td><span class="mono">{ctx.fmt_bytes(row["cycle_used_bytes"])}</span> · {quota_text}</td>'
             f'<td>{_incident_status_badges(row)}</td>'
-            f'<td style="padding-right:18px;">{actions}</td>'
+            f'<td>{actions}</td>'
             '</tr>'
         )
     if not user_rows:
         user_rows.append('<tr><td colspan="5" class="empty">暂无用户</td></tr>')
 
-    alert_rows = ''.join(
-        '<tr>'
-        f'<td style="padding-left:18px;">{html.escape(a["label"])}</td>'
-        f'<td>{html.escape(a["user"])}</td>'
-        f'<td style="padding-right:18px;"><code>{html.escape(a["key"])}</code></td>'
-        '</tr>'
-        for a in payload['alerts']
-    ) or '<tr><td colspan="3" class="empty">暂无告警状态</td></tr>'
-
     content = f'''{alert}
-<div class="grid grid-4">
-  <div class="card stat"><div class="k">峰值小时</div><div class="v">{ctx.fmt_bytes(peak["bytes"])}</div><div class="small">{html.escape(peak["hour"] or "—")}</div></div>
-  <div class="card stat"><div class="k">当小时</div><div class="v">{ctx.fmt_bytes(payload["stats"]["current_hour_bytes"])}</div><div class="small">{payload["stats"]["online"]} 在线</div></div>
-  <div class="card stat"><div class="k">推荐处置</div><div class="v">{html.escape(rec["label"])}</div><div class="small">{html.escape(radar["reason"])}</div></div>
-  <div class="card stat"><div class="k">证据导出</div><a class="btn secondary btn-sm mt-sm" href="/admin/incidents/evidence.json">下载 JSON</a></div>
-</div>
+<div class="admin-page incidents-page">
 
-<div class="grid grid-2 mt-md">
-  <div class="card card-flush scroll-x" tabindex="0"
-       aria-label="峰值小时相关用户，可横向滚动">
-    <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-      <h2 class="section-title">峰值小时相关用户</h2><span class="small">Top {len(peak.get('users') or [])}</span>
+  <!-- Page header controls -->
+  <div class="incident-page-header">
+    <a class="btn ghost btn-sm" href="/admin/incidents/evidence.json">下载证据 JSON</a>
+  </div>
+
+  <!-- Top 4 KPIs -->
+  <div class="health-top-kpis">
+    <div class="health-kpi-card">
+      <div class="health-kpi-label">峰值小时</div>
+      <div class="health-kpi-value"><span class="mono">{ctx.fmt_bytes(peak["bytes"])}</span></div>
+      <div class="health-kpi-sub">{html.escape(peak["hour"] or "—")}</div>
     </div>
-    <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>峰值小时流量</th></tr></thead><tbody>{peak_users}</tbody></table>
-  </div>
-  <div class="card card-flush scroll-x" tabindex="0"
-       aria-label="近期告警状态，可横向滚动">
-    <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-      <h2 class="section-title">近期告警状态</h2><span class="small">去重状态</span>
+    <div class="health-kpi-card">
+      <div class="health-kpi-label">当前小时</div>
+      <div class="health-kpi-value"><span class="mono">{ctx.fmt_bytes(payload["stats"]["current_hour_bytes"])}</span></div>
+      <div class="health-kpi-sub">{payload["stats"]["online"]} 在线</div>
     </div>
-    <table class="table"><thead><tr><th style="padding-left:18px;">类型</th><th>用户</th><th style="padding-right:18px;">键</th></tr></thead><tbody>{alert_rows}</tbody></table>
+    <div class="health-kpi-card">
+      <div class="health-kpi-label">受影响用户</div>
+      <div class="health-kpi-value"><span class="mono">{affected_users}</span></div>
+      <div class="health-kpi-sub">峰值小时内</div>
+    </div>
+    <div class="health-kpi-card">
+      <div class="health-kpi-label">活跃告警</div>
+      <div class="health-kpi-value"><span class="mono">{active_alerts}</span></div>
+      <div class="health-kpi-sub">当前状态</div>
+    </div>
   </div>
-</div>
 
-<div class="card card-flush scroll-x mt-md" tabindex="0"
-     aria-label="处置候选用户，可横向滚动">
-  <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-    <h2 class="section-title">处置候选用户</h2>
-    <div class="small">按近 24 小时流量排序；暂停/轮换会复用现有安全动作</div>
+  <!-- Recommended action panel -->
+  <section class="admin-section">
+    <div class="admin-section-header">
+      <h2 class="admin-section-title">推荐处置</h2>
+    </div>
+    <div class="admin-section-body">
+      <div class="incident-rec">
+        <div class="incident-rec-entry">
+          <div class="incident-rec-badge">{html.escape(rec["label"])}</div>
+        </div>
+        <div class="incident-rec-reason">{html.escape(radar["reason"])}</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Peak hour users + recent alerts (equal-height dual panel) -->
+  <div class="incident-dual-grid">
+    <section class="admin-section incident-panel">
+      <div class="admin-section-header">
+        <h2 class="admin-section-title">峰值小时相关用户</h2>
+        <span class="small">Top {affected_users}</span>
+      </div>
+      <div class="admin-section-body no-pad">
+        <div class="data-table-wrap" tabindex="0" aria-label="峰值小时相关用户，可横向滚动">
+          <table class="data-table">
+            <thead><tr><th>用户</th><th>峰值小时流量</th></tr></thead>
+            <tbody>{peak_users}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section class="admin-section incident-panel">
+      <div class="admin-section-header">
+        <h2 class="admin-section-title">近期告警状态</h2>
+        <span class="small">{active_alerts} 条</span>
+      </div>
+      <div class="admin-section-body no-pad">
+        <div class="data-table-wrap" tabindex="0" aria-label="近期告警状态，可横向滚动">
+          <table class="data-table">
+            <thead><tr><th>类型</th><th>用户</th><th>键</th></tr></thead>
+            <tbody>{alert_rows}</tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
-  <table class="table"><thead><tr><th style="padding-left:18px;">用户</th><th>24h 流量</th><th>周期用量</th><th>状态</th><th style="padding-right:18px;">操作</th></tr></thead><tbody>{''.join(user_rows)}</tbody></table>
-</div>
 
-{ctx.render_line_radar(now=now)}
-{ctx.render_cost_calibrator(now=now)}'''
+  <!-- Action candidate users -->
+  <section class="admin-section">
+    <div class="admin-section-header">
+      <div>
+        <h2 class="admin-section-title">处置候选用户</h2>
+        <div class="small">按近 24 小时流量排序</div>
+      </div>
+    </div>
+    <div class="admin-section-body no-pad">
+      <div class="data-table-wrap" tabindex="0" aria-label="处置候选用户，可横向滚动">
+        <table class="data-table">
+          <thead><tr><th>用户</th><th>24h 流量</th><th>周期用量</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody>{"".join(user_rows)}</tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- Line quality summary -->
+  <div class="incident-diagnostic-grid">
+    <section class="admin-section incident-panel">
+      <div class="admin-section-header">
+        <h2 class="admin-section-title">线路质量摘要</h2>
+      </div>
+      <div class="admin-section-body">
+        {ctx.render_line_radar_summary(now=now)}
+      </div>
+    </section>
+  </div>
+
+</div>'''
     return ctx.render_admin_shell(
         'incidents', '事故处理', content,
         badge=host, subtitle='峰值 · 用户 · 证据',

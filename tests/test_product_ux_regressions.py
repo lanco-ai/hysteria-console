@@ -365,13 +365,38 @@ def test_health_status_uses_an_authenticated_local_fragment_refresh(
     assert "setInterval(refresh" not in page
     assert "activeController" in page
     assert "visibilitychange" in page
-    assert fragment.count("<article") == 15
-    assert 'data-health="鉴权服务"' in fragment
-    assert 'data-health="鉴权依赖"' in fragment
-    assert 'data-health="面板 HTTPS"' in fragment
-    assert 'data-health="证书自动续期"' in fragment
+    # Fragment payload is bare rows for tbody.innerHTML, no outer <tbody>.
+    assert "<tbody" not in fragment.lower()
+    assert "</tbody" not in fragment.lower()
+    # Each probe is rendered as one row with a stable data-health identity.
+    assert fragment.count("<tr") == 15
+    assert fragment.count("data-health=") == 15
+    for probe_title in (
+        "CRON 心跳",
+        "鉴权服务",
+        "鉴权依赖",
+        "Hysteria",
+        "Xray",
+        "TUIC",
+        "限流 Timer",
+        "TLS 证书",
+        "面板 HTTPS",
+        "证书自动续期",
+        "在线用户",
+        "Xray 配置权限",
+        "Hysteria 更新",
+        "最近备份",
+        "磁盘",
+    ):
+        assert f'data-health="{probe_title}"' in fragment
+    # Healthy probes use neutral badge, the disk probe uses danger.
+    assert fragment.count('<span class="badge">') == 14
+    assert fragment.count('<span class="badge badge-danger">') == 1
     assert "<!doctype" not in fragment.lower()
     assert "<main" not in fragment.lower()
+    # The page's SSR tbody wraps the same row markup.
+    assert "<tbody>" in page
+    assert fragment in page
 
     auth = {"ok": False}
     monkeypatch.setattr(ss, "is_logged_in", lambda _handler: auth["ok"])
@@ -389,7 +414,10 @@ def test_health_status_uses_an_authenticated_local_fragment_refresh(
         allowed = conn.getresponse()
         body = allowed.read().decode("utf-8")
         assert allowed.status == 200
-        assert body.count("<article") == 15
+        # Live fragment payload: bare rows for tbody.innerHTML.
+        assert "<tbody" not in body.lower()
+        assert body.count("<tr") == 15
+        assert body.count("data-health=") == 15
         conn.close()
 
 

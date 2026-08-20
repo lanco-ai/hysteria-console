@@ -149,14 +149,14 @@ def render_line_radar(ctx, now=None):
         online = str(row['online']) if row['online'] is not None else '—'
         rows.append(
             '<tr>'
-            f'<td style="padding-left:18px;"><div class="bold">{html.escape(row["label"])}</div>'
-            f'<div class="small faint">{html.escape(row["note"])}</div></td>'
+            f'<td><div class="bold">{html.escape(row["label"])}</div>'
+            f'<div class="small faint mono">{html.escape(row["note"])}</div></td>'
             f'<td><span class="{cls}">{html.escape(row["status"])}</span></td>'
-            f'<td>{html.escape(traffic)}</td>'
-            f'<td>{share}</td>'
+            f'<td><span class="mono">{html.escape(traffic)}</span></td>'
+            f'<td><span class="mono">{share}</span></td>'
             f'<td>{row["active_users"]}</td>'
             f'<td>{online}</td>'
-            f'<td style="padding-right:18px;"><code>profile={html.escape(row["profile"])}</code></td>'
+            f'<td><code>profile={html.escape(row["profile"])}</code></td>'
             '</tr>'
         )
     rec = ctx.subscription_profiles.get(
@@ -164,18 +164,46 @@ def render_line_radar(ctx, now=None):
         ctx.subscription_profiles['default'],
     )
     return (
-        '<div class="card card-flush scroll-x mt-md" tabindex="0" '
-        'aria-label="线路质量雷达，可横向滚动">'
-        '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
-        '<div><h2 class="section-title">线路质量雷达</h2>'
-        f'<div class="small">近 {radar["window_hours"]} 小时协议占比 · 总量 {ctx.fmt_bytes(radar["total_bytes"])}</div></div>'
-        f'<div class="badge">推荐：{html.escape(rec["label"])} · {html.escape(radar["reason"])}</div>'
+        '<section class="admin-section health-radar-section">'
+        '<div class="admin-section-header">'
+        '<div>'
+        '<h2 class="admin-section-title">线路质量雷达</h2>'
+        f'<div class="small">近 {radar["window_hours"]} 小时协议占比 · 总量 {ctx.fmt_bytes(radar["total_bytes"])}</div>'
         '</div>'
-        '<table class="table"><thead><tr>'
-        '<th style="padding-left:18px;">线路</th><th>状态</th><th>24h 流量</th>'
-        '<th>占比</th><th>可用用户</th><th>在线</th><th style="padding-right:18px;">推荐入口</th>'
-        f'</tr></thead><tbody>{"".join(rows)}</tbody></table>'
+        f'<div class="badge">{html.escape(rec["label"])} · {html.escape(radar["reason"])}</div>'
         '</div>'
+        '<div class="admin-section-body no-pad">'
+        '<div class="data-table-wrap" tabindex="0" aria-label="线路质量雷达，可横向滚动">'
+        '<table class="data-table">'
+        '<thead><tr><th>线路</th><th>状态</th><th>24h 流量</th><th>占比</th><th>可用用户</th><th>在线</th><th>推荐入口</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody>'
+        '</table>'
+        '</div>'
+        '</div>'
+        '</section>'
+    )
+
+
+def render_line_radar_summary(ctx, now=None):
+    """Minimal inline summary for the incidents page."""
+    radar = build_line_radar(ctx, now=now)
+    items = []
+    for row in radar['rows']:
+        share = f'{row["share"]:.1f}%' if radar['total_bytes'] > 0 else '—'
+        items.append(
+            f'<div class="radar-summary-row">'
+            f'<span class="bold">{html.escape(row["label"])}</span>'
+            f'<span class="mono">{share}</span>'
+            f'</div>'
+        )
+    rec = ctx.subscription_profiles.get(
+        radar['recommendation'],
+        ctx.subscription_profiles['default'],
+    )
+    return (
+        '<div class="radar-summary">' + ''.join(items) + '</div>'
+        f'<div class="small faint" style="margin-top:8px;">推荐：{html.escape(rec["label"])} · {html.escape(radar["reason"])}</div>'
+        f'<a class="btn ghost btn-sm" href="/admin/health" style="margin-top:12px;">查看完整健康状态</a>'
     )
 
 
@@ -278,17 +306,21 @@ def render_cost_calibrator(ctx, now=None):
         f'<td style="padding-right:18px;">{html.escape(iface_text)}</td></tr>'
     )
     return (
-        '<div class="card card-flush scroll-x mt-md" tabindex="0" '
-        'aria-label="成本校准数据，可横向滚动">'
-        '<div class="row" style="padding:14px 18px;justify-content:space-between;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);">'
-        '<div><h2 class="section-title">成本校准器</h2>'
-        f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div></div>'
+        '<section class="admin-section health-calibrator-section">'
+        '<div class="admin-section-header">'
+        '<div>'
+        '<h2 class="admin-section-title">成本校准器</h2>'
+        f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div>'
+        '</div>'
         f'<div class="row gap-sm"><div class="badge">{html.escape(advice)}</div>{apply_form}</div>'
         '</div>'
-        f'<table class="table"><tbody>{rows}</tbody></table>'
-        '<table class="table"><thead><tr><th style="padding-left:18px;">窗口</th><th>总量建议</th><th>出站建议</th><th>纳入流量</th><th>样本</th><th style="padding-right:18px;">置信度</th></tr></thead>'
+        '<div class="admin-section-body no-pad">'
+        '<div class="data-table-wrap" tabindex="0" aria-label="成本校准数据，可横向滚动">'
+        '<table class="data-table"><tbody>' + rows + '</tbody></table>'
+        '<table class="data-table"><thead><tr><th>窗口</th><th>总量建议</th><th>出站建议</th><th>纳入流量</th><th>样本</th><th>置信度</th></tr></thead>'
         f'<tbody>{window_rows}</tbody></table>'
-        '<div style="padding:0 18px 14px;">'
+        '</div>'
+        '<div class="calibrator-form">'
         '<form method="post" action="/admin/cost-multiplier/auto" class="inline-form" '
         'data-confirm="保存后，启用的自动策略可在满足条件时修改运行时倍率并重启面板服务，确认继续？">'
         '<div class="grid grid-3">'
@@ -302,12 +334,13 @@ def render_cost_calibrator(ctx, now=None):
         f'<div><label for="multiplier-auto-min-delta">最小变化 (%)</label><input id="multiplier-auto-min-delta" name="min_delta_percent" type="number" min="0" max="50" value="{float(policy["min_delta_percent"]):.0f}"></div>'
         f'<div><label for="multiplier-auto-cooldown">冷却时间 (小时)</label><input id="multiplier-auto-cooldown" name="cooldown_hours" type="number" min="1" max="168" value="{float(policy["cooldown_hours"]):.0f}"></div>'
         '</div>'
-        '<button class="btn secondary btn-sm mt-md" type="submit">保存自动策略</button>'
+        '<button class="btn secondary btn-sm" type="submit">保存自动策略</button>'
         '</form>'
         f'{last_state}{last_policy}'
-        '</div>'
-        '<div class="small faint" style="padding:0 18px 14px;">'
+        '<div class="small faint">'
         '建议倍率使用小样本过滤 + 10% 截尾加权平均；自动模式默认关闭，启用后仍受置信度、单次变化和冷却时间限制。'
         '</div>'
         '</div>'
+        '</div>'
+        '</section>'
     )

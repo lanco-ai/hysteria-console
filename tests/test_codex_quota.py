@@ -248,7 +248,11 @@ def test_dashboard_page_contains_interactive_chart_and_missing_window_copy():
     assert 'data-col="five-hour"' in page
     assert 'data-role="records-body"' in page
     assert '最近采集明细' in page
-    assert '当前账户响应中未提供这个额度窗口' in page
+    # Missing-window copy in product voice — the unavailable quota panel
+    # surfaces a unified empty state instead of debug "未提供" placeholders.
+    assert '暂无额度数据' in page
+    assert '等待 Codex 返回该额度窗口' in page
+    assert 'class="codex-quota-panel tone-violet is-unavailable"' in page
     assert '<script src="/static/codex-quota.js?v=abc123" defer></script>' in page
 
     payload['windows']['five_hour'] = {

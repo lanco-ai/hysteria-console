@@ -2506,19 +2506,25 @@ def render_logout_confirmation(host, *, user_panel=False):
     action = '/user/logout' if user_panel else '/logout'
     cancel = '/user/panel' if user_panel else '/admin'
     title = '退出用户面板？' if user_panel else '退出管理后台？'
-    body = f'''
+    body = f'''<div class="auth-page">
 <div class="auth-wrap">
-  <section class="auth-card">
-    <div class="auth-brand"><span class="logo">H</span><div><strong>{html.escape(host)}</strong><small>安全退出</small></div></div>
-    <h1 class="title">{title}</h1>
-    <p class="subtitle">确认后会结束当前设备的登录会话；其他设备不受影响。</p>
-    <form method="post" action="{action}">
-      <button class="btn full danger-btn" type="submit">确认退出</button>
-    </form>
-    <a class="btn secondary full mt-sm" href="{cancel}">返回</a>
-  </section>
+<div class="auth-card">
+  <div class="auth-brand">
+    <span class="auth-logo">H</span>
+    <div class="auth-brand-text">
+      <strong>{html.escape(host)}</strong>
+      <small>安全退出</small>
+    </div>
+  </div>
+  <h1 class="auth-title">{title}</h1>
+  <p class="auth-subtitle">确认后会结束当前设备的登录会话；其他设备不受影响。</p>
+  <form method="post" action="{action}">
+    <button class="btn danger-btn mt-md" type="submit" style="width:100%;">确认退出</button>
+  </form>
+  <a class="auth-back" href="{cancel}">返回</a>
+</div>
 </div>'''
-    return html_page('确认退出', body, body_class='auth-page')
+    return html_page('确认退出', body)
 
 
 _SIDEBAR_NAV = [
@@ -2550,8 +2556,15 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
     body = f'''<a class="skip-link" href="#main-content">跳到主内容</a>
 <div class="app">
 <aside class="sidebar" id="sidebar">
-  <div class="sidebar-brand"><span class="logo">H</span><span class="sidebar-brand-copy"><strong>Hysteria</strong><small>Network Console</small></span>
-    <button class="sidebar-close" id="sidebar-close" type="button" aria-label="关闭导航" aria-controls="sidebar">关闭</button>
+  <div class="sidebar-brand">
+    <span class="sidebar-logo">H</span>
+    <div class="sidebar-brand-text">
+      <strong>Hysteria</strong>
+      <small>Network Console</small>
+    </div>
+    <button class="sidebar-close" id="sidebar-close" type="button" aria-label="关闭导航" aria-controls="sidebar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
   </div>
   <nav class="sidebar-nav" aria-label="管理导航">
     <div class="sidebar-section">控制中心</div>
@@ -2559,7 +2572,7 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   </nav>
   <div class="sidebar-footer">
     <form method="post" action="/logout">
-      <button type="submit" class="sidebar-link sidebar-logout">{icon("logout")}<span>退出登录</span></button>
+      <button type="submit" class="sidebar-logout">{icon("logout")}<span>退出登录</span></button>
     </form>
   </div>
 </aside>
@@ -2567,11 +2580,13 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
 <div class="main">
   <header class="topbar">
     <div class="topbar-inner">
-      <div class="row gap-sm">
-        <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="切换侧边栏" aria-controls="sidebar" aria-expanded="false">{icon("menu")}</button>
+      <div class="topbar-left">
+        <button class="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="切换侧边栏" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
         <h1 class="page-title">{html.escape(page_title)}{sub_html}</h1>
       </div>
-      <div class="topbar-actions">{topbar_extra}{badge_html}</div>
+      <div class="topbar-right">{topbar_extra}{badge_html}</div>
     </div>
   </header>
   <main class="content" id="main-content" tabindex="-1">{content}</main>
@@ -2735,66 +2750,395 @@ def flash_text(msg):
 
 
 def render_home(host):
-    body = f'''<div class="wrap home-wrap">
-<div class="card elev inline-form auth-card welcome-card" style="text-align:center;">
-  <div class="auth-head" style="justify-content:center;border-bottom:0;padding-bottom:6px;margin-bottom:8px;">
-    <span class="app-logo lg">H</span>
-    <div style="text-align:left;">
-      <h1 class="title">Hysteria</h1>
-      <div class="sub">管理与订阅控制台</div>
+    body = '''<header class="home-header">
+  <div class="home-header-inner">
+    <a href="/" class="home-logo">
+      <span class="home-logo-icon">H</span>
+      <span class="home-logo-text"><strong>Hysteria</strong><small>Network Console</small></span>
+    </a>
+    <nav class="home-nav">
+      <a href="/" class="home-nav-link">首页</a>
+      <a href="#services" class="home-nav-link">服务</a>
+    </nav>
+    <div class="home-nav-actions">
+      <a href="/login" class="btn btn-primary">进入控制台</a>
     </div>
   </div>
-  <a class="btn full mt-md" href="/user/login">{icon("dashboard")}<span>用户登录</span></a>
-  <a class="btn secondary full mt-sm" href="/login">{icon("lock")}<span>管理员登录</span></a>
-</div></div>'''
-    return html_page('Hysteria', body)
+</header>
 
-
-def render_login(host, msg=''):
-    body = f'''<div class="wrap home-wrap">
-{render_alert(msg, 'err')}
-<div class="card elev inline-form auth-card login-card">
-  <div class="auth-head">
-    <span class="app-logo">H</span>
-    <div>
-      <h1 class="title">管理员登录</h1>
-      <div class="sub">登录到 <code style="padding:2px 6px;font-size:11.5px;">{html.escape(host)}</code></div>
+<section class="home-hero">
+  <div class="home-hero-bg">
+    <div class="home-hero-glow"></div>
+    <div class="home-hero-grid"></div>
+  </div>
+  <div class="home-hero-content">
+    <div class="home-eyebrow">Hysteria 2 · Network Infrastructure</div>
+    <h1 class="home-title">Hysteria</h1>
+    <p class="home-headline">一个入口，连接你的网络。</p>
+    <p class="home-desc">简洁、稳定、透明的 Hysteria 2 服务。</p>
+    <div class="home-actions">
+      <a href="/login" class="btn btn-primary">
+        进入控制台
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+    <div class="home-protocols">
+      <span class="home-protocols-label">Supported Protocols</span>
+      <div class="home-protocols-list">
+        <span class="home-protocols-item">Hysteria 2</span>
+        <span class="home-protocols-item">Clash</span>
+        <span class="home-protocols-item">Sing-box</span>
+        <span class="home-protocols-item">WireGuard</span>
+      </div>
     </div>
   </div>
-  <form method="post" action="/login">
-    <label for="admin-username">用户名</label><input id="admin-username" name="username" required autofocus autocomplete="username">
-    <label for="admin-password" class="mt-sm">密码</label><input id="admin-password" name="password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password">
-    <div class="row mt-md">
-      <button class="btn" type="submit" style="flex:1;justify-content:center;">登录</button>
-      <a class="btn secondary" href="/">返回</a>
+</section>
+
+<section class="home-sections" id="services">
+  <!-- Section 1: 服务状态 / 控制台概览 -->
+  <div class="home-section home-section-text-left">
+    <div class="home-section-content">
+      <div class="home-section-eyebrow">Service · 服务</div>
+      <h2 class="home-section-title">服务状态，一眼看清</h2>
+      <p class="home-section-desc">实时监控网络状态、流量使用与用户周期。透明化的数据呈现，让管理更简单。</p>
+      <div class="home-section-features">
+        <div class="home-section-feature">实时流量统计</div>
+        <div class="home-section-feature">用户周期管理</div>
+        <div class="home-section-feature">订阅统一分发</div>
+      </div>
     </div>
-  </form>
-</div></div>'''
-    return html_page('管理员登录', body)
+    <div class="home-section-preview">
+      <div class="preview-mini-panel">
+        <div class="preview-mini-header">
+          <span class="preview-mini-title">控制台概览</span>
+        </div>
+        <div class="stats-row">
+          <div class="stat-block">
+            <span class="stat-block-k">在线状态</span>
+            <span class="stat-block-v">
+              <span class="stat-dot"></span>正常
+            </span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-block-k">活跃用户</span>
+            <span class="stat-block-v stat-block-mono">24</span>
+          </div>
+          <div class="stat-block">
+            <span class="stat-block-k">计费周期</span>
+            <span class="stat-block-v stat-block-mono">2026-08</span>
+          </div>
+        </div>
+        <div class="console-divider"></div>
+        <div class="traffic-summary">
+          <div class="traffic-summary-title">本周流量</div>
+          <div class="traffic-row">
+            <span class="traffic-row-label">上行</span>
+            <div class="traffic-bar-track"><div class="traffic-bar-fill" style="width: 62%"></div></div>
+            <span class="traffic-row-value">12.4 GB</span>
+          </div>
+          <div class="traffic-row">
+            <span class="traffic-row-label">下行</span>
+            <div class="traffic-bar-track"><div class="traffic-bar-fill" style="width: 85%"></div></div>
+            <span class="traffic-row-value">47.8 GB</span>
+          </div>
+        </div>
+        <div class="console-divider"></div>
+        <div class="meta-summary">
+          <div class="meta-summary-row">
+            <span class="meta-summary-k">在线设备</span>
+            <span class="meta-summary-v">31</span>
+          </div>
+          <div class="meta-summary-row">
+            <span class="meta-summary-k">规则数量</span>
+            <span class="meta-summary-v">137</span>
+          </div>
+        </div>
+        <div class="console-divider"></div>
+        <div class="console-protocols">
+          <span class="console-protocol-pill">Hysteria 2</span>
+          <span class="console-protocol-pill">Clash</span>
+          <span class="console-protocol-pill">Sing-box</span>
+          <span class="console-protocol-pill">WireGuard</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 2: 配置集中 / 用户与策略 -->
+  <div class="home-section home-section-text-right">
+    <div class="home-section-preview">
+      <div class="preview-mini-panel">
+        <div class="preview-mini-header">
+          <span class="preview-mini-title">用户与策略</span>
+        </div>
+        <div class="user-rows">
+          <div class="user-row">
+            <div class="user-row-top">
+              <span class="user-row-name">alice</span>
+              <span class="user-row-badge">按量</span>
+            </div>
+            <div class="user-row-bar-track">
+              <div class="user-row-bar-fill" style="width: 45%"></div>
+            </div>
+            <div class="user-row-meta">
+              <span class="user-row-bytes">56.2 GB</span>
+            </div>
+          </div>
+          <div class="user-row">
+            <div class="user-row-top">
+              <span class="user-row-name">bob</span>
+              <span class="user-row-badge">TUIC</span>
+            </div>
+            <div class="user-row-bar-track">
+              <div class="user-row-bar-fill" style="width: 28%"></div>
+            </div>
+            <div class="user-row-meta">
+              <span class="user-row-bytes">35.0 GB</span>
+            </div>
+          </div>
+          <div class="user-row">
+            <div class="user-row-top">
+              <span class="user-row-name">claire</span>
+              <span class="user-row-badge">Clash</span>
+            </div>
+            <div class="user-row-bar-track">
+              <div class="user-row-bar-fill" style="width: 66%"></div>
+            </div>
+            <div class="user-row-meta">
+              <span class="user-row-bytes">82.4 GB</span>
+            </div>
+          </div>
+        </div>
+        <div class="console-divider"></div>
+        <div class="meta-summary">
+          <div class="meta-summary-row">
+            <span class="meta-summary-k">默认模板</span>
+            <span class="meta-summary-v">2 个</span>
+          </div>
+          <div class="meta-summary-row">
+            <span class="meta-summary-k">路由规则</span>
+            <span class="meta-summary-v">137 条</span>
+          </div>
+          <div class="meta-summary-row">
+            <span class="meta-summary-k">支持协议</span>
+            <span class="meta-summary-v">4 项</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="home-section-content">
+      <div class="home-section-eyebrow">Control · 管理</div>
+      <h2 class="home-section-title">配置集中，状态透明</h2>
+      <p class="home-section-desc">把用户、套餐、流量与订阅统一管理，通过清晰的信息结构与轻量控制台，实现更稳定的日常维护。</p>
+      <div class="home-section-features">
+        <div class="home-section-feature">多协议订阅</div>
+        <div class="home-section-feature">精细化流量控制</div>
+        <div class="home-section-feature">统一模板与规则管理</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="home-footer">
+  <div class="home-footer-inner">
+    <div class="home-footer-line"></div>
+    <p class="home-footer-copy">Hysteria Network Console · Hysteria 2 · Clash · Sing-box · WireGuard</p>
+  </div>
+</footer>'''
+    return html_page('Hysteria', body, body_class='page-home')
+
+
+def render_login(host, msg='', msg_kind='err', active_tab='admin', username=''):
+    alert = render_alert(msg, msg_kind) if msg else ''
+    admin_checked = 'checked' if active_tab == 'admin' else ''
+    user_checked = 'checked' if active_tab == 'user' else ''
+    body = f'''<header class="auth-header">
+  <div class="auth-header-inner">
+    <a href="/" class="auth-header-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Hysteria
+    </a>
+    <a href="/" class="auth-header-back">← 返回首页</a>
+  </div>
+</header>
+
+<div class="auth-scene">
+  <div class="auth-body">
+    <div class="auth-brand">
+      <div class="auth-brand-content">
+        <div class="auth-brand-eyebrow">Network · Access</div>
+        <h1 class="auth-brand-title">连接，<br>应该简单一点。</h1>
+        <p class="auth-brand-subtitle">统一登录、统一订阅、统一控制，让连接配置回归清晰。</p>
+        <div class="auth-brand-features">
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            稳定加密连接
+          </div>
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+            透明用量统计
+          </div>
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            统一订阅管理
+          </div>
+        </div>
+        <div class="auth-brand-info">
+          <div class="auth-brand-info-row">
+            <span class="auth-brand-info-label">支持协议</span>
+            <span class="auth-brand-info-value">Hysteria 2 · Clash · Sing-box · WireGuard</span>
+          </div>
+          <div class="auth-brand-info-row">
+            <span class="auth-brand-info-label">控制能力</span>
+            <span class="auth-brand-info-value">用户 · 配额 · 规则 · 模板</span>
+          </div>
+          <div class="auth-brand-info-row">
+            <span class="auth-brand-info-label">入口统一</span>
+            <span class="auth-brand-info-value">管理员 / 用户共用登录页</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-form-panel">
+      <div class="auth-card">
+        <div class="auth-card-brand">
+          <div class="auth-card-logo">H</div>
+          <div class="auth-card-brand-text">
+            <strong>Hysteria</strong>
+            <small>登录入口</small>
+          </div>
+        </div>
+        {alert}
+        <div class="auth-tabs">
+          <input type="radio" name="auth_tab" id="tab-admin" value="admin" {admin_checked} class="auth-tab-input">
+          <label for="tab-admin" class="auth-tab-label">管理员</label>
+          <input type="radio" name="auth_tab" id="tab-user" value="user" {user_checked} class="auth-tab-input">
+          <label for="tab-user" class="auth-tab-label">用户</label>
+        </div>
+        <form method="post" action="/login" class="auth-form" id="form-admin">
+          <div class="field">
+            <label class="label" for="admin-username">用户名</label>
+            <input class="input" id="admin-username" name="admin_username" value="{html.escape(username, quote=True)}" required autofocus autocomplete="username" placeholder="输入管理员用户名">
+          </div>
+          <div class="field">
+            <label class="label" for="admin-password">密码</label>
+            <input class="input" id="admin-password" name="admin_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
+          </div>
+          <button class="btn btn-primary btn-full" type="submit">登录</button>
+        </form>
+        <form method="post" action="/login" class="auth-form" id="form-user" style="display:none;">
+          <div class="field">
+            <label class="label" for="user-username">用户名</label>
+            <input class="input" id="user-username" name="user_username" value="{html.escape(username, quote=True)}" required autocomplete="username" placeholder="输入用户名">
+          </div>
+          <div class="field">
+            <label class="label" for="user-password">密码</label>
+            <input class="input" id="user-password" name="user_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
+          </div>
+          <button class="btn btn-primary btn-full" type="submit">登录</button>
+        </form>
+        <p class="auth-card-hint">统一登录入口，认证成功后自动进入对应控制台</p>
+        <a class="auth-back" href="/">返回首页</a>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {{
+  var adminRadio = document.getElementById('tab-admin');
+  var userRadio = document.getElementById('tab-user');
+  var adminForm = document.getElementById('form-admin');
+  var userForm = document.getElementById('form-user');
+  function switchTab(tab) {{
+    if (tab === 'admin') {{
+      adminRadio.checked = true;
+      userRadio.checked = false;
+      adminForm.style.display = '';
+      userForm.style.display = 'none';
+      adminForm.querySelector('input[name="admin_username"]').focus();
+    }} else {{
+      adminRadio.checked = false;
+      userRadio.checked = true;
+      adminForm.style.display = 'none';
+      userForm.style.display = '';
+      userForm.querySelector('input[name="user_username"]').focus();
+    }}
+  }}
+  adminRadio.addEventListener('change', function() {{ switchTab('admin'); }});
+  userRadio.addEventListener('change', function() {{ switchTab('user'); }});
+  if (adminRadio.checked) switchTab('admin');
+  else switchTab('user');
+}})();
+</script>'''
+    return html_page('登录 · Hysteria', body, body_class='page-auth')
 
 
 def render_user_login(host, msg='', username=''):
-    body = f'''<div class="wrap home-wrap">
-{render_alert(msg, 'err')}
-<div class="card elev inline-form auth-card login-card">
-  <div class="auth-head">
-    <span class="app-logo">H</span>
-    <div>
-      <h1 class="title">用户登录</h1>
-      <div class="sub">登录后查看用量和订阅信息</div>
+    alert = render_alert(msg, 'err') if msg else ''
+    body = f'''<header class="auth-header">
+  <div class="auth-header-inner">
+    <a href="/" class="auth-header-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Hysteria
+    </a>
+    <a href="/" class="auth-header-back">← 返回首页</a>
+  </div>
+</header>
+
+<div class="auth-scene">
+  <div class="auth-body">
+    <div class="auth-brand">
+      <div class="auth-brand-content">
+        <div class="auth-brand-eyebrow">User · Panel</div>
+        <h1 class="auth-brand-title">查看用量，<br>管理订阅。</h1>
+        <div class="auth-brand-features">
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+            实时流量统计
+          </div>
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            独立访问密码
+          </div>
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            统一订阅链接
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-form-panel">
+      <div class="auth-card">
+        <div class="auth-card-brand">
+          <div class="auth-card-logo">H</div>
+          <div class="auth-card-brand-text">
+            <strong>Hysteria</strong>
+            <small>用户面板</small>
+          </div>
+        </div>
+        <h2 class="auth-card-title">用户登录</h2>
+        <p class="auth-card-subtitle">登录后查看用量和订阅信息</p>
+        {alert}
+        <form method="post" action="/user/login" class="auth-form">
+          <div class="field">
+            <label class="label" for="user-username">用户名</label>
+            <input class="input" id="user-username" name="username" value="{html.escape(username, quote=True)}" required autofocus autocomplete="username" placeholder="输入用户名">
+          </div>
+          <div class="field">
+            <label class="label" for="user-password">面板密码</label>
+            <input class="input" id="user-password" name="password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
+          </div>
+          <button class="btn btn-primary btn-full" type="submit">登录</button>
+        </form>
+        <div class="auth-note">面板密码由管理员设置；原订阅链接仍可继续使用。</div>
+        <a class="auth-back" href="/">返回首页</a>
+      </div>
     </div>
   </div>
-  <form method="post" action="/user/login">
-    <label for="user-username">用户名</label><input id="user-username" name="username" value="{html.escape(username, quote=True)}" required autofocus autocomplete="username">
-    <label for="user-password" class="mt-sm">面板密码</label><input id="user-password" name="password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password">
-    <div class="row mt-md">
-      <button class="btn" type="submit" style="flex:1;justify-content:center;">登录</button>
-      <a class="btn secondary" href="/">返回</a>
-    </div>
-  </form>
-  <div class="small faint mt-md">面板密码由管理员设置；原订阅链接仍可继续使用。</div>
-</div></div>'''
-    return html_page('用户登录', body)
+</div>'''
+    return html_page('用户登录', body, body_class='page-auth')
 
 
 def render_user_change_password(host, user, msg=''):
@@ -2806,26 +3150,73 @@ def render_user_change_password(host, user, msg=''):
         'new password same': '新密码不能与当前密码相同',
     }
     alert = render_alert(messages.get(msg, msg), 'err') if msg else ''
-    body = f'''<div class="wrap home-wrap">
-{alert}
-<div class="card elev inline-form auth-card login-card">
-  <div class="auth-head">
-    <span class="app-logo">H</span>
-    <div>
-      <h1 class="title">修改面板密码</h1>
-      <div class="sub">{html.escape(user)} · {html.escape(host)}</div>
+    body = f'''<header class="auth-header">
+  <div class="auth-header-inner">
+    <a href="/" class="auth-header-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Hysteria
+    </a>
+    <a href="/user/panel" class="auth-header-back">← 返回面板</a>
+  </div>
+</header>
+
+<div class="auth-scene">
+  <div class="auth-body">
+    <div class="auth-brand">
+      <div class="auth-brand-content">
+        <div class="auth-brand-eyebrow">Security · 安全</div>
+        <h1 class="auth-brand-title">保护你的<br>账户安全。</h1>
+        <div class="auth-brand-features">
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            使用强密码
+          </div>
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            保护订阅访问
+          </div>
+          <div class="auth-brand-feature">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            实时生效
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="auth-form-panel">
+      <div class="auth-card">
+        <div class="auth-card-brand">
+          <div class="auth-card-logo">H</div>
+          <div class="auth-card-brand-text">
+            <strong>Hysteria</strong>
+            <small>用户面板</small>
+          </div>
+        </div>
+        <h2 class="auth-card-title">修改面板密码</h2>
+        <p class="auth-card-subtitle">{html.escape(user)} · {html.escape(host)}</p>
+        {alert}
+      <form method="post" action="/user/change-password" class="auth-form">
+        <div class="field">
+          <label class="label" for="user-current-password">当前密码</label>
+          <input class="input" id="user-current-password" name="current" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autofocus autocomplete="current-password" placeholder="输入当前密码">
+        </div>
+        <div class="field">
+          <label class="label" for="user-new-password">新密码</label>
+          <input class="input" id="user-new-password" name="new" type="password" required minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="new-password" placeholder="输入新密码">
+        </div>
+        <div class="field">
+          <label class="label" for="user-confirm-password">再次输入新密码</label>
+          <input class="input" id="user-confirm-password" name="confirm" type="password" required minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="new-password" placeholder="再次输入新密码">
+        </div>
+        <button class="btn btn-primary btn-full" type="submit">保存新密码</button>
+        <div class="auth-note">使用至少 8 位、且未在其他网站使用的密码。保存后其他设备上的用户面板会话将自动退出。</div>
+      </form>
+      <a class="auth-back" href="/user/panel">返回用户面板</a>
     </div>
   </div>
-  <form method="post" action="/user/change-password">
-    <label for="user-current-password">当前密码</label><input id="user-current-password" name="current" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autofocus autocomplete="current-password">
-    <label for="user-new-password" class="mt-sm">新密码</label><input id="user-new-password" name="new" type="password" required minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" aria-describedby="user-password-help" autocomplete="new-password">
-    <label for="user-confirm-password" class="mt-sm">再次输入新密码</label><input id="user-confirm-password" name="confirm" type="password" required minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="new-password">
-    <button class="btn full mt-md" type="submit" style="justify-content:center;">保存新密码</button>
-  </form>
-  <div class="field-help mt-sm" id="user-password-help">使用至少 8 位、且未在其他网站使用的密码。</div>
-  <div class="small faint mt-md">保存后其他设备上的用户面板会话将自动退出。</div>
-</div></div>'''
-    return html_page('修改面板密码', body)
+</div>
+</div>'''
+    return html_page('修改面板密码', body, body_class='page-auth')
 
 
 def render_qr_svg(text, *, _runner=None):
@@ -2886,43 +3277,43 @@ def render_subscription_profile_links(base_url, user, token):
         qr_path = subscription_profile_qr_path(user, token, key)
         selected = key == 'default'
         items.append(
-            f'<a class="btn secondary profile-link{" selected" if selected else ""}" '
-            f'href="{html.escape(url, quote=True)}" data-profile-option data-profile="{key}" '
+            f'<button type="button" class="profile-tab{" is-active" if selected else ""}" '
+            f'data-profile-option data-profile="{key}" '
             f'data-profile-label="{html.escape(meta["label"], quote=True)}" '
             f'data-profile-desc="{html.escape(meta["desc"], quote=True)}" '
             f'data-profile-url="{html.escape(url, quote=True)}" '
             f'data-profile-qr="{html.escape(qr_path, quote=True)}" '
             f'aria-current="{"true" if selected else "false"}">'
-            f'<span>{html.escape(meta["label"])}</span>'
-            f'<small>{html.escape(meta["desc"])}</small></a>'
+            f'<span class="profile-tab-label">{html.escape(meta["label"])}</span>'
+            f'</button>'
         )
     default_meta = SUBSCRIPTION_PROFILES['default']
     default_url = subscription_profile_url(base_url, user, token, 'default')
     default_qr = subscription_profile_qr_path(user, token, 'default')
     return (
-        '<div class="card mt-md import-assistant">'
-        '<div class="import-head">'
-        '<div><h2 class="section-title">快速导入</h2>'
-        '<div class="small">先选择使用场景，再复制链接到客户端；跨设备时可按需显示二维码。'
-        f'模板更新时间：{html.escape(subscription_template_mtime() or "未知")}。</div></div>'
-        f'<span class="badge" id="profile-selected-badge">{html.escape(default_meta["label"])}</span>'
+        '<div class="connection-panel">'
+        '<div class="connection-head">'
+        '<div><div class="k">订阅模式</div>'
+        f'<div class="connection-desc small" id="profile-selected-desc">{html.escape(default_meta["desc"])}</div>'
         '</div>'
-        f'<div class="profile-links mt-md" role="group" aria-label="选择订阅模式">{"".join(items)}</div>'
-        '<div class="import-selected mt-md" aria-live="polite">'
-        '<div class="import-selected-copy">'
-        '<div class="small faint">当前模式</div>'
-        f'<div class="bold" id="profile-selected-title">{html.escape(default_meta["label"])}</div>'
-        f'<div class="small" id="profile-selected-desc">{html.escape(default_meta["desc"])}</div>'
+        f'<div class="connection-head-right">'
+        f'<span class="badge connection-badge" id="profile-selected-badge">{html.escape(default_meta["label"])}</span>'
+        f'<span class="connection-muted small faint sr-only" id="profile-selected-title">{html.escape(default_meta["label"])}</span>'
+        f'</div>'
         '</div>'
-        '<div class="row gap-sm import-actions">'
-        f'<button class="btn" type="button" id="profile-copy" data-copy="{html.escape(default_url, quote=True)}">'
-        f'{icon("copy")}<span>复制当前模式链接</span></button>'
-        f'<a class="btn secondary" id="profile-open" href="{html.escape(default_url, quote=True)}">'
+        f'<div class="profile-tabs" role="group" aria-label="选择订阅模式">{"".join(items)}</div>'
+        '<div class="connection-url">'
+        f'<code class="mono url-text" id="sub">{html.escape(default_url)}</code>'
+        f'<button class="btn primary btn-sm" type="button" id="profile-copy" data-copy="{html.escape(default_url, quote=True)}">'
+        f'{icon("copy")}<span>复制链接</span></button>'
+        '</div>'
+        '<div class="connection-actions">'
+        f'<a class="btn secondary btn-sm" id="profile-open" href="{html.escape(default_url, quote=True)}">'
         f'{icon("open")}<span>打开配置</span></a>'
-        f'<button class="btn ghost" type="button" id="profile-show-qr" '
+        f'<button class="btn ghost btn-sm" type="button" id="profile-show-qr" '
         f'data-qr="{html.escape(default_qr, quote=True)}" aria-expanded="false" aria-controls="profile-qr-panel">'
-        '<span>显示二维码</span></button>'
-        '</div></div>'
+        f'<span>二维码</span></button>'
+        '</div>'
         '<div class="profile-qr-panel" id="profile-qr-panel" hidden>'
         '<div class="qr-wrap"><img id="profile-qr-image" width="220" height="220" alt="当前订阅模式二维码"></div>'
         '<div class="small faint" id="profile-qr-status" role="status" aria-live="polite">在另一台设备上用客户端扫码导入；二维码仅在这里按需生成。</div>'
@@ -3244,76 +3635,146 @@ def render_user_panel(
         panel_link_title = '当前面板链接'
         panel_link_hint = '重置后旧链接立即失效，需用新链接重新订阅。'
     rotation_request_id = secrets.token_urlsafe(24)
-    links_section = ''
+
+    # Rotate-token form goes into the Account & Security section.
+    token_action_html = ''
+    session_url_html = ''
     if not inactive:
-        links_section = f'''<div class="grid grid-2 mt-md">
-  <div class="card">
-    <h2 class="section-title">订阅链接</h2>
-    <div class="copy-mono"><code id="sub">{html.escape(sub_http)}</code></div>
-    <div class="row mt-md">
-      <button class="btn" type="button" data-copy="{html.escape(sub_http)}">{icon("copy")}<span>复制链接</span></button>
-      <a class="btn secondary" href="{html.escape(sub_path)}">{icon("open")}<span>打开订阅</span></a>
-    </div>
-  </div>
-  <div class="card">
-    <h2 class="section-title">{panel_link_title}</h2>
-    <div class="copy-mono"><code>{html.escape(panel_http)}</code></div>
-    <div class="row mt-md">
-      <button class="btn secondary" type="button" data-copy="{html.escape(panel_http)}">{icon("copy")}<span>复制链接</span></button>
-      <a class="btn ghost btn-sm" href="/">{icon("back")}<span>返回首页</span></a>
-      <form method="post" action="/panel/{html.escape(user)}/rotate-token" data-action="rotate-token" class="inline-form-row">
-        <input type="hidden" name="token" value="{html.escape(token)}">
-        <input type="hidden" name="rotation_id" value="{html.escape(rotation_request_id)}">
-        <button class="btn danger-btn btn-sm" type="submit">重置 Token</button>
-      </form>
-    </div>
-    <div class="small mt-sm faint">{panel_link_hint}</div>
-  </div>
-</div>'''
+        token_action_html = (
+            f'<form method="post" action="/panel/{html.escape(user)}/rotate-token" '
+            f'data-action="rotate-token" class="inline-form-row">'
+            f'<input type="hidden" name="token" value="{html.escape(token)}">'
+            f'<input type="hidden" name="rotation_id" value="{html.escape(rotation_request_id)}">'
+            f'<button class="btn danger-btn btn-sm" type="submit">'
+            f'{icon("lock")}<span>重置 Token</span></button>'
+            f'</form>'
+        )
+        # Session URL stays inside a details block — collapsed by default,
+        # never shown as naked large body text.
+        session_url_html = (
+            f'<details class="account-session-details">'
+            f'<summary>查看当前会话详情</summary>'
+            f'<div class="copy-mono"><code class="mono">{html.escape(panel_http)}</code></div>'
+            f'<div class="small faint mt-sm">{html.escape(panel_link_hint)}</div>'
+            f'</details>'
+        )
     initial_poll_status = '已暂停更新' if inactive else '自动更新 · 30 s'
-    body = f'''<div class="wrap">
+
+    # Cycle day index (e.g. "第 6 / 30 天") — purely cosmetic, derived from
+    # the same cycle data the page already exposes via reset_date.
+    days_into_cycle = max(1, cycle_len - max(days_left, 0))
+
+    def _status_label():
+        if is_disabled:
+            return '停用', 'is-error'
+        if is_expired:
+            return '已到期', 'is-error'
+        return '正常', 'is-live'
+
+    account_status_label, account_status_class = _status_label()
+
+    profile_meta = SUBSCRIPTION_PROFILES.get('default', {})
+    profile_label = profile_meta.get('label', '默认')
+
+    body = f'''<div class="wrap user-panel">
 {notice_banner}
 {disabled_banner}
-<div class="nav user-panel-nav">
-  <div class="row gap-sm">
-    <span class="app-logo">H</span>
+<header class="user-panel-header">
+  <div class="user-panel-brand">
     <div>
-      <h1 class="brand user-panel-title">用户面板</h1>
-      <div class="small">{html.escape(user)}</div>
+      <div class="small faint">Hysteria</div>
+      <h1 class="user-panel-title">个人控制台</h1>
+      <div class="user-panel-subtitle faint">订阅、用量与设备</div>
     </div>
   </div>
-  <div style="text-align:right;">
-    <span class="badge">{html.escape(host)}</span>
-    <div class="small faint poll-status" data-role="poll-status" style="margin-top:4px;">{initial_poll_status}</div>
+  <div class="user-panel-account">
+    <div class="user-panel-name mono">{html.escape(user)}</div>
+    <div class="user-panel-status">
+      <span class="badge {account_status_class}">{html.escape(account_status_label)}</span>
+    </div>
+    <div class="user-panel-actions">
+      {account_action}
+    </div>
+  </div>
+</header>
+
+<section class="usage-section" aria-label="本周期用量">
+  <header class="section-head">
+    <h2 class="section-title">本周期用量</h2>
+    <div class="poll-status small" data-role="poll-status">{initial_poll_status}</div>
     <span class="sr-only" id="panel-status-announcer" role="status" aria-live="polite"></span>
+  </header>
+  <div class="usage-kpis">
+    <div class="usage-kpi">
+      <div class="k">已用流量</div>
+      <div class="v" data-role="used">{fmt_bytes(used)}</div>
+      <div class="sub">{('不限额' if quota_unlimited else f'{percent:.1f}%')}</div>
+    </div>
+    <div class="usage-kpi">
+      <div class="k">剩余额度</div>
+      <div class="v" data-role="remain">{remain_label}</div>
+      <div class="sub">{('100.0%' if quota_unlimited else (f'{100 - percent:.1f}%' if percent > 0 else '0.0%'))}</div>
+    </div>
+    <div class="usage-kpi">
+      <div class="k">计费周期</div>
+      <div class="v usage-date">{html.escape(reset_date)}</div>
+      <div class="sub">第 {days_into_cycle} / {cycle_len} 天 · 还剩 {days_left} 天</div>
+    </div>
+  </div>
+  <div class="usage-progress">
+    <div class="usage-progress-head">
+      <span class="k">本周期</span>
+      <span class="bold" data-role="percent" style="font-variant-numeric:tabular-nums;">{percent_label}</span>
+    </div>
+    <div class="bar"><div class="fill {cls}" data-role="bar" role="progressbar"
+         aria-label="本周期流量" aria-valuemin="0" aria-valuemax="100"
+         aria-valuenow="{'0' if quota_unlimited else f'{percent:.2f}'}"
+         aria-valuetext="{html.escape(percent_label)}"
+         style="width:{'0' if quota_unlimited else f'{percent:.2f}'}%"></div></div>
+    <div class="small mt-sm" data-role="txrx">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
+  </div>
+</section>
+
+<section class="connection-section" aria-label="连接与订阅">
+  <header class="section-head">
+    <h2 class="section-title">连接与订阅</h2>
+  </header>
+  {import_assistant}
+</section>
+
+<aside class="plan-section" aria-label="套餐与设备">
+  <header class="section-head">
+    <h2 class="section-title">套餐与设备</h2>
+  </header>
+  <dl class="user-kv">
+    <div><dt>套餐</dt><dd>{html.escape(profile_label)}</dd></div>
+    <div><dt>总额度</dt><dd class="mono">{total_label}</dd></div>
+    <div><dt>设备</dt><dd><span data-role="online">{online}</span> <span class="faint" data-role="device-limit">{html.escape(max_devices_label)}</span></dd></div>
+    <div><dt>周期</dt><dd>{cycle_len} 天</dd></div>
+    <div><dt>重置</dt><dd class="mono">{html.escape(reset_date)}</dd></div>
+    <div><dt>有效期</dt><dd>{html.escape(expiry["label"])}</dd></div>
+  </dl>
+</aside>
+
+<section class="trend-section" aria-label="近 30 天用量趋势">
+  <header class="section-head">
+    <h2 class="section-title">近 30 天用量趋势</h2>
+    <div class="small faint">轻量辅助阅读</div>
+  </header>
+  <div class="trend-body">{spark}</div>
+</section>
+
+<section class="account-section" aria-label="账户与安全">
+  <header class="section-head">
+    <h2 class="section-title">账户与安全</h2>
+  </header>
+  <div class="account-actions">
     {account_action}
+    {token_action_html}
   </div>
-</div>
-<div class="grid grid-4 hero-stats">
-  <div class="card stat"><div class="k">本周期已用</div><div class="v big" data-role="used">{fmt_bytes(used)}</div><div class="accent-bar"></div></div>
-  <div class="card stat"><div class="k">总流量</div><div class="v">{total_label}</div></div>
-  <div class="card stat"><div class="k">剩余流量</div><div class="v" data-role="remain">{remain_label}</div></div>
-  <div class="card stat"><div class="k">在线设备</div><div class="v"><span data-role="online">{online}</span> <span class="faint" data-role="device-limit" style="font-size:14px;font-weight:500;">{max_devices_label}</span></div></div>
-</div>
-<div class="card mt-md">
-  <div class="row" style="justify-content:space-between;margin-bottom:10px;">
-    <h2 class="section-title">流量进度</h2>
-    <div class="bold" style="font-variant-numeric:tabular-nums;" data-role="percent">{percent_label}</div>
-  </div>
-  <div class="bar"><div class="fill {cls}" data-role="bar" role="progressbar"
-       aria-label="本周期流量" aria-valuemin="0" aria-valuemax="100"
-       aria-valuenow="{'0' if quota_unlimited else f'{percent:.2f}'}"
-       aria-valuetext="{html.escape(percent_label)}"
-       style="width:{'0' if quota_unlimited else f'{percent:.2f}'}%"></div></div>
-  <div class="small mt-sm" data-role="txrx">上传 {fmt_bytes(tx)} · 下载 {fmt_bytes(rx)}</div>
-  <div class="small mt-sm faint">本周期 {cycle_len} 天 · 重置于 {reset_date} · 还剩 {days_left} 天 · 有效期 {html.escape(expiry["label"])}</div>
-</div>
-{import_assistant}
-<div class="card mt-md">
-  <h2 class="section-title">近 30 天用量趋势</h2>
-  <div class="panel-trend">{spark}</div>
-</div>
-{links_section}
+  {session_url_html}
+</section>
+
 </div>
 <script>
 (function() {{
@@ -3327,6 +3788,7 @@ def render_user_panel(
   var profileQrPanel = document.getElementById('profile-qr-panel');
   var profileQrImage = document.getElementById('profile-qr-image');
   var profileQrStatus = document.getElementById('profile-qr-status');
+  var profileSubUrl = document.getElementById('sub');
   function setQrStatus(text) {{ if (profileQrStatus) profileQrStatus.textContent = text; }}
   function selectProfile(option) {{
     if (!option) return;
@@ -3342,6 +3804,9 @@ def render_user_panel(
     if (profileBadge) profileBadge.textContent = label;
     if (profileTitle) profileTitle.textContent = label;
     if (profileDesc) profileDesc.textContent = desc;
+    // Visible subscription URL text must mirror the active profile so the
+    // displayed value and the copied value stay in sync after every switch.
+    if (profileSubUrl) profileSubUrl.textContent = url;
     if (profileCopy) profileCopy.setAttribute('data-copy', url);
     if (profileOpen) profileOpen.setAttribute('href', url);
     if (profileShowQr) profileShowQr.setAttribute('data-qr', qr);
@@ -3611,90 +4076,66 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
     else:
         rows = '<tr><td colspan="5" class="empty">暂无用户，使用下方表单创建第一个用户</td></tr>'
     content = f'''{alert}
-<div class="grid grid-3 hero-stats">
-  <div class="card stat"><div class="k">本周期总流量</div><div class="v big" id="total-used">{fmt_bytes(total_used)}</div><div class="small">{html.escape(cycle_range)}</div><div class="accent-bar"></div></div>
-  <div class="card stat"><div class="k">计费周期</div><div class="v">{mk}</div><div class="small">每 {cycle_length} 天结算 · 第 {settlement_day} 日</div></div>
-  <div class="card stat">
-    <div class="k">快速操作</div>
-    <form method="post" action="/admin/reset-usage-all" data-action="reset-all" style="margin:6px 0 0;">
-      <button class="btn danger-btn btn-sm" type="submit">一键清空本周期用量</button>
+<div class="overview-stats">
+  <div class="overview-stat">
+    <div class="label">本周期总流量</div>
+    <div class="value" id="total-used">{fmt_bytes(total_used)}</div>
+    <div class="sub">{html.escape(cycle_range)}</div>
+  </div>
+  <div class="overview-stat">
+    <div class="label">计费周期</div>
+    <div class="value">{mk}</div>
+    <div class="sub">每 {cycle_length} 天结算 · 第 {settlement_day} 日</div>
+  </div>
+  <div class="overview-stat">
+    <div class="label">快速操作</div>
+    <form method="post" action="/admin/reset-usage-all" data-action="reset-all">
+      <button class="btn btn-sm danger-btn" type="submit" style="margin-top:10px;">清空本周期用量</button>
     </form>
-    <div class="row gap-sm mt-sm">
-      <a class="btn ghost btn-sm" href="/admin/usage.csv?window=cycle">导出本周期 CSV</a>
-      <a class="btn ghost btn-sm" href="/admin/usage.csv?window=30d">导出 30 天 CSV</a>
+    <div class="quick-actions">
+      <a class="btn btn-sm" href="/admin/usage.csv?window=cycle">导出 CSV</a>
     </div>
   </div>
 </div>
-<div class="card card-flush mt-md scroll-x users-card" tabindex="0" aria-label="用户列表，可横向滚动">
-  <div class="card-head">
-    <h2 class="section-title">用户列表</h2>
-    <div class="row gap-sm filter-toolbar" style="flex:1;justify-content:flex-end;flex-wrap:wrap;">
-      <input id="user-filter" type="search" placeholder="搜索用户名…" aria-label="搜索用户名" autocomplete="off"
-             class="user-filter-input" style="min-width:180px;max-width:260px;">
-      <div class="row gap-sm filter-chips" role="group" aria-label="状态筛选">
+<div class="users-section">
+  <div class="users-header">
+    <h2 class="users-title">用户列表</h2>
+    <div class="users-toolbar">
+      <input id="user-filter" type="search" placeholder="搜索…" aria-label="搜索用户名" autocomplete="off" class="user-filter-input">
+      <div class="filter-chips" role="group" aria-label="状态筛选">
         <button type="button" class="chip active" data-filter="all" aria-pressed="true">全部</button>
         <button type="button" class="chip" data-filter="online" aria-pressed="false">在线</button>
-        <button type="button" class="chip" data-filter="over" aria-pressed="false">超 90%</button>
+        <button type="button" class="chip" data-filter="over" aria-pressed="false">超限</button>
       </div>
-      <div class="small" id="filter-count" role="status" aria-live="polite" style="min-width:64px;text-align:right;">{len(users)} / {len(users)} 个</div>
-      <div class="small faint">自动更新 · 30 s</div>
+      <span class="filter-count" id="filter-count" role="status" aria-live="polite">{len(users)} 用户</span>
     </div>
   </div>
-  <table class="table users-table" data-user-count="{len(users)}"><caption class="sr-only">用户、套餐用量、管理操作与订阅链接</caption><thead><tr><th id="users-col-user" scope="col" style="padding-left:18px;">用户</th><th id="users-col-trend" scope="col">30 天趋势</th><th id="users-col-usage" scope="col">本周期用量</th><th id="users-col-actions" scope="col">操作</th><th id="users-col-links" scope="col" style="padding-right:18px;">链接</th></tr></thead><tbody>{rows}</tbody></table>
+  <div class="users-table-wrap">
+    <table class="users-table" data-user-count="{len(users)}"><caption class="sr-only">用户、套餐用量、管理操作与订阅链接</caption><thead><tr><th>用户</th><th>趋势</th><th>用量</th><th>操作</th><th>链接</th></tr></thead><tbody>{rows}</tbody></table>
+  </div>
 </div>
-<dialog class="edit-dialog" id="user-edit-dialog" aria-labelledby="user-edit-title">
-  <form method="post" action="/admin/update" class="inline-form edit-dialog-form" id="user-edit-form">
-    <div class="dialog-head">
-      <div>
-        <div class="small faint">用户套餐</div>
-        <h2 id="user-edit-title">编辑用户</h2>
-      </div>
-      <button class="btn ghost btn-sm" type="button" data-dialog-close aria-label="关闭编辑窗口">关闭</button>
-    </div>
-    <input type="hidden" name="user">
-    <input type="hidden" name="user_revision">
-    <div class="grid grid-2 dialog-fields">
-      <div class="field-span-2"><label for="edit-panel-password">重置用户面板登录密码（可选）</label><input id="edit-panel-password" name="panel_password" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="留空则不修改，至少 8 位"><div class="field-help">设置后会注销该用户的其他面板会话，并要求首次登录修改密码。</div></div>
-      <div class="field-span-2"><label for="edit-proxy-password">代理连接密码（可选）</label><input id="edit-proxy-password" name="password" type="password" maxlength="256" autocomplete="new-password" placeholder="留空则不修改"></div>
-      <div><label for="edit-max-devices">设备数上限</label><input id="edit-max-devices" name="max_devices" type="number" min="0" max="100" required><div class="field-help">填 0 表示不限设备。</div></div>
-      <div><label for="edit-quota-gb">基础流量上限（GB）</label><input id="edit-quota-gb" name="quota_gb" type="number" min="0" max="10240" required><div class="field-help">填 0 表示不限流量。</div></div>
-      <div><label for="edit-quota-extra-gb">加量包（GB）</label><input id="edit-quota-extra-gb" name="quota_extra_gb" type="number" min="0" max="10240" required></div>
-      <div><label for="edit-expires-at">到期日</label><input id="edit-expires-at" name="expires_at" type="date"></div>
-      <div class="field-span-2"><label for="edit-note">备注</label><input id="edit-note" name="note" maxlength="200" placeholder="可选：续费状态/来源/说明"></div>
-    </div>
-    <div class="dialog-options">
-      <label class="switch"><input type="checkbox" name="guest">按量用户（参与配额计量）</label>
-      <label class="switch"><input type="checkbox" name="tuic_enabled">允许 TUIC（TUIC 不参与单用户额度计量）</label>
-    </div>
-    <div class="dialog-actions">
-      <button class="btn secondary" type="button" data-dialog-close>取消</button>
-      <button class="btn" type="submit">保存更改</button>
-    </div>
-  </form>
-</dialog>
-<form method="post" id="user-action-form" hidden></form>
-<div class="card mt-md create-user-card">
-  <details class="summary-muted"{create_open}>
-    <summary>新增用户</summary>
+<details class="create-section"{create_open}>
+  <summary class="create-toggle">+ 新增用户</summary>
+  <div class="create-form">
     {create_error}
-    <form method="post" action="/admin/add" class="inline-form mt-md">
-          <div class="grid grid-3">
-            <div><label for="create-user">用户名</label><input id="create-user" name="user" value="{create_user}" maxlength="64" required autocomplete="off"{validation_attrs('create-user')}></div>
-            <div><label for="create-panel-password">用户面板初始登录密码（可选）</label><input id="create-panel-password" name="panel_password" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="设置后可使用用户登录"{validation_attrs('create-panel-password')}><div class="field-help">首次登录会要求用户修改。</div></div>
-            <div><label for="create-proxy-password">代理连接密码（可选）</label><input id="create-proxy-password" name="password" type="password" maxlength="256" autocomplete="new-password" placeholder="默认仅用订阅 token 认证"{validation_attrs('create-proxy-password')}></div>
-            <div><label for="create-quota-gb">基础流量上限（GB）</label><input id="create-quota-gb" name="quota_gb" type="number" value="{create_quota_gb}" min="0" max="10240" required{validation_attrs('create-quota-gb')}><div class="field-help">填 0 表示不限流量。</div></div>
-            <div><label for="create-quota-extra-gb">加量包（GB）</label><input id="create-quota-extra-gb" name="quota_extra_gb" type="number" value="{create_quota_extra_gb}" min="0" max="10240" required{validation_attrs('create-quota-extra-gb')}></div>
-            <div><label for="create-expires-at">到期日</label><input id="create-expires-at" name="expires_at" type="date" value="{create_expires_at}"></div>
-            <div><label for="create-note">备注</label><input id="create-note" name="note" value="{create_note}" maxlength="200" placeholder="可选"></div>
-          </div>
-      <div class="row mt-md">
-	        <label class="switch"><input type="checkbox" name="guest"{create_guest_checked}>按量用户（参与配额计量）</label>
-	        <label class="switch"><input type="checkbox" name="tuic_enabled"{create_tuic_checked}>允许 TUIC</label>
+    <form method="post" action="/admin/add" class="inline-form">
+      <div class="create-grid">
+        <div class="form-field"><label for="create-user">用户名</label><input id="create-user" name="user" value="{create_user}" maxlength="64" required autocomplete="off"{validation_attrs('create-user')}></div>
+        <div class="form-field"><label for="create-panel-password">面板密码</label><input id="create-panel-password" name="panel_password" type="password" minlength="8" maxlength="256" autocomplete="new-password" placeholder="可选"{validation_attrs('create-panel-password')}><span class="hint">至少 8 位</span></div>
+        <div class="form-field"><label for="create-proxy-password">代理密码</label><input id="create-proxy-password" name="password" type="password" maxlength="256" autocomplete="new-password" placeholder="可选"{validation_attrs('create-proxy-password')}></div>
+        <div class="form-field"><label for="create-quota-gb">流量上限 GB</label><input id="create-quota-gb" name="quota_gb" type="number" value="{create_quota_gb}" min="0" max="10240" required{validation_attrs('create-quota-gb')}><span class="hint">0 = 不限</span></div>
+        <div class="form-field"><label for="create-quota-extra-gb">加量包 GB</label><input id="create-quota-extra-gb" name="quota_extra_gb" type="number" value="{create_quota_extra_gb}" min="0" max="10240" required{validation_attrs('create-quota-extra-gb')}></div>
+        <div class="form-field"><label for="create-expires-at">到期日</label><input id="create-expires-at" name="expires_at" type="date" value="{create_expires_at}"></div>
+        <div class="form-field" style="grid-column:1/-1"><label for="create-note">备注</label><input id="create-note" name="note" value="{create_note}" maxlength="200" placeholder="可选"></div>
       </div>
-      <button class="btn mt-md" type="submit">创建用户</button>
+      <div class="form-options">
+        <label class="switch"><input type="checkbox" name="guest"{create_guest_checked}>按量用户</label>
+        <label class="switch"><input type="checkbox" name="tuic_enabled"{create_tuic_checked}>允许 TUIC</label>
+      </div>
+      <button class="btn" type="submit">创建</button>
     </form>
-  </details>
-</div>
+  </div>
+</details>
 <script src="/static/admin-poll.js?v={ADMIN_POLL_JS_ETAG.strip('"')}" defer></script>
 '''
     poll_status = (
@@ -3861,6 +4302,7 @@ def _incident_context():
         build_line_radar=build_line_radar,
         summarize_cost_calibration=summarize_cost_calibration,
         render_line_radar=render_line_radar,
+        render_line_radar_summary=render_line_radar_summary,
         render_cost_calibrator=render_cost_calibrator,
         render_alert=render_alert,
         flash_text=flash_text,
@@ -3937,27 +4379,109 @@ def _health_card(title, probe_result):
     return health.health_card(title, probe_result)
 
 
+def _render_health_top_kpis():
+    """Run all probes and derive 4 top-level KPIs."""
+    probes = (
+        ('整体状态', _probe_overall_status),
+        ('在线服务', _probe_online_services),
+        ('HTTPS 证书', _probe_https_cert),
+        ('磁盘空间', _probe_disk_kpi),
+    )
+
+    def run(item):
+        title, fn = item
+        try:
+            result = fn()
+        except Exception:
+            result = {'ok': False, 'label': '—'}
+        return title, result
+
+    with ThreadPoolExecutor(max_workers=4, thread_name_prefix='health-kpi') as ex:
+        results = dict(ex.map(run, probes))
+    return results
+
+
+def _probe_overall_status():
+    """Healthy if all core services are up and no certs are expiring."""
+    checks = [
+        ('鉴权服务', lambda: probe_systemd('hysteria-auth.service')),
+        ('Hysteria', lambda: probe_systemd('hysteria-server.service')),
+        ('Xray', lambda: probe_systemd('xray.service')),
+        ('TUIC', lambda: probe_systemd('tuic-server.service')),
+        ('证书自动续期', probe_certbot_renewal),
+    ]
+    ok_count = 0
+    for name, fn in checks:
+        try:
+            r = fn()
+            if r.get('ok'):
+                ok_count += 1
+        except Exception:
+            pass
+    total = len(checks)
+    ok = ok_count == total
+    label = f'{ok_count}/{total} 正常' if ok else f'{ok_count}/{total} 异常'
+    return {'ok': ok, 'label': label}
+
+
+def _probe_online_services():
+    try:
+        data = load_json(ONLINE_FILE, {})
+        n = sum(int(v) for v in data.values())
+        return {'ok': n > 0, 'label': f'{n} 在线'}
+    except Exception:
+        return {'ok': False, 'label': '未知'}
+
+
+def _probe_https_cert():
+    certs = [
+        probe_cert(),
+        probe_panel_tls(),
+    ]
+    worst = None
+    for r in certs:
+        if not r.get('ok'):
+            worst = r
+    if worst is None:
+        return {'ok': True, 'label': '全部有效'}
+    return worst
+
+
+def _probe_disk_kpi():
+    return probe_disk()
+
+
+def _health_top_kpi_card(title, probe_result, is_text=False):
+    is_ok = bool(probe_result['ok'])
+    label = probe_result.get('label', '—')
+    badge_cls = 'badge' if is_ok else 'badge badge-danger'
+    badge_inner = f'<span class="{badge_cls}">{html.escape(label)}</span>' if is_text else html.escape(label)
+    return (
+        f'<div class="health-kpi-card">'
+        f'<div class="health-kpi-label">{html.escape(title)}</div>'
+        f'<div class="health-kpi-value{" is-text" if is_text else ""}">{badge_inner}</div>'
+        f'</div>'
+    )
+
+
 def _render_health_cards():
     """Run independent probes concurrently while preserving card order."""
     probes = (
-        ('cron 心跳', probe_cron_heartbeat),
+        ('CRON 心跳', probe_cron_heartbeat),
         ('鉴权服务', lambda: probe_systemd('hysteria-auth.service')),
         ('鉴权依赖', probe_auth_readiness),
-        ('hysteria', lambda: probe_systemd('hysteria-server.service')),
-        ('xray', lambda: probe_systemd('xray.service')),
-        ('tuic', lambda: probe_systemd('tuic-server.service')),
-        (
-            '限流 timer',
-            lambda: probe_systemd('hysteria-traffic-limiter.timer'),
-        ),
-        ('磁盘', probe_disk),
-        ('Hysteria TLS 证书', probe_cert),
+        ('Hysteria', lambda: probe_systemd('hysteria-server.service')),
+        ('Xray', lambda: probe_systemd('xray.service')),
+        ('TUIC', lambda: probe_systemd('tuic-server.service')),
+        ('限流 Timer', lambda: probe_systemd('hysteria-traffic-limiter.timer')),
+        ('TLS 证书', probe_cert),
         ('面板 HTTPS', probe_panel_tls),
         ('证书自动续期', probe_certbot_renewal),
         ('在线用户', probe_online),
         ('Xray 配置权限', probe_xray_config_permissions),
         ('Hysteria 更新', probe_hysteria_update),
         ('最近备份', probe_recent_backup),
+        ('磁盘', probe_disk),
     )
 
     def run_probe(item):
@@ -4003,6 +4527,10 @@ def render_line_radar(now=None):
     return health_widgets.render_line_radar(_health_widget_context(), now=now)
 
 
+def render_line_radar_summary(now=None):
+    return health_widgets.render_line_radar_summary(_health_widget_context(), now=now)
+
+
 def summarize_cost_calibration(*, now=None):
     return health_widgets.summarize_cost_calibration(_health_widget_context(), now=now)
 
@@ -4042,12 +4570,66 @@ _HEALTH_FLASH = {
 
 def render_health(host, flash=''):
     alert = render_prefixed_alert(flash, _HEALTH_FLASH)
-    cards = _render_health_cards()
+    kpis = _render_health_top_kpis()
+    kpi_cards = ''.join(
+        _health_top_kpi_card(title, result, is_text=(title == '整体状态'))
+        for title, result in kpis.items()
+    )
     content = (
         alert
-        + '<div class="grid grid-3" id="health-live-grid">' + cards + '</div>'
+        + '<div class="admin-page health-page">'
+
+        # --- Page header controls ---
+        # (rendered by render_admin_shell topbar_extra)
+
+        # --- Top 4 KPIs (static, not live-refreshed) ---
+        + '<div class="health-top-kpis">' + kpi_cards + '</div>'
+
+        # --- Core services table (live-refreshed) ---
+        + '<section class="admin-section">'
+        + '<div class="admin-section-header">'
+        + '<h2 class="admin-section-title">核心服务</h2>'
+        + '</div>'
+        + '<div class="admin-section-body no-pad">'
+        + '<div class="data-table-wrap" tabindex="0" aria-label="核心服务状态，可横向滚动">'
+        + '<table class="data-table" id="health-live-grid">'
+        + '<thead><tr><th>服务</th><th>状态</th></tr></thead>'
+        + '<tbody>' + _render_health_cards() + '</tbody>'
+        + '</table>'
+        + '</div>'
+        + '</div>'
+        + '</section>'
+
+        # --- Infrastructure ---
+        + '<section class="admin-section">'
+        + '<div class="admin-section-header">'
+        + '<h2 class="admin-section-title">基础设施与生命周期</h2>'
+        + '</div>'
+        + '<div class="admin-section-body no-pad">'
+        + '<div class="data-table-wrap" tabindex="0" aria-label="基础设施状态，可横向滚动">'
+        + '<table class="data-table">'
+        + '<thead><tr><th>项目</th><th>状态</th></tr></thead>'
+        + '<tbody>'
+        + _health_card('TLS 证书', probe_cert())
+        + _health_card('面板 HTTPS', probe_panel_tls())
+        + _health_card('证书自动续期', probe_certbot_renewal())
+        + _health_card('最近备份', probe_recent_backup())
+        + _health_card('Xray 配置权限', probe_xray_config_permissions())
+        + _health_card('Hysteria 更新', probe_hysteria_update())
+        + _health_card('在线用户', probe_online())
+        + '</tbody>'
+        + '</table>'
+        + '</div>'
+        + '</div>'
+        + '</section>'
+
+        # --- Line radar ---
         + render_line_radar()
+
+        # --- Cost calibrator (advanced ops) ---
         + render_cost_calibrator()
+
+        + '</div>'
         + '''<span class="sr-only" id="health-refresh-announcer" role="status" aria-live="polite"></span>
 <script>
 (function(){
@@ -4091,7 +4673,8 @@ def render_health(host, flash=''):
         return response.text();
       })
       .then(function(markup){
-        grid.innerHTML = markup;
+        var tbody = grid.querySelector('tbody');
+        if (tbody) tbody.innerHTML = markup;
         failures = 0;
         if (status) status.textContent = '更新 ' + stamp();
       })
@@ -4138,8 +4721,8 @@ def render_health(host, flash=''):
     test_btn = ('<form method="post" action="/admin/test-alert" class="inline-form-row">'
                 '<button class="btn secondary btn-sm" type="submit">发送测试告警</button></form>')
     refresh_controls = (
-        '<button class="btn ghost btn-sm" id="health-refresh-now" type="button">立即更新</button>'
-        '<span class="badge poll-status" id="health-refresh-status">自动更新 · 30 s</span>'
+        '<button class="btn ghost btn-sm" id="health-refresh-now" type="button">立即刷新</button>'
+        '<span class="badge poll-status" id="health-refresh-status">自动更新 · 30s</span>'
     )
     return render_admin_shell('health', '健康状态', content,
                               badge=host, subtitle='状态卡片每 30 秒自动更新',
@@ -4221,18 +4804,35 @@ def render_settings(host, flash=''):
     admin_user = html.escape(str(meta.get('admin_user', 'admin')))
     alert = render_prefixed_alert(flash, _SETTINGS_FLASH)
     content = f'''{alert}
-<div class="card mb-md">
-  <div class="small">管理员账号：<code>{admin_user}</code></div>
-</div>
-<div class="card" style="max-width:520px;">
-  <h2 class="section-title">修改管理员密码</h2>
-  <form method="post" action="/admin/change-password" class="inline-form">
-    <label for="settings-current-password">当前密码</label><input id="settings-current-password" name="current" type="password" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" required>
-    <label for="settings-new-password" class="mt-sm">新密码（至少 8 位）</label><input id="settings-new-password" name="new" type="password" minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="new-password" required>
-    <label for="settings-confirm-password" class="mt-sm">确认新密码</label><input id="settings-confirm-password" name="confirm" type="password" minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="new-password" required>
-    <button class="btn mt-md" type="submit">更新密码</button>
-  </form>
-  <div class="small mt-sm faint">更新后将注销所有已登录会话（其它设备需重新登录），但本设备会保持登录。</div>
+<div class="admin-page settings-page">
+  <section class="form-section">
+    <div class="form-section-title">管理员账号</div>
+    <div class="form-section-desc">当前登录的管理员账号名称。</div>
+    <div class="small">账号：<code>{admin_user}</code></div>
+  </section>
+
+  <section class="form-section" style="max-width:560px;">
+    <div class="form-section-title">修改管理员密码</div>
+    <div class="form-section-desc">定期更换管理员密码可以降低被泄露的风险。</div>
+    <form method="post" action="/admin/change-password" class="inline-form">
+      <div class="form-field">
+        <label for="settings-current-password">当前密码</label>
+        <input id="settings-current-password" name="current" type="password" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" required>
+      </div>
+      <div class="form-field">
+        <label for="settings-new-password">新密码（至少 8 位）</label>
+        <input id="settings-new-password" name="new" type="password" minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="new-password" required>
+      </div>
+      <div class="form-field">
+        <label for="settings-confirm-password">确认新密码</label>
+        <input id="settings-confirm-password" name="confirm" type="password" minlength="{PASSWORD_MIN_LENGTH}" maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="new-password" required>
+      </div>
+      <div class="row mt-md">
+        <button class="btn btn-primary" type="submit">更新密码</button>
+      </div>
+    </form>
+    <div class="small mt-sm faint">更新后将注销所有已登录会话（其它设备需重新登录），但本设备会保持登录。</div>
+  </section>
 </div>'''
     return render_admin_shell('settings', '设置', content, badge=host)
 
@@ -4269,13 +4869,19 @@ def render_reset_logs(host, limit=300):
                     f'<td>{action}</td><td>{target}</td><td class="small">{month}</td>'
                     f'<td class="small">{html.escape(detail)}</td></tr>')
     table = ''.join(rows) if rows else f'<tr><td colspan="7" class="empty">暂无日志记录</td></tr>'
-    content = f'''<div class="card scroll-x" tabindex="0" aria-label="清零日志，可横向滚动" style="padding:0;overflow:hidden;">
-  <div class="row" style="padding:14px 18px;justify-content:space-between;border-bottom:1px solid var(--line);">
-    <h2 class="section-title">最近清零记录</h2>
+    content = f'''<div class="admin-section">
+  <div class="admin-section-header">
+    <h2 class="admin-section-title">最近清零记录</h2>
     <div class="small">最近 {limit} 条 · 最新在上</div>
   </div>
-  <table class="table"><thead><tr><th style="padding-left:18px;">时间</th><th>操作人</th><th>IP</th><th>操作</th><th>目标</th><th>月份</th><th style="padding-right:18px;">流量变化</th></tr></thead>
-  <tbody>{table}</tbody></table>
+  <div class="data-table-wrap" tabindex="0" aria-label="清零日志，可横向滚动">
+    <table class="data-table">
+      <thead>
+        <tr><th>时间</th><th>操作人</th><th>IP</th><th>操作</th><th>目标</th><th>月份</th><th>流量变化</th></tr>
+      </thead>
+      <tbody>{table}</tbody>
+    </table>
+  </div>
 </div>'''
     return render_admin_shell('logs', '清零日志', content, badge=host)
 
@@ -4491,36 +5097,46 @@ def render_config_editor(
     )
     disabled_attrs = ' disabled aria-disabled="true"' if load_failed else ''
     recovery_actions = (
-        '<a class="btn secondary" href="/admin/config">重新加载模板</a>'
+        '<a class="btn btn-secondary" href="/admin/config">重新加载模板</a>'
         if load_failed
         else (
-            '<a class="btn secondary" href="/admin/config">'
+            '<a class="btn btn-secondary" href="/admin/config">'
             '打开最新版本（请先复制草稿）</a>'
             if flash.removeprefix('err:') == 'conflict'
             else ''
         )
     )
     content = f'''{alert}
-<div class="card mb-md">
-  <div class="small mb-sm">编辑订阅模板（JSON 格式）。保存后所有用户下次拉订阅即获得新配置，每个用户的密码和 UUID 由服务端从 users.json 自动注入。</div>
-  <div class="small">模板文件：<code>{html.escape(str(TEMPLATE_FILE))}</code></div>
-</div>
-<div class="card">
-  <form method="post" action="/admin/config/save" id="configForm"
-        data-confirm="保存后所有用户下次拉取订阅都会使用这份模板，确认覆盖？">
-    <input type="hidden" name="template_revision" value="{html.escape(template_revision, quote=True)}">
-    <label for="configEditor" class="k">模板 JSON</label>
-    <div id="configEditorHelp" class="field-help mb-sm">Tab 插入两个空格；按 Esc 后再按 Tab 可移出编辑器，Shift+Tab 可直接返回上一个控件。</div>
-    <div id="jsonError" class="json-error" role="alert" aria-live="assertive"></div>
-    <textarea name="config_json" id="configEditor" class="code-area code-tall"
-              aria-describedby="configEditorHelp jsonError" spellcheck="false"{editor_error_attrs}{locked_attrs}>{html.escape(config_json)}</textarea>
-    <div class="row mt-md">
-      <button class="btn danger-btn" type="submit"{disabled_attrs}>保存并覆盖模板</button>
-      <button class="btn secondary" type="button" id="cfgFormat"{disabled_attrs}>格式化 JSON</button>
-      <button class="btn ghost" type="button" id="cfgCollapse"{disabled_attrs}>折叠/展开</button>
-      {recovery_actions}
-    </div>
-  </form>
+<div class="admin-page">
+  <section class="form-section">
+    <div class="form-section-title">模板说明</div>
+    <div class="form-section-desc">编辑订阅模板（JSON 格式）。保存后所有用户下次拉订阅即获得新配置，每个用户的密码和 UUID 由服务端从 users.json 自动注入。</div>
+    <div class="small">模板文件：<code>{html.escape(str(TEMPLATE_FILE))}</code></div>
+  </section>
+
+  <section class="code-panel">
+    <form method="post" action="/admin/config/save" id="configForm"
+          data-confirm="保存后所有用户下次拉取订阅都会使用这份模板，确认覆盖？">
+      <div class="code-panel-header">
+        <div class="code-panel-title">模板 JSON</div>
+        <div class="code-panel-actions">
+          <button class="btn btn-ghost btn-sm" type="button" id="cfgFormat"{disabled_attrs}>格式化 JSON</button>
+          <button class="btn btn-ghost btn-sm" type="button" id="cfgCollapse"{disabled_attrs}>折叠/展开</button>
+        </div>
+      </div>
+      <div class="code-panel-body">
+        <input type="hidden" name="template_revision" value="{html.escape(template_revision, quote=True)}">
+        <div class="field-help">Tab 插入两个空格；按 Esc 后再按 Tab 可移出编辑器，Shift+Tab 可直接返回上一个控件。</div>
+        <div id="jsonError" class="json-error" role="alert" aria-live="assertive"></div>
+        <textarea name="config_json" id="configEditor" class="code-area code-tall"
+                  aria-describedby="configEditorHelp jsonError" spellcheck="false"{editor_error_attrs}{locked_attrs}>{html.escape(config_json)}</textarea>
+        <div class="row mt-md gap-md">
+          <button class="btn btn-danger" type="submit"{disabled_attrs}>保存并覆盖模板</button>
+          {recovery_actions}
+        </div>
+      </div>
+    </form>
+  </section>
 </div>
 <script>
 (function(){{
@@ -4832,7 +5448,7 @@ def render_rules(
                 f'<input type="hidden" name="index" value="{i}">'
                 f'<input type="hidden" name="expected_rule" value="{html.escape(rule_str, quote=True)}">'
                 f'<input type="hidden" name="template_revision" value="{template_revision}">'
-                f'<button class="btn danger-btn btn-sm" type="submit">删除</button>'
+                f'<button class="btn btn-danger btn-sm" type="submit">删除</button>'
                 f'</form>'
             )
         tr_class = ' class="system-row"' if is_system else ''
@@ -4862,76 +5478,132 @@ def render_rules(
     )
 
     content = f'''{alert}
-<div class="card mb-md">
-  <div class="small">自定义规则优先级高于规则集，从上到下依次匹配。灰色行为内置规则集，不可删除。</div>
-</div>
-<div class="card mb-md">
-  <h2 class="section-title mb-md">规则包</h2>
-  <form method="post" action="/admin/rule-pack/apply" class="inline-form"
-        data-confirm="应用规则包会修改所选范围的路由配置，确认继续？">
-    <input type="hidden" name="template_revision" value="{template_revision}">
-    <div class="grid grid-3">
-      <div><label for="rule-pack">规则包</label><select id="rule-pack" name="pack">{pack_options}</select></div>
-      <div><label for="rule-pack-scope">应用范围</label><select id="rule-pack-scope" name="scope">
-        <option value="global">全局模板</option>
-        <option value="user">单个用户</option>
-      </select></div>
-      <div><label for="rule-pack-user">用户（选择“单个用户”时生效）</label><select id="rule-pack-user" name="user" disabled>
-        <option value="">选择用户</option>{user_options}
-      </select></div>
-    </div>
-    <button class="btn secondary mt-md" type="submit">应用规则包</button>
-  </form>
-  <div class="small mt-sm faint">全局模板影响所有用户；单个用户会写入 users.json 的个人 Clash 覆盖项。</div>
-</div>
-<div class="card scroll-x" tabindex="0" aria-label="路由规则，可横向滚动" style="padding:0;overflow:hidden;">
-  <table class="table"><thead><tr><th style="padding-left:18px;width:50px;">#</th><th>类型</th><th>匹配</th><th>动作</th><th style="padding-right:18px;width:90px;">操作</th></tr></thead>
-  <tbody>{rows or '<tr><td colspan="5" class="empty">暂无规则</td></tr>'}</tbody></table>
-</div>
+<div class="admin-page">
 
-<div class="card mt-md">
-  <h2 class="section-title mb-md">添加自定义规则</h2>
-  <form method="post" action="/admin/rules/add" class="inline-form">
-    <input type="hidden" name="template_revision" value="{template_revision}">
-    <div class="grid grid-2">
-      <div><label for="new-rule-type">规则类型</label><select id="new-rule-type" name="rule_type">
-        <option value="DOMAIN-SUFFIX">DOMAIN-SUFFIX（域名后缀）</option>
-        <option value="DOMAIN-KEYWORD">DOMAIN-KEYWORD（域名关键词）</option>
-        <option value="DOMAIN">DOMAIN（完整域名）</option>
-        <option value="IP-CIDR">IP-CIDR（IP 段）</option>
-      </select></div>
-      <div><label for="new-rule-pattern">匹配值</label><input id="new-rule-pattern" name="pattern" required placeholder="example.com 或 10.0.0.0/8"></div>
-      <div><label for="new-rule-action">动作</label><select id="new-rule-action" name="action">
-        <option value="DIRECT">直连 (DIRECT)</option>
-        <option value="🚀 节点选择">代理 (🚀 节点选择)</option>
-        <option value="REJECT">拦截 (REJECT)</option>
-      </select></div>
-      <div><label for="new-rule-extra">附加选项</label><select id="new-rule-extra" name="extra">
-        <option value="">无</option>
-        <option value="no-resolve">no-resolve（IP 规则跳过 DNS 解析）</option>
-      </select></div>
-    </div>
-    <div class="row mt-md">
-      <button class="btn" type="submit">添加规则（插入到最前）</button>
-    </div>
-  </form>
-</div>
+  <!-- Page intro -->
+  <div class="rules-intro">
+    <div class="rules-intro-note">自定义规则优先级高于规则集，从上到下依次匹配。灰色行为内置规则集，不可删除。</div>
+  </div>
 
-<div class="card mt-md">
-  <details>
-    <summary>直接编辑全部规则</summary>
-    <form method="post" action="/admin/rules/raw" class="inline-form mt-md"
-          data-confirm="保存会替换全部共享路由规则，并影响所有用户订阅，确认继续？">
-      <input type="hidden" name="template_revision" value="{html.escape(submitted_revision, quote=True)}">
-      <div class="small mb-sm">每行一条规则，格式：<code>TYPE,匹配值,动作</code>。保存后同步到所有订阅模板。</div>
-      <label for="rules-raw" class="sr-only">全部路由规则</label>
-      <textarea id="rules-raw" name="rules_raw" class="code-area code-med">{rules_text}</textarea>
-      <div class="row mt-md">
-        <button class="btn danger-btn" type="submit">覆盖全部规则</button>
-      </div>
-    </form>
+  <!-- Layer 1: 操作区 — 双栏 -->
+  <div class="rules-ops-grid">
+
+    <!-- 规则包 -->
+    <div class="op-panel">
+      <div class="op-panel-title">规则包</div>
+      <div class="op-panel-desc">应用规则包会修改所选范围的路由配置。全局模板影响所有用户；单个用户会写入 users.json 的个人 Clash 覆盖项。</div>
+      <form method="post" action="/admin/rule-pack/apply" class="op-form"
+            data-confirm="应用规则包会修改所选范围的路由配置，确认继续？">
+        <input type="hidden" name="template_revision" value="{template_revision}">
+        <div class="op-form-grid">
+          <div class="field">
+            <label for="rule-pack">规则包</label>
+            <select id="rule-pack" name="pack" class="select">{pack_options}</select>
+          </div>
+          <div class="field">
+            <label for="rule-pack-scope">应用范围</label>
+            <select id="rule-pack-scope" name="scope" class="select">
+              <option value="global">全局模板</option>
+              <option value="user">单个用户</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="rule-pack-user">用户（选择"单个用户"时生效）</label>
+            <select id="rule-pack-user" name="user" class="select" disabled>
+              <option value="">选择用户</option>{user_options}
+            </select>
+          </div>
+        </div>
+        <div class="op-form-footer">
+          <span class="op-footer-hint">应用后将更新所选范围</span>
+          <button class="btn btn-secondary" type="submit">应用规则包</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- 添加自定义规则 -->
+    <div class="op-panel">
+      <div class="op-panel-title">添加自定义规则</div>
+      <form method="post" action="/admin/rules/add" class="op-form">
+        <input type="hidden" name="template_revision" value="{template_revision}">
+        <div class="op-form-grid">
+          <div class="field">
+            <label for="new-rule-type">规则类型</label>
+            <select id="new-rule-type" name="rule_type" class="select">
+              <option value="DOMAIN-SUFFIX">DOMAIN-SUFFIX（域名后缀）</option>
+              <option value="DOMAIN-KEYWORD">DOMAIN-KEYWORD（域名关键词）</option>
+              <option value="DOMAIN">DOMAIN（完整域名）</option>
+              <option value="IP-CIDR">IP-CIDR（IP 段）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="new-rule-pattern">匹配值</label>
+            <input id="new-rule-pattern" name="pattern" required class="input" placeholder="example.com 或 10.0.0.0/8">
+          </div>
+          <div class="field">
+            <label for="new-rule-action">动作</label>
+            <select id="new-rule-action" name="action" class="select">
+              <option value="DIRECT">直连 (DIRECT)</option>
+              <option value="🚀 节点选择">代理 (🚀 节点选择)</option>
+              <option value="REJECT">拦截 (REJECT)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="new-rule-extra">附加选项</label>
+            <select id="new-rule-extra" name="extra" class="select">
+              <option value="">无</option>
+              <option value="no-resolve">no-resolve（IP 规则跳过 DNS 解析）</option>
+            </select>
+          </div>
+        </div>
+        <div class="op-form-footer">
+          <span class="op-footer-hint">将插入规则列表最前</span>
+          <button class="btn btn-primary" type="submit">+ 添加规则</button>
+        </div>
+      </form>
+    </div>
+
+  </div><!-- /.rules-ops-grid -->
+
+  <!-- Layer 2: 直接编辑全部规则 — 默认折叠 -->
+  <details class="rules-raw-editor">
+    <summary class="rules-raw-summary">
+      <span>直接编辑全部规则</span>
+      <span class="rules-raw-badge">高级操作</span>
+    </summary>
+    <div class="rules-raw-body">
+      <div class="rules-raw-help">每行一条规则，格式：<code>TYPE,匹配值,动作</code>。保存后同步到所有订阅模板。</div>
+      <form method="post" action="/admin/rules/raw" class="op-form"
+            data-confirm="保存会替换全部共享路由规则，并影响所有用户订阅，确认继续？">
+        <input type="hidden" name="template_revision" value="{html.escape(submitted_revision, quote=True)}">
+        <div class="field">
+          <label for="rules-raw" class="sr-only">全部路由规则</label>
+          <textarea id="rules-raw" name="rules_raw" class="rules-raw-textarea">{rules_text}</textarea>
+        </div>
+        <div class="op-form-footer">
+          <button class="btn btn-danger" type="submit">覆盖全部规则</button>
+        </div>
+      </form>
+    </div>
   </details>
-</div>
+
+  <!-- Layer 3: 当前规则列表 — 结果查看区 -->
+  <section class="admin-section">
+    <div class="admin-section-header">
+      <h2 class="admin-section-title">当前规则列表</h2>
+      <div class="small">{len(rules)} 条</div>
+    </div>
+    <div class="data-table-wrap" tabindex="0" aria-label="路由规则，可横向滚动">
+      <table class="data-table">
+        <thead>
+          <tr><th style="width:50px;">#</th><th>类型</th><th>匹配</th><th>动作</th><th style="width:90px;">操作</th></tr>
+        </thead>
+        <tbody>{rows or '<tr><td colspan="5" class="empty">暂无规则</td></tr>'}</tbody>
+      </table>
+    </div>
+  </section>
+
+</div><!-- /.admin-page -->
 <script>
 var rulePackScope = document.getElementById('rule-pack-scope');
 var rulePackUser = document.getElementById('rule-pack-user');
@@ -5300,20 +5972,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == '/user/login':
-            logged_user, session_kind = get_logged_in_user_context(self)
-            if logged_user:
-                cfg = load_json(USERS_FILE, {}).get(logged_user, {})
-                target = (
-                    '/user/change-password'
-                    if (
-                        session_kind == USER_SESSION_PANEL_PASSWORD
-                        and cfg.get('panel_password_must_change')
-                    )
-                    else '/user/panel'
-                )
-                self.redirect(target)
-                return
-            self.send_response_body(200, render_user_login(host), 'text/html; charset=utf-8', send_payload)
+            # Unified login - redirect to /login
+            self.redirect('/login', status=303)
             return
 
         if path == '/logout':
@@ -5328,7 +5988,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/user/logout':
             if not get_logged_in_user(self):
-                self.redirect('/user/login')
+                self.redirect('/login')
                 return
             self.send_response_body(
                 200, render_logout_confirmation(host, user_panel=True),
@@ -5342,11 +6002,11 @@ class Handler(BaseHTTPRequestHandler):
                 not user
                 or session_kind != USER_SESSION_PANEL_PASSWORD
             ):
-                self.redirect('/user/login')
+                self.redirect('/login')
                 return
             cfg = load_json(USERS_FILE, {}).get(user)
             if not isinstance(cfg, dict):
-                self.redirect('/user/login', cookie=clear_user_session_cookie(secure=is_secure_request(self)))
+                self.redirect('/login', cookie=clear_user_session_cookie(secure=is_secure_request(self)))
                 return
             access_error = user_panel_access_error(
                 cfg, session_kind, today=local_now().date(),
@@ -5391,11 +6051,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/user/panel':
             user, session_kind = get_logged_in_user_context(self)
             if not user:
-                self.redirect('/user/login')
+                self.redirect('/login')
                 return
             cfg = load_json(USERS_FILE, {}).get(user)
             if not isinstance(cfg, dict):
-                self.redirect('/user/login', cookie=clear_user_session_cookie(secure=is_secure_request(self)))
+                self.redirect('/login', cookie=clear_user_session_cookie(secure=is_secure_request(self)))
                 return
             access_error = user_panel_access_error(
                 cfg, session_kind, today=local_now().date(),
@@ -5909,7 +6569,7 @@ class Handler(BaseHTTPRequestHandler):
             sid = parse_cookies(self).get('usid', '')
             delete_user_session(sid)
             self.redirect(
-                '/user/login',
+                '/login',
                 cookie=clear_user_session_cookie(secure=is_secure_request(self)),
                 status=303,
             )
@@ -5956,7 +6616,7 @@ class Handler(BaseHTTPRequestHandler):
                         '管理员或另一个会话已完成更新，本次恢复凭据已作废。'
                         '请使用管理员提供的最新链接，或用面板密码重新登录。'
                         '</div><div class="row mt-md">'
-                        '<a class="btn" href="/user/login">返回登录</a>'
+                        '<a class="btn" href="/login">返回登录</a>'
                         '</div></div></div>',
                     ),
                     'text/html; charset=utf-8',
@@ -6091,7 +6751,7 @@ class Handler(BaseHTTPRequestHandler):
                         '为避免交付过期凭据，本页不显示旧一代 Token；'
                         '请使用最新管理员链接或面板密码重新登录。'
                         '</div><div class="row mt-md">'
-                        '<a class="btn" href="/user/login">返回登录</a>'
+                        '<a class="btn" href="/login">返回登录</a>'
                         '</div></div></div>',
                     ),
                     'text/html; charset=utf-8',
@@ -6169,78 +6829,102 @@ class Handler(BaseHTTPRequestHandler):
             host = configured_public_host(
                 self.headers.get('Host', '127.0.0.1'),
             )
-            if not _begin_login_attempt(ip):
-                self.send_response_body(
-                    429,
-                    render_login(host, msg='登录尝试过于频繁，请 1 小时后再试'),
-                    'text/html; charset=utf-8',
-                    True,
-                    extra_headers={'Retry-After': str(_LOGIN_WINDOW)},
-                )
-                return
-            user = (form.get('username') or [''])[0].strip()
-            passwd = (form.get('password') or [''])[0]
-            stored_hash = str(meta.get('admin_pass_hash') or '')
-            ok = (
-                user == meta.get('admin_user')
-                and len(passwd) <= PASSWORD_MAX_LENGTH
-                and stored_hash
-                and verify_secret(passwd, stored_hash)
-            )
-            _finish_login_attempt(ip, ok)
-            if ok:
-                sid = create_session(
-                    'admin', _credential_generation(stored_hash),
-                )
-                self.redirect('/admin?msg=login+success',
-                              cookie=session_cookie(sid, secure=is_secure_request(self)))
-                return
-            self.send_response_body(200, render_login(host, msg='用户名或密码错误'), 'text/html; charset=utf-8', True)
-            return
 
-        if path == '/user/login':
-            ip = http_utils.request_client_ip(self)
-            host = configured_public_host(
-                self.headers.get('Host', '127.0.0.1'),
-            )
-            if not _begin_login_attempt(ip, _user_login_failures):
+            # Determine which tab was submitted
+            admin_username = (form.get('admin_username') or [''])[0].strip()
+            admin_password = (form.get('admin_password') or [''])[0]
+            user_username = (form.get('user_username') or [''])[0].strip()
+            user_password = (form.get('user_password') or [''])[0]
+
+            if admin_username:
+                # Admin login
+                if not _begin_login_attempt(ip):
+                    self.send_response_body(
+                        429,
+                        render_login(host, msg='登录尝试过于频繁，请 1 小时后再试', active_tab='admin', username=admin_username),
+                        'text/html; charset=utf-8',
+                        True,
+                        extra_headers={'Retry-After': str(_LOGIN_WINDOW)},
+                    )
+                    return
+                stored_hash = str(meta.get('admin_pass_hash') or '')
+                ok = (
+                    admin_username == meta.get('admin_user')
+                    and len(admin_password) <= PASSWORD_MAX_LENGTH
+                    and stored_hash
+                    and verify_secret(admin_password, stored_hash)
+                )
+                _finish_login_attempt(ip, ok)
+                if ok:
+                    sid = create_session(
+                        'admin', _credential_generation(stored_hash),
+                    )
+                    self.redirect('/admin?msg=login+success',
+                                  cookie=session_cookie(sid, secure=is_secure_request(self)))
+                    return
                 self.send_response_body(
-                    429, render_user_login(host, msg='登录尝试过于频繁，请 1 小时后再试'),
+                    200,
+                    render_login(host, msg='用户名或密码错误', active_tab='admin', username=admin_username),
                     'text/html; charset=utf-8', True,
-                    extra_headers={'Retry-After': str(_LOGIN_WINDOW)},
                 )
                 return
-            user = (form.get('username') or [''])[0].strip()
-            passwd = (form.get('password') or [''])[0]
-            cfg = load_json(USERS_FILE, {}).get(user)
-            stored_hash = str(cfg.get('panel_pass_hash') or '') if isinstance(cfg, dict) else ''
-            ok = bool(
-                is_valid_username(user)
-                and len(passwd) <= PASSWORD_MAX_LENGTH
-                and stored_hash
-                and verify_secret(passwd, stored_hash)
+
+            if user_username:
+                # User login
+                if not _begin_login_attempt(ip, _user_login_failures):
+                    self.send_response_body(
+                        429,
+                        render_login(host, msg='登录尝试过于频繁，请 1 小时后再试', active_tab='user', username=user_username),
+                        'text/html; charset=utf-8', True,
+                        extra_headers={'Retry-After': str(_LOGIN_WINDOW)},
+                    )
+                    return
+                cfg = load_json(USERS_FILE, {}).get(user_username)
+                stored_hash = str(cfg.get('panel_pass_hash') or '') if isinstance(cfg, dict) else ''
+                ok = bool(
+                    is_valid_username(user_username)
+                    and len(user_password) <= PASSWORD_MAX_LENGTH
+                    and stored_hash
+                    and verify_secret(user_password, stored_hash)
+                )
+                if ok and cfg.get('disabled'):
+                    _finish_login_attempt(ip, None, _user_login_failures)
+                    self.send_response_body(
+                        200,
+                        render_login(host, msg='账号已停用，请联系管理员', active_tab='user', username=user_username),
+                        'text/html; charset=utf-8', True,
+                    )
+                    return
+                if ok and user_compat.is_expired(cfg, today=local_now().date()):
+                    _finish_login_attempt(ip, None, _user_login_failures)
+                    self.send_response_body(
+                        200,
+                        render_login(host, msg='账号已到期，请联系管理员续费', active_tab='user', username=user_username),
+                        'text/html; charset=utf-8', True,
+                    )
+                    return
+                _finish_login_attempt(ip, ok, _user_login_failures)
+                if ok:
+                    sid = create_user_session(
+                        user_username, _credential_generation(stored_hash),
+                    )
+                    target = '/user/change-password' if cfg.get('panel_password_must_change') else '/user/panel'
+                    self.redirect(target, cookie=user_session_cookie(
+                        sid, secure=is_secure_request(self)))
+                    return
+                self.send_response_body(
+                    200,
+                    render_login(host, msg='用户名或密码错误', active_tab='user', username=user_username),
+                    'text/html; charset=utf-8', True,
+                )
+                return
+
+            # No credentials provided
+            self.send_response_body(
+                200,
+                render_login(host, msg='请输入用户名和密码'),
+                'text/html; charset=utf-8', True,
             )
-            if ok and cfg.get('disabled'):
-                _finish_login_attempt(ip, None, _user_login_failures)
-                self.send_response_body(200, render_user_login(host, msg='账号已停用，请联系管理员', username=user),
-                                        'text/html; charset=utf-8', True)
-                return
-            if ok and user_compat.is_expired(cfg, today=local_now().date()):
-                _finish_login_attempt(ip, None, _user_login_failures)
-                self.send_response_body(200, render_user_login(host, msg='账号已到期，请联系管理员续费', username=user),
-                                        'text/html; charset=utf-8', True)
-                return
-            _finish_login_attempt(ip, ok, _user_login_failures)
-            if ok:
-                sid = create_user_session(
-                    user, _credential_generation(stored_hash),
-                )
-                target = '/user/change-password' if cfg.get('panel_password_must_change') else '/user/panel'
-                self.redirect(target, cookie=user_session_cookie(
-                    sid, secure=is_secure_request(self)))
-                return
-            self.send_response_body(200, render_user_login(host, msg='用户名或密码错误', username=user),
-                                    'text/html; charset=utf-8', True)
             return
 
         if path == '/user/change-password':
@@ -6249,7 +6933,7 @@ class Handler(BaseHTTPRequestHandler):
                 not user
                 or session_kind != USER_SESSION_PANEL_PASSWORD
             ):
-                self.redirect('/user/login')
+                self.redirect('/login')
                 return
             current_cfg = load_json(USERS_FILE, {}).get(user)
             access_error = user_panel_access_error(
@@ -6257,7 +6941,7 @@ class Handler(BaseHTTPRequestHandler):
             )
             if access_error == 'forbidden':
                 self.redirect(
-                    '/user/login',
+                    '/login',
                     cookie=clear_user_session_cookie(
                         secure=is_secure_request(self),
                     ),
@@ -6286,7 +6970,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 if locked_access_error == 'forbidden':
                     self.redirect(
-                        '/user/login',
+                        '/login',
                         cookie=clear_user_session_cookie(
                             secure=is_secure_request(self),
                         ),

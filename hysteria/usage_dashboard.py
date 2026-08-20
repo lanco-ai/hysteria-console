@@ -502,35 +502,38 @@ def render_daily_usage(ctx, host, days=14):
     )
     earliest_recorded = min(daily.keys()) if daily else '—'
 
-    content = f'''<div class="grid grid-4 hero-stats">
-  <div class="card stat"><div class="k">{days} 天总流量</div><div class="v big">{ctx.fmt_bytes(overall_total)}</div><div class="accent-bar"></div></div>
-  <div class="card stat"><div class="k">今日已用</div><div class="v">{ctx.fmt_bytes(today_total)}</div><div class="small">{today_key}</div></div>
-  <div class="card stat"><div class="k">日均</div><div class="v">{ctx.fmt_bytes(avg_per_day)}</div></div>
-  <div class="card stat"><div class="k">峰值日</div><div class="v">{ctx.fmt_bytes(peak_val) if peak_val else "—"}</div><div class="small">{peak_day or "—"}</div></div>
-</div>
-<div class="card mt-md section-head-card" style="padding:14px 18px;">
-  <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:10px;">
-    <div>
-      <h2 class="section-title">每日流量明细 · 最近 {days} 天</h2>
-      <div class="small">最早数据：{earliest_recorded} · 保留 {ctx.daily_retention_days} 天</div>
-    </div>
-    <div class="row gap-sm">{switcher}</div>
+    content = f'''<div class="admin-page">
+  <div class="metric-grid">
+    <div class="metric-card"><div class="metric-k">{days} 天总流量</div><div class="metric-v big">{ctx.fmt_bytes(overall_total)}</div></div>
+    <div class="metric-card"><div class="metric-k">今日已用</div><div class="metric-v">{ctx.fmt_bytes(today_total)}</div><div class="metric-sub">{today_key}</div></div>
+    <div class="metric-card"><div class="metric-k">日均</div><div class="metric-v">{ctx.fmt_bytes(avg_per_day)}</div></div>
+    <div class="metric-card"><div class="metric-k">峰值日</div><div class="metric-v">{ctx.fmt_bytes(peak_val) if peak_val else "—"}</div><div class="metric-sub">{peak_day or "—"}</div></div>
   </div>
-</div>
-<div class="card card-flush mt-md scroll-x daily-table-card">
-  <table class="table daily-table">
-    <thead><tr>
-      <th class="user-col" style="padding-left:18px;">用户</th>
-      <th class="num">{days} 天累计</th>
-      {"".join(col_headers)}
-    </tr></thead>
-    <tbody>{"".join(rows)}</tbody>
-    <tfoot><tr>
-      <th class="user-col" style="padding-left:18px;">合计</th>
-      <td class="num user-total">{ctx.fmt_bytes(overall_total) if overall_total else "—"}</td>
-      {"".join(foot_cells)}
-    </tr></tfoot>
-  </table>
+
+  <section class="admin-section">
+    <div class="admin-section-header">
+      <div>
+        <h2 class="admin-section-title">每日流量明细 · 最近 {days} 天</h2>
+        <div class="small">最早数据：{earliest_recorded} · 保留 {ctx.daily_retention_days} 天</div>
+      </div>
+      <div class="row gap-sm">{switcher}</div>
+    </div>
+    <div class="data-table-wrap">
+      <table class="data-table">
+        <thead><tr>
+          <th>用户</th>
+          <th class="num">{days} 天累计</th>
+          {"".join(col_headers)}
+        </tr></thead>
+        <tbody>{"".join(rows)}</tbody>
+        <tfoot><tr>
+          <th>合计</th>
+          <td class="num user-total">{ctx.fmt_bytes(overall_total) if overall_total else "—"}</td>
+          {"".join(foot_cells)}
+        </tr></tfoot>
+      </table>
+    </div>
+  </section>
 </div>'''
     return ctx.render_admin_shell(
         'daily', '每日流量', content,
@@ -574,36 +577,73 @@ def render_usage_page(ctx, host):
         '<span class="sr-only" id="usage-poll-announcer" role="status" aria-live="polite"></span>'
     )
 
-    content = f'''<div class="grid grid-4 hero-stats">
-  <div class="card stat" data-stat="current_hour"><div class="k">当小时</div><div class="v big">{ctx.fmt_bytes(stats["current_hour_bytes"])}</div><div class="small"><span data-role="usage-online">{stats["online"]}</span> 在线</div></div>
-  <div class="card stat" data-stat="today"><div class="k">今日</div><div class="v">{ctx.fmt_bytes(stats["today_bytes"])}</div><div class="small">昨日 <span data-role="usage-yesterday">{ctx.fmt_bytes(stats["yesterday_bytes"])}</span></div></div>
-  <div class="card stat" data-stat="last_7d"><div class="k">近 7 天</div><div class="v">{ctx.fmt_bytes(stats["last_7d_bytes"])}</div><div class="small">日均 <span data-role="usage-7d-average">{ctx.fmt_bytes(stats["last_7d_bytes"] // 7)}</span></div></div>
-  <div class="card stat" data-stat="cycle"><div class="k">本周期</div><div class="v">{ctx.fmt_bytes(stats["cycle_bytes"])}</div><div class="small" data-role="cycle-progress">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div></div>
-</div>
-
-<div class="card mt-md chart-card" style="padding:14px 18px;">
-  <h2 class="section-title">过去 7 天 · 每小时</h2>
-  <div id="hourly-bars-host" style="margin-top:10px;">{bars_svg}</div>
-</div>
-
-<div class="grid grid-2 mt-md analytics-grid">
-  <div class="card chart-card" style="padding:14px 18px;">
-    <h2 class="section-title">7 天 × 24 小时 热图</h2>
-    <div id="heatmap-host" style="margin-top:10px;">{heat_svg}</div>
+    content = f'''<div class="admin-page">
+  <div class="metric-grid">
+    <div class="metric-card" data-stat="current_hour">
+      <div class="metric-k">当小时</div>
+      <div class="metric-v big">{ctx.fmt_bytes(stats["current_hour_bytes"])}</div>
+      <div class="metric-sub"><span data-role="usage-online">{stats["online"]}</span> 在线</div>
+    </div>
+    <div class="metric-card" data-stat="today">
+      <div class="metric-k">今日</div>
+      <div class="metric-v">{ctx.fmt_bytes(stats["today_bytes"])}</div>
+      <div class="metric-sub">昨日 <span data-role="usage-yesterday">{ctx.fmt_bytes(stats["yesterday_bytes"])}</span></div>
+    </div>
+    <div class="metric-card" data-stat="last_7d">
+      <div class="metric-k">近 7 天</div>
+      <div class="metric-v">{ctx.fmt_bytes(stats["last_7d_bytes"])}</div>
+      <div class="metric-sub">日均 <span data-role="usage-7d-average">{ctx.fmt_bytes(stats["last_7d_bytes"] // 7)}</span></div>
+    </div>
+    <div class="metric-card" data-stat="cycle">
+      <div class="metric-k">本周期</div>
+      <div class="metric-v">{ctx.fmt_bytes(stats["cycle_bytes"])}</div>
+      <div class="metric-sub" data-role="cycle-progress">第 {stats["cycle_day"]} / {stats["cycle_total_days"]} 天</div>
+    </div>
   </div>
-  <div class="card card-flush chart-card" style="padding:14px 0;">
-    <h2 class="section-title" style="padding:0 18px;">Top 5 · 近 24 小时</h2>
-    <div id="top-n-host" style="margin-top:10px;">{top_html}</div>
-  </div>
-</div>
 
-<details class="card mt-md history-card" id="usage-history" style="padding:8px 18px;">
-  <summary style="cursor:pointer;">历史每日明细（可展开）</summary>
-  <div class="history-load-host" id="usage-history-host" data-url="/admin/usage-history"
-       aria-live="polite" aria-busy="false">
-    <div class="empty history-placeholder">展开后加载 30 天明细，减少首屏内存占用</div>
-  </div>
-</details>
+  <section class="chart-panel">
+    <div class="chart-panel-header">
+      <div>
+        <div class="chart-panel-title">过去 7 天 · 每小时</div>
+        <div class="chart-panel-desc">基于滚动 7 天的小时桶聚合，点击峰值可定位到当日。</div>
+      </div>
+    </div>
+    <div id="hourly-bars-host">{bars_svg}</div>
+  </section>
+
+  <section class="admin-section">
+    <div class="admin-section-body" style="padding:0;">
+      <div class="grid grid-2 analytics-grid">
+        <section class="chart-panel">
+          <div class="chart-panel-header">
+            <div>
+              <div class="chart-panel-title">7 天 × 24 小时 热图</div>
+              <div class="chart-panel-desc">单元格颜色越深代表该小时流量越高。</div>
+            </div>
+          </div>
+          <div id="heatmap-host">{heat_svg}</div>
+        </section>
+        <section class="admin-section" style="border:none;">
+          <div class="admin-section-header">
+            <div class="admin-section-title">Top 5 · 近 24 小时</div>
+            <div class="small">活跃用户</div>
+          </div>
+          <div id="top-n-host">{top_html}</div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <details class="admin-section">
+    <summary style="padding:14px 20px;cursor:pointer;font-weight:500;color:var(--text-secondary);">历史每日明细（可展开）</summary>
+    <div class="admin-section-body" style="padding-top:0;">
+      <div class="history-load-host" id="usage-history-host" data-url="/admin/usage-history"
+           aria-live="polite" aria-busy="false">
+        <div class="empty history-placeholder">展开后加载 30 天明细，减少首屏内存占用</div>
+      </div>
+    </div>
+  </details>
+</div>
 
 <div class="hover-tip" id="usage-hover-tip" role="status" aria-live="polite"
      aria-atomic="true" style="display:none;position:absolute;"></div>

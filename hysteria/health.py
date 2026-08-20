@@ -243,13 +243,13 @@ def probe_recent_backup(path, *, max_age_hours=30, disk_usage=shutil.disk_usage)
 
 
 def health_card(title, probe_result):
+    """Render a single status card for the services table."""
     is_ok = bool(probe_result['ok'])
-    cls = 'ok' if is_ok else 'bad'
-    status = '正常' if is_ok else '异常'
-    badge_cls = 'badge-info' if is_ok else 'badge-danger'
-    return (f'<div class="card stat health-{cls}">'
-            f'<div class="k">{html.escape(title)}</div>'
-            f'<div class="v">{html.escape(probe_result["label"])}</div>'
-            f'<div class="small"><span class="badge {badge_cls} health-status">'
-            f'状态：{status}</span></div>'
-            f'</div>')
+    label = probe_result.get('label', '未知')
+    badge_cls = 'badge' if is_ok else 'badge badge-danger'
+    return (
+        f'<tr data-health="{html.escape(title, quote=True)}">'
+        f'<td><span class="bold">{html.escape(title)}</span></td>'
+        f'<td><span class="{badge_cls}">{html.escape(label)}</span></td>'
+        f'</tr>'
+    )
