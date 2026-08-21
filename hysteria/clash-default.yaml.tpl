@@ -419,6 +419,16 @@ rules:
   # IPv6 全部拒绝（当前 IPv6 关闭）
   - 'IP-CIDR6,::/0,REJECT,no-resolve'
 
+  # IPv6 NCSI 精确拒绝（必须早于泛 Microsoft DIRECT）
+  - 'DOMAIN,ipv6.msftconnecttest.com,REJECT'
+  - 'DOMAIN,ipv6.msftncsi.com,REJECT'
+
+  # 内网 / CGNAT 直连，避免内网 STUN/TURN 被送入公网代理
+  - 'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve'
+  - 'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve'
+  - 'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve'
+  - 'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve'
+
   # === WebRTC / STUN / TURN 防泄露 ===
   # 专用组 🔒 WebRTC 隐私 只含 HY2 + TUIC（纯 UDP 代理）
   # VLESS TCP / DIRECT 不会落入该组，不会因选到非 UDP 节点而泄露
@@ -453,8 +463,6 @@ rules:
   - 'DOMAIN-SUFFIX,xboxservices.com,DIRECT'
   - 'DOMAIN-SUFFIX,gamepass.com,DIRECT'
   - 'DOMAIN-SUFFIX,playfabapi.com,DIRECT'
-  - 'DOMAIN,ipv6.msftconnecttest.com,REJECT'
-  - 'DOMAIN,ipv6.msftncsi.com,REJECT'
 
   # 学术资源（📚 学术访问）
   - 'DOMAIN-SUFFIX,sciencedirect.com,📚 学术访问'
@@ -578,17 +586,20 @@ rules:
   - 'RULE-SET,icloud,DIRECT'
   - 'RULE-SET,apple,DIRECT'
   - 'RULE-SET,direct,DIRECT'
-  - 'RULE-SET,proxy,🚀 节点选择'
-  - 'RULE-SET,cncidr,DIRECT,no-resolve'
 
-  # 国内域名 DIRECT
-  - 'GEOIP,LAN,DIRECT'
+  # Microsoft / VSCode / NVIDIA 显式直连（必须早于 proxy 规则集）
   - 'DOMAIN-KEYWORD,Microsoft,DIRECT'
   - 'DOMAIN-SUFFIX,office.com,DIRECT'
   - 'DOMAIN-SUFFIX,visualstudio.com,DIRECT'
   - 'DOMAIN-SUFFIX,vscode-cdn.net,DIRECT'
   - 'DOMAIN-KEYWORD,vscode,DIRECT'
   - 'DOMAIN-SUFFIX,nvidia.com,DIRECT'
+
+  - 'RULE-SET,proxy,🚀 节点选择'
+  - 'RULE-SET,cncidr,DIRECT,no-resolve'
+
+  # 国内域名 DIRECT
+  - 'GEOIP,LAN,DIRECT'
 
   # 中国大陆 IP 直连（最后防线）
   - 'GEOIP,CN,DIRECT'
