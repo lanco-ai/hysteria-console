@@ -11,6 +11,7 @@ Maintenance rule: any code that mutates xray clients must go through `sync_user`
 inbound ports leaves the user reachable on one and rejected on the other, with
 no obvious error.
 """
+import copy
 import json
 import grp
 import os
@@ -165,23 +166,53 @@ def _prepare_temp_permissions(fd):
 
 def _save_config(path, cfg):
     """Atomic write: serialize to a sibling temp file, fsync, then rename.
-    A naked write_text() can leave config.json truncated if the process is
-    killed mid-write — xray then refuses to start, taking both inbounds with it.
+
+    Two separate temp files are used:
+
+    prod_staging  — holds the ORIGINAL cfg.  Only this file may be rename'd to the
+                     production path on success.
+
+    val_tmp        — holds a deepcopy of cfg with log paths redirected to /dev/null.
+                     Used only for native xray validation and is always deleted
+                     afterwards, regardless of outcome.
+
+    This separation is required because production log paths
+    (e.g. /var/log/xray/hy2-access.log) are owned by a separate service account
+    (hy2-xray, mode 600) and the subscription/traffic-limiter services run as root
+    in a CapabilityBoundingSet= sandbox that provides no CAP_DAC_OVERRIDE.  Writing
+    to that directory from inside the sandbox would fail.  Redirecting the log paths
+    to /dev/null in the VALIDATION COPY only avoids that failure without altering
+    the production config that is ultimately saved.
     """
-    payload = json.dumps(cfg, indent=2, ensure_ascii=False) + '\n'
-    fd = None
-    tmp_name = None
+    prod_fd = None
+    prod_tmp = None
+    val_tmp = None
     try:
-        fd, tmp_name = tempfile.mkstemp(
+        # ---- Production staging: original cfg (will be rename'd to production path) ----
+        prod_fd, prod_tmp = tempfile.mkstemp(
             prefix=path.name + '.', suffix='.tmp', dir=str(path.parent),
             text=True,
         )
-        _prepare_temp_permissions(fd)
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            fd = None
-            f.write(payload)
+        _prepare_temp_permissions(prod_fd)
+        with os.fdopen(prod_fd, 'w', encoding='utf-8') as f:
+            prod_fd = None
+            f.write(json.dumps(cfg, indent=2, ensure_ascii=False) + '\n')
             f.flush()
             os.fsync(f.fileno())
+
+        # ---- Validation staging: patched copy (never rename'd to production path) ----
+        val_tmp_fd, val_tmp = tempfile.mkstemp(
+            prefix=path.name + '.', suffix='.val.tmp', dir=str(path.parent),
+            text=True,
+        )
+        _prepare_temp_permissions(val_tmp_fd)
+        val_cfg = _patch_logs_for_validation(cfg)
+        with os.fdopen(val_tmp_fd, 'w', encoding='utf-8') as f:
+            f.write(json.dumps(val_cfg, indent=2, ensure_ascii=False) + '\n')
+            f.flush()
+            os.fsync(f.fileno())
+
+        # ---- Native validation (uses val_tmp with /dev/null log paths) ----
         if path.absolute() == PRODUCTION_CONFIG_FILE.absolute():
             try:
                 validation = subprocess.run(
@@ -192,7 +223,7 @@ def _save_config(path, cfg):
                         '-format',
                         'json',
                         '-config',
-                        tmp_name,
+                        val_tmp,
                     ],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -207,18 +238,63 @@ def _save_config(path, cfg):
                 raise state_store.InvalidJsonState(
                     'staged xray config failed native validation',
                 )
-        os.replace(tmp_name, path)
-        tmp_name = None
+
+        # ---- Validation passed: promote original staging file to production ----
+        os.replace(prod_tmp, path)
+        prod_tmp = None          # mark as consumed so finally doesn't try to unlink
         _secure_config_permissions(path)
         state_store._fsync_dir(path.parent)
+
     finally:
-        if fd is not None:
-            os.close(fd)
-        if tmp_name is not None:
-            try:
-                Path(tmp_name).unlink()
-            except FileNotFoundError:
-                pass
+        # Clean up whichever temp files are still outstanding.
+        if prod_fd is not None:
+            os.close(prod_fd)
+        for name in (prod_tmp, val_tmp):
+            if name is not None:
+                try:
+                    Path(name).unlink()
+                except FileNotFoundError:
+                    pass
+
+
+def _patch_logs_for_validation(cfg):
+    """Return a deepcopy of cfg with known managed log paths redirected to /dev/null.
+
+    This is applied ONLY to the temp file used for native xray validation.
+    The original cfg dict passed to _save_config is never modified.
+
+    IMPORTANT — do NOT repair illegal config schemas:
+    Xray's own native validator must receive the same structure that would be
+    written to production so that it can correctly detect and report errors.
+
+    Only paths that are KNOWN to be managed by this project are redirected.
+    This prevents accidentally silencing errors from a genuine misconfigured
+    custom path that should be visible:
+
+      - MANAGED_ACCESS_LOG   → /dev/null
+      - MANAGED_ERROR_LOG   → /dev/null
+      - legacy paths         → /dev/null
+      - /dev/null itself     → /dev/null (no-op)
+      - None (disabled)      → None (no-op)
+      - any other path       → PASS THROUGH unchanged
+
+    Schema violations (non-dict log, non-string access/error) are also passed
+    through so that Xray reports the real error.
+    """
+    _managed_paths = {
+        MANAGED_ACCESS_LOG,
+        MANAGED_ERROR_LOG,
+        LEGACY_MANAGED_LOG_PATHS['access'][0],
+        LEGACY_MANAGED_LOG_PATHS['error'][0],
+    }
+    cfg = copy.deepcopy(cfg)
+    log = cfg.get('log')
+    if isinstance(log, dict):
+        for key in ('access', 'error'):
+            val = log.get(key)
+            if isinstance(val, str) and val in _managed_paths:
+                log[key] = '/dev/null'
+    return cfg
 
 
 def _config_lock_path(path):
