@@ -467,3 +467,111 @@ def test_save_json_is_atomic_against_crash(tmp_path, monkeypatch):
         pass
     # The previously-written file must still be readable; no truncation.
     assert json.loads(target.read_text())["good"] == "value"
+
+
+# =============================================================================
+# Admin user-list DOM / JS contract regression tests
+# =============================================================================
+
+def _seed_admin(tmp_path, monkeypatch, users=None):
+    """Repoint state for admin page rendering."""
+    (tmp_path / "users.json").write_text(json.dumps(users or {}))
+    (tmp_path / "usage.json").write_text("{}")
+    (tmp_path / "usage_daily.json").write_text("{}")
+    (tmp_path / "usage_hourly.json").write_text("{}")
+    (tmp_path / "usage_preserved.json").write_text("{}")
+    (tmp_path / "online.json").write_text("{}")
+    (tmp_path / "meta.json").write_text(
+        json.dumps({"settlement_day": 1, "cycle_length_days": 30,
+                    "cycle_anchor_date": "2026-07-01"})
+    )
+    for attr, name in [
+        ("USERS_FILE", "users.json"),
+        ("USAGE_FILE", "usage.json"),
+        ("USAGE_DAILY_FILE", "usage_daily.json"),
+        ("USAGE_HOURLY_FILE", "usage_hourly.json"),
+        ("USAGE_PRESERVED_FILE", "usage_preserved.json"),
+        ("ONLINE_FILE", "online.json"),
+        ("META_FILE", "meta.json"),
+    ]:
+        monkeypatch.setattr(ss, attr, tmp_path / name, raising=False)
+
+
+def test_admin_user_action_form_exists_once(tmp_path, monkeypatch):
+    """The shared hidden form must exist exactly once; without it, all action
+    buttons (清流量 / 刷新流量 / 重置订阅 / 暂停 / 启用 / 删除) fail silently."""
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {}})
+    out = ss.render_admin("test-host", "http://test-host")
+    assert 'id="user-action-form"' in out, "missing shared hidden form"
+    assert out.count('id="user-action-form"') == 1, "duplicate form ID"
+
+
+def test_admin_every_action_button_declares_user_action_form(tmp_path, monkeypatch):
+    """Each per-user action button must associate with the shared form so that
+    JS can read ev.submitter to determine the target endpoint."""
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {}, "bob": {}})
+    out = ss.render_admin("test-host", "http://test-host")
+    for expected_action, expected_formaction in [
+        ("reset-user-usage", "/admin/reset-usage"),
+        ("refresh-user-usage", "/admin/refresh-usage"),
+        ("rotate-user-token", "/admin/rotate-token"),
+        ("disable-user", "/admin/toggle-user"),
+        ("delete-user", "/admin/delete"),
+    ]:
+        assert f'data-action="{expected_action}"' in out, f"missing data-action={expected_action}"
+        assert f'form="user-action-form"' in out, f"button {expected_action} must declare form= user-action-form"
+        assert f'formaction="{expected_formaction}' in out, f"{expected_action} must formaction to {expected_formaction}"
+
+
+def test_admin_edit_dialog_dom_exists(tmp_path, monkeypatch):
+    """The edit-dialog, edit-form, and edit-title must all be present so that
+    admin_poll.js openEditDialog() can find them."""
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {}})
+    out = ss.render_admin("test-host", "http://test-host")
+    assert 'id="user-edit-dialog"' in out, "missing user-edit-dialog"
+    assert 'id="user-edit-form"' in out, "missing user-edit-form"
+    assert 'id="user-edit-title"' in out, "missing user-edit-title"
+
+
+def test_admin_edit_button_data_attributes_populate_form(tmp_path, monkeypatch):
+    """The .edit-user button data-* attributes must contain every field needed
+    by admin_poll.js openEditDialog() to pre-fill the form."""
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {}})
+    out = ss.render_admin("test-host", "http://test-host")
+    # These data-* names match what openEditDialog reads from the button:
+    for attr in ("edit-user", "user-revision", "max-devices",
+                 "quota-gb", "quota-extra-gb", "expires-at", "note",
+                 "metered", "tuic-enabled"):
+        assert f'data-{attr}=' in out, f"edit button missing data-{attr}"
+
+
+def test_admin_edit_dialog_does_not_leak_sensitive_fields(tmp_path, monkeypatch):
+    """The edit dialog form must not contain sub_token or password_hash fields,
+    which are server-side-only and must never reach the browser."""
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {}})
+    out = ss.render_admin("test-host", "http://test-host")
+    assert "sub_token" not in out.lower() or "sub-token" not in out.lower()
+    assert "password_hash" not in out.lower()
+    # Token and password hash must not appear as HTML input values.
+    assert "type=\"hidden\" name=\"sub_token\"" not in out
+    assert "type=\"hidden\" name=\"password_hash\"" not in out
+
+
+def test_admin_no_duplicate_ids(tmp_path, monkeypatch):
+    """IDs in the admin page must be unique; duplicate IDs cause
+    document.getElementById() to return the first match, breaking JS."""
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {}, "bob": {}})
+    out = ss.render_admin("test-host", "http://test-host")
+    import re
+    ids = re.findall(r'\bid="([^"]+)"', out)
+    dupes = [i for i in ids if ids.count(i) > 1]
+    assert not dupes, f"duplicate IDs found: {dupes}"
+
+
+def test_admin_edit_form_targets_correct_backend_endpoint(tmp_path, monkeypatch):
+    """The edit form must POST to /admin/update (the existing backend handler)."""
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {}})
+    out = ss.render_admin("test-host", "http://test-host")
+    assert 'action="/admin/update"' in out
+    # Also verify there is exactly one such action (not per-row forms).
+    assert out.count('action="/admin/update"') == 1

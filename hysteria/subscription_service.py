@@ -4097,6 +4097,53 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
     </div>
   </div>
 </div>
+<!-- Shared hidden form used by all per-user action buttons (清流量 / 刷新流量 /
+     重置订阅 / 暂停 / 启用 / 删除).  Buttons declare form="user-action-form"
+     so clicks route through this form; JS reads ev.submitter to determine which
+     action (formaction) to POST.  Must appear before .users-section so the
+     form is in the DOM when any button is clicked. -->
+<form method="post" id="user-action-form" hidden></form>
+<!-- Edit-user dialog: opened by .edit-user buttons via showModal().  The JS
+     reads data-* from the clicked button and pre-fills every field.  Must not
+     expose sub_token or password_hash. -->
+<dialog id="user-edit-dialog" class="admin-dialog">
+  <div class="dialog-inner">
+    <div class="dialog-head">
+      <h2 class="dialog-title" id="user-edit-title">编辑用户</h2>
+      <button type="button" class="dialog-close" data-dialog-close aria-label="关闭">×</button>
+    </div>
+      <form method="post" id="user-edit-form" action="/admin/update">
+      <input type="hidden" name="user" id="edit-user-name">
+      <input type="hidden" name="user_revision" id="edit-user-revision">
+      <div class="form-grid">
+        <div class="form-field"><label for="edit-max-devices">最大设备数</label>
+          <input id="edit-max-devices" name="max_devices" type="number" min="0" max="999" value="2"></div>
+        <div class="form-field"><label for="edit-quota-gb">流量上限 GB</label>
+          <input id="edit-quota-gb" name="quota_gb" type="number" min="0" max="10240" value="150"></div>
+        <div class="form-field"><label for="edit-quota-extra-gb">加量包 GB</label>
+          <input id="edit-quota-extra-gb" name="quota_extra_gb" type="number" min="0" max="10240" value="0"></div>
+        <div class="form-field"><label for="edit-expires-at">到期日</label>
+          <input id="edit-expires-at" name="expires_at" type="date"></div>
+        <div class="form-field" style="grid-column:1/-1"><label for="edit-note">备注</label>
+          <input id="edit-note" name="note" maxlength="200" placeholder="可选"></div>
+        <div class="form-field"><label for="edit-panel-password">面板密码</label>
+          <input id="edit-panel-password" name="panel_password" type="password" minlength="8" maxlength="256"
+                 autocomplete="new-password" placeholder="留空保持不变"><span class="hint">至少 8 位</span></div>
+        <div class="form-field"><label for="edit-proxy-password">代理密码</label>
+          <input id="edit-proxy-password" name="password" type="password" maxlength="256"
+                 autocomplete="new-password" placeholder="留空保持不变"></div>
+      </div>
+      <div class="form-options">
+        <label class="switch"><input type="checkbox" name="guest" id="edit-guest">按量用户</label>
+        <label class="switch"><input type="checkbox" name="tuic_enabled" id="edit-tuic-enabled">允许 TUIC</label>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" class="btn ghost btn-sm" data-dialog-close>取消</button>
+        <button type="submit" class="btn primary btn-sm">保存更改</button>
+      </div>
+    </form>
+  </div>
+</dialog>
 <div class="users-section">
   <div class="users-header">
     <h2 class="users-title">用户列表</h2>
