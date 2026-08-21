@@ -7,15 +7,136 @@ log-level: info
 external-controller: 127.0.0.1:9090
 unified-delay: true
 
-# 2. DNS 配置 (fake-ip 模式)
+# 2. DNS 配置
+# 目标：
+#   - 中国大陆流量走 DIRECT（低延迟）
+#   - 海外流量通过代理出口查询 DNS（防止 DNS 泄露）
+#   - fake-ip 模式保留
+#   - IPv6 关闭
 dns:
   enable: true
   ipv6: false
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  # respect-rules: true → DNS 查询结果参与规则匹配时按代理策略出口
+  # Clash Nyanpasu / Mihomo 支持
+  # proxy-server-nameserver: 当 respect-rules 启用时，必须配置
+  #   → 负责向 Clash Meta 内置 proxy-server 发出 DNS 请求的 upstream
+  respect-rules: true
+  proxy-server-nameserver:
+    - https://doh.pub/dns-query
+    - https://dns.alidns.com/dns-query
+  # bootstrap: 解析 proxy-server-nameserver 自身的域名（如 doh.pub / dns.alidns.com）
   default-nameserver:
     - 223.5.5.5
     - 119.29.29.29
-  enhanced-mode: fake-ip
-  fake-ip-range: 198.18.0.1/16
+
+  # 默认 nameserver：统一使用海外 DoH（通过代理出口）
+  # 当 domain 不匹配任何 nameserver-policy 时使用
+  nameserver:
+    - https://1.1.1.1/dns-query
+    - https://dns.google/dns-query
+
+  # nameserver-policy：
+  #   - rule-set:direct → 国内 DoH（直连）
+  #   - GitHub / OpenAI / Telegram → 海外 DoH（代理）
+  #   - Steam 域名 → 国内 DoH（直连，国内 CDN 低延迟）
+  nameserver-policy:
+    # 国内域名用国内 DNS（直连，低延迟）
+    'rule-set:direct':
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+
+    # Steam 国内 CDN（直连，国内低延迟）
+    '+.steamcontent.com':
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+    '+.steamserver.net':
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+
+    # GitHub 全系（必须海外解析才能正确路由）
+    '+.github.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.githubusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.githubassets.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.github.io':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.githubapp.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.github.dev':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.ghcr.io':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.githubcopilot.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.github-cloud.s3.amazonaws.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+
+    # OpenAI / ChatGPT
+    '+.openai.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.chatgpt.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.oaistatic.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.oaiusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.openaiusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.ai.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.auth0.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.arkoselabs.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.statsigapi.net':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.featuregates.org':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+
+    # Telegram
+    '+.telegram.org':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.telegram.me':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.telegram.dog':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.t.me':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.telegra.ph':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.tdesktop.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+
+  # fake-ip-filter（同前）
   fake-ip-filter:
     - "*.msftconnecttest.com"
     - "*.msftncsi.com"
@@ -51,195 +172,6 @@ dns:
     - "*.oup.com"
     - "*.cambridge.org"
   use-hosts: true
-
-  nameserver:
-    - https://doh.pub/dns-query
-    - https://dns.alidns.com/dns-query
-
-  fallback:
-    - tls://8.8.8.8
-    - tls://1.1.1.1
-
-  direct-nameserver:
-    - 223.5.5.5
-    - 119.29.29.29
-
-  nameserver-policy:
-    '+.github.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.githubusercontent.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.githubassets.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.github.io':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.githubapp.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.github.dev':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.ghcr.io':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.githubcopilot.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.github-cloud.s3.amazonaws.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.openai.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.chatgpt.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.oaistatic.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.oaiusercontent.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.openaiusercontent.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.ai.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.auth0.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.arkoselabs.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.statsigapi.net':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.featuregates.org':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.google.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.gmail.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googlemail.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googleapis.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.gstatic.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googleusercontent.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.ggpht.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.gvt1.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googlevideo.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.youtube.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.ytimg.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.youtu.be':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.google.com.hk':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.google.com.tw':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googleadservices.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googlesyndication.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.google-analytics.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googletagmanager.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.googletagservices.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.doubleclick.net':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.recaptcha.net':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.gvt2.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.gvt3.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.appspot.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.firebaseapp.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.firebaseio.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.blogger.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.blogspot.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.telegram.org':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.telegram.me':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.telegram.dog':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.t.me':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.telegra.ph':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.tdesktop.com':
-      - https://1.1.1.1/dns-query
-      - https://8.8.8.8/dns-query
-    '+.steamcontent.com':
-      - 223.5.5.5
-      - 119.29.29.29
-    '+.steamserver.net':
-      - 223.5.5.5
-      - 119.29.29.29
-    '+.steampowered.com':
-      - 223.5.5.5
-      - 119.29.29.29
-
-  fallback-filter:
-    geoip: true
-    geoip-code: CN
-    ipcidr:
-      - 240.0.0.0/4
-      - 0.0.0.0/32
 
 # 3. 节点 (password 和 uuid 由 subscription_service.py 在下发订阅时按用户注入)
 proxies:
@@ -392,6 +324,17 @@ proxy-groups:
     timeout: 5000
     tolerance: 100
 
+  # WebRTC / STUN / TURN 隐私专用组
+  # 只允许 UDP 代理节点：HY2 端口跳跃 + TUIC
+  # 禁止：VLESS TCP（不支持 UDP）、DIRECT（暴露国内 IP）
+  # TUIC disabled 时 subscription_profiles.py 会删除 TUIC 节点，
+  # 但 HY2 始终存在，该组始终非空。
+  - name: 🔒 WebRTC 隐私
+    type: select
+    proxies:
+      - 🇺🇸 美国 UDP (端口跳跃)
+      - 🇺🇸 美国 UDP TUIC
+
 # 5. 规则集（每天自动更新）
 rule-providers:
   private:
@@ -458,12 +401,47 @@ rule-providers:
     interval: 86400
 
 # 6. 规则
+# 顺序策略：从特殊到通用
+#   1. 固定 IP 直连（国内服务）
+#   2. IPv6 REJECT
+#   3. WebRTC / STUN / TURN 防泄露（🔒 WebRTC 隐私，仅 HY2/TUIC）
+#   4. MSFT NCSI（DIRECT，防止触发 IPv6 检测）
+#   5. 学术 / AI / Google / GitHub / Telegram（按策略组）
+#   6. Steam（DIRECT，国内低延迟）
+#   7. 规则集
+#   8. 中国大陆 IP 直连
+#   9. 默认代理
 rules:
+  # 固定 IP 直连（已确认的国内服务）
   - 'IP-CIDR,47.245.53.96/32,DIRECT,no-resolve'
   - 'IP-CIDR,192.238.178.243/32,DIRECT,no-resolve'
-  - 'DOMAIN,ipv6.msftconnecttest.com,REJECT'
-  - 'DOMAIN,ipv6.msftncsi.com,REJECT'
+
+  # IPv6 全部拒绝（当前 IPv6 关闭）
   - 'IP-CIDR6,::/0,REJECT,no-resolve'
+
+  # === WebRTC / STUN / TURN 防泄露 ===
+  # 专用组 🔒 WebRTC 隐私 只含 HY2 + TUIC（纯 UDP 代理）
+  # VLESS TCP / DIRECT 不会落入该组，不会因选到非 UDP 节点而泄露
+  # 规则必须在 GEOIP,CN,DIRECT 之前
+
+  # STUN/TURN 端口范围（Mihomo AND 逻辑：UDP + 端口范围）
+  - 'AND,((NETWORK,UDP),(DST-PORT,3478-3481)),🔒 WebRTC 隐私'
+  - 'AND,((NETWORK,UDP),(DST-PORT,5349)),🔒 WebRTC 隐私'
+  - 'AND,((NETWORK,UDP),(DST-PORT,19302-19309)),🔒 WebRTC 隐私'
+
+  # 常见 STUN/TURN 域名（精确匹配，避免 DOMAIN-KEYWORD 误伤）
+  - 'DOMAIN-SUFFIX,stun.l.google.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,stun1.l.google.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,stun2.l.google.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,stun.cloudflare.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,stun.hitv.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,stun.miwifi.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,stun.chat.bilibili.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,global.stun.twilio.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,stun.nextcloud.com,🔒 WebRTC 隐私'
+  - 'DOMAIN-SUFFIX,turn.kundun.com,🔒 WebRTC 隐私'
+
+  # MSFT NCSI（DIRECT 防止触发 IPv6 检测）
   - 'DOMAIN-SUFFIX,msftconnecttest.com,DIRECT'
   - 'DOMAIN-SUFFIX,msftncsi.com,DIRECT'
   - 'DOMAIN-SUFFIX,microsoft.com,DIRECT'
@@ -475,6 +453,10 @@ rules:
   - 'DOMAIN-SUFFIX,xboxservices.com,DIRECT'
   - 'DOMAIN-SUFFIX,gamepass.com,DIRECT'
   - 'DOMAIN-SUFFIX,playfabapi.com,DIRECT'
+  - 'DOMAIN,ipv6.msftconnecttest.com,REJECT'
+  - 'DOMAIN,ipv6.msftncsi.com,REJECT'
+
+  # 学术资源（📚 学术访问）
   - 'DOMAIN-SUFFIX,sciencedirect.com,📚 学术访问'
   - 'DOMAIN-SUFFIX,sciencedirectassets.com,📚 学术访问'
   - 'DOMAIN-SUFFIX,els-cdn.com,📚 学术访问'
@@ -501,6 +483,8 @@ rules:
   - 'DOMAIN-SUFFIX,cambridge.org,📚 学术访问'
   - 'DOMAIN-SUFFIX,arxiv.org,📚 学术访问'
   - 'DOMAIN-SUFFIX,nih.gov,📚 学术访问'
+
+  # OpenAI / ChatGPT（🤖 GPT 优化）
   - 'DOMAIN-SUFFIX,openai.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,chatgpt.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,oaistatic.com,🤖 GPT 优化'
@@ -517,6 +501,8 @@ rules:
   - 'DOMAIN-SUFFIX,browser-intake-datadoghq.com,🤖 GPT 优化'
   - 'DOMAIN-SUFFIX,chatgpt.livekit.cloud,🤖 GPT 优化'
   - 'DOMAIN,challenges.cloudflare.com,🤖 GPT 优化'
+
+  # Google（🌐 Google 优化）
   - 'DOMAIN-SUFFIX,google.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,google.com.hk,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,google.com.tw,🌐 Google 优化'
@@ -547,12 +533,8 @@ rules:
   - 'DOMAIN-SUFFIX,firebaseio.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,blogger.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,blogspot.com,🌐 Google 优化'
-  - 'DOMAIN-SUFFIX,telegram.org,✈️ Telegram 优化'
-  - 'DOMAIN-SUFFIX,telegram.me,✈️ Telegram 优化'
-  - 'DOMAIN-SUFFIX,telegram.dog,✈️ Telegram 优化'
-  - 'DOMAIN-SUFFIX,t.me,✈️ Telegram 优化'
-  - 'DOMAIN-SUFFIX,telegra.ph,✈️ Telegram 优化'
-  - 'DOMAIN-SUFFIX,tdesktop.com,✈️ Telegram 优化'
+
+  # GitHub（⚡ GitHub 加速）
   - 'DOMAIN-SUFFIX,github.com,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,github.io,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,githubusercontent.com,⚡ GitHub 加速'
@@ -562,35 +544,54 @@ rules:
   - 'DOMAIN-SUFFIX,ghcr.io,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,githubcopilot.com,⚡ GitHub 加速'
   - 'DOMAIN-SUFFIX,github-cloud.s3.amazonaws.com,⚡ GitHub 加速'
-  - 'DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'
-  - 'DOMAIN-SUFFIX,overleafusercontent.com,🚀 节点选择'
-  - 'DOMAIN-SUFFIX,sharelatex.com,🚀 节点选择'
-  - 'DOMAIN-SUFFIX,steamcontent.com,DIRECT'
-  - 'DOMAIN-SUFFIX,steamserver.net,DIRECT'
-  - 'DOMAIN-SUFFIX,steampowered.com,🚀 节点选择'
+
+  # Telegram（✈️ Telegram 优化）
+  - 'DOMAIN-SUFFIX,telegram.org,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,telegram.me,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,telegram.dog,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,t.me,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,telegra.ph,✈️ Telegram 优化'
+  - 'DOMAIN-SUFFIX,tdesktop.com,✈️ Telegram 优化'
+  - 'RULE-SET,telegramcidr,✈️ Telegram 优化,no-resolve'
+
+  # CDN / 开发资源（🚀 节点选择）
   - 'DOMAIN-SUFFIX,cloudflare.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,cdnjs.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,jsdelivr.net,🚀 节点选择'
   - 'DOMAIN-SUFFIX,bootstrapcdn.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,fontawesome.com,🚀 节点选择'
   - 'DOMAIN-SUFFIX,fontawesomecdn.com,🚀 节点选择'
-  - 'RULE-SET,telegramcidr,✈️ Telegram 优化,no-resolve'
+  - 'DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'
+  - 'DOMAIN-SUFFIX,overleafusercontent.com,🚀 节点选择'
+  - 'DOMAIN-SUFFIX,sharelatex.com,🚀 节点选择'
+  - 'DOMAIN-SUFFIX,steampowered.com,🚀 节点选择'
+
+  # Steam / 游戏（DIRECT — 国内低延迟）
+  - 'DOMAIN-SUFFIX,steamcontent.com,DIRECT'
+  - 'DOMAIN-SUFFIX,steamserver.net,DIRECT'
+  - 'DOMAIN-SUFFIX,rmbgame.net,DIRECT'
+
+  # 规则集
   - 'RULE-SET,reject,REJECT'
   - 'RULE-SET,private,DIRECT'
   - 'RULE-SET,lancidr,DIRECT,no-resolve'
-  - 'GEOIP,LAN,DIRECT'
-  - 'DOMAIN-SUFFIX,rmbgame.net,DIRECT'
-  - 'DOMAIN-KEYWORD,Microsoft,DIRECT'
-  - 'DOMAIN-SUFFIX,office.com,DIRECT'
-  - 'DOMAIN-SUFFIX,windows.com,DIRECT'
-  - 'DOMAIN-SUFFIX,visualstudio.com,DIRECT'
-  - 'DOMAIN-SUFFIX,vscode-cdn.net,DIRECT'
-  - 'DOMAIN-KEYWORD,vscode,DIRECT'
-  - 'DOMAIN-SUFFIX,nvidia.com,DIRECT'
   - 'RULE-SET,icloud,DIRECT'
   - 'RULE-SET,apple,DIRECT'
   - 'RULE-SET,direct,DIRECT'
   - 'RULE-SET,proxy,🚀 节点选择'
   - 'RULE-SET,cncidr,DIRECT,no-resolve'
+
+  # 国内域名 DIRECT
+  - 'GEOIP,LAN,DIRECT'
+  - 'DOMAIN-KEYWORD,Microsoft,DIRECT'
+  - 'DOMAIN-SUFFIX,office.com,DIRECT'
+  - 'DOMAIN-SUFFIX,visualstudio.com,DIRECT'
+  - 'DOMAIN-SUFFIX,vscode-cdn.net,DIRECT'
+  - 'DOMAIN-KEYWORD,vscode,DIRECT'
+  - 'DOMAIN-SUFFIX,nvidia.com,DIRECT'
+
+  # 中国大陆 IP 直连（最后防线）
   - 'GEOIP,CN,DIRECT'
+
+  # 默认走代理
   - 'MATCH,🚀 节点选择'
