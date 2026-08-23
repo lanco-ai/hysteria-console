@@ -22,6 +22,15 @@ VLESS_BACKUP_PROXY = '🇺🇸 美国 TCP 备用 (VLESS+REALITY)'
 DIRECT_IP_RULE = 'IP-CIDR,47.245.53.96/32,DIRECT,no-resolve'
 NOISY_TIMEOUT_IP_RULE = 'IP-CIDR,192.238.178.243/32,DIRECT,no-resolve'
 DIRECT_IP_RULES = (DIRECT_IP_RULE, NOISY_TIMEOUT_IP_RULE)
+
+# 局域网 / CGNAT CIDR，safe profile 下必须始终保持 DIRECT
+LAN_DIRECT_RULES = (
+    'IP-CIDR,10.0.0.0/8,DIRECT,no-resolve',
+    'IP-CIDR,172.16.0.0/12,DIRECT,no-resolve',
+    'IP-CIDR,192.168.0.0/16,DIRECT,no-resolve',
+    'IP-CIDR,100.64.0.0/10,DIRECT,no-resolve',
+)
+
 USER_CLASH_RULES_KEY = 'clash_rules'
 USER_FAKE_IP_FILTER_KEY = 'clash_fake_ip_filter'
 USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY = 'clash_tun_route_exclude_address'
@@ -395,6 +404,7 @@ def _apply_safe_profile(cfg):
     )
     keep_direct = (
         *DIRECT_IP_RULES,
+        *LAN_DIRECT_RULES,
         'RULE-SET,private,DIRECT',
         'RULE-SET,lancidr,DIRECT',
         'GEOIP,LAN,DIRECT',
