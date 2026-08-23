@@ -290,6 +290,59 @@
     if (actionBtn) { pendingUserAction = actionBtn; return; }
     if (ev.target.closest('[data-dialog-close]')) { ev.preventDefault(); closeEditDialog(); }
   });
+  // === DATE VALIDATION FOR expires_at ===
+  function validateExpiresAtField(el) {
+    if (!el || el.type !== 'date') return true;
+
+    el.setCustomValidity('');
+
+    var val = String(el.value || '').trim();
+    if (!val) return true;
+
+    var invalid =
+      !/^\d{4}-\d{2}-\d{2}$/.test(val) ||
+      el.validity.badInput ||
+      el.validity.rangeUnderflow ||
+      el.validity.rangeOverflow;
+
+    var year = Number(val.slice(0, 4));
+
+    if (
+      invalid ||
+      !isFinite(year) ||
+      year < 2000 ||
+      year > 2099
+    ) {
+      el.setCustomValidity('请输入 2000-01-01 至 2099-12-31 之间的有效日期');
+      return false;
+    }
+
+    return true;
+  }
+
+  function addDateValidationToForms() {
+    document.querySelectorAll(
+      'input[name="expires_at"], input[id*="expires-at"]'
+    ).forEach(function(field) {
+      if (field.dataset.expiryValidationBound === '1') return;
+
+      field.dataset.expiryValidationBound = '1';
+
+      field.addEventListener('input', function() {
+        validateExpiresAtField(this);
+      });
+
+      field.addEventListener('change', function() {
+        validateExpiresAtField(this);
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', addDateValidationToForms);
+  } else {
+    addDateValidationToForms();
+  }
   if (editDialog) editDialog.addEventListener('click', function(ev){
     if (ev.target === editDialog) closeEditDialog();
   });

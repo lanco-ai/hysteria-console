@@ -519,14 +519,28 @@ def revision_matches(cfg, expected):
 
 
 def parse_date_field(raw):
+    """Parse date string to YYYY-MM-DD or '' on error.
+
+    Rules (strict):
+    - '' or None or whitespace → ''
+    - Must be exactly YYYY-MM-DD
+    - year in 2000..2099 inclusive
+    - valid Gregorian date (including 2028-02-29)
+
+    Returns normalized YYYY-MM-DD on success, '' on any failure.
+    """
     raw = str(raw or '').strip()
     if not raw:
         return ''
-    try:
-        datetime.strptime(raw, '%Y-%m-%d')
-    except ValueError:
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}', raw):
         return ''
-    return raw
+    try:
+        parsed = datetime.strptime(raw, '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        return ''
+    if not 2000 <= parsed.year <= 2099:
+        return ''
+    return parsed.isoformat()
 
 
 def parse_note_field(raw):
@@ -4123,7 +4137,7 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
         <div class="form-field"><label for="edit-quota-extra-gb">加量包 GB</label>
           <input id="edit-quota-extra-gb" name="quota_extra_gb" type="number" min="0" max="10240" value="0"></div>
         <div class="form-field"><label for="edit-expires-at">到期日</label>
-          <input id="edit-expires-at" name="expires_at" type="date"></div>
+          <input id="edit-expires-at" name="expires_at" type="date" min="2000-01-01" max="2099-12-31"><span class="hint">留空 = 不限期；年份范围 2000–2099</span></div>
         <div class="form-field" style="grid-column:1/-1"><label for="edit-note">备注</label>
           <input id="edit-note" name="note" maxlength="200" placeholder="可选"></div>
         <div class="form-field"><label for="edit-panel-password">面板密码</label>
@@ -4172,7 +4186,7 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
         <div class="form-field"><label for="create-proxy-password">代理密码</label><input id="create-proxy-password" name="password" type="password" maxlength="256" autocomplete="new-password" placeholder="可选"{validation_attrs('create-proxy-password')}></div>
         <div class="form-field"><label for="create-quota-gb">流量上限 GB</label><input id="create-quota-gb" name="quota_gb" type="number" value="{create_quota_gb}" min="0" max="10240" required{validation_attrs('create-quota-gb')}><span class="hint">0 = 不限</span></div>
         <div class="form-field"><label for="create-quota-extra-gb">加量包 GB</label><input id="create-quota-extra-gb" name="quota_extra_gb" type="number" value="{create_quota_extra_gb}" min="0" max="10240" required{validation_attrs('create-quota-extra-gb')}></div>
-        <div class="form-field"><label for="create-expires-at">到期日</label><input id="create-expires-at" name="expires_at" type="date" value="{create_expires_at}"></div>
+        <div class="form-field"><label for="create-expires-at">到期日</label><input id="create-expires-at" name="expires_at" type="date" value="{create_expires_at}" min="2000-01-01" max="2099-12-31"><span class="hint">留空 = 不限期；年份范围 2000–2099</span></div>
         <div class="form-field" style="grid-column:1/-1"><label for="create-note">备注</label><input id="create-note" name="note" value="{create_note}" maxlength="200" placeholder="可选"></div>
       </div>
       <div class="form-options">
