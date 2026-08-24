@@ -340,6 +340,18 @@ USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
 CODEX_QUOTA_JS_BYTES = (_STATIC_DIR / 'codex_quota.js').read_bytes()
 CODEX_QUOTA_JS_ETAG = '"' + hashlib.sha1(CODEX_QUOTA_JS_BYTES).hexdigest()[:16] + '"'
 
+# Strict whitelist for /static/fonts/*.woff2 — no path traversal, no arbitrary files.
+STATIC_FONT_FILES = {
+    '/static/fonts/inter-var.woff2': (
+        (_STATIC_DIR / 'static' / 'fonts' / 'inter-var.woff2').read_bytes(),
+        'font/woff2',
+    ),
+    '/static/fonts/jetbrains-mono.woff2': (
+        (_STATIC_DIR / 'static' / 'fonts' / 'jetbrains-mono.woff2').read_bytes(),
+        'font/woff2',
+    ),
+}
+
 
 def _etag_matches(raw_header, current_etag):
     """Weakly compare an If-None-Match list with a generated asset ETag."""
@@ -2453,8 +2465,8 @@ def html_page(title, body, body_class=''):
     return (
         f'<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<meta name="color-scheme" content="dark">'
-        f'<meta name="theme-color" content="#07101f">'
+        f'<meta name="color-scheme" content="light">'
+        f'<meta name="theme-color" content="#F8F7F3">'
         f'<title>{html.escape(title)}</title>'
         f'<link rel="stylesheet" href="/static/style.css?v={css_version}">'
         f'</head><body{cls}>{page_body}</body></html>'
@@ -5816,20 +5828,21 @@ class Handler(BaseHTTPRequestHandler):
         if send_body:
             self.wfile.write(data)
 
-    def _serve_static(self, payload_bytes, etag, ctype, send_payload):
+    def _serve_static(self, payload_bytes, etag, ctype, send_payload,
+                       cache_control='public, max-age=86400'):
         """Serve a cacheable static asset with ETag-aware 304 handling."""
         if _etag_matches(self.headers.get('If-None-Match'), etag):
             self.send_response(304)
             self._send_security_headers()
             self.send_header('ETag', etag)
-            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('Cache-Control', cache_control)
             self.end_headers()
             return
         self.send_response(200)
         self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(payload_bytes)))
         self._send_security_headers()
-        self.send_header('Cache-Control', 'public, max-age=86400')
+        self.send_header('Cache-Control', cache_control)
         self.send_header('ETag', etag)
         self.end_headers()
         if send_payload:
@@ -6022,6 +6035,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/static/codex-quota.js':
             self._serve_static(CODEX_QUOTA_JS_BYTES, CODEX_QUOTA_JS_ETAG,
                                'application/javascript; charset=utf-8', send_payload)
+            return
+
+        font_entry = STATIC_FONT_FILES.get(path)
+        if font_entry is not None:
+            font_bytes, font_ctype = font_entry
+            self._serve_static(
+                font_bytes,
+                '"' + hashlib.sha1(font_bytes).hexdigest()[:16] + '"',
+                font_ctype,
+                send_payload,
+                cache_control='public, max-age=31536000, immutable',
+            )
             return
 
         if path == '/':

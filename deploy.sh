@@ -251,7 +251,9 @@ build_durable_artifact_set() {
     admin.css \
     admin_poll.js \
     codex_quota.js \
-    usage.js; do
+    usage.js \
+    static/fonts/inter-var.woff2 \
+    static/fonts/jetbrains-mono.woff2; do
     add_durable_artifact "$HY_DIR/$name"
   done
   add_durable_artifact "$HY_DIR/state/https_required"
@@ -1498,6 +1500,8 @@ for artifact in \
   "$HY_DIR/admin_poll.js" \
   "$HY_DIR/codex_quota.js" \
   "$HY_DIR/usage.js" \
+  "$HY_DIR/static/fonts/inter-var.woff2" \
+  "$HY_DIR/static/fonts/jetbrains-mono.woff2" \
   "$HY_DIR/template.yaml" \
   "$HY_DIR/users.json" \
   "$HY_DIR/subscription_meta.json" \
@@ -1652,6 +1656,16 @@ install_atomic 644 "$REPO_DIR/hysteria/admin.css"      "$HY_DIR/admin.css"
 install_atomic 644 "$REPO_DIR/hysteria/admin_poll.js"  "$HY_DIR/admin_poll.js"
 install_atomic 644 "$REPO_DIR/hysteria/codex_quota.js" "$HY_DIR/codex_quota.js"
 install_atomic 644 "$REPO_DIR/hysteria/usage.js"       "$HY_DIR/usage.js"
+
+# ---- Font assets ----
+install -d -o root -g root -m 755 "$HY_DIR/static/fonts"
+install_atomic 644 \
+  "$REPO_DIR/hysteria/static/fonts/inter-var.woff2" \
+  "$HY_DIR/static/fonts/inter-var.woff2"
+install_atomic 644 \
+  "$REPO_DIR/hysteria/static/fonts/jetbrains-mono.woff2" \
+  "$HY_DIR/static/fonts/jetbrains-mono.woff2"
+
 chmod 700 \
   "$HY_DIR/auth_backend.py" \
   "$HY_DIR/auth_service.py" \
