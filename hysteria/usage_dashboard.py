@@ -634,7 +634,7 @@ def render_usage_page(ctx, host):
     </div>
   </section>
 
-  <details class="admin-section">
+  <details class="admin-section" id="usage-history" data-role="history-details">
     <summary style="padding:14px 20px;cursor:pointer;font-weight:500;color:var(--text-secondary);">历史每日明细（可展开）</summary>
     <div class="admin-section-body" style="padding-top:0;">
       <div class="history-load-host" id="usage-history-host" data-url="/admin/usage-history"

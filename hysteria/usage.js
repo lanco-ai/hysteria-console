@@ -411,7 +411,8 @@
 
   // The 30-day table is large and normally collapsed. Fetch it only after the
   // user opens the section, then keep the loaded fragment for that page visit.
-  var historyDetails = document.getElementById("usage-history");
+  var historyDetails = document.getElementById("usage-history") ||
+      document.querySelector('[data-role="history-details"]');
   var historyHost = document.getElementById("usage-history-host");
   var historyState = "idle";
   function loadHistory() {
@@ -427,7 +428,12 @@
         return r.text();
       })
       .then(function (markup) {
-        historyHost.innerHTML = markup;
+        var stripped = markup.trim();
+        if (!stripped) {
+          historyHost.innerHTML = '<div class="empty history-placeholder">当前范围暂无每日明细</div>';
+        } else {
+          historyHost.innerHTML = markup;
+        }
         historyState = "loaded";
       })
       .catch(function (error) {

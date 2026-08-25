@@ -252,6 +252,7 @@ build_durable_artifact_set() {
     admin_poll.js \
     codex_quota.js \
     usage.js \
+    static/home.js \
     static/fonts/inter-var.woff2 \
     static/fonts/jetbrains-mono.woff2; do
     add_durable_artifact "$HY_DIR/$name"
@@ -1656,6 +1657,7 @@ install_atomic 644 "$REPO_DIR/hysteria/admin.css"      "$HY_DIR/admin.css"
 install_atomic 644 "$REPO_DIR/hysteria/admin_poll.js"  "$HY_DIR/admin_poll.js"
 install_atomic 644 "$REPO_DIR/hysteria/codex_quota.js" "$HY_DIR/codex_quota.js"
 install_atomic 644 "$REPO_DIR/hysteria/usage.js"       "$HY_DIR/usage.js"
+install_atomic 644 "$REPO_DIR/hysteria/static/home.js" "$HY_DIR/static/home.js"
 
 # ---- Font assets ----
 install -d -o root -g root -m 755 "$HY_DIR/static/fonts"

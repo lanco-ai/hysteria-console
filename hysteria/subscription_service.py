@@ -339,6 +339,8 @@ USAGE_JS_BYTES = (_STATIC_DIR / 'usage.js').read_bytes()
 USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
 CODEX_QUOTA_JS_BYTES = (_STATIC_DIR / 'codex_quota.js').read_bytes()
 CODEX_QUOTA_JS_ETAG = '"' + hashlib.sha1(CODEX_QUOTA_JS_BYTES).hexdigest()[:16] + '"'
+HOME_JS_BYTES = (_STATIC_DIR / 'static' / 'home.js').read_bytes()
+HOME_JS_ETAG = '"' + hashlib.sha1(HOME_JS_BYTES).hexdigest()[:16] + '"'
 
 # Strict whitelist for /static/fonts/*.woff2 — no path traversal, no arbitrary files.
 STATIC_FONT_FILES = {
@@ -2847,7 +2849,7 @@ def render_home(host):
           </div>
           <div class="stat-block">
             <span class="stat-block-k">活跃用户</span>
-            <span class="stat-block-v stat-block-mono">24</span>
+            <span class="stat-block-v stat-block-mono" data-count-target="24" data-count-decimals="0" data-count-suffix="">24</span>
           </div>
           <div class="stat-block">
             <span class="stat-block-k">计费周期</span>
@@ -2859,24 +2861,24 @@ def render_home(host):
           <div class="traffic-summary-title">本周流量</div>
           <div class="traffic-row">
             <span class="traffic-row-label">上行</span>
-            <div class="traffic-bar-track"><div class="traffic-bar-fill" style="width: 62%"></div></div>
-            <span class="traffic-row-value">12.4 GB</span>
+            <div class="traffic-bar-track"><div class="traffic-bar-fill" data-target="62" style="width: 62%"></div></div>
+            <span class="traffic-row-value" data-count-target="12.4" data-count-decimals="1" data-count-suffix=" GB">12.4 GB</span>
           </div>
           <div class="traffic-row">
             <span class="traffic-row-label">下行</span>
-            <div class="traffic-bar-track"><div class="traffic-bar-fill" style="width: 85%"></div></div>
-            <span class="traffic-row-value">47.8 GB</span>
+            <div class="traffic-bar-track"><div class="traffic-bar-fill" data-target="85" style="width: 85%"></div></div>
+            <span class="traffic-row-value" data-count-target="47.8" data-count-decimals="1" data-count-suffix=" GB">47.8 GB</span>
           </div>
         </div>
         <div class="console-divider"></div>
         <div class="meta-summary">
           <div class="meta-summary-row">
             <span class="meta-summary-k">在线设备</span>
-            <span class="meta-summary-v">31</span>
+            <span class="meta-summary-v" data-count-target="31" data-count-decimals="0" data-count-suffix="">31</span>
           </div>
           <div class="meta-summary-row">
             <span class="meta-summary-k">规则数量</span>
-            <span class="meta-summary-v">137</span>
+            <span class="meta-summary-v" data-count-target="137" data-count-decimals="0" data-count-suffix="">137</span>
           </div>
         </div>
         <div class="console-divider"></div>
@@ -2904,10 +2906,10 @@ def render_home(host):
               <span class="user-row-badge">按量</span>
             </div>
             <div class="user-row-bar-track">
-              <div class="user-row-bar-fill" style="width: 45%"></div>
+              <div class="user-row-bar-fill" data-target="45" style="width: 45%"></div>
             </div>
             <div class="user-row-meta">
-              <span class="user-row-bytes">56.2 GB</span>
+              <span class="user-row-bytes" data-count-target="56.2" data-count-decimals="1" data-count-suffix=" GB">56.2 GB</span>
             </div>
           </div>
           <div class="user-row">
@@ -2916,10 +2918,10 @@ def render_home(host):
               <span class="user-row-badge">TUIC</span>
             </div>
             <div class="user-row-bar-track">
-              <div class="user-row-bar-fill" style="width: 28%"></div>
+              <div class="user-row-bar-fill" data-target="28" style="width: 28%"></div>
             </div>
             <div class="user-row-meta">
-              <span class="user-row-bytes">35.0 GB</span>
+              <span class="user-row-bytes" data-count-target="35.0" data-count-decimals="1" data-count-suffix=" GB">35.0 GB</span>
             </div>
           </div>
           <div class="user-row">
@@ -2928,10 +2930,10 @@ def render_home(host):
               <span class="user-row-badge">Clash</span>
             </div>
             <div class="user-row-bar-track">
-              <div class="user-row-bar-fill" style="width: 66%"></div>
+              <div class="user-row-bar-fill" data-target="66" style="width: 66%"></div>
             </div>
             <div class="user-row-meta">
-              <span class="user-row-bytes">82.4 GB</span>
+              <span class="user-row-bytes" data-count-target="82.4" data-count-decimals="1" data-count-suffix=" GB">82.4 GB</span>
             </div>
           </div>
         </div>
@@ -2970,7 +2972,8 @@ def render_home(host):
     <div class="home-footer-line"></div>
     <p class="home-footer-copy">Hysteria Network Console · Hysteria 2 · Clash · Sing-box · WireGuard</p>
   </div>
-</footer>'''
+</footer>
+<script src="/static/home.js?v={HOME_JS_ETAG.strip('"')}" defer></script>'''
     return html_page('Hysteria', body, body_class='page-home')
 
 
@@ -3943,7 +3946,9 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
     guest_badge = '<span class="badge badge-info">按量</span>' if metered else ''
     tuic_badge = '<span class="badge">TUIC</span>' if tuic_allowed else '<span class="badge badge-danger">TUIC 关闭</span>'
     disabled = bool(cfg.get('disabled'))
-    disabled_badge = '<span class="badge badge-danger">已停用</span>' if disabled else ''
+    disabled_badge = ('<span class="badge badge-danger" data-role="disabled-badge">已停用</span>'
+                     if disabled else
+                     '<span class="badge badge-danger" data-role="disabled-badge" hidden>已停用</span>')
     guest_preview = ' · 按量' if metered else ''
     quota_preview = '不限' if total <= 0 else f'{base_gb} GB{extra_preview}'
     summary_preview = f'<span class="summary-preview">{quota_preview} · {device_limit_summary}{guest_preview}{expires_preview}</span>'
@@ -3955,6 +3960,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
             f'<button class="btn ghost btn-sm user-action" type="submit" form="user-action-form" '
             f'name="user" value="{user_esc}" data-user="{user_esc}" '
             f'formaction="/admin/toggle-user?{revision_query}&amp;desired=enabled" '
+            'data-action="enable-user" '
             'title="恢复该用户的连接权限">启用</button>'
         )
     else:
@@ -4013,6 +4019,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
   <button class="btn danger-btn btn-sm user-action" type="submit" form="user-action-form" name="user"
           value="{user_esc}" data-user="{user_esc}" formaction="/admin/delete?{revision_query}" data-action="delete-user">删除</button>
 </div>
+<div class="row-error small" style="display:none;color:var(--danger);margin-top:4px;"></div>
 </td>
 <td class="link-cell" headers="users-col-links" data-label="链接">
   <div class="link-row">
@@ -5384,6 +5391,15 @@ def safe_admin_next(raw, default='/admin'):
     return f'{parsed.path}{query}'
 
 
+def _json_request(handler):
+    """True when the client explicitly wants JSON (Accept header or _json=1 query)."""
+    parsed = urlparse(handler.path)
+    if parse_qs(parsed.query, keep_blank_values=True).get('_json'):
+        return True
+    accept = handler.headers.get('Accept') or ''
+    return 'application/json' in accept.lower()
+
+
 def with_flash(target, msg):
     parsed = urlparse(target)
     pairs = [
@@ -5911,6 +5927,28 @@ class Handler(BaseHTTPRequestHandler):
             'text/html; charset=utf-8',
         )
 
+    def _send_toggle_json(self, send_payload, status, username, reason, next_to):
+        """Send a toggle-user result as JSON or redirect based on Accept header."""
+        if _json_request(self):
+            body = json.dumps({
+                'ok': status == 200,
+                'username': username,
+                'reason': reason,
+                'desired': reason if reason in ('disabled', 'enabled') else None,
+            }, ensure_ascii=False)
+            self.send_response_body(status, body, 'application/json; charset=utf-8', send_payload)
+        else:
+            # Fall back to original flash-redirect behaviour for non-JSON clients
+            if status == 200:
+                msg = f'{reason} {username}'
+                self.redirect(with_flash(next_to, msg))
+            elif status == 404:
+                self.redirect(with_flash(next_to, 'user not found'))
+            elif status == 409:
+                self.send_user_state_conflict(next_to)
+            else:
+                self.redirect(with_flash(next_to, f'error {status}'))
+
     def get_admin_actor(self):
         q = parse_query_params(self.path)
         token = (q.get('token') or [''])[0]
@@ -6034,6 +6072,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/static/codex-quota.js':
             self._serve_static(CODEX_QUOTA_JS_BYTES, CODEX_QUOTA_JS_ETAG,
+                               'application/javascript; charset=utf-8', send_payload)
+            return
+
+        if path == '/static/home.js':
+            self._serve_static(HOME_JS_BYTES, HOME_JS_ETAG,
                                'application/javascript; charset=utf-8', send_payload)
             return
 
@@ -7733,26 +7776,34 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/admin/toggle-user':
             if not is_logged_in(self):
-                self.redirect('/login')
+                if _json_request(self):
+                    self.send_response_body(401, '{"ok":false,"reason":"login_required"}',
+                                           'application/json; charset=utf-8', send_payload)
+                else:
+                    self.redirect('/login')
                 return
             username = (form.get('user') or [''])[0].strip()
             next_to = safe_admin_next((form.get('next') or [''])[0])
             desired = (query.get('desired') or [''])[0]
             if desired not in ('disabled', 'enabled'):
-                self.send_response_body(422, '目标用户状态无效')
+                if _json_request(self):
+                    self.send_response_body(422, '{"ok":false,"reason":"invalid_desired"}',
+                                           'application/json; charset=utf-8', send_payload)
+                else:
+                    self.send_response_body(422, '目标用户状态无效')
                 return
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect(with_flash(next_to, 'user not found'))
+                    self._send_toggle_json(send_payload, 404, username, 'user_not_found', next_to)
                     return
                 if not isinstance(users.get(username), dict):
-                    self.redirect(with_flash(next_to, 'user not found'))
+                    self._send_toggle_json(send_payload, 404, username, 'user_not_found', next_to)
                     return
                 if not revision_matches(
                     users.get(username), request_user_revision,
                 ):
-                    self.send_user_state_conflict(next_to)
+                    self._send_toggle_json(send_payload, 409, username, 'conflict', next_to)
                     return
                 disable = desired == 'disabled'
                 users[username]['disabled'] = disable
@@ -7761,8 +7812,7 @@ class Handler(BaseHTTPRequestHandler):
                 xray_changed, tuic_changed = (
                     _sync_static_access_from_users(users)
                 )
-            # Config commits share the user-state lock above. Process reloads,
-            # session I/O, audit logging and network kicks stay outside it.
+            # Config commits share the user-state lock above.
             if disable:
                 delete_user_sessions_for(username)
                 if xray_changed:
@@ -7771,14 +7821,13 @@ class Handler(BaseHTTPRequestHandler):
                     tuic_config.reload_async()
                 hy_kick([username])
                 self.write_reset_log(self.get_admin_actor(), 'disable_user', username, {}, {})
-                self.redirect(with_flash(next_to, 'disabled ' + username))
             else:
                 if xray_changed:
                     xray_config.reload_async()
                 if tuic_changed:
                     tuic_config.reload_async()
                 self.write_reset_log(self.get_admin_actor(), 'enable_user', username, {}, {})
-                self.redirect(with_flash(next_to, 'enabled ' + username))
+            self._send_toggle_json(send_payload, 200, username, desired, next_to)
             return
 
         if path == '/admin/reset-usage-all':

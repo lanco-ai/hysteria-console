@@ -239,108 +239,170 @@ def render_cost_calibrator(ctx, now=None):
     )
     policy = cost_calibrator.load_auto_policy(ctx.multiplier_auto_policy_file)
     runtime_state = ctx.load_json(ctx.display_multiplier_state_file, {})
-    confidence = _CALIBRATION_CONFIDENCE_LABELS.get(summary['confidence'], summary['confidence'])
+    confidence_key = summary['confidence']
+    confidence_label = _CALIBRATION_CONFIDENCE_LABELS.get(confidence_key, confidence_key)
     delta = summary.get('delta_percent')
-    delta_text = '—' if delta is None else f'{delta:+.1f}%'
-    iface_text = ', '.join(summary.get('ifaces') or []) or '未识别'
-    advice = '样本不足，先观察一段时间'
-    apply_form = ''
-    if summary['confidence'] in ('medium', 'high') and summary.get('suggested_multiplier') is not None:
-        advice = '可应用为运行时倍率'
-        apply_form = (
+    suggested = summary.get('suggested_multiplier')
+    current_mult = summary.get('current_multiplier')
+
+    if delta is None:
+        delta_text = '—'
+        delta_cls = ''
+    elif delta < 0:
+        delta_text = f'↓ {abs(delta):.1f}%'
+        delta_cls = 'delta-down'
+    else:
+        delta_text = f'↑ {delta:.1f}%'
+        delta_cls = 'delta-up'
+
+    conf_cls = 'badge-ok' if confidence_key == 'high' else ('badge-warn' if confidence_key == 'low' else 'badge')
+    conf_html = f'<span class="badge {conf_cls}">{html.escape(confidence_label)}</span>'
+
+    can_apply = confidence_key in ('medium', 'high') and suggested is not None
+    if can_apply:
+        apply_html = (
             '<form method="post" action="/admin/cost-multiplier/apply" class="inline-form-row" '
             'data-confirm="应用建议倍率会修改运行时流量倍率并重启面板服务，确认继续？">'
             '<button class="btn danger-btn btn-sm" type="submit">应用建议倍率</button>'
             '</form>'
         )
-    window_rows = ''.join(
-        '<tr>'
-        f'<td style="padding-left:18px;">{int(w["window_hours"])}h</td>'
-        f'<td>{_fmt_optional_multiplier(w["suggested_multiplier"])}</td>'
-        f'<td>{_fmt_optional_multiplier(w["egress_multiplier"])}</td>'
-        f'<td>{ctx.fmt_bytes(w["app_raw_bytes"])}</td>'
-        f'<td>{w["included_sample_count"]}/{w["sample_count"]}</td>'
-        f'<td style="padding-right:18px;">{html.escape(_CALIBRATION_CONFIDENCE_LABELS.get(w["confidence"], w["confidence"]))}</td>'
-        '</tr>'
-        for w in windows
+    else:
+        apply_html = ''
+
+    active_window = summary.get('window_hours')
+    window_rows = []
+    for w in windows:
+        is_active = int(w.get('window_hours', 0)) == active_window
+        wconf_key = w.get('confidence', 'none')
+        wconf_cls = 'badge-ok' if wconf_key == 'high' else ('badge-warn' if wconf_key == 'low' else 'badge')
+        wconf_html = f'<span class="badge {wconf_cls}">{html.escape(_CALIBRATION_CONFIDENCE_LABELS.get(wconf_key, wconf_key))}</span>'
+        window_rows.append((
+            is_active,
+            f'<tr{" class=calibrator-active-row" if is_active else ""}>'
+            f'<td style="padding-left:18px;">{int(w["window_hours"])}h</td>'
+            f'<td class=num>{_fmt_optional_multiplier(w["suggested_multiplier"])}</td>'
+            f'<td class=num>{_fmt_optional_multiplier(w["egress_multiplier"])}</td>'
+            f'<td class=num>{ctx.fmt_bytes(w["app_raw_bytes"])}</td>'
+            f'<td class=num>{w["included_sample_count"]}/{w["sample_count"]}</td>'
+            f'<td style="padding-right:18px;">{wconf_html}</td>'
+            f'</tr>'
+        ))
+    window_rows_html = ''.join(row for _is_active, row in sorted(window_rows))
+
+    iface_text = ', '.join(summary.get('ifaces') or []) or '未识别'
+    last_sample_time = summary.get('last_sample_at', '—')
+    sampling_details = (
+        '<details class="calibrator-details">'
+        '<summary>采样与计算明细</summary>'
+        '<div class="calibrator-dl">'
+        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>App 原始流量</span><span class=calibrator-dl-v>{ctx.fmt_bytes(summary["app_raw_bytes"])}</span></div>'
+        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>系统总流量</span><span class=calibrator-dl-v>{ctx.fmt_bytes(summary["net_total_bytes"])}</span></div>'
+        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>系统出站参考</span><span class=calibrator-dl-v>{_fmt_optional_multiplier(summary["egress_multiplier"])}</span></div>'
+        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>公网网卡</span><span class=calibrator-dl-v>{html.escape(iface_text)}</span></div>'
+        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>最后采样</span><span class=calibrator-dl-v>{html.escape(str(last_sample_time))}</span></div>'
+        '<div class="calibrator-dl-row"><span class=calibrator-dl-k>方法</span><span class=calibrator-dl-v>小样本过滤 + 10% 截尾加权平均</span></div>'
+        '</div>'
+        '</details>'
     )
-    checked = 'checked' if policy.get('enabled') else ''
-    mode_total = 'selected' if policy.get('mode') == 'total' else ''
-    mode_egress = 'selected' if policy.get('mode') == 'egress' else ''
+
+    auto_enabled = bool(policy.get('enabled'))
+    checked_attr = ' checked' if auto_enabled else ''
+    disabled_attr = ' disabled' if not auto_enabled else ''
+    mode_total_sel = 'selected' if policy.get('mode') == 'total' else ''
+    mode_egress_sel = 'selected' if policy.get('mode') == 'egress' else ''
     conf_opts = ''.join(
-        f'<option value="{key}" {"selected" if policy.get("min_confidence") == key else ""}>{label}</option>'
-        for key, label in (('medium', '中'), ('high', '高'))
+        f'<option value="{k}" {"selected" if policy.get("min_confidence") == k else ""}>{l}</option>'
+        for k, l in (('medium', '中'), ('high', '高'))
     )
-    last_state = ''
-    if runtime_state.get('multiplier'):
-        source = '自动' if runtime_state.get('auto') else '手动'
-        last_state = (
-            f'<div class="small faint">当前运行时覆盖：{_fmt_optional_multiplier(runtime_state.get("multiplier"))}'
-            f' · {html.escape(source)} · {html.escape(str(runtime_state.get("applied_at") or ""))}</div>'
-        )
-    last_policy = ''
     if policy.get('last_checked_at'):
-        last_policy = (
-            f'<div class="small faint">自动检查：{html.escape(str(policy.get("last_decision") or ""))}'
-            f' / {html.escape(str(policy.get("last_reason") or ""))}'
-            f' · {html.escape(str(policy.get("last_checked_at") or ""))}</div>'
+        last_policy_html = (
+            '<div class="calibrator-last-check">'
+            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>上次评估</span><span class=calibrator-dl-v>{html.escape(str(policy.get("last_checked_at") or ""))}</span></div>'
+            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>评估结果</span><span class=calibrator-dl-v>{html.escape(str(policy.get("last_decision") or ""))}</span></div>'
+            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>原因</span><span class=calibrator-dl-v>{html.escape(str(policy.get("last_reason") or ""))}</span></div>'
+            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>上次应用</span><span class=calibrator-dl-v>{html.escape(str(runtime_state.get("applied_at") or ""))}</span></div>'
+            '</div>'
         )
-    rows = (
-        '<tr><th style="padding-left:18px;">当前倍率</th>'
-        f'<td>{_fmt_optional_multiplier(summary["current_multiplier"])}</td>'
-        '<th>建议倍率</th>'
-        f'<td>{_fmt_optional_multiplier(summary["suggested_multiplier"])}</td>'
-        '<th>相对当前</th>'
-        f'<td style="padding-right:18px;">{delta_text}</td></tr>'
-        '<tr><th style="padding-left:18px;">App 原始流量</th>'
-        f'<td>{ctx.fmt_bytes(summary["app_raw_bytes"])}</td>'
-        '<th>系统总流量</th>'
-        f'<td>{ctx.fmt_bytes(summary["net_total_bytes"])}</td>'
-        '<th>系统出站参考</th>'
-        f'<td style="padding-right:18px;">{_fmt_optional_multiplier(summary["egress_multiplier"])}</td></tr>'
-        '<tr><th style="padding-left:18px;">样本</th>'
-        f'<td>{summary["included_sample_count"]}/{summary["sample_count"]} 个</td>'
-        '<th>置信度</th>'
-        f'<td>{html.escape(confidence)}</td>'
-        '<th>公网网卡</th>'
-        f'<td style="padding-right:18px;">{html.escape(iface_text)}</td></tr>'
-    )
-    return (
-        '<section class="admin-section health-calibrator-section">'
-        '<div class="admin-section-header">'
-        '<div>'
-        '<h2 class="admin-section-title">成本校准器</h2>'
-        f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div>'
-        '</div>'
-        f'<div class="row gap-sm"><div class="badge">{html.escape(advice)}</div>{apply_form}</div>'
-        '</div>'
-        '<div class="admin-section-body no-pad">'
-        '<div class="data-table-wrap" tabindex="0" aria-label="成本校准数据，可横向滚动">'
-        '<table class="data-table"><tbody>' + rows + '</tbody></table>'
-        '<table class="data-table"><thead><tr><th>窗口</th><th>总量建议</th><th>出站建议</th><th>纳入流量</th><th>样本</th><th>置信度</th></tr></thead>'
-        f'<tbody>{window_rows}</tbody></table>'
-        '</div>'
-        '<div class="calibrator-form">'
+    elif runtime_state.get('applied_at'):
+        last_policy_html = (
+            '<div class="calibrator-last-check">'
+            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>上次应用</span><span class=calibrator-dl-v>{html.escape(str(runtime_state.get("applied_at") or ""))}</span></div>'
+            '</div>'
+        )
+    else:
+        last_policy_html = ''
+
+    parts = []
+    parts.append('<section class="admin-section health-calibrator-section">')
+    parts.append('<div class="admin-section-header">')
+    parts.append('<div>')
+    parts.append('<h2 class="admin-section-title">成本校准器</h2>')
+    parts.append(f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div>')
+    parts.append('</div>')
+    parts.append(f'<div class="row gap-sm">{conf_html}{apply_html}</div>')
+    parts.append('</div>')
+    parts.append('<div class="admin-section-body no-pad">')
+
+    # Section 1: Decision bar
+    parts.append('<div class="calibrator-decision-bar">')
+    parts.append('<div class="calibrator-multiple">')
+    parts.append('<div class="calibrator-multiple-label">当前倍率</div>')
+    parts.append(f'<div class="calibrator-multiple-value">{_fmt_optional_multiplier(current_mult)}</div>')
+    parts.append('</div>')
+    parts.append('<div class="calibrator-arrow">→</div>')
+    parts.append('<div class="calibrator-multiple">')
+    parts.append('<div class="calibrator-multiple-label">建议倍率</div>')
+    parts.append(f'<div class="calibrator-multiple-value">{_fmt_optional_multiplier(suggested)}</div>')
+    parts.append('</div>')
+    parts.append(f'<div class="calibrator-delta {delta_cls}">{delta_text}</div>')
+    parts.append(f'<div class="calibrator-confidence">{conf_html}</div>')
+    parts.append('</div>')
+
+    # Section 2: Window table
+    parts.append('<div class="data-table-wrap" tabindex="0" aria-label="多窗口倍率对比，可横向滚动">')
+    parts.append('<table class="data-table">')
+    parts.append('<thead><tr><th>窗口</th><th>总量建议</th><th>出站建议</th><th>纳入流量</th><th>样本</th><th>置信度</th></tr></thead>')
+    parts.append(f'<tbody>{window_rows_html}</tbody>')
+    parts.append('</table>')
+    parts.append('</div>')
+
+    # Section 3: Sampling details
+    parts.append(sampling_details)
+
+    # Section 4: Auto policy
+    parts.append('<div class="calibrator-auto">')
+    parts.append('<div class="calibrator-auto-header">')
+    parts.append('<label class="calibrator-auto-toggle">')
+    parts.append(f'<input type="checkbox" id="calibrator-auto-enabled" name="enabled"{checked_attr}>')
+    parts.append('自动调倍率')
+    parts.append('</label>')
+    parts.append('</div>')
+    parts.append(
         '<form method="post" action="/admin/cost-multiplier/auto" class="inline-form" '
         'data-confirm="保存后，启用的自动策略可在满足条件时修改运行时倍率并重启面板服务，确认继续？">'
-        '<div class="grid grid-3">'
-        f'<label class="switch"><input type="checkbox" name="enabled" {checked}>自动调倍率</label>'
-        '<div><label for="multiplier-auto-mode">依据</label><select id="multiplier-auto-mode" name="mode">'
-        f'<option value="total" {mode_total}>公网 RX+TX 总量</option>'
-        f'<option value="egress" {mode_egress}>公网 TX 出站</option>'
-        '</select></div>'
-        f'<div><label for="multiplier-auto-confidence">最低置信度</label><select id="multiplier-auto-confidence" name="min_confidence">{conf_opts}</select></div>'
-        f'<div><label for="multiplier-auto-max-delta">最大单次变化 (%)</label><input id="multiplier-auto-max-delta" name="max_delta_percent" type="number" min="1" max="100" value="{float(policy["max_delta_percent"]):.0f}"></div>'
-        f'<div><label for="multiplier-auto-min-delta">最小变化 (%)</label><input id="multiplier-auto-min-delta" name="min_delta_percent" type="number" min="0" max="50" value="{float(policy["min_delta_percent"]):.0f}"></div>'
-        f'<div><label for="multiplier-auto-cooldown">冷却时间 (小时)</label><input id="multiplier-auto-cooldown" name="cooldown_hours" type="number" min="1" max="168" value="{float(policy["cooldown_hours"]):.0f}"></div>'
-        '</div>'
-        '<button class="btn secondary btn-sm" type="submit">保存自动策略</button>'
-        '</form>'
-        f'{last_state}{last_policy}'
-        '<div class="small faint">'
-        '建议倍率使用小样本过滤 + 10% 截尾加权平均；自动模式默认关闭，启用后仍受置信度、单次变化和冷却时间限制。'
-        '</div>'
-        '</div>'
-        '</div>'
-        '</section>'
     )
+    parts.append(f'<fieldset class="calibrator-auto-fields"{disabled_attr}>')
+    parts.append('<div class="grid grid-3">')
+    parts.append('<div><label for="multiplier-auto-mode">依据</label>')
+    parts.append(f'<select id="multiplier-auto-mode" name="mode">')
+    parts.append(f'<option value="total"{mode_total_sel}>公网 RX+TX 总量</option>')
+    parts.append(f'<option value="egress"{mode_egress_sel}>公网 TX 出站</option>')
+    parts.append('</select></div>')
+    parts.append('<div><label for="multiplier-auto-confidence">最低置信度</label>')
+    parts.append(f'<select id="multiplier-auto-confidence" name="min_confidence">{conf_opts}</select></div>')
+    parts.append(f'<div><label for="multiplier-auto-max-delta">最大单次变化 (%)</label>')
+    parts.append(f'<input id="multiplier-auto-max-delta" name="max_delta_percent" type="number" min="1" max="100" value="{float(policy["max_delta_percent"]):.0f}"></div>')
+    parts.append(f'<div><label for="multiplier-auto-min-delta">最小变化 (%)</label>')
+    parts.append(f'<input id="multiplier-auto-min-delta" name="min_delta_percent" type="number" min="0" max="50" value="{float(policy["min_delta_percent"]):.0f}"></div>')
+    parts.append(f'<div><label for="multiplier-auto-cooldown">冷却时间 (小时)</label>')
+    parts.append(f'<input id="multiplier-auto-cooldown" name="cooldown_hours" type="number" min="1" max="168" value="{float(policy["cooldown_hours"]):.0f}"></div>')
+    parts.append('</div>')
+    parts.append('</fieldset>')
+    parts.append('<button class="btn secondary btn-sm" type="submit">保存自动策略</button>')
+    parts.append('</form>')
+    parts.append(last_policy_html)
+    parts.append('<div class="small faint">建议倍率使用小样本过滤 + 10% 截尾加权平均；自动模式默认关闭，启用后仍受置信度、单次变化和冷却时间限制。</div>')
+    parts.append('</div>')
+    parts.append('</div>')
+    parts.append('</section>')
+    return ''.join(parts)

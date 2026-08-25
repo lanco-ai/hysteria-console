@@ -168,26 +168,8 @@
       if (d.total_used !== lastTotal) { setText(totalEl, fmt(d.total_used)); lastTotal = d.total_used; }
       var statusChanged = false;
       (d.users||[]).forEach(function(u){
-        var row = index.get(u.user);
-        if (!row) return;
-        if (u.online !== row.lastOnline) { setText(row.online, String(u.online)); row.lastOnline = u.online; }
-        if (u.online !== row.online_n) { row.online_n = u.online; statusChanged = true; }
-        if (u.used !== row.lastUsed) { setText(row.used, fmt(u.used)); row.lastUsed = u.used; }
-        var unlimited = Number(u.total) <= 0;
-        if (u.percent !== row.lastPercent || unlimited !== row.lastUnlimited) {
-          setStyle(row.bar, 'width', unlimited ? '0%' : u.percent.toFixed(1)+'%');
-          setClass(row.bar, 'danger', !unlimited && u.percent >= 90);
-          setClass(row.bar, 'unlimited', unlimited);
-          if (row.bar) {
-            row.bar.setAttribute('aria-valuenow', unlimited ? '0' : u.percent.toFixed(1));
-            row.bar.setAttribute('aria-valuetext', unlimited ? '不限' : u.percent.toFixed(1)+'%');
-          }
-          setText(row.detail, (unlimited ? '不限' : u.percent.toFixed(1)+'%')+' · ↑'+fmt(u.tx)+' ↓'+fmt(u.rx));
-          row.lastPercent = u.percent;
-          row.percent_n = unlimited ? 0 : u.percent;
-          row.lastUnlimited = unlimited;
-          statusChanged = true;
-        }
+        var changed = patchUserRow(u);
+        if (changed) statusChanged = true;
       });
       // Re-apply filter if any status-relevant field changed (and a status
       // chip is active, so the membership might shift).
@@ -237,7 +219,6 @@
   var editForm = document.getElementById('user-edit-form');
   var editTitle = document.getElementById('user-edit-title');
   var editTrigger = null;
-  var pendingUserAction = null;
   function closeEditDialog(){
     if (!editDialog) return;
     if (typeof editDialog.close === 'function' && editDialog.open) editDialog.close();
@@ -286,8 +267,6 @@
   document.addEventListener('click', function(ev){
     var editBtn = ev.target.closest('.edit-user');
     if (editBtn) { ev.preventDefault(); openEditDialog(editBtn); return; }
-    var actionBtn = ev.target.closest('.user-action');
-    if (actionBtn) { pendingUserAction = actionBtn; return; }
     if (ev.target.closest('[data-dialog-close]')) { ev.preventDefault(); closeEditDialog(); }
   });
   // === DATE VALIDATION FOR expires_at ===
@@ -351,16 +330,251 @@
     closeEditDialog();
   });
 
+  // Patch a single user row from a fresh overview payload.
+  // Fully self-contained: reads current DOM state and overview payload only,
+  // never references variables from the calling scope.
+  // Returns false if the row is not in the index (page may have removed it).
+  function patchUserRow(u) {
+    var row = index.get(u.user);
+    if (!row) return false;
+    var changed = false;
+    var allBtns = row.tr.querySelectorAll('.user-action');
+
+    // --- revision sync (all action buttons including toggle) ---
+    if (u.revision && u.revision !== row.tr.dataset.revision) {
+      row.tr.dataset.revision = u.revision;
+      allBtns.forEach(function (btn) {
+        var fa = btn.getAttribute('formaction');
+        if (!fa) return;
+        try {
+          var url = new URL(fa, window.location.href);
+          url.searchParams.set('revision', u.revision);
+          btn.setAttribute('formaction', url.toString());
+        } catch (_) {}
+      });
+      changed = true;
+    }
+
+    // --- edit button data-user-revision ---
+    var editBtn = row.tr.querySelector('.edit-user');
+    if (editBtn && editBtn.dataset.userRevision !== String(u.revision || '')) {
+      editBtn.dataset.userRevision = String(u.revision || '');
+      changed = true;
+    }
+
+    // --- toggle button + disabled badge (always sync from server state) ---
+    var isDisabled = !!u.disabled;
+    allBtns.forEach(function (btn) {
+      var act = btn.dataset.action;
+      if (act !== 'enable-user' && act !== 'disable-user') return;
+      if (isDisabled) {
+        if (btn.textContent !== '启用') { btn.textContent = '启用'; changed = true; }
+        if (act !== 'enable-user') { btn.dataset.action = 'enable-user'; changed = true; }
+        if (btn.title !== '恢复该用户的连接权限') { btn.title = '恢复该用户的连接权限'; }
+        try {
+          var url2 = new URL(btn.getAttribute('formaction') || '', window.location.href);
+          url2.searchParams.set('desired', 'enabled');
+          btn.setAttribute('formaction', url2.toString());
+        } catch (_) {}
+      } else {
+        if (btn.textContent !== '暂停') { btn.textContent = '暂停'; changed = true; }
+        if (act !== 'disable-user') { btn.dataset.action = 'disable-user'; changed = true; }
+        if (btn.title !== '临时停用：拒绝新连接并断开现有会话，不删除用户') {
+          btn.title = '临时停用：拒绝新连接并断开现有会话，不删除用户';
+        }
+        try {
+          var url3 = new URL(btn.getAttribute('formaction') || '', window.location.href);
+          url3.searchParams.set('desired', 'disabled');
+          btn.setAttribute('formaction', url3.toString());
+        } catch (_) {}
+      }
+    });
+
+    var badge = row.tr.querySelector('[data-role="disabled-badge"]');
+    if (badge) {
+      var shouldShow = !!u.disabled;
+      var isHidden = badge.hasAttribute('hidden');
+      if (shouldShow && isHidden) { badge.removeAttribute('hidden'); changed = true; }
+      if (!shouldShow && !isHidden) { badge.setAttribute('hidden', ''); changed = true; }
+    }
+
+    // --- online / used / bar / detail ---
+    var online_n = Number(u.online) || 0;
+    if (u.online !== row.lastOnline) { setText(row.online, String(u.online)); row.lastOnline = u.online; changed = true; }
+    if (online_n !== row.online_n) { row.online_n = online_n; changed = true; }
+    if (u.used !== row.lastUsed) { setText(row.used, fmt(u.used)); row.lastUsed = u.used; changed = true; }
+    var unlimited = Number(u.total) <= 0;
+    if (u.percent !== row.lastPercent || unlimited !== row.lastUnlimited) {
+      setStyle(row.bar, 'width', unlimited ? '0%' : u.percent.toFixed(1) + '%');
+      setClass(row.bar, 'danger', !unlimited && u.percent >= 90);
+      setClass(row.bar, 'unlimited', unlimited);
+      if (row.bar) {
+        row.bar.setAttribute('aria-valuenow', unlimited ? '0' : u.percent.toFixed(1));
+        row.bar.setAttribute('aria-valuetext', unlimited ? '不限' : u.percent.toFixed(1) + '%');
+      }
+      setText(row.detail, (unlimited ? '不限' : u.percent.toFixed(1) + '%') + ' · ↑' + fmt(u.tx) + ' ↓' + fmt(u.rx));
+      row.lastPercent = u.percent;
+      row.percent_n = unlimited ? 0 : u.percent;
+      row.lastUnlimited = unlimited;
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  // Refresh a single user row via the overview JSON endpoint.
+  // expectedDisabled: if provided, the expected disabled state after the toggle;
+  //   the promise rejects with 'state_mismatch' if the server state differs.
+  // Rejects with 'user_not_found_after_toggle' if the user is absent from the overview.
+  function refreshUserRow(username, expectedDisabled) {
+    return fetchWithTimeout('/admin/overview.json', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) {
+        if (r.status === 401) {
+          stop();
+          setPollStatus('登录已失效 · 点此登录', 'is-error');
+          announce('登录已失效，请重新登录');
+          if (pollStatus) pollStatus.dataset.action = 'login';
+          return null;
+        }
+        if (!r.ok) throw new Error('overview ' + r.status);
+        return r.json();
+      })
+      .then(function (d) {
+        if (!d) { throw new Error('overview_fetch_aborted'); }
+        var user = (d.users || []).find(function (u) { return u.user === username; });
+        if (!user) { throw new Error('user_not_found_after_toggle'); }
+        var row = index.get(username);
+        if (!row) { throw new Error('user_row_not_found_after_toggle'); }
+        patchUserRow(user);
+        var newTotal = Number(d.total_used) || 0;
+        if (totalEl && newTotal !== lastTotal) { setText(totalEl, fmt(newTotal)); lastTotal = newTotal; }
+        if (expectedDisabled !== undefined) {
+          var actualDisabled = !!user.disabled;
+          if (actualDisabled !== expectedDisabled) {
+            throw new Error('state_mismatch');
+          }
+        }
+      });
+  }
+
+  // Global single-flight: one toggle at a time across all users.
+  var pendingToggle = null;
+
+  // Unified cleanup — single definition point.
+  function releaseToggle() {
+    pendingToggle = null;
+  }
+
   document.addEventListener('submit', function(ev){
-    var f=ev.target;
-    if(!f || f.tagName!=='FORM') return;
-    var submitter=ev.submitter || pendingUserAction;
-    pendingUserAction=null;
-    var row=f.closest('tr');
-    var name=(submitter && (submitter.dataset.user || submitter.value)) ||
-      f.dataset.user || (row && row.dataset.user) || '';
-    var action=(submitter && submitter.dataset.action) || f.dataset.action || '';
-    if(!confirmAdminAction(action, name)) ev.preventDefault();
+    var f = ev.target;
+    if (!f || f.tagName !== 'FORM') return;
+    var name = f.dataset.user || '';
+    var action = '';
+    var submitter = ev.submitter || f.__pendingSubmitter || null;
+    f.__pendingSubmitter = null;  // consume and clear — no stale write
+    if (submitter) {
+      action = submitter.dataset.action || '';
+      name = name || submitter.dataset.user || submitter.value || '';
+    }
+
+    // AJAX: enable-user / disable-user only
+    if (submitter && (action === 'enable-user' || action === 'disable-user')) {
+      ev.preventDefault();
+
+      // Global single-flight
+      if (pendingToggle !== null) return;
+      pendingToggle = name;
+
+      // Confirm (especially important for disable)
+      if (!confirmAdminAction(action, name)) { releaseToggle(); return; }
+
+      // Build AJAX URL with _json=1 via URL API
+      var actionUrl = submitter.getAttribute('formaction') || f.action || '';
+      var ajaxUrl;
+      try {
+        ajaxUrl = new URL(actionUrl, window.location.href);
+        ajaxUrl.searchParams.set('_json', '1');
+        ajaxUrl = ajaxUrl.toString();
+      } catch (_) {
+        ajaxUrl = actionUrl + '&_json=1';
+      }
+
+      // Build POST body — preserve all existing form fields
+      var body;
+      if (typeof FormData !== 'undefined') {
+        body = new FormData(f);
+        body.set('user', name);
+      } else {
+        body = new URLSearchParams({ user: name });
+      }
+
+      var row = submitter.closest('tr');
+      var btns = row ? row.querySelectorAll('.user-action') : [];
+      for (var _i = 0; _i < btns.length; _i++) btns[_i].disabled = true;
+      var originalLabel = submitter.textContent;
+      submitter.textContent = '处理中…';
+      if (row) row.setAttribute('aria-busy', 'true');
+      var errEl = row && row.querySelector('.row-error');
+      if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+
+      // Always try to parse JSON regardless of HTTP status, then decide.
+      fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+        .then(function (r) {
+          return r.json().catch(function () { return null; }).then(function (data) {
+            return { ok: r.ok, status: r.status, data: data };
+          });
+        })
+        .then(function (result) {
+          var ok = result.ok;
+          var data = result.data;
+          if (!ok || !data || !data.ok) {
+            var reason = (data && data.reason) ? String(data.reason) : null;
+            var displayMsg;
+            if      (reason === 'login_required')          displayMsg = '登录已失效，请重新登录';
+            else if (reason === 'conflict')                displayMsg = '用户状态已变化，请刷新后重试';
+            else if (reason === 'user_not_found')         displayMsg = '用户不存在';
+            else if (reason === 'invalid_desired')        displayMsg = '请求状态无效';
+            else if (reason === 'state_mismatch')         displayMsg = '状态同步未完成，请稍后重试';
+            else if (reason === 'user_not_found_after_toggle') displayMsg = '用户状态刷新失败，请刷新页面';
+            else if (reason === 'user_row_not_found_after_toggle') displayMsg = '当前用户行已变化，请刷新页面';
+            else                                          displayMsg = '操作失败，请重试';
+            if (errEl) { errEl.textContent = displayMsg; errEl.style.display = ''; }
+            throw new Error(reason || 'unknown');
+          }
+          // Server confirmed success; verify server state matches expected
+          var expectedDisabled = (data.desired === 'disabled');
+          return refreshUserRow(name, expectedDisabled);
+        })
+        .then(function () {
+          // Success: row is already patched — only restore disabled/aria
+          for (var _r = 0; _r < btns.length; _r++) btns[_r].disabled = false;
+          if (row) row.setAttribute('aria-busy', 'false');
+          releaseToggle();
+        })
+        .catch(function (err) {
+          // Failure: restore all buttons, keep errEl message as-is
+          for (var _c = 0; _c < btns.length; _c++) btns[_c].disabled = false;
+          submitter.textContent = originalLabel;
+          if (row) row.setAttribute('aria-busy', 'false');
+          releaseToggle();
+          // Known error types already have visible errEl
+          if (err && err.message &&
+              err.message.indexOf('state_mismatch') === -1 &&
+              err.message.indexOf('user_not_found_after_toggle') === -1 &&
+              err.message.indexOf('user_row_not_found_after_toggle') === -1 &&
+              err.message.indexOf('login_required') === -1 &&
+              err.message.indexOf('conflict') === -1 &&
+              err.message.indexOf('user_not_found') === -1 &&
+              err.message.indexOf('invalid_desired') === -1) {
+            if (errEl) { errEl.textContent = '操作失败，请重试'; errEl.style.display = ''; }
+          }
+          if (window.console && console.warn) console.warn('toggle failed:', err && err.message);
+        });
+      return;
+    }
+
+    // Non-AJAX: confirmation only
+    if (!confirmAdminAction(action, name)) ev.preventDefault();
   });
 
   document.addEventListener('click', function(ev){
@@ -387,4 +601,13 @@
       }, 1200);
     }).catch(manualCopy);
   });
+
+  // Cost calibrator: toggle fieldset disabled state with checkbox
+  var calibratorToggle = document.getElementById('calibrator-auto-enabled');
+  if (calibratorToggle) {
+    calibratorToggle.addEventListener('change', function() {
+      var fieldset = document.querySelector('.calibrator-auto-fields');
+      if (fieldset) fieldset.disabled = !calibratorToggle.checked;
+    });
+  }
 })();
