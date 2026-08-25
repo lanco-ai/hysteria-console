@@ -5927,7 +5927,7 @@ class Handler(BaseHTTPRequestHandler):
             'text/html; charset=utf-8',
         )
 
-    def _send_toggle_json(self, send_payload, status, username, reason, next_to):
+    def _send_toggle_json(self, status, username, reason, next_to):
         """Send a toggle-user result as JSON or redirect based on Accept header."""
         if _json_request(self):
             body = json.dumps({
@@ -5936,7 +5936,7 @@ class Handler(BaseHTTPRequestHandler):
                 'reason': reason,
                 'desired': reason if reason in ('disabled', 'enabled') else None,
             }, ensure_ascii=False)
-            self.send_response_body(status, body, 'application/json; charset=utf-8', send_payload)
+            self.send_response_body(status, body, 'application/json; charset=utf-8')
         else:
             # Fall back to original flash-redirect behaviour for non-JSON clients
             if status == 200:
@@ -7778,7 +7778,7 @@ class Handler(BaseHTTPRequestHandler):
             if not is_logged_in(self):
                 if _json_request(self):
                     self.send_response_body(401, '{"ok":false,"reason":"login_required"}',
-                                           'application/json; charset=utf-8', send_payload)
+                                           'application/json; charset=utf-8')
                 else:
                     self.redirect('/login')
                 return
@@ -7788,22 +7788,22 @@ class Handler(BaseHTTPRequestHandler):
             if desired not in ('disabled', 'enabled'):
                 if _json_request(self):
                     self.send_response_body(422, '{"ok":false,"reason":"invalid_desired"}',
-                                           'application/json; charset=utf-8', send_payload)
+                                           'application/json; charset=utf-8')
                 else:
                     self.send_response_body(422, '目标用户状态无效')
                 return
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self._send_toggle_json(send_payload, 404, username, 'user_not_found', next_to)
+                    self._send_toggle_json(404, username, 'user_not_found', next_to)
                     return
                 if not isinstance(users.get(username), dict):
-                    self._send_toggle_json(send_payload, 404, username, 'user_not_found', next_to)
+                    self._send_toggle_json(404, username, 'user_not_found', next_to)
                     return
                 if not revision_matches(
                     users.get(username), request_user_revision,
                 ):
-                    self._send_toggle_json(send_payload, 409, username, 'conflict', next_to)
+                    self._send_toggle_json(409, username, 'conflict', next_to)
                     return
                 disable = desired == 'disabled'
                 users[username]['disabled'] = disable
@@ -7827,7 +7827,7 @@ class Handler(BaseHTTPRequestHandler):
                 if tuic_changed:
                     tuic_config.reload_async()
                 self.write_reset_log(self.get_admin_actor(), 'enable_user', username, {}, {})
-            self._send_toggle_json(send_payload, 200, username, desired, next_to)
+            self._send_toggle_json(200, username, desired, next_to)
             return
 
         if path == '/admin/reset-usage-all':

@@ -499,14 +499,16 @@
         ajaxUrl = actionUrl + '&_json=1';
       }
 
-      // Build POST body — preserve all existing form fields
-      var body;
+      // Build POST body as URLSearchParams so the server accepts it.
+      // http_utils.parse_form() only handles application/x-www-form-urlencoded.
+      var body = new URLSearchParams();
       if (typeof FormData !== 'undefined') {
-        body = new FormData(f);
-        body.set('user', name);
-      } else {
-        body = new URLSearchParams({ user: name });
+        var fd = new FormData(f);
+        fd.forEach(function (val, key) {
+          if (typeof val === 'string') body.append(key, val);
+        });
       }
+      body.set('user', name);
 
       var row = submitter.closest('tr');
       var btns = row ? row.querySelectorAll('.user-action') : [];
@@ -518,7 +520,8 @@
       if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
 
       // Always try to parse JSON regardless of HTTP status, then decide.
-      fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+      fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin',
+                       headers: { 'Accept': 'application/json' }, body: body })
         .then(function (r) {
           return r.json().catch(function () { return null; }).then(function (data) {
             return { ok: r.ok, status: r.status, data: data };
