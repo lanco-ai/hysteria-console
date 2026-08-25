@@ -214,6 +214,26 @@ _CALIBRATION_CONFIDENCE_LABELS = {
     'none': '无样本',
 }
 
+# `body.has-shell .badge-ok` resolves to the same grey as the neutral `.badge`,
+# so 高 and 中 rendered identically and the three confidence levels collapsed
+# into two. Carry the colour inline instead of depending on that class.
+_CALIBRATION_CONFIDENCE_STYLES = {
+    'high': 'background:var(--ok-soft);color:var(--ok);',
+    'low': 'background:var(--warn-soft);color:var(--warn);',
+}
+
+# admin.css has no `.num` rule, so these columns were left-aligned with
+# proportional figures. Keep the class for future styling but carry the
+# alignment inline so the table reads as numeric today.
+_NUM_CELL_ATTRS = ' class="num" style="text-align:right;font-variant-numeric:tabular-nums;"'
+
+
+def _confidence_badge(key):
+    label = _CALIBRATION_CONFIDENCE_LABELS.get(key, key)
+    style = _CALIBRATION_CONFIDENCE_STYLES.get(key)
+    style_attr = f' style="{style}"' if style else ''
+    return f'<span class="badge"{style_attr}>{html.escape(str(label))}</span>'
+
 
 def _fmt_optional_multiplier(value):
     if value is None:
@@ -240,7 +260,6 @@ def render_cost_calibrator(ctx, now=None):
     policy = cost_calibrator.load_auto_policy(ctx.multiplier_auto_policy_file)
     runtime_state = ctx.load_json(ctx.display_multiplier_state_file, {})
     confidence_key = summary['confidence']
-    confidence_label = _CALIBRATION_CONFIDENCE_LABELS.get(confidence_key, confidence_key)
     delta = summary.get('delta_percent')
     suggested = summary.get('suggested_multiplier')
     current_mult = summary.get('current_multiplier')
@@ -255,8 +274,7 @@ def render_cost_calibrator(ctx, now=None):
         delta_text = f'↑ {delta:.1f}%'
         delta_cls = 'delta-up'
 
-    conf_cls = 'badge-ok' if confidence_key == 'high' else ('badge-warn' if confidence_key == 'low' else 'badge')
-    conf_html = f'<span class="badge {conf_cls}">{html.escape(confidence_label)}</span>'
+    conf_html = _confidence_badge(confidence_key)
 
     can_apply = confidence_key in ('medium', 'high') and suggested is not None
     if can_apply:
@@ -267,40 +285,52 @@ def render_cost_calibrator(ctx, now=None):
             '</form>'
         )
     else:
-        apply_html = ''
+        # Withholding the button silently left the header empty and looked
+        # like a rendering bug. Say which gate is not satisfied.
+        if suggested is None:
+            apply_reason = '样本不足，暂无建议倍率'
+        elif confidence_key == 'none':
+            apply_reason = '暂无采样数据'
+        else:
+            apply_reason = '置信度偏低，继续采样后可应用'
+        apply_html = f'<span class="small faint">{html.escape(apply_reason)}</span>'
 
     active_window = summary.get('window_hours')
+    # summarize_windows() already returns cost_calibrator.WINDOW_HOURS order
+    # (24h / 72h / 168h). The previous sorted() call ordered by the is_active
+    # flag and then by raw HTML, which pushed the active row to the bottom and
+    # sorted the rest lexicographically, rendering 168h / 24h / 72h.
     window_rows = []
     for w in windows:
         is_active = int(w.get('window_hours', 0)) == active_window
-        wconf_key = w.get('confidence', 'none')
-        wconf_cls = 'badge-ok' if wconf_key == 'high' else ('badge-warn' if wconf_key == 'low' else 'badge')
-        wconf_html = f'<span class="badge {wconf_cls}">{html.escape(_CALIBRATION_CONFIDENCE_LABELS.get(wconf_key, wconf_key))}</span>'
-        window_rows.append((
-            is_active,
-            f'<tr{" class=calibrator-active-row" if is_active else ""}>'
+        active_attr = ' class="calibrator-active-row"' if is_active else ''
+        wconf_html = _confidence_badge(w.get('confidence', 'none'))
+        window_rows.append(
+            f'<tr{active_attr}>'
             f'<td style="padding-left:18px;">{int(w["window_hours"])}h</td>'
-            f'<td class=num>{_fmt_optional_multiplier(w["suggested_multiplier"])}</td>'
-            f'<td class=num>{_fmt_optional_multiplier(w["egress_multiplier"])}</td>'
-            f'<td class=num>{ctx.fmt_bytes(w["app_raw_bytes"])}</td>'
-            f'<td class=num>{w["included_sample_count"]}/{w["sample_count"]}</td>'
+            f'<td{_NUM_CELL_ATTRS}>{_fmt_optional_multiplier(w["suggested_multiplier"])}</td>'
+            f'<td{_NUM_CELL_ATTRS}>{_fmt_optional_multiplier(w["egress_multiplier"])}</td>'
+            f'<td{_NUM_CELL_ATTRS}>{ctx.fmt_bytes(w["app_raw_bytes"])}</td>'
+            f'<td{_NUM_CELL_ATTRS}>{w["included_sample_count"]}/{w["sample_count"]}</td>'
             f'<td style="padding-right:18px;">{wconf_html}</td>'
             f'</tr>'
-        ))
-    window_rows_html = ''.join(row for _is_active, row in sorted(window_rows))
+        )
+    window_rows_html = ''.join(window_rows)
 
     iface_text = ', '.join(summary.get('ifaces') or []) or '未识别'
-    last_sample_time = summary.get('last_sample_at', '—')
+    # summarize_state() reports the newest sample as `last_ts`; the old
+    # `last_sample_at` key never existed, so this always rendered as —.
+    last_sample_time = summary.get('last_ts') or '—'
     sampling_details = (
         '<details class="calibrator-details">'
         '<summary>采样与计算明细</summary>'
         '<div class="calibrator-dl">'
-        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>App 原始流量</span><span class=calibrator-dl-v>{ctx.fmt_bytes(summary["app_raw_bytes"])}</span></div>'
-        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>系统总流量</span><span class=calibrator-dl-v>{ctx.fmt_bytes(summary["net_total_bytes"])}</span></div>'
-        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>系统出站参考</span><span class=calibrator-dl-v>{_fmt_optional_multiplier(summary["egress_multiplier"])}</span></div>'
-        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>公网网卡</span><span class=calibrator-dl-v>{html.escape(iface_text)}</span></div>'
-        f'<div class="calibrator-dl-row"><span class=calibrator-dl-k>最后采样</span><span class=calibrator-dl-v>{html.escape(str(last_sample_time))}</span></div>'
-        '<div class="calibrator-dl-row"><span class=calibrator-dl-k>方法</span><span class=calibrator-dl-v>小样本过滤 + 10% 截尾加权平均</span></div>'
+        f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">App 原始流量</span><span class="calibrator-dl-v">{ctx.fmt_bytes(summary["app_raw_bytes"])}</span></div>'
+        f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">系统总流量</span><span class="calibrator-dl-v">{ctx.fmt_bytes(summary["net_total_bytes"])}</span></div>'
+        f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">系统出站参考</span><span class="calibrator-dl-v">{_fmt_optional_multiplier(summary["egress_multiplier"])}</span></div>'
+        f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">公网网卡</span><span class="calibrator-dl-v">{html.escape(iface_text)}</span></div>'
+        f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">最后采样</span><span class="calibrator-dl-v">{html.escape(str(last_sample_time))}</span></div>'
+        '<div class="calibrator-dl-row"><span class="calibrator-dl-k">方法</span><span class="calibrator-dl-v">小样本过滤 + 10% 截尾加权平均</span></div>'
         '</div>'
         '</details>'
     )
@@ -308,25 +338,27 @@ def render_cost_calibrator(ctx, now=None):
     auto_enabled = bool(policy.get('enabled'))
     checked_attr = ' checked' if auto_enabled else ''
     disabled_attr = ' disabled' if not auto_enabled else ''
-    mode_total_sel = 'selected' if policy.get('mode') == 'total' else ''
-    mode_egress_sel = 'selected' if policy.get('mode') == 'egress' else ''
+    # These need the leading space: without it the markup came out as
+    # <option value="total"selected>.
+    mode_total_sel = ' selected' if policy.get('mode') == 'total' else ''
+    mode_egress_sel = ' selected' if policy.get('mode') == 'egress' else ''
     conf_opts = ''.join(
-        f'<option value="{k}" {"selected" if policy.get("min_confidence") == k else ""}>{l}</option>'
-        for k, l in (('medium', '中'), ('high', '高'))
+        f'<option value="{k}"{" selected" if policy.get("min_confidence") == k else ""}>{label}</option>'
+        for k, label in (('medium', '中'), ('high', '高'))
     )
     if policy.get('last_checked_at'):
         last_policy_html = (
             '<div class="calibrator-last-check">'
-            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>上次评估</span><span class=calibrator-dl-v>{html.escape(str(policy.get("last_checked_at") or ""))}</span></div>'
-            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>评估结果</span><span class=calibrator-dl-v>{html.escape(str(policy.get("last_decision") or ""))}</span></div>'
-            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>原因</span><span class=calibrator-dl-v>{html.escape(str(policy.get("last_reason") or ""))}</span></div>'
-            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>上次应用</span><span class=calibrator-dl-v>{html.escape(str(runtime_state.get("applied_at") or ""))}</span></div>'
+            f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">上次评估</span><span class="calibrator-dl-v">{html.escape(str(policy.get("last_checked_at") or ""))}</span></div>'
+            f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">评估结果</span><span class="calibrator-dl-v">{html.escape(str(policy.get("last_decision") or ""))}</span></div>'
+            f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">原因</span><span class="calibrator-dl-v">{html.escape(str(policy.get("last_reason") or ""))}</span></div>'
+            f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">上次应用</span><span class="calibrator-dl-v">{html.escape(str(runtime_state.get("applied_at") or ""))}</span></div>'
             '</div>'
         )
     elif runtime_state.get('applied_at'):
         last_policy_html = (
             '<div class="calibrator-last-check">'
-            f'<div class=calibrator-dl-row><span class=calibrator-dl-k>上次应用</span><span class=calibrator-dl-v>{html.escape(str(runtime_state.get("applied_at") or ""))}</span></div>'
+            f'<div class="calibrator-dl-row"><span class="calibrator-dl-k">上次应用</span><span class="calibrator-dl-v">{html.escape(str(runtime_state.get("applied_at") or ""))}</span></div>'
             '</div>'
         )
     else:
@@ -339,7 +371,9 @@ def render_cost_calibrator(ctx, now=None):
     parts.append('<h2 class="admin-section-title">成本校准器</h2>')
     parts.append(f'<div class="small">近 {summary["window_hours"]} 小时 · 系统网卡 / App 原始流量</div>')
     parts.append('</div>')
-    parts.append(f'<div class="row gap-sm">{conf_html}{apply_html}</div>')
+    # The confidence badge lives in the decision bar below; the header slot is
+    # for the action only. Rendering it in both places duplicated it.
+    parts.append(f'<div class="row gap-sm">{apply_html}</div>')
     parts.append('</div>')
     parts.append('<div class="admin-section-body no-pad">')
 
@@ -384,17 +418,17 @@ def render_cost_calibrator(ctx, now=None):
     parts.append(f'<fieldset class="calibrator-auto-fields"{disabled_attr}>')
     parts.append('<div class="grid grid-3">')
     parts.append('<div><label for="multiplier-auto-mode">依据</label>')
-    parts.append(f'<select id="multiplier-auto-mode" name="mode">')
+    parts.append('<select id="multiplier-auto-mode" name="mode">')
     parts.append(f'<option value="total"{mode_total_sel}>公网 RX+TX 总量</option>')
     parts.append(f'<option value="egress"{mode_egress_sel}>公网 TX 出站</option>')
     parts.append('</select></div>')
     parts.append('<div><label for="multiplier-auto-confidence">最低置信度</label>')
     parts.append(f'<select id="multiplier-auto-confidence" name="min_confidence">{conf_opts}</select></div>')
-    parts.append(f'<div><label for="multiplier-auto-max-delta">最大单次变化 (%)</label>')
+    parts.append('<div><label for="multiplier-auto-max-delta">最大单次变化 (%)</label>')
     parts.append(f'<input id="multiplier-auto-max-delta" name="max_delta_percent" type="number" min="1" max="100" value="{float(policy["max_delta_percent"]):.0f}"></div>')
-    parts.append(f'<div><label for="multiplier-auto-min-delta">最小变化 (%)</label>')
+    parts.append('<div><label for="multiplier-auto-min-delta">最小变化 (%)</label>')
     parts.append(f'<input id="multiplier-auto-min-delta" name="min_delta_percent" type="number" min="0" max="50" value="{float(policy["min_delta_percent"]):.0f}"></div>')
-    parts.append(f'<div><label for="multiplier-auto-cooldown">冷却时间 (小时)</label>')
+    parts.append('<div><label for="multiplier-auto-cooldown">冷却时间 (小时)</label>')
     parts.append(f'<input id="multiplier-auto-cooldown" name="cooldown_hours" type="number" min="1" max="168" value="{float(policy["cooldown_hours"]):.0f}"></div>')
     parts.append('</div>')
     parts.append('</fieldset>')
