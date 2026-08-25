@@ -1,8 +1,34 @@
 (function(){
+  // The disabled badge is shown/hidden through the `hidden` attribute, but
+  // `[hidden]{display:none}` only comes from the UA stylesheet and loses to
+  // any author-level `display` on `.badge`. Without this rule the "已停用"
+  // badge can stay visible for every user, disabled or not.
+  (function ensureHiddenAttributeWins(){
+    if (document.getElementById('hidden-attr-fix')) return;
+    var s = document.createElement('style');
+    s.id = 'hidden-attr-fix';
+    s.appendChild(document.createTextNode('[hidden]{display:none!important}'));
+    (document.head || document.documentElement).appendChild(s);
+  })();
+
   function fmt(n){n=Math.max(0,Number(n)||0);var u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return n.toFixed(2)+' '+u[i];}
   function setText(el,v){ if(el && el.textContent!==v) el.textContent=v; }
   function setStyle(el,prop,v){ if(el && el.style[prop]!==v) el.style[prop]=v; }
   function setClass(el,cls,on){ if(el && el.classList.contains(cls)!==on) el.classList.toggle(cls,on); }
+
+  // `new URL('', base)` does not throw — it resolves to the *current page*.
+  // A button with a missing formaction would therefore be rewritten to POST
+  // to /admin instead of the intended endpoint, and try/catch would not
+  // notice. Always require an explicit formaction.
+  function setFormActionParam(btn, key, value){
+    var fa = btn.getAttribute('formaction');
+    if (!fa) return;
+    try {
+      var url = new URL(fa, window.location.href);
+      url.searchParams.set(key, value);
+      btn.setAttribute('formaction', url.toString());
+    } catch (_) {}
+  }
 
   var pollStatus = document.querySelector('[data-role="admin-poll-status"]');
   var pollAnnouncer = document.getElementById('admin-poll-announcer');
@@ -269,6 +295,21 @@
     if (editBtn) { ev.preventDefault(); openEditDialog(editBtn); return; }
     if (ev.target.closest('[data-dialog-close]')) { ev.preventDefault(); closeEditDialog(); }
   });
+
+  // SubmitEvent.submitter is missing on older Safari and some embedded
+  // webviews. The submit handler reads f.__pendingSubmitter as a fallback but
+  // nothing used to assign it, so on those engines `action` came out empty and
+  // the AJAX path was skipped in favour of a full-page POST. Record the button
+  // during the capture phase, before the submit event fires.
+  document.addEventListener('click', function(ev){
+    var btn = ev.target.closest('button, input[type="submit"], input[type="image"]');
+    if (!btn) return;
+    var type = (btn.getAttribute('type') || '').toLowerCase();
+    if (btn.tagName === 'BUTTON' && type && type !== 'submit') return;
+    var form = btn.form || btn.closest('form');
+    if (form) form.__pendingSubmitter = btn;
+  }, true);
+
   // === DATE VALIDATION FOR expires_at ===
   function validateExpiresAtField(el) {
     if (!el || el.type !== 'date') return true;
@@ -344,13 +385,7 @@
     if (u.revision && u.revision !== row.tr.dataset.revision) {
       row.tr.dataset.revision = u.revision;
       allBtns.forEach(function (btn) {
-        var fa = btn.getAttribute('formaction');
-        if (!fa) return;
-        try {
-          var url = new URL(fa, window.location.href);
-          url.searchParams.set('revision', u.revision);
-          btn.setAttribute('formaction', url.toString());
-        } catch (_) {}
+        setFormActionParam(btn, 'revision', u.revision);
       });
       changed = true;
     }
@@ -371,22 +406,14 @@
         if (btn.textContent !== '启用') { btn.textContent = '启用'; changed = true; }
         if (act !== 'enable-user') { btn.dataset.action = 'enable-user'; changed = true; }
         if (btn.title !== '恢复该用户的连接权限') { btn.title = '恢复该用户的连接权限'; }
-        try {
-          var url2 = new URL(btn.getAttribute('formaction') || '', window.location.href);
-          url2.searchParams.set('desired', 'enabled');
-          btn.setAttribute('formaction', url2.toString());
-        } catch (_) {}
+        setFormActionParam(btn, 'desired', 'enabled');
       } else {
         if (btn.textContent !== '暂停') { btn.textContent = '暂停'; changed = true; }
         if (act !== 'disable-user') { btn.dataset.action = 'disable-user'; changed = true; }
         if (btn.title !== '临时停用：拒绝新连接并断开现有会话，不删除用户') {
           btn.title = '临时停用：拒绝新连接并断开现有会话，不删除用户';
         }
-        try {
-          var url3 = new URL(btn.getAttribute('formaction') || '', window.location.href);
-          url3.searchParams.set('desired', 'disabled');
-          btn.setAttribute('formaction', url3.toString());
-        } catch (_) {}
+        setFormActionParam(btn, 'desired', 'disabled');
       }
     });
 
@@ -396,6 +423,9 @@
       var isHidden = badge.hasAttribute('hidden');
       if (shouldShow && isHidden) { badge.removeAttribute('hidden'); changed = true; }
       if (!shouldShow && !isHidden) { badge.setAttribute('hidden', ''); changed = true; }
+      // Defence in depth: never depend on [hidden] winning the cascade.
+      var wantDisplay = shouldShow ? '' : 'none';
+      if (badge.style.display !== wantDisplay) badge.style.display = wantDisplay;
     }
 
     // --- online / used / bar / detail ---
@@ -457,7 +487,9 @@
       });
   }
 
-  // Global single-flight: one toggle at a time across all users.
+  // Global single-flight: one toggle at a time across all users. Each toggle
+  // rewrites the whole static-access plan server-side, so overlapping toggles
+  // would race on the same config; keep this global rather than per-row.
   var pendingToggle = null;
 
   // Unified cleanup — single definition point.
@@ -555,23 +587,23 @@
           releaseToggle();
         })
         .catch(function (err) {
-          // Failure: restore all buttons, keep errEl message as-is
+          // Failure: restore all buttons.
           for (var _c = 0; _c < btns.length; _c++) btns[_c].disabled = false;
           submitter.textContent = originalLabel;
           if (row) row.setAttribute('aria-busy', 'false');
           releaseToggle();
-          // Known error types already have visible errEl
-          if (err && err.message &&
-              err.message.indexOf('state_mismatch') === -1 &&
-              err.message.indexOf('user_not_found_after_toggle') === -1 &&
-              err.message.indexOf('user_row_not_found_after_toggle') === -1 &&
-              err.message.indexOf('login_required') === -1 &&
-              err.message.indexOf('conflict') === -1 &&
-              err.message.indexOf('user_not_found') === -1 &&
-              err.message.indexOf('invalid_desired') === -1) {
-            if (errEl) { errEl.textContent = '操作失败，请重试'; errEl.style.display = ''; }
+          var msg = (err && err.message) ? String(err.message) : '';
+          // Errors raised after the server already confirmed success used to
+          // leave the row silent; always surface something actionable.
+          if (errEl && !errEl.textContent) {
+            var fallback = '操作失败，请重试';
+            if (msg.indexOf('overview_fetch_aborted') !== -1) fallback = '登录已失效，请重新登录';
+            else if (msg.indexOf('state_mismatch') !== -1) fallback = '状态同步未完成，请稍后刷新确认';
+            else if (msg.indexOf('_after_toggle') !== -1) fallback = '已提交，但该行刷新失败，请刷新页面';
+            errEl.textContent = fallback;
+            errEl.style.display = '';
           }
-          if (window.console && console.warn) console.warn('toggle failed:', err && err.message);
+          if (window.console && console.warn) console.warn('toggle failed:', msg);
         });
       return;
     }
