@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import html
 import base64
+import collections
 import hashlib
 import hmac
 import http.client
@@ -941,6 +942,64 @@ def _strict_usage_entry_total(entry, *, field):
     return total
 
 
+def _cycle_usage_sum_strict(daily, cycle_days, username):
+    """Raw cycle bytes for one user, with the exact original validation."""
+    used = 0
+    for day_key in cycle_days:
+        bucket = daily.get(day_key, {})
+        if not isinstance(bucket, dict):
+            _critical_authorization_state(
+                f'usage day {day_key!r} must be an object',
+            )
+        used += _strict_usage_entry_total(
+            bucket.get(username, 0),
+            field=f'{day_key}.{username}',
+        )
+    return used
+
+
+# Small LRU for raw per-user cycle usage sums. This caches ONLY the
+# usage_daily.json aggregation step — never the authorization decision.
+# Every other input (disabled, expires_at, quota, vless_uuid, multiplier)
+# is re-read and re-applied on every plan build.
+_CYCLE_USAGE_CACHE_MAX = 8
+_cycle_usage_cache_lock = threading.Lock()
+_cycle_usage_cache = collections.OrderedDict()
+
+
+def _usage_daily_file_version():
+    """(mtime_ns, size) version of the live usage_daily file, or None."""
+    try:
+        st = USAGE_DAILY_FILE.stat()
+    except OSError:
+        return None
+    return (st.st_mtime_ns, st.st_size)
+
+
+def _cached_cycle_usage_sum(daily, cycle_days, username, *, version):
+    """Cycle usage sum with a bounded cache keyed on the exact inputs.
+
+    Cache hit requires: same cycle days, same usage_daily file version
+    (mtime_ns + size), same username, and live core state. Anything else —
+    including tests and alternate roots — bypasses the cache entirely."""
+    if version is None:
+        return _cycle_usage_sum_strict(daily, cycle_days, username)
+    key = (tuple(cycle_days), version, username)
+    with _cycle_usage_cache_lock:
+        hit = _cycle_usage_cache.get(key)
+        if hit is not None:
+            _cycle_usage_cache.move_to_end(key)
+            return hit
+    # Compute outside the lock; strict validation raises before any caching.
+    used = _cycle_usage_sum_strict(daily, cycle_days, username)
+    with _cycle_usage_cache_lock:
+        _cycle_usage_cache[key] = used
+        _cycle_usage_cache.move_to_end(key)
+        while len(_cycle_usage_cache) > _CYCLE_USAGE_CACHE_MAX:
+            _cycle_usage_cache.popitem(last=False)
+    return used
+
+
 def _validate_authorization_meta(meta):
     if not isinstance(meta, dict):
         _critical_authorization_state('subscription metadata must be an object')
@@ -971,9 +1030,19 @@ def _validate_authorization_meta(meta):
             _critical_authorization_state('cycle_anchor_date is invalid')
 
 
-def _build_static_access_plan(users, daily, meta, *, now=None):
-    """Derive the exact generated-proxy authorization set from core state."""
+def _build_static_access_plan(users, daily, meta, *, now=None, usage_version=None):
+    """Derive the exact generated-proxy authorization set from core state.
+
+    usage_version: (mtime_ns, size) of the usage_daily file the `daily` dict
+    was loaded from, taken under usage_lock. When provided, the raw per-user
+    cycle aggregation may be served from a small LRU cache. The cache never
+    stores allow/deny decisions — disabled/expires/quota/uuid/multiplier are
+    re-evaluated on every call."""
     current = now or local_now()
+    if not _using_live_core_state():
+        # Tests and alternate roots must never share the live aggregation
+        # cache — one test's usage data must not leak into another.
+        usage_version = None
     _validate_authorization_meta(meta)
     multiplier_path = DISPLAY_MULTIPLIER_STATE_FILE
     if not _using_live_core_state():
@@ -1006,17 +1075,9 @@ def _build_static_access_plan(users, daily, meta, *, now=None):
             continue
         quota = user_compat.total_quota_bytes(cfg)
         if user_compat.is_metered(cfg) and quota > 0:
-            used = 0
-            for day_key in cycle_days:
-                bucket = daily.get(day_key, {})
-                if not isinstance(bucket, dict):
-                    _critical_authorization_state(
-                        f'usage day {day_key!r} must be an object',
-                    )
-                used += _strict_usage_entry_total(
-                    bucket.get(username, 0),
-                    field=f'{day_key}.{username}',
-                )
+            used = _cached_cycle_usage_sum(
+                daily, cycle_days, username, version=usage_version,
+            )
             if used * multiplier >= quota:
                 plan[username] = None
                 continue
@@ -1046,8 +1107,14 @@ def _sync_static_access_from_users(users, *, now=None):
         # host billing state or create generated credentials beside it.
         return False, False
     daily = load_json(USAGE_DAILY_FILE, {})
+    # usage_lock is held, so the file cannot change between the load and this
+    # stat — the version provably describes the dict we just read. It keys
+    # the raw cycle-usage aggregation cache inside the plan builder.
+    usage_version = _usage_daily_file_version()
     meta = load_meta()
-    plan = _build_static_access_plan(users, daily, meta, now=now)
+    plan = _build_static_access_plan(
+        users, daily, meta, now=now, usage_version=usage_version,
+    )
     xray_kwargs = {'prune_unknown': True}
     tuic_kwargs = {}
     try:
