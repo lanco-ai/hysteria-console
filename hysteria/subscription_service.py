@@ -5968,6 +5968,45 @@ class Handler(BaseHTTPRequestHandler):
             'text/html; charset=utf-8',
         )
 
+    def _send_mutation_json(self, status, payload):
+        """JSON response shared by the AJAX admin mutation endpoints.
+
+        Only reached when the client explicitly asked for JSON; plain form
+        POSTs keep their original flash/redirect behaviour."""
+        self.send_response_body(
+            status,
+            json.dumps(payload, ensure_ascii=False),
+            'application/json; charset=utf-8',
+        )
+
+    def _mutation_unauthorized(self):
+        """Reject an unauthenticated mutation: JSON 401 or login redirect."""
+        if _json_request(self):
+            self._send_mutation_json(
+                401, {'ok': False, 'reason': 'login_required'},
+            )
+        else:
+            self.redirect('/login')
+
+    def _mutation_user_not_found(self, username, next_to):
+        if _json_request(self):
+            self._send_mutation_json(
+                404,
+                {'ok': False, 'reason': 'user_not_found',
+                 'username': username},
+            )
+        else:
+            self.redirect(with_flash(next_to, 'user not found'))
+
+    def _mutation_conflict(self, username, next_to):
+        if _json_request(self):
+            self._send_mutation_json(
+                409,
+                {'ok': False, 'reason': 'conflict', 'username': username},
+            )
+        else:
+            self.send_user_state_conflict(next_to)
+
     def _send_toggle_json(self, status, username, reason, next_to):
         """Send a toggle-user result as JSON or redirect based on Accept header."""
         if _json_request(self):
@@ -7515,18 +7554,18 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/admin/reset-usage':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
             username = (form.get('user') or [''])[0].strip()
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect('/admin?msg=user+not+found')
+                    self._mutation_user_not_found(username, '/admin')
                     return
                 if not revision_matches(
                     users.get(username), request_user_revision,
                 ):
-                    self.send_user_state_conflict('/admin')
+                    self._mutation_conflict(username, '/admin')
                     return
                 now = local_now()
                 usage = load_json(USAGE_FILE, {})
@@ -7548,23 +7587,31 @@ class Handler(BaseHTTPRequestHandler):
             if tuic_changed:
                 tuic_config.reload_async()
             self.write_reset_log(self.get_admin_actor(), 'reset_usage_user', username, before, after)
-            self.redirect('/admin?msg=reset+usage+' + username)
+            if _json_request(self):
+                self._send_mutation_json(200, {
+                    'ok': True,
+                    'username': username,
+                    'user': _build_overview_user(username, now=local_now()),
+                    'reload': _static_reload_status(),
+                })
+            else:
+                self.redirect('/admin?msg=reset+usage+' + username)
             return
 
         if path == '/admin/refresh-usage':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
             username = (form.get('user') or [''])[0].strip()
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect('/admin?msg=user+not+found')
+                    self._mutation_user_not_found(username, '/admin')
                     return
                 if not revision_matches(
                     users.get(username), request_user_revision,
                 ):
-                    self.send_user_state_conflict('/admin')
+                    self._mutation_conflict(username, '/admin')
                     return
                 now = local_now()
                 usage = load_json(USAGE_FILE, {})
@@ -7588,7 +7635,15 @@ class Handler(BaseHTTPRequestHandler):
             if tuic_changed:
                 tuic_config.reload_async()
             self.write_reset_log(self.get_admin_actor(), 'refresh_usage_user', username, before, after)
-            self.redirect('/admin?msg=refresh+usage+' + username)
+            if _json_request(self):
+                self._send_mutation_json(200, {
+                    'ok': True,
+                    'username': username,
+                    'user': _build_overview_user(username, now=local_now()),
+                    'reload': _static_reload_status(),
+                })
+            else:
+                self.redirect('/admin?msg=refresh+usage+' + username)
             return
 
         if path == '/admin/change-password':
@@ -7647,7 +7702,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/admin/rotate-token':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
             # Snapshot the actor before any mutation. A later session-lock
             # timeout must never turn a committed rotation into a false 503.
@@ -7660,15 +7715,15 @@ class Handler(BaseHTTPRequestHandler):
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect(with_flash(next_to, 'user not found'))
+                    self._mutation_user_not_found(username, next_to)
                     return
                 if not isinstance(users.get(username), dict):
-                    self.redirect(with_flash(next_to, 'user not found'))
+                    self._mutation_user_not_found(username, next_to)
                     return
                 if not revision_matches(
                     users.get(username), request_user_revision,
                 ):
-                    self.send_user_state_conflict(next_to)
+                    self._mutation_conflict(username, next_to)
                     return
                 previous_generation = _credential_generation(
                     users[username].get('sub_token'),
@@ -7798,7 +7853,31 @@ class Handler(BaseHTTPRequestHandler):
                 flash = 'err:rotated_static_pending ' + username
             else:
                 flash = 'rotated ' + username
-            self.redirect(with_flash(next_to, flash))
+            if _json_request(self):
+                # The token changed, so the row's subscription/panel links
+                # must be refreshed client-side along with the row itself.
+                host = configured_public_host(
+                    self.headers.get('Host', '127.0.0.1'),
+                )
+                base_url = safe_base_url(
+                    host,
+                    self.headers.get('X-Forwarded-Proto', 'http'),
+                    self.headers.get('X-Forwarded-Port', ''),
+                )
+                new_token = users.get(username, {}).get('sub_token', '')
+                self._send_mutation_json(200, {
+                    'ok': True,
+                    'username': username,
+                    'flash': flash.split(' ', 1)[0],
+                    'user': _build_overview_user(username, now=local_now()),
+                    'links': {
+                        'panel': f'{base_url}/panel/{username}?token={new_token}',
+                        'sub': f'{base_url}/sub/{username}?token={new_token}',
+                    },
+                    'reload': _static_reload_status(),
+                })
+            else:
+                self.redirect(with_flash(next_to, flash))
             return
 
         if path == '/admin/pause-user':
@@ -7903,7 +7982,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/admin/reset-usage-all':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
             with usage_lock():
                 now = local_now()
@@ -7936,12 +8015,23 @@ class Handler(BaseHTTPRequestHandler):
                 before_all,
                 {u: {'tx': 0, 'rx': 0, 'total': 0} for u in users.keys()},
             )
-            self.redirect('/admin?msg=reset+usage+all')
+            if _json_request(self):
+                # Global reset touches every row, so return the full user
+                # list in the overview schema for the client to patch.
+                overview = _build_overview_json_payload(now=local_now())
+                self._send_mutation_json(200, {
+                    'ok': True,
+                    'users': overview['users'],
+                    'total_used': overview['total_used'],
+                    'reload': _static_reload_status(),
+                })
+            else:
+                self.redirect('/admin?msg=reset+usage+all')
             return
 
         if path == '/admin/delete':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
             username = (form.get('user') or [''])[0].strip()
             task_id = ''
@@ -7953,16 +8043,16 @@ class Handler(BaseHTTPRequestHandler):
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect('/admin?msg=user+not+found')
+                    self._mutation_user_not_found(username, '/admin')
                     return
                 cfg = users.get(username)
                 if not isinstance(cfg, dict):
-                    self.redirect('/admin?msg=user+not+found')
+                    self._mutation_user_not_found(username, '/admin')
                     return
                 if not revision_matches(
                     cfg, request_user_revision,
                 ):
-                    self.send_user_state_conflict('/admin')
+                    self._mutation_conflict(username, '/admin')
                     return
                 task_id = revocation_queue.task_id_for(
                     username,
@@ -8013,16 +8103,21 @@ class Handler(BaseHTTPRequestHandler):
                 or cleanup_error
                 or outcome['uncertain']
             )
-            self.redirect(
-                with_flash(
-                    '/admin',
-                    (
-                        'err:deleted_retry ' + username
-                        if retry_pending
-                        else 'deleted ' + username
-                    ),
-                ),
+            flash = (
+                'err:deleted_retry ' + username
+                if retry_pending
+                else 'deleted ' + username
             )
+            if _json_request(self):
+                self._send_mutation_json(200, {
+                    'ok': True,
+                    'username': username,
+                    'deleted': True,
+                    'flash': flash.split(' ', 1)[0],
+                    'reload': _static_reload_status(),
+                })
+            else:
+                self.redirect(with_flash('/admin', flash))
             return
 
         if path == '/admin/config/save':

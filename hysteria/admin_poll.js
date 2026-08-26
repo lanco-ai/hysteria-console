@@ -537,127 +537,263 @@
   // mutation can rewrite the whole static-access plan server-side, so
   // overlapping mutations would race on the same config; keep this global
   // rather than per-row.
-  var pendingToggle = null;
+  var pendingMutation = null;
 
   // Unified cleanup — single definition point.
-  function releaseToggle() {
-    pendingToggle = null;
+  function releaseMutation() {
+    pendingMutation = null;
+  }
+
+  // Actions handled over AJAX. Everything else falls through to a plain
+  // form POST (progressive enhancement).
+  var AJAX_ACTIONS = {
+    'enable-user': true,
+    'disable-user': true,
+    'reset-user-usage': true,
+    'refresh-user-usage': true,
+    'rotate-user-token': true,
+    'delete-user': true,
+    'reset-all': true,
+  };
+
+  function mutationErrorMessage(reason) {
+    if      (reason === 'login_required')   return '登录已失效，请重新登录';
+    else if (reason === 'conflict')         return '用户状态已变化，请刷新后重试';
+    else if (reason === 'user_not_found')   return '用户不存在';
+    else if (reason === 'invalid_desired')  return '请求状态无效';
+    else if (reason === 'state_mismatch')   return '状态同步未完成，请稍后重试';
+    return '操作失败，请重试';
+  }
+
+  // After a token rotation the row's panel/subscription links embed the old
+  // token; rewrite every anchor href and copy button from the fresh payload.
+  function updateRowLinks(row, links) {
+    if (!row || !links) return;
+    var cell = row.tr.querySelector('.link-cell');
+    if (!cell) return;
+    var pairs = [
+      ['panel', links.panel],
+      ['sub', links.sub],
+    ];
+    var linkRows = cell.querySelectorAll('.link-row');
+    for (var i = 0; i < pairs.length && i < linkRows.length; i++) {
+      var url = pairs[i][1];
+      if (!url) continue;
+      var anchor = linkRows[i].querySelector('a[href]');
+      if (anchor) anchor.setAttribute('href', url);
+      var copyBtn = linkRows[i].querySelector('.copy-link');
+      if (copyBtn) copyBtn.dataset.copy = url;
+    }
+  }
+
+  function removeUserRow(name) {
+    var row = index.get(name);
+    if (!row) return;
+    index.delete(name);
+    if (row.tr.parentNode) row.tr.parentNode.removeChild(row.tr);
+    applyFilter();
+  }
+
+  // Shared AJAX mutation pipeline: POST formaction?_json=1, parse the JSON
+  // envelope, dispatch to the per-action success handler, and always restore
+  // the buttons afterwards. Returns nothing; errors surface inline.
+  function performAdminMutation(f, submitter, action, name) {
+    // Global single-flight
+    if (pendingMutation !== null) return;
+    pendingMutation = name || action;
+
+    // Confirm (especially important for destructive actions)
+    if (!confirmAdminAction(action, name)) { releaseMutation(); return; }
+
+    // Build AJAX URL with _json=1 via URL API
+    var actionUrl = (submitter && submitter.getAttribute('formaction')) || f.action || '';
+    var ajaxUrl;
+    try {
+      ajaxUrl = new URL(actionUrl, window.location.href);
+      ajaxUrl.searchParams.set('_json', '1');
+      ajaxUrl = ajaxUrl.toString();
+    } catch (_) {
+      ajaxUrl = actionUrl + (actionUrl.indexOf('?') === -1 ? '?' : '&') + '_json=1';
+    }
+
+    // Build POST body as URLSearchParams so the server accepts it.
+    // http_utils.parse_form() only handles application/x-www-form-urlencoded.
+    var body = new URLSearchParams();
+    if (typeof FormData !== 'undefined') {
+      var fd = new FormData(f);
+      fd.forEach(function (val, key) {
+        if (typeof val === 'string') body.append(key, val);
+      });
+    }
+    if (name) body.set('user', name);
+
+    var row = submitter ? submitter.closest('tr') : null;
+    var btns = row ? row.querySelectorAll('.user-action') : [];
+    for (var _i = 0; _i < btns.length; _i++) btns[_i].disabled = true;
+    var originalLabel = submitter ? submitter.textContent : '';
+    if (submitter) {
+      submitter.disabled = true;
+      submitter.textContent = '处理中…';
+      submitter.setAttribute('aria-busy', 'true');
+    }
+    if (row) row.setAttribute('aria-busy', 'true');
+    var errEl = row && row.querySelector('.row-error');
+    if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+
+    function reportError(message) {
+      if (errEl) {
+        errEl.textContent = message;
+        errEl.style.display = '';
+      } else {
+        // Actions without a row (e.g. reset-all) surface errors in the
+        // status pill instead of leaving the click silent.
+        setPollStatus(message, 'is-error');
+        announce(message);
+      }
+    }
+
+    // restoreLabel: only on failure. After a successful toggle the patched
+    // row already carries the new 启用/暂停 label; restoring the stale
+    // originalLabel would overwrite it.
+    function restoreButtons(restoreLabel) {
+      for (var _r = 0; _r < btns.length; _r++) btns[_r].disabled = false;
+      if (submitter) {
+        submitter.disabled = false;
+        if (restoreLabel) submitter.textContent = originalLabel;
+        submitter.setAttribute('aria-busy', 'false');
+      }
+      if (row) row.setAttribute('aria-busy', 'false');
+    }
+
+    // Always try to parse JSON regardless of HTTP status, then decide.
+    fetchWithTimeout(ajaxUrl, { method: 'POST', credentials: 'same-origin',
+                     headers: { 'Accept': 'application/json' }, body: body })
+      .then(function (r) {
+        if (r.status === 401) {
+          stop();
+          setPollStatus('登录已失效 · 点此登录', 'is-error');
+          announce('登录已失效，请重新登录');
+          if (pollStatus) pollStatus.dataset.action = 'login';
+          throw new Error('login_required');
+        }
+        return r.json().catch(function () { return null; }).then(function (data) {
+          return { ok: r.ok, status: r.status, data: data };
+        });
+      })
+      .then(function (result) {
+        var ok = result.ok;
+        var data = result.data;
+        if (!ok || !data || !data.ok) {
+          var reason = (data && data.reason) ? String(data.reason) : null;
+          reportError(mutationErrorMessage(reason));
+          throw new Error(reason || 'unknown');
+        }
+        handleMutationResult(action, name, data, row);
+      })
+      .then(function () {
+        restoreButtons(false);
+        releaseMutation();
+      })
+      .catch(function (err) {
+        restoreButtons(true);
+        releaseMutation();
+        var msg = (err && err.message) ? String(err.message) : '';
+        // Errors raised after the server already confirmed success used to
+        // leave the row silent; always surface something actionable.
+        if (msg && msg !== 'login_required') {
+          var hasInline = errEl && errEl.textContent;
+          if (!hasInline) {
+            var fallback = '操作失败，请重试';
+            if (err && err.code === 'timeout') fallback = '请求超时，请重试';
+            else if (msg.indexOf('state_mismatch') !== -1) fallback = '状态同步未完成，请稍后刷新确认';
+            else if (msg.indexOf('user_row_missing_in_response') !== -1) fallback = '已提交，但该行刷新失败，请刷新页面';
+            reportError(fallback);
+          }
+        }
+        if (window.console && console.warn) console.warn('mutation failed:', action, msg);
+      });
+  }
+
+  // Per-action success handling. Every handler receives the parsed JSON
+  // envelope; shapes are asserted before touching the DOM so a partial or
+  // unexpected payload can never half-patch a row.
+  function handleMutationResult(action, name, data, row) {
+    if (action === 'enable-user' || action === 'disable-user') {
+      // Server confirmed success and returned the fresh row in the same
+      // schema as /admin/overview.json — patch directly, no extra fetch.
+      var user = data.user;
+      if (!user || user.user !== name) {
+        throw new Error('user_row_missing_in_response');
+      }
+      var expectedDisabled = (data.desired === 'disabled');
+      if (!!user.disabled !== expectedDisabled) {
+        throw new Error('state_mismatch');
+      }
+      patchUserRow(user);
+      reportReloadState(data.reload);
+      return;
+    }
+
+    if (action === 'reset-user-usage' || action === 'refresh-user-usage') {
+      if (data.user && data.user.user === name) patchUserRow(data.user);
+      flashPollStatus(
+        action === 'reset-user-usage' ? '已清零 ' + name : '已刷新 ' + name,
+        'is-live'
+      );
+      reportReloadState(data.reload);
+      return;
+    }
+
+    if (action === 'rotate-user-token') {
+      if (data.user && data.user.user === name) patchUserRow(data.user);
+      updateRowLinks(row, data.links);
+      var rotatedOk = !data.flash || data.flash.indexOf('err:') !== 0;
+      flashPollStatus(
+        rotatedOk ? '已重置订阅令牌' : '已重置，代理回收进行中',
+        rotatedOk ? 'is-live' : 'is-paused'
+      );
+      reportReloadState(data.reload);
+      return;
+    }
+
+    if (action === 'delete-user') {
+      removeUserRow(name);
+      var deletedOk = !data.flash || data.flash.indexOf('err:') !== 0;
+      flashPollStatus(
+        deletedOk ? '已删除 ' + name : '已删除 ' + name + '，清理仍在进行',
+        deletedOk ? 'is-live' : 'is-paused'
+      );
+      reportReloadState(data.reload);
+      return;
+    }
+
+    if (action === 'reset-all') {
+      var users = Array.isArray(data.users) ? data.users : [];
+      users.forEach(function (u) { patchUserRow(u); });
+      var newTotal = Number(data.total_used) || 0;
+      if (totalEl && newTotal !== lastTotal) { setText(totalEl, fmt(newTotal)); lastTotal = newTotal; }
+      flashPollStatus('已清空全部用量', 'is-live');
+      reportReloadState(data.reload);
+      return;
+    }
   }
 
   document.addEventListener('submit', function(ev){
     var f = ev.target;
     if (!f || f.tagName !== 'FORM') return;
     var name = f.dataset.user || '';
-    var action = '';
+    var action = f.dataset.action || '';
     var submitter = ev.submitter || f.__pendingSubmitter || null;
     f.__pendingSubmitter = null;  // consume and clear — no stale write
     if (submitter) {
-      action = submitter.dataset.action || '';
+      action = submitter.dataset.action || action;
       name = name || submitter.dataset.user || submitter.value || '';
     }
 
-    // AJAX: enable-user / disable-user only
-    if (submitter && (action === 'enable-user' || action === 'disable-user')) {
+    // AJAX: shared mutation actions only
+    if (AJAX_ACTIONS[action]) {
       ev.preventDefault();
-
-      // Global single-flight
-      if (pendingToggle !== null) return;
-      pendingToggle = name;
-
-      // Confirm (especially important for disable)
-      if (!confirmAdminAction(action, name)) { releaseToggle(); return; }
-
-      // Build AJAX URL with _json=1 via URL API
-      var actionUrl = submitter.getAttribute('formaction') || f.action || '';
-      var ajaxUrl;
-      try {
-        ajaxUrl = new URL(actionUrl, window.location.href);
-        ajaxUrl.searchParams.set('_json', '1');
-        ajaxUrl = ajaxUrl.toString();
-      } catch (_) {
-        ajaxUrl = actionUrl + '&_json=1';
-      }
-
-      // Build POST body as URLSearchParams so the server accepts it.
-      // http_utils.parse_form() only handles application/x-www-form-urlencoded.
-      var body = new URLSearchParams();
-      if (typeof FormData !== 'undefined') {
-        var fd = new FormData(f);
-        fd.forEach(function (val, key) {
-          if (typeof val === 'string') body.append(key, val);
-        });
-      }
-      body.set('user', name);
-
-      var row = submitter.closest('tr');
-      var btns = row ? row.querySelectorAll('.user-action') : [];
-      for (var _i = 0; _i < btns.length; _i++) btns[_i].disabled = true;
-      var originalLabel = submitter.textContent;
-      submitter.textContent = '处理中…';
-      if (row) row.setAttribute('aria-busy', 'true');
-      var errEl = row && row.querySelector('.row-error');
-      if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
-
-      // Always try to parse JSON regardless of HTTP status, then decide.
-      fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin',
-                       headers: { 'Accept': 'application/json' }, body: body })
-        .then(function (r) {
-          return r.json().catch(function () { return null; }).then(function (data) {
-            return { ok: r.ok, status: r.status, data: data };
-          });
-        })
-        .then(function (result) {
-          var ok = result.ok;
-          var data = result.data;
-          if (!ok || !data || !data.ok) {
-            var reason = (data && data.reason) ? String(data.reason) : null;
-            var displayMsg;
-            if      (reason === 'login_required')          displayMsg = '登录已失效，请重新登录';
-            else if (reason === 'conflict')                displayMsg = '用户状态已变化，请刷新后重试';
-            else if (reason === 'user_not_found')         displayMsg = '用户不存在';
-            else if (reason === 'invalid_desired')        displayMsg = '请求状态无效';
-            else if (reason === 'state_mismatch')         displayMsg = '状态同步未完成，请稍后重试';
-            else                                          displayMsg = '操作失败，请重试';
-            if (errEl) { errEl.textContent = displayMsg; errEl.style.display = ''; }
-            throw new Error(reason || 'unknown');
-          }
-          // Server confirmed success and returned the fresh row in the same
-          // schema as /admin/overview.json — patch directly, no extra fetch.
-          var user = data.user;
-          if (!user || user.user !== name) {
-            throw new Error('user_row_missing_in_response');
-          }
-          var expectedDisabled = (data.desired === 'disabled');
-          if (!!user.disabled !== expectedDisabled) {
-            throw new Error('state_mismatch');
-          }
-          patchUserRow(user);
-          reportReloadState(data.reload);
-        })
-        .then(function () {
-          // Success: row is already patched — only restore disabled/aria
-          for (var _r = 0; _r < btns.length; _r++) btns[_r].disabled = false;
-          if (row) row.setAttribute('aria-busy', 'false');
-          releaseToggle();
-        })
-        .catch(function (err) {
-          // Failure: restore all buttons.
-          for (var _c = 0; _c < btns.length; _c++) btns[_c].disabled = false;
-          submitter.textContent = originalLabel;
-          if (row) row.setAttribute('aria-busy', 'false');
-          releaseToggle();
-          var msg = (err && err.message) ? String(err.message) : '';
-          // Errors raised after the server already confirmed success used to
-          // leave the row silent; always surface something actionable.
-          if (errEl && !errEl.textContent) {
-            var fallback = '操作失败，请重试';
-            if (msg.indexOf('state_mismatch') !== -1) fallback = '状态同步未完成，请稍后刷新确认';
-            else if (msg.indexOf('user_row_missing_in_response') !== -1) fallback = '已提交，但该行刷新失败，请刷新页面';
-            errEl.textContent = fallback;
-            errEl.style.display = '';
-          }
-          if (window.console && console.warn) console.warn('toggle failed:', msg);
-        });
+      performAdminMutation(f, submitter, action, name);
       return;
     }
 
