@@ -219,7 +219,9 @@ _CALIBRATION_CONFIDENCE_LABELS = {
 # into two. Carry the colour inline instead of depending on that class.
 _CALIBRATION_CONFIDENCE_STYLES = {
     'high': 'background:var(--ok-soft);color:var(--ok);',
+    'medium': 'background:var(--data-soft);color:var(--data);',
     'low': 'background:var(--warn-soft);color:var(--warn);',
+    'none': 'background:var(--bg-subtle);color:var(--text-secondary);',
 }
 
 # admin.css has no `.num` rule, so these columns were left-aligned with
@@ -342,9 +344,15 @@ def render_cost_calibrator(ctx, now=None):
     # <option value="total"selected>.
     mode_total_sel = ' selected' if policy.get('mode') == 'total' else ''
     mode_egress_sel = ' selected' if policy.get('mode') == 'egress' else ''
+    # Every legal value from cost_calibrator.CONFIDENCE_RANK must be
+    # selectable — otherwise a policy holding 'low' silently submits the
+    # first option ('medium') on save and tightens the threshold.
+    conf_labels = (('none', '无样本'), ('low', '低'), ('medium', '中'), ('high', '高'))
     conf_opts = ''.join(
-        f'<option value="{k}"{" selected" if policy.get("min_confidence") == k else ""}>{label}</option>'
-        for k, label in (('medium', '中'), ('high', '高'))
+        '<option value="' + k + '"'
+        + (' selected' if policy.get('min_confidence') == k else '')
+        + '>' + label + '</option>'
+        for k, label in conf_labels
     )
     if policy.get('last_checked_at'):
         last_policy_html = (

@@ -951,6 +951,7 @@ body.page-home {
 }
 
 .stat-dot {
+  position: relative; /* containing block for the .is-live::before halo */
   display: inline-block;
   width: 7px;
   height: 7px;
@@ -5389,6 +5390,7 @@ html.home-prepaint .preview-mini-bar-fill {
 
 /* Stat dot pulse — only on homepage (not admin status-dot) */
 .page-home .stat-dot {
+  position: relative; /* containing block for the .is-live::before halo */
   display: inline-block;
   width: 8px;
   height: 8px;

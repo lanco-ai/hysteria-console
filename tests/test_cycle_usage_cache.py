@@ -328,6 +328,7 @@ def test_non_dict_day_bucket_still_fails_closed(tmp_path, monkeypatch):
 
 
 # Bounded: the cache never grows past its configured size.
+# Capacity is dynamic: max(_CYCLE_USAGE_CACHE_MIN, 4 * user_count).
 
 def test_cache_is_bounded(tmp_path, monkeypatch):
     daily_file, _m = _live_state(
@@ -338,7 +339,9 @@ def test_cache_is_bounded(tmp_path, monkeypatch):
     version = ss._usage_daily_file_version()
     daily = json.loads(daily_file.read_text(encoding="utf-8"))
 
-    for i in range(ss._CYCLE_USAGE_CACHE_MAX + 4):
+    # Build plans one user at a time: capacity = max(32, 4*1) = 32,
+    # so the cache must stay at or below 32 even with 36 distinct users.
+    for i in range(ss._CYCLE_USAGE_CACHE_MIN + 4):
         users = {
             f"user{i:02d}": _metered(
                 1000,
@@ -348,4 +351,78 @@ def test_cache_is_bounded(tmp_path, monkeypatch):
         ss._build_static_access_plan(
             users, daily, meta, now=NOW, usage_version=version,
         )
-    assert len(ss._cycle_usage_cache) <= ss._CYCLE_USAGE_CACHE_MAX
+    assert len(ss._cycle_usage_cache) <= ss._CYCLE_USAGE_CACHE_MIN
+
+
+def test_cache_scales_with_user_count(tmp_path, monkeypatch):
+    """More than the old fixed cap of 8: every metered user's entry must
+    survive a full plan build and hit on the next one."""
+    daily_file, _m = _live_state(
+        tmp_path, monkeypatch,
+        daily={"2026-07-18": {"alice": {"tx": 1, "rx": 1, "total": 2}}},
+    )
+    meta = _meta()
+    version = ss._usage_daily_file_version()
+    daily = json.loads(daily_file.read_text(encoding="utf-8"))
+
+    users = {
+        f"user{i:02d}": _metered(
+            1000,
+            uuid_value=f"11111111-1111-4111-8111-{i + 1:012d}",
+        )
+        for i in range(12)
+    }
+    calls = _counting_strict(monkeypatch)
+
+    ss._build_static_access_plan(
+        users, daily, meta, now=NOW, usage_version=version,
+    )
+    assert len(calls) == 12  # cold: every user aggregated once
+
+    ss._build_static_access_plan(
+        users, daily, meta, now=NOW, usage_version=version,
+    )
+    assert len(calls) == 12  # warm: all 12 hit, zero re-aggregation
+
+
+# Cache hits must also prune to the current effective bound.
+
+def test_cache_hit_also_prunes_to_current_bound(tmp_path, monkeypatch):
+    daily_file, _m = _live_state(
+        tmp_path, monkeypatch,
+        daily={"2026-07-18": {"alice": {"tx": 1, "rx": 1, "total": 2}}},
+    )
+    meta = _meta()
+    version = ss._usage_daily_file_version()
+    daily = json.loads(daily_file.read_text(encoding="utf-8"))
+
+    # Grow the cache with a large user set (bound = 4 * 64 = 256).
+    big_users = {
+        f"user{i:03d}": _metered(
+            1000,
+            uuid_value=f"11111111-1111-4111-8111-{i + 1:012d}",
+        )
+        for i in range(64)
+    }
+    ss._build_static_access_plan(
+        big_users, daily, meta, now=NOW, usage_version=version,
+    )
+    assert len(ss._cycle_usage_cache) == 64
+
+    # The user base shrank to one: bound collapses to the floor (32).
+    # A pure cache hit must still prune the oversized cache.
+    small_users = {"user000": big_users["user000"]}
+    ss._build_static_access_plan(
+        small_users, daily, meta, now=NOW, usage_version=version,
+    )
+    assert len(ss._cycle_usage_cache) <= ss._CYCLE_USAGE_CACHE_MIN
+
+
+def test_cache_never_exceeds_hard_cap(tmp_path, monkeypatch):
+    assert ss._cycle_usage_cache_bound(0) == ss._CYCLE_USAGE_CACHE_MIN
+    assert ss._cycle_usage_cache_bound(8) == ss._CYCLE_USAGE_CACHE_MIN
+    assert ss._cycle_usage_cache_bound(100) == 400
+    assert (
+        ss._cycle_usage_cache_bound(100000)
+        == ss._CYCLE_USAGE_CACHE_HARD_MAX
+    )

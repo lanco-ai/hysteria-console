@@ -147,24 +147,13 @@
   }
 
   // ── Live dot pulse ───────────────────────────────────────────────
-  // `.stat-dot.is-live::before` is absolutely positioned with inset:-2px.
-  // `.stat-dot` itself declared no position, so the halo resolved against
-  // the nearest positioned ancestor — the panel that addScanLine() marks
-  // position:relative — and painted a pulsing green wash across the whole
-  // card instead of a 12px ring. Give every dot an explicit containing block.
-  each(document.querySelectorAll(".stat-dot"), function (dot) {
-    if (window.getComputedStyle(dot).position === "static") {
-      dot.style.position = "relative";
-    }
-  });
-
+  // `.stat-dot` carries `position: relative` in the stylesheet, so the
+  // absolutely positioned .is-live::before halo resolves against the dot
+  // itself — no runtime patching needed here.
   function activateDot(container) {
     var dot = container.querySelector(".stat-dot");
     if (!dot || dot.dataset.pulseBound) return;
     dot.dataset.pulseBound = "1";
-    if (window.getComputedStyle(dot).position === "static") {
-      dot.style.position = "relative";
-    }
     dot.classList.add("is-live");
   }
 

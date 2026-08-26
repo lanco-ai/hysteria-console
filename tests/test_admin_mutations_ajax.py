@@ -440,3 +440,82 @@ def test_reset_all_form_post_still_redirects(tmp_path, monkeypatch):
         )
     assert status == 302
     assert headers["location"].startswith("/admin?msg=")
+
+
+# ---------------------------------------------------------------------------
+# /admin/pause-user (JSON parity with the other mutation endpoints)
+# ---------------------------------------------------------------------------
+
+def test_pause_user_json_returns_fresh_row(tmp_path, monkeypatch):
+    state = _configure_state(tmp_path, monkeypatch, users=_seed_users())
+    _stub_side_effects(monkeypatch)
+
+    with _running_server() as server:
+        status, _h, body = _json_post(
+            server,
+            "/admin/pause-user?token=admin-token"
+            f"&revision={_revision(state)}",
+            {"user": "alice", "minutes": "60"},
+        )
+
+    assert status == 200
+    payload = json.loads(body.decode("utf-8"))
+    assert payload["ok"] is True
+    assert payload["username"] == "alice"
+    assert "disabled_until" in payload
+    assert payload["user"]["user"] == "alice"
+    assert payload["user"]["disabled"] is True
+    assert set(payload["reload"].keys()) == {"pending", "xray", "tuic"}
+
+    saved = json.loads(state["USERS_FILE"].read_text(encoding="utf-8"))
+    assert saved["alice"]["disabled"] is True
+    assert saved["alice"]["disabled_until"]
+
+
+def test_pause_user_json_error_shapes(tmp_path, monkeypatch):
+    state = _configure_state(tmp_path, monkeypatch, users=_seed_users())
+    _stub_side_effects(monkeypatch)
+
+    with _running_server() as server:
+        # 401
+        status, _h, body = _json_post(
+            server, "/admin/pause-user", {"user": "alice"},
+        )
+        assert status == 401
+        assert json.loads(body.decode("utf-8")) == {
+            "ok": False, "reason": "login_required",
+        }
+
+        # 404
+        status, _h, body = _json_post(
+            server,
+            f"/admin/pause-user?token=admin-token&revision={_revision(state)}",
+            {"user": "ghost"},
+        )
+        assert status == 404
+        assert json.loads(body.decode("utf-8"))["reason"] == "user_not_found"
+
+        # 409
+        status, _h, body = _json_post(
+            server,
+            "/admin/pause-user?token=admin-token&revision=stale",
+            {"user": "alice"},
+        )
+        assert status == 409
+        assert json.loads(body.decode("utf-8"))["reason"] == "conflict"
+
+
+def test_pause_user_form_post_still_redirects(tmp_path, monkeypatch):
+    state = _configure_state(tmp_path, monkeypatch, users=_seed_users())
+    _stub_side_effects(monkeypatch)
+
+    with _running_server() as server:
+        status, headers, _body = _request(
+            server,
+            "POST",
+            "/admin/pause-user?token=admin-token"
+            f"&revision={_revision(state)}",
+            form={"user": "alice", "minutes": "60"},
+        )
+    assert status == 302
+    assert "paused" in headers["location"]

@@ -1786,3 +1786,36 @@ def test_fire_test_alert_dispatches_on_background_thread(monkeypatch):
 def test_health_flash_reports_dispatched_not_guaranteed_sent(tmp_path, monkeypatch):
     out = ss.render_health('host', flash='alert dispatched')
     assert '后台发送' in out
+
+
+def test_cost_calibrator_confidence_select_covers_all_legal_values(tmp_path, monkeypatch):
+    """A policy file holding min_confidence='low' must render as selected;
+    previously the select only had medium/high, so saving silently raised
+    the threshold to medium."""
+    monkeypatch.setattr(ss, 'COST_CALIBRATION_FILE', tmp_path / 'cost_calibration.json')
+    monkeypatch.setattr(ss, 'DISPLAY_MULTIPLIER_STATE_FILE', tmp_path / 'display_multiplier.json')
+    policy_path = tmp_path / 'display_multiplier_auto.json'
+    monkeypatch.setattr(ss, 'MULTIPLIER_AUTO_POLICY_FILE', policy_path)
+    _seed_high_confidence_calibration(tmp_path / 'cost_calibration.json')
+    policy_path.write_text(json.dumps({
+        'enabled': True,
+        'min_confidence': 'low',
+        'mode': 'total',
+    }))
+
+    out = ss.render_cost_calibrator(now=datetime(2026, 6, 22, 16, tzinfo=SH))
+
+    select_start = out.index('name="min_confidence"')
+    select_end = out.index('</select>', select_start)
+    select_html = out[select_start:select_end]
+    for value in ('none', 'low', 'medium', 'high'):
+        assert f'value="{value}"' in select_html
+    assert 'value="low" selected' in select_html
+
+
+def test_confidence_badge_styles_cover_every_legal_value():
+    import health_widgets
+    import cost_calibrator
+
+    for key in cost_calibrator.CONFIDENCE_RANK:
+        assert key in health_widgets._CALIBRATION_CONFIDENCE_STYLES

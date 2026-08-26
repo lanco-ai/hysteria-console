@@ -29,6 +29,14 @@
   var POLL_MAX_MS = 240000;
   var RETRY_JITTER_MS = 4000;
 
+  // Bumped when a mutation starts and again when it finishes. tick() tags
+  // each overview fetch with the epoch at send time; if the epoch moved by
+  // the time the response lands, the payload may predate the mutation's
+  // server-side commit, so it is dropped instead of being compared against
+  // rows the mutation already patched (which would trigger a phantom
+  // "data changed" needsReload).
+  var mutationEpoch = 0;
+
   function setPollStatus(text, cls){
     if (!pollStatus) return;
     pollStatus.textContent = text;
@@ -152,6 +160,7 @@
     clearScheduled();
     inflight = true;
     setPollStatus('刷新中', 'is-live');
+    var tickEpoch = mutationEpoch;
     try{
       var r=await fetchWithTimeout('/admin/overview.json',{credentials:'same-origin',cache:'no-store'});
       if (r.status === 401 || (r.redirected && new URL(r.url).pathname === '/login')) {
@@ -167,6 +176,13 @@
         throw httpError;
       }
       var d=await r.json();
+      if (tickEpoch !== mutationEpoch) {
+        // A mutation overlapped this fetch; the payload may predate it.
+        // Drop it — never patch, never needsReload. Polling continues.
+        consecutiveFailures = 0;
+        if (running) setPollStatus('更新 '+stamp(), 'is-live');
+        return;
+      }
       var incoming = new Set((d.users || []).map(function(u){ return u.user; }));
       var listChanged = incoming.size !== index.size;
       if (!listChanged) index.forEach(function(_row, name){ if (!incoming.has(name)) listChanged = true; });
@@ -366,6 +382,23 @@
   // Fully self-contained: reads current DOM state and overview payload only,
   // never references variables from the calling scope.
   // Returns false if the row is not in the index (page may have removed it).
+  // Single write path for a row's revision. tick() reads the cached
+  // row.revision while the DOM carries tr.dataset.revision — patchUserRow
+  // used to update only the dataset side, so after any AJAX mutation the
+  // next poll saw a phantom change, forced needsReload and stopped polling.
+  // Both sides (plus formaction URLs and the edit button) are now written
+  // together here, keeping DOM and cache from the same source.
+  function setRowRevision(row, revision) {
+    var rev = String(revision || '');
+    row.revision = rev;
+    if (row.tr.dataset.revision !== rev) row.tr.dataset.revision = rev;
+    row.tr.querySelectorAll('.user-action').forEach(function (btn) {
+      setFormActionParam(btn, 'revision', rev);
+    });
+    var editBtn = row.tr.querySelector('.edit-user');
+    if (editBtn) editBtn.dataset.userRevision = rev;
+  }
+
   function patchUserRow(u) {
     var row = index.get(u.user);
     if (!row) return false;
@@ -373,18 +406,17 @@
     var allBtns = row.tr.querySelectorAll('.user-action');
 
     // --- revision sync (all action buttons including toggle) ---
-    if (u.revision && u.revision !== row.tr.dataset.revision) {
-      row.tr.dataset.revision = u.revision;
-      allBtns.forEach(function (btn) {
-        setFormActionParam(btn, 'revision', u.revision);
-      });
+    if (u.revision && String(u.revision) !== row.revision) {
+      setRowRevision(row, u.revision);
       changed = true;
     }
 
     // --- edit button data-user-revision ---
+    // setRowRevision already synced it when the revision changed; this branch
+    // only fires when the payload carries an empty/absent revision.
     var editBtn = row.tr.querySelector('.edit-user');
-    if (editBtn && editBtn.dataset.userRevision !== String(u.revision || '')) {
-      editBtn.dataset.userRevision = String(u.revision || '');
+    if (!u.revision && editBtn && editBtn.dataset.userRevision !== '') {
+      editBtn.dataset.userRevision = '';
       changed = true;
     }
 
@@ -579,10 +611,15 @@
 
   function removeUserRow(name) {
     var row = index.get(name);
-    if (!row) return;
+    if (!row) return 0;
+    // Remember the row's last known usage so the caller can deduct it from
+    // the header total instead of waiting up to 30s for the next poll.
+    var removedUsed = (typeof row.lastUsed === 'number' && row.lastUsed > 0)
+      ? row.lastUsed : 0;
     index.delete(name);
     if (row.tr.parentNode) row.tr.parentNode.removeChild(row.tr);
     applyFilter();
+    return removedUsed;
   }
 
   // Shared AJAX mutation pipeline: POST formaction?_json=1, parse the JSON
@@ -595,6 +632,10 @@
 
     // Confirm (especially important for destructive actions)
     if (!confirmAdminAction(action, name)) { releaseMutation(); return; }
+
+    // From here on, any overview fetch already in flight predates this
+    // mutation; tick() will drop its response by epoch mismatch.
+    mutationEpoch++;
 
     // Build AJAX URL with _json=1 via URL API
     var actionUrl = (submitter && submitter.getAttribute('formaction')) || f.action || '';
@@ -679,15 +720,24 @@
           reportError(mutationErrorMessage(reason));
           throw new Error(reason || 'unknown');
         }
-        handleMutationResult(action, name, data, row);
+        return handleMutationResult(action, name, data, row);
       })
-      .then(function () {
-        restoreButtons(false);
+      .then(function (rowRemoved) {
+        // delete-user already detached the row's buttons; restoring them
+        // would spin on nodes that are no longer in the document.
+        if (!rowRemoved) restoreButtons(false);
         releaseMutation();
+        // Mutation finished and rows were patched; any overview response
+        // still in flight may predate the commit — bump again so tick()
+        // drops it instead of comparing stale revisions.
+        mutationEpoch++;
       })
       .catch(function (err) {
-        restoreButtons(true);
+        // If the row was removed before a later step threw, its controls
+        // are detached — never restore them.
+        if (!(row && row.__detached)) restoreButtons(true);
         releaseMutation();
+        mutationEpoch++;
         var msg = (err && err.message) ? String(err.message) : '';
         // Errors raised after the server already confirmed success used to
         // leave the row silent; always surface something actionable.
@@ -708,6 +758,8 @@
   // Per-action success handling. Every handler receives the parsed JSON
   // envelope; shapes are asserted before touching the DOM so a partial or
   // unexpected payload can never half-patch a row.
+  // Returns true when the row was removed from the document (delete-user),
+  // so the caller skips restoring buttons that no longer exist.
   function handleMutationResult(action, name, data, row) {
     if (action === 'enable-user' || action === 'disable-user') {
       // Server confirmed success and returned the fresh row in the same
@@ -722,7 +774,7 @@
       }
       patchUserRow(user);
       reportReloadState(data.reload);
-      return;
+      return false;
     }
 
     if (action === 'reset-user-usage' || action === 'refresh-user-usage') {
@@ -732,7 +784,7 @@
         'is-live'
       );
       reportReloadState(data.reload);
-      return;
+      return false;
     }
 
     if (action === 'rotate-user-token') {
@@ -744,18 +796,25 @@
         rotatedOk ? 'is-live' : 'is-paused'
       );
       reportReloadState(data.reload);
-      return;
+      return false;
     }
 
     if (action === 'delete-user') {
-      removeUserRow(name);
+      var removedUsed = removeUserRow(name);
+      // Mark immediately: if anything below throws, the catch path must
+      // know the row's controls are already detached from the document.
+      if (row) row.__detached = true;
+      if (totalEl && removedUsed > 0 && lastTotal > 0) {
+        lastTotal = Math.max(0, lastTotal - removedUsed);
+        setText(totalEl, fmt(lastTotal));
+      }
       var deletedOk = !data.flash || data.flash.indexOf('err:') !== 0;
       flashPollStatus(
         deletedOk ? '已删除 ' + name : '已删除 ' + name + '，清理仍在进行',
         deletedOk ? 'is-live' : 'is-paused'
       );
       reportReloadState(data.reload);
-      return;
+      return true;
     }
 
     if (action === 'reset-all') {
@@ -765,7 +824,7 @@
       if (totalEl && newTotal !== lastTotal) { setText(totalEl, fmt(newTotal)); lastTotal = newTotal; }
       flashPollStatus('已清空全部用量', 'is-live');
       reportReloadState(data.reload);
-      return;
+      return false;
     }
   }
 

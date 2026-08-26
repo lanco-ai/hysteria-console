@@ -962,9 +962,31 @@ def _cycle_usage_sum_strict(daily, cycle_days, username):
 # usage_daily.json aggregation step — never the authorization decision.
 # Every other input (disabled, expires_at, quota, vless_uuid, multiplier)
 # is re-read and re-applied on every plan build.
-_CYCLE_USAGE_CACHE_MAX = 8
+# Capacity scales with the user count: one plan build inserts up to one
+# entry per metered user, so a fixed small cap would evict entries before
+# they are ever reused once more than a handful of users exist. A hard cap
+# keeps pathological user counts from growing the cache without bound.
+_CYCLE_USAGE_CACHE_MIN = 32
+_CYCLE_USAGE_CACHE_HARD_MAX = 1024
 _cycle_usage_cache_lock = threading.Lock()
 _cycle_usage_cache = collections.OrderedDict()
+
+
+def _cycle_usage_cache_bound(user_count):
+    """Effective capacity for one plan build: scales with users, never
+    below the floor, never above the hard cap."""
+    return min(
+        _CYCLE_USAGE_CACHE_HARD_MAX,
+        max(_CYCLE_USAGE_CACHE_MIN, 4 * user_count),
+    )
+
+
+def _prune_cycle_usage_cache(max_entries):
+    """Shrink to the effective bound. Caller holds _cycle_usage_cache_lock.
+    Runs on hits too: after a user-count shrink, a hit-only sequence must
+    not keep the cache above the current bound indefinitely."""
+    while len(_cycle_usage_cache) > max_entries:
+        _cycle_usage_cache.popitem(last=False)
 
 
 def _usage_daily_file_version():
@@ -976,7 +998,8 @@ def _usage_daily_file_version():
     return (st.st_mtime_ns, st.st_size)
 
 
-def _cached_cycle_usage_sum(daily, cycle_days, username, *, version):
+def _cached_cycle_usage_sum(daily, cycle_days, username, *, version,
+                            max_entries):
     """Cycle usage sum with a bounded cache keyed on the exact inputs.
 
     Cache hit requires: same cycle days, same usage_daily file version
@@ -989,14 +1012,14 @@ def _cached_cycle_usage_sum(daily, cycle_days, username, *, version):
         hit = _cycle_usage_cache.get(key)
         if hit is not None:
             _cycle_usage_cache.move_to_end(key)
+            _prune_cycle_usage_cache(max_entries)
             return hit
     # Compute outside the lock; strict validation raises before any caching.
     used = _cycle_usage_sum_strict(daily, cycle_days, username)
     with _cycle_usage_cache_lock:
         _cycle_usage_cache[key] = used
         _cycle_usage_cache.move_to_end(key)
-        while len(_cycle_usage_cache) > _CYCLE_USAGE_CACHE_MAX:
-            _cycle_usage_cache.popitem(last=False)
+        _prune_cycle_usage_cache(max_entries)
     return used
 
 
@@ -1077,6 +1100,7 @@ def _build_static_access_plan(users, daily, meta, *, now=None, usage_version=Non
         if user_compat.is_metered(cfg) and quota > 0:
             used = _cached_cycle_usage_sum(
                 daily, cycle_days, username, version=usage_version,
+                max_entries=_cycle_usage_cache_bound(len(users)),
             )
             if used * multiplier >= quota:
                 plan[username] = None
@@ -7966,7 +7990,7 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/admin/pause-user':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
             username = (form.get('user') or [''])[0].strip()
             minutes = parse_int_field((form.get('minutes') or ['60'])[0], 60, 1, 1440)
@@ -7976,15 +8000,15 @@ class Handler(BaseHTTPRequestHandler):
             with usage_lock():
                 users = load_json(USERS_FILE, {})
                 if username not in users:
-                    self.redirect(with_flash(next_to, 'user not found'))
+                    self._mutation_user_not_found(username, next_to)
                     return
                 if not isinstance(users.get(username), dict):
-                    self.redirect(with_flash(next_to, 'user not found'))
+                    self._mutation_user_not_found(username, next_to)
                     return
                 if not revision_matches(
                     users.get(username), request_user_revision,
                 ):
-                    self.send_user_state_conflict(next_to)
+                    self._mutation_conflict(username, next_to)
                     return
                 users[username]['disabled'] = True
                 users[username]['disabled_until'] = until_text
@@ -8005,7 +8029,16 @@ class Handler(BaseHTTPRequestHandler):
                 {},
                 {'disabled_until': until_text},
             )
-            self.redirect(with_flash(next_to, 'paused ' + username))
+            if _json_request(self):
+                self._send_mutation_json(200, {
+                    'ok': True,
+                    'username': username,
+                    'disabled_until': until_text,
+                    'user': _build_overview_user(username, now=local_now()),
+                    'reload': _static_reload_status(),
+                })
+            else:
+                self.redirect(with_flash(next_to, 'paused ' + username))
             return
 
         if path == '/admin/toggle-user':
