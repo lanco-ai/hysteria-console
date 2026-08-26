@@ -452,44 +452,91 @@
     return changed;
   }
 
-  // Refresh a single user row via the overview JSON endpoint.
-  // expectedDisabled: if provided, the expected disabled state after the toggle;
-  //   the promise rejects with 'state_mismatch' if the server state differs.
-  // Rejects with 'user_not_found_after_toggle' if the user is absent from the overview.
-  function refreshUserRow(username, expectedDisabled) {
-    return fetchWithTimeout('/admin/overview.json', { credentials: 'same-origin', cache: 'no-store' })
-      .then(function (r) {
-        if (r.status === 401) {
-          stop();
-          setPollStatus('登录已失效 · 点此登录', 'is-error');
-          announce('登录已失效，请重新登录');
-          if (pollStatus) pollStatus.dataset.action = 'login';
-          return null;
-        }
-        if (!r.ok) throw new Error('overview ' + r.status);
-        return r.json();
-      })
-      .then(function (d) {
-        if (!d) { throw new Error('overview_fetch_aborted'); }
-        var user = (d.users || []).find(function (u) { return u.user === username; });
-        if (!user) { throw new Error('user_not_found_after_toggle'); }
-        var row = index.get(username);
-        if (!row) { throw new Error('user_row_not_found_after_toggle'); }
-        patchUserRow(user);
-        var newTotal = Number(d.total_used) || 0;
-        if (totalEl && newTotal !== lastTotal) { setText(totalEl, fmt(newTotal)); lastTotal = newTotal; }
-        if (expectedDisabled !== undefined) {
-          var actualDisabled = !!user.disabled;
-          if (actualDisabled !== expectedDisabled) {
-            throw new Error('state_mismatch');
-          }
-        }
-      });
+  // After a successful mutation the server includes the reload-pending
+  // marker state. pending=false means the change is already live; pending=true
+  // means the proxy reload is still being applied by the background worker,
+  // so we poll the tiny read-only marker endpoint until it clears.
+  var RELOAD_STATUS_URL = '/admin/reload-status.json';
+  var RELOAD_POLL_FIRST_MS = 600;
+  var RELOAD_POLL_NEXT_MS = 850;
+  var RELOAD_POLL_MAX_MS = 9000;
+  var reloadWatch = null;
+
+  function clearReloadWatch(){
+    if (reloadWatch && reloadWatch.timer) clearTimeout(reloadWatch.timer);
+    reloadWatch = null;
   }
 
-  // Global single-flight: one toggle at a time across all users. Each toggle
-  // rewrites the whole static-access plan server-side, so overlapping toggles
-  // would race on the same config; keep this global rather than per-row.
+  // Briefly show a transient outcome in the poll status pill, then hand the
+  // pill back to the regular overview poller.
+  function flashPollStatus(text, cls, holdMs){
+    setPollStatus(text, cls);
+    announce(text);
+    setTimeout(function(){
+      if (running && !reloadWatch) setPollStatus('更新 '+stamp(), 'is-live');
+    }, holdMs || 1300);
+  }
+
+  function watchReloadStatus(){
+    clearReloadWatch();
+    var started = Date.now();
+    reloadWatch = { timer: null };
+    var watch = reloadWatch;
+    function done(){
+      if (reloadWatch !== watch) return;
+      clearReloadWatch();
+      flashPollStatus('已生效', 'is-live');
+    }
+    function overdue(){
+      if (reloadWatch !== watch) return;
+      clearReloadWatch();
+      // The user-state change itself already committed; only the proxy
+      // reload is still catching up. This is not a failure.
+      setPollStatus('后台仍在生效，请稍后确认', 'is-paused');
+      announce('用户状态已保存，代理配置仍在后台生效');
+    }
+    function poll(){
+      if (reloadWatch !== watch) return;
+      if (Date.now() - started > RELOAD_POLL_MAX_MS) { overdue(); return; }
+      fetchWithTimeout(RELOAD_STATUS_URL, { credentials: 'same-origin', cache: 'no-store' })
+        .then(function(r){
+          if (r.status === 401 || (r.redirected && new URL(r.url).pathname === '/login')) {
+            stop();
+            setPollStatus('登录已失效 · 点此登录', 'is-error');
+            announce('登录已失效，请重新登录');
+            if (pollStatus) pollStatus.dataset.action = 'login';
+            clearReloadWatch();
+            return null;
+          }
+          if (!r.ok) throw new Error('reload-status ' + r.status);
+          return r.json();
+        })
+        .then(function(d){
+          if (!d || reloadWatch !== watch) return;
+          if (d.ok && !d.pending) { done(); return; }
+          watch.timer = setTimeout(poll, RELOAD_POLL_NEXT_MS);
+        })
+        .catch(function(){
+          if (reloadWatch !== watch) return;
+          watch.timer = setTimeout(poll, RELOAD_POLL_NEXT_MS);
+        });
+    }
+    watch.timer = setTimeout(poll, RELOAD_POLL_FIRST_MS);
+  }
+
+  function reportReloadState(reload){
+    if (reload && reload.pending) {
+      setPollStatus('生效中…', 'is-live');
+      watchReloadStatus();
+    } else {
+      flashPollStatus('已生效', 'is-live');
+    }
+  }
+
+  // Global single-flight: one mutation at a time across all users. Each
+  // mutation can rewrite the whole static-access plan server-side, so
+  // overlapping mutations would race on the same config; keep this global
+  // rather than per-row.
   var pendingToggle = null;
 
   // Unified cleanup — single definition point.
@@ -570,15 +617,22 @@
             else if (reason === 'user_not_found')         displayMsg = '用户不存在';
             else if (reason === 'invalid_desired')        displayMsg = '请求状态无效';
             else if (reason === 'state_mismatch')         displayMsg = '状态同步未完成，请稍后重试';
-            else if (reason === 'user_not_found_after_toggle') displayMsg = '用户状态刷新失败，请刷新页面';
-            else if (reason === 'user_row_not_found_after_toggle') displayMsg = '当前用户行已变化，请刷新页面';
             else                                          displayMsg = '操作失败，请重试';
             if (errEl) { errEl.textContent = displayMsg; errEl.style.display = ''; }
             throw new Error(reason || 'unknown');
           }
-          // Server confirmed success; verify server state matches expected
+          // Server confirmed success and returned the fresh row in the same
+          // schema as /admin/overview.json — patch directly, no extra fetch.
+          var user = data.user;
+          if (!user || user.user !== name) {
+            throw new Error('user_row_missing_in_response');
+          }
           var expectedDisabled = (data.desired === 'disabled');
-          return refreshUserRow(name, expectedDisabled);
+          if (!!user.disabled !== expectedDisabled) {
+            throw new Error('state_mismatch');
+          }
+          patchUserRow(user);
+          reportReloadState(data.reload);
         })
         .then(function () {
           // Success: row is already patched — only restore disabled/aria
@@ -597,9 +651,8 @@
           // leave the row silent; always surface something actionable.
           if (errEl && !errEl.textContent) {
             var fallback = '操作失败，请重试';
-            if (msg.indexOf('overview_fetch_aborted') !== -1) fallback = '登录已失效，请重新登录';
-            else if (msg.indexOf('state_mismatch') !== -1) fallback = '状态同步未完成，请稍后刷新确认';
-            else if (msg.indexOf('_after_toggle') !== -1) fallback = '已提交，但该行刷新失败，请刷新页面';
+            if (msg.indexOf('state_mismatch') !== -1) fallback = '状态同步未完成，请稍后刷新确认';
+            else if (msg.indexOf('user_row_missing_in_response') !== -1) fallback = '已提交，但该行刷新失败，请刷新页面';
             errEl.textContent = fallback;
             errEl.style.display = '';
           }

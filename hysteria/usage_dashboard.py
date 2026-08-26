@@ -229,6 +229,29 @@ def build_usage_csv(ctx, *, now, window='cycle'):
     return buf.getvalue()
 
 
+def build_overview_user_entry(ctx, uid, cfg, *, online, daily, now):
+    """One user row of the overview payload. Shared by the full overview
+    endpoint and by mutation responses that return a fresh row so the client
+    can patch the table without an extra overview fetch."""
+    tx, rx, used = ctx.scaled_usage_for_user(uid, daily=daily, now=now)
+    total = ctx.user_total_quota(cfg)
+    return {
+        'user': uid,
+        'tx': tx,
+        'rx': rx,
+        'used': used,
+        'total': total,
+        'percent': ctx.pct(used, total),
+        'online': int(online.get(uid, 0)),
+        'revision': (
+            ctx.user_revision(cfg)
+            if callable(ctx.user_revision)
+            else ''
+        ),
+        'disabled': bool(cfg.get('disabled')),
+    }
+
+
 def build_overview_json_payload(ctx, *, now):
     """Small, high-frequency payload for the admin user table.
 
@@ -241,24 +264,11 @@ def build_overview_json_payload(ctx, *, now):
     user_list = []
     total_used = 0
     for uid, cfg in users.items():
-        tx, rx, used = ctx.scaled_usage_for_user(uid, daily=daily, now=now)
-        total = ctx.user_total_quota(cfg)
-        total_used += used
-        user_list.append({
-            'user': uid,
-            'tx': tx,
-            'rx': rx,
-            'used': used,
-            'total': total,
-            'percent': ctx.pct(used, total),
-            'online': int(online.get(uid, 0)),
-            'revision': (
-                ctx.user_revision(cfg)
-                if callable(ctx.user_revision)
-                else ''
-            ),
-            'disabled': bool(cfg.get('disabled')),
-        })
+        entry = build_overview_user_entry(
+            ctx, uid, cfg, online=online, daily=daily, now=now,
+        )
+        total_used += entry['used']
+        user_list.append(entry)
     total_used += int(ctx.preserved_raw_for_cycle(now=now) * ctx.display_multiplier)
     return {
         'ts': now.isoformat(timespec='seconds'),

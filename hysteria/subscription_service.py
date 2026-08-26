@@ -4323,6 +4323,37 @@ def _build_overview_json_payload(*, now):
     return usage_dashboard.build_overview_json_payload(_usage_context(), now=now)
 
 
+def _build_overview_user(username, *, now):
+    """Fresh single-user overview row, same schema as /admin/overview.json.
+
+    Returned inside mutation JSON responses so the client can patch the row
+    directly instead of re-fetching the whole overview."""
+    ctx = _usage_context()
+    users = ctx.load_json(ctx.users_file, {})
+    cfg = users.get(username)
+    if not isinstance(cfg, dict):
+        return None
+    online = ctx.load_json(ctx.online_file, {})
+    daily = ctx.load_json(ctx.usage_daily_file, {})
+    return usage_dashboard.build_overview_user_entry(
+        ctx, username, cfg, online=online, daily=daily, now=now,
+    )
+
+
+def _static_reload_status():
+    """Read-only view of the existing Xray/TUIC reload-pending markers.
+
+    Never writes, never schedules a reload — it only reports whether the
+    durable markers left by reload_async() are still present."""
+    xray_pending = xray_config._has_reload_pending(xray_config.CONFIG_FILE)
+    tuic_pending = tuic_config._has_reload_pending(tuic_config.CONFIG_FILE)
+    return {
+        'pending': bool(xray_pending or tuic_pending),
+        'xray': bool(xray_pending),
+        'tuic': bool(tuic_pending),
+    }
+
+
 def _build_analytics_json_payload(*, now, include_charts=True):
     return usage_dashboard.build_analytics_json_payload(
         _usage_context(), now=now, include_charts=include_charts,
@@ -5940,13 +5971,24 @@ class Handler(BaseHTTPRequestHandler):
     def _send_toggle_json(self, status, username, reason, next_to):
         """Send a toggle-user result as JSON or redirect based on Accept header."""
         if _json_request(self):
-            body = json.dumps({
+            body = {
                 'ok': status == 200,
                 'username': username,
                 'reason': reason,
                 'desired': reason if reason in ('disabled', 'enabled') else None,
-            }, ensure_ascii=False)
-            self.send_response_body(status, body, 'application/json; charset=utf-8')
+            }
+            if status == 200:
+                # Success carries the fresh row so the client patches the
+                # table directly instead of re-fetching /admin/overview.json,
+                # plus the current reload-pending markers so the UI can show
+                # whether the change has reached the proxies yet.
+                body['user'] = _build_overview_user(username, now=local_now())
+                body['reload'] = _static_reload_status()
+            self.send_response_body(
+                status,
+                json.dumps(body, ensure_ascii=False),
+                'application/json; charset=utf-8',
+            )
         else:
             # Fall back to original flash-redirect behaviour for non-JSON clients
             if status == 200:
@@ -6401,6 +6443,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response_body(
                 200, json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
                 'application/json; charset=utf-8', send_payload,
+            )
+            return
+
+        if path == '/admin/reload-status.json':
+            # Read-only view of the existing Xray/TUIC reload-pending markers.
+            # It never writes state, never schedules a reload and never
+            # regenerates config — it only reports the durable markers.
+            if not is_logged_in(self):
+                self.send_response_body(
+                    401, '{"ok":false,"reason":"login_required"}',
+                    'application/json; charset=utf-8', send_payload,
+                )
+                return
+            payload = {'ok': True}
+            payload.update(_static_reload_status())
+            self.send_response_body(
+                200, json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
+                'application/json; charset=utf-8', send_payload,
+                extra_headers={'Cache-Control': 'no-store'},
             )
             return
 
