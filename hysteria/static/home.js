@@ -6,8 +6,16 @@
   var REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   // The entrance effect hides elements and reveals them again on
   // intersection. If we cannot observe, we must not hide: bail out and let
-  // the server-rendered markup stand as-is.
+  // the server-rendered markup stand as-is. (The pre-paint bootstrap makes
+  // the same check before adding .home-prepaint, so nothing stays hidden.)
   if (REDUCED_MOTION || typeof IntersectionObserver !== "function") return;
+
+  // The pre-paint bootstrap's failsafe is no longer needed once this file
+  // runs: from here on, the inline prime state below is the source of truth.
+  if (window.__homePrepaintFailsafe) {
+    window.clearTimeout(window.__homePrepaintFailsafe);
+    window.__homePrepaintFailsafe = null;
+  }
 
   var STAGGER_MS = 60; // between sibling items
   var ENTER_MS = 400;
@@ -172,6 +180,11 @@
     fill.style.transform = "scaleX(0)";
     fill.style.willChange = "transform";
   });
+
+  // All entrance elements now carry their inline prime state, which matches
+  // the CSS pre-paint state exactly — removing the class changes nothing
+  // visually. The observer reveals below take it from here.
+  document.documentElement.classList.remove("home-prepaint");
   observeOnce(fills, 0.1, function (fill) {
     fill.classList.add("animate-progress");
     requestAnimationFrame(function () {
@@ -210,24 +223,11 @@
   });
 
   // ── Hero grid drift ──────────────────────────────────────────────
-  // The stylesheet animates background-position to a hardcoded 32px, but the
-  // lattice period is whatever background-size says. Any mismatch makes the
-  // pattern jump on every loop, so derive the period from the element and
-  // override the keyframes. A later @keyframes of the same name wins.
+  // The lattice period lives in one place: the --home-grid-size custom
+  // property in the stylesheet, consumed by both background-size and the
+  // grid-drift keyframes. No runtime @keyframes injection anymore.
   var grid = document.querySelector(".home-hero-grid");
   if (grid) {
-    var period = parseFloat(window.getComputedStyle(grid).backgroundSize);
-    if (isFinite(period) && period > 0) {
-      var style = document.createElement("style");
-      style.setAttribute("data-role", "grid-drift-period");
-      style.appendChild(
-        document.createTextNode(
-          "@keyframes grid-drift{from{background-position:0 0}" +
-            "to{background-position:" + period + "px " + period + "px}}"
-        )
-      );
-      document.head.appendChild(style);
-    }
     grid.classList.add("is-drifting");
   }
 })();

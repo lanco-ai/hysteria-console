@@ -1,15 +1,6 @@
 (function(){
-  // The disabled badge is shown/hidden through the `hidden` attribute, but
-  // `[hidden]{display:none}` only comes from the UA stylesheet and loses to
-  // any author-level `display` on `.badge`. Without this rule the "已停用"
-  // badge can stay visible for every user, disabled or not.
-  (function ensureHiddenAttributeWins(){
-    if (document.getElementById('hidden-attr-fix')) return;
-    var s = document.createElement('style');
-    s.id = 'hidden-attr-fix';
-    s.appendChild(document.createTextNode('[hidden]{display:none!important}'));
-    (document.head || document.documentElement).appendChild(s);
-  })();
+  // [hidden]{display:none!important} lives in admin.css — no runtime style
+  // injection needed here.
 
   function fmt(n){n=Math.max(0,Number(n)||0);var u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return n.toFixed(2)+' '+u[i];}
   function setText(el,v){ if(el && el.textContent!==v) el.textContent=v; }

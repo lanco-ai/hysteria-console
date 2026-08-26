@@ -2845,7 +2845,24 @@ def flash_text(msg):
 
 
 def render_home(host):
-    body = '''<header class="home-header">
+    body = '''<script>
+(function(){
+  // Pre-paint bootstrap: hide the entrance-animated elements before the
+  // first paint so they cannot flash visible and then vanish. home.js
+  // primes the same elements inline, clears the failsafe and removes the
+  // class; if the script never loads, the failsafe reveals everything.
+  try {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (typeof IntersectionObserver !== 'function') return;
+    var de = document.documentElement;
+    de.classList.add('home-prepaint');
+    window.__homePrepaintFailsafe = window.setTimeout(function(){
+      de.classList.remove('home-prepaint');
+    }, 2000);
+  } catch (e) {}
+})();
+</script>
+<header class="home-header">
   <div class="home-header-inner">
     <a href="/" class="home-logo">
       <span class="home-logo-icon">H</span>
