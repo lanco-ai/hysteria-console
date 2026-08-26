@@ -2978,9 +2978,29 @@ def render_home(host):
 
 
 def render_login(host, msg='', msg_kind='err', active_tab='admin', username=''):
-    alert = render_alert(msg, msg_kind) if msg else ''
+    """Single-card login for both admin and user realms.
+
+    The POST contract is unchanged: both forms POST to /login with the same
+    field names as before (admin_username/admin_password and
+    user_username/user_password); the realm is chosen by which form is shown,
+    not by any extra field. The .auth-error region always exists so a
+    server-side failure does not shift the card layout.
+    """
     admin_checked = 'checked' if active_tab == 'admin' else ''
     user_checked = 'checked' if active_tab == 'user' else ''
+
+    def auth_error(tab):
+        if msg and tab == active_tab:
+            role = ' role="alert"' if msg_kind == 'err' else ''
+            live = 'assertive' if msg_kind == 'err' else 'polite'
+            cls = 'auth-error' if msg_kind == 'err' else 'auth-error auth-error-flash'
+            return (
+                f'<div class="{cls}"{role} aria-live="{live}" aria-atomic="true">'
+                f'{html.escape(msg)}</div>'
+            )
+        return '<div class="auth-error" aria-live="polite" aria-atomic="true"></div>'
+
+    username_esc = html.escape(username, quote=True)
     body = f'''<header class="auth-header">
   <div class="auth-header-inner">
     <a href="/" class="auth-header-logo">
@@ -2991,86 +3011,48 @@ def render_login(host, msg='', msg_kind='err', active_tab='admin', username=''):
   </div>
 </header>
 
-<div class="auth-scene">
-  <div class="auth-body">
-    <div class="auth-brand">
-      <div class="auth-brand-content">
-        <div class="auth-brand-eyebrow">Network · Access</div>
-        <h1 class="auth-brand-title">连接，<br>应该简单一点。</h1>
-        <p class="auth-brand-subtitle">统一登录、统一订阅、统一控制，让连接配置回归清晰。</p>
-        <div class="auth-brand-features">
-          <div class="auth-brand-feature">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-            稳定加密连接
-          </div>
-          <div class="auth-brand-feature">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
-            透明用量统计
-          </div>
-          <div class="auth-brand-feature">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-            统一订阅管理
-          </div>
-        </div>
-        <div class="auth-brand-info">
-          <div class="auth-brand-info-row">
-            <span class="auth-brand-info-label">支持协议</span>
-            <span class="auth-brand-info-value">Hysteria 2 · Clash · Sing-box · WireGuard</span>
-          </div>
-          <div class="auth-brand-info-row">
-            <span class="auth-brand-info-label">控制能力</span>
-            <span class="auth-brand-info-value">用户 · 配额 · 规则 · 模板</span>
-          </div>
-          <div class="auth-brand-info-row">
-            <span class="auth-brand-info-label">入口统一</span>
-            <span class="auth-brand-info-value">管理员 / 用户共用登录页</span>
-          </div>
-        </div>
+<div class="auth-scene auth-scene-single">
+  <div class="auth-card">
+    <div class="auth-card-brand">
+      <div class="auth-card-logo">H</div>
+      <div class="auth-card-brand-text">
+        <strong>Hysteria</strong>
+        <small>Network Console</small>
       </div>
     </div>
-
-    <div class="auth-form-panel">
-      <div class="auth-card">
-        <div class="auth-card-brand">
-          <div class="auth-card-logo">H</div>
-          <div class="auth-card-brand-text">
-            <strong>Hysteria</strong>
-            <small>登录入口</small>
-          </div>
-        </div>
-        {alert}
-        <div class="auth-tabs">
-          <input type="radio" name="auth_tab" id="tab-admin" value="admin" {admin_checked} class="auth-tab-input">
-          <label for="tab-admin" class="auth-tab-label">管理员</label>
-          <input type="radio" name="auth_tab" id="tab-user" value="user" {user_checked} class="auth-tab-input">
-          <label for="tab-user" class="auth-tab-label">用户</label>
-        </div>
-        <form method="post" action="/login" class="auth-form" id="form-admin">
-          <div class="field">
-            <label class="label" for="admin-username">用户名</label>
-            <input class="input" id="admin-username" name="admin_username" value="{html.escape(username, quote=True)}" required autofocus autocomplete="username" placeholder="输入管理员用户名">
-          </div>
-          <div class="field">
-            <label class="label" for="admin-password">密码</label>
-            <input class="input" id="admin-password" name="admin_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
-          </div>
-          <button class="btn btn-primary btn-full" type="submit">登录</button>
-        </form>
-        <form method="post" action="/login" class="auth-form" id="form-user" style="display:none;">
-          <div class="field">
-            <label class="label" for="user-username">用户名</label>
-            <input class="input" id="user-username" name="user_username" value="{html.escape(username, quote=True)}" required autocomplete="username" placeholder="输入用户名">
-          </div>
-          <div class="field">
-            <label class="label" for="user-password">密码</label>
-            <input class="input" id="user-password" name="user_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
-          </div>
-          <button class="btn btn-primary btn-full" type="submit">登录</button>
-        </form>
-        <p class="auth-card-hint">统一登录入口，认证成功后自动进入对应控制台</p>
-        <a class="auth-back" href="/">返回首页</a>
-      </div>
+    <h1 class="auth-card-title">登录控制台</h1>
+    <p class="auth-card-subtitle">管理员与用户共用的统一入口，认证成功后自动进入对应控制台。</p>
+    <div class="auth-tabs" role="radiogroup" aria-label="登录身份">
+      <input type="radio" name="auth_tab" id="tab-admin" value="admin" {admin_checked} class="auth-tab-input">
+      <label for="tab-admin" class="auth-tab-label">管理员</label>
+      <input type="radio" name="auth_tab" id="tab-user" value="user" {user_checked} class="auth-tab-input">
+      <label for="tab-user" class="auth-tab-label">用户</label>
     </div>
+    <form method="post" action="/login" class="auth-form" id="form-admin">
+      {auth_error('admin')}
+      <div class="field">
+        <label class="label" for="admin-username">用户名</label>
+        <input class="input" id="admin-username" name="admin_username" value="{username_esc}" required autofocus autocomplete="username" placeholder="输入管理员用户名">
+      </div>
+      <div class="field">
+        <label class="label" for="admin-password">密码</label>
+        <input class="input" id="admin-password" name="admin_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
+      </div>
+      <button class="btn btn-primary btn-full auth-submit" type="submit"><span class="auth-submit-text">登录</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+    </form>
+    <form method="post" action="/login" class="auth-form" id="form-user" style="display:none;">
+      {auth_error('user')}
+      <div class="field">
+        <label class="label" for="user-username">用户名</label>
+        <input class="input" id="user-username" name="user_username" value="{username_esc}" required autocomplete="username" placeholder="输入用户名">
+      </div>
+      <div class="field">
+        <label class="label" for="user-password">密码</label>
+        <input class="input" id="user-password" name="user_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
+      </div>
+      <button class="btn btn-primary btn-full auth-submit" type="submit"><span class="auth-submit-text">登录</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
+    </form>
+    <a class="auth-back" href="/">返回首页</a>
   </div>
 </div>
 <script>
@@ -3098,6 +3080,34 @@ def render_login(host, msg='', msg_kind='err', active_tab='admin', username=''):
   userRadio.addEventListener('change', function() {{ switchTab('user'); }});
   if (adminRadio.checked) switchTab('admin');
   else switchTab('user');
+
+  // Submit loading state. The 'submit' event only fires after native HTML
+  // constraint validation passes, so an invalid form never enters loading.
+  function setLoading(btn, on) {{
+    btn.disabled = on;
+    btn.classList.toggle('is-loading', on);
+    if (on) btn.setAttribute('aria-busy', 'true');
+    else btn.removeAttribute('aria-busy');
+    var text = btn.querySelector('.auth-submit-text');
+    if (text) text.textContent = on ? '正在登录…' : '登录';
+  }}
+  function wireLoading(form) {{
+    if (!form) return;
+    form.addEventListener('submit', function() {{
+      var btn = form.querySelector('.auth-submit');
+      if (btn && !btn.disabled) setLoading(btn, true);
+    }});
+  }}
+  wireLoading(adminForm);
+  wireLoading(userForm);
+  // bfcache restore: navigating back must never leave a disabled button.
+  window.addEventListener('pageshow', function(ev) {{
+    if (!ev.persisted) return;
+    [adminForm, userForm].forEach(function(form) {{
+      var btn = form && form.querySelector('.auth-submit');
+      if (btn) setLoading(btn, false);
+    }});
+  }});
 }})();
 </script>'''
     return html_page('登录 · Hysteria', body, body_class='page-auth')

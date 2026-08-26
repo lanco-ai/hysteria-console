@@ -45,6 +45,7 @@
   --radius-xs: 3px;
   --radius-sm: 6px;
   --radius-md: 10px;
+  --radius-lg: 16px;
   --radius-pill: 999px;
 
   /* Fonts */
@@ -1474,6 +1475,188 @@ body.page-auth {
   background: var(--bg-surface);
   color: var(--text-primary);
   box-shadow: var(--shadow-xs);
+}
+
+/* ---- Single-card login scene (unified /login) ---- */
+/* Standalone centered auth page (logout confirmation etc.) */
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background: var(--bg-page);
+}
+.auth-wrap { width: min(430px, 100%); }
+.auth-page .auth-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md), var(--shadow-xs);
+  padding: 32px 32px 28px;
+}
+.auth-page .auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 20px;
+  margin-bottom: 20px;
+  border-right: none;
+  border-bottom: 1px solid var(--border);
+}
+.auth-page .auth-logo {
+  width: 40px;
+  height: 40px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-xs);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.auth-page .auth-brand-text strong {
+  display: block;
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.auth-page .auth-brand-text small {
+  display: block;
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+.auth-page .auth-title {
+  font-size: 22px;
+  font-weight: 650;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  letter-spacing: -0.02em;
+}
+.auth-page .auth-subtitle {
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.auth-scene.auth-scene-single {
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+}
+
+.auth-scene-single .auth-card {
+  width: 100%;
+  max-width: 430px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md), var(--shadow-xs);
+  padding: 32px 32px 28px;
+}
+
+.auth-scene-single .auth-card-brand {
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+}
+
+.auth-scene-single .auth-card-title {
+  font-size: 22px;
+  margin-bottom: 6px;
+}
+
+.auth-scene-single .auth-card-subtitle {
+  margin-bottom: 20px;
+}
+
+.auth-scene-single .auth-back {
+  margin-top: 20px;
+}
+
+/* Inline auth error region: always rendered so showing the server message
+   never shifts the card layout. */
+.auth-error {
+  min-height: 22px;
+  margin-bottom: 4px;
+  font-size: var(--text-ui);
+  line-height: 1.6;
+  color: var(--danger);
+}
+.auth-error:empty {
+  visibility: hidden;
+}
+.auth-error-flash {
+  color: var(--ok);
+}
+
+/* Pill submit with loading state */
+.auth-submit {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.auth-submit .auth-submit-spinner {
+  display: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: auth-spin 0.7s linear infinite;
+}
+.auth-submit.is-loading .auth-submit-spinner {
+  display: inline-block;
+}
+.auth-submit:disabled {
+  opacity: 0.75;
+  cursor: wait;
+}
+@keyframes auth-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Browser autofill: keep console colors instead of the UA yellow/blue tint. */
+.auth-form .input:-webkit-autofill,
+.auth-form .input:-webkit-autofill:hover,
+.auth-form .input:-webkit-autofill:focus,
+.auth-form .input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--text-primary);
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-surface) inset;
+  caret-color: var(--text-primary);
+  border-color: var(--border);
+  border-radius: var(--radius-sm);
+  transition: background-color 600000s 0s;
+}
+.auth-form .input:-webkit-autofill:focus {
+  border-color: var(--data);
+  -webkit-box-shadow:
+    0 0 0 1000px var(--bg-surface) inset,
+    0 0 0 3px var(--data-soft);
+}
+
+/* Segmented control keyboard focus: the input is visually hidden, so draw
+   the focus ring on its label. */
+.auth-tab-input:focus-visible + .auth-tab-label {
+  outline: 2px solid var(--data);
+  outline-offset: 2px;
+}
+.auth-tab-input:focus:not(:focus-visible) + .auth-tab-label {
+  outline: none;
+}
+
+@media (max-width: 640px) {
+  .auth-scene.auth-scene-single {
+    padding: 24px 16px;
+    align-items: flex-start;
+  }
+  .auth-scene-single .auth-card {
+    padding: 24px 20px 20px;
+    max-width: 100%;
+  }
 }
 
 /* ---- Responsive ---- */
@@ -4475,6 +4658,16 @@ body.has-shell .codex-context-item {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 16px 20px;
+}
+
+body.has-shell .codex-context-icon {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--data);
+  opacity: 0.6;
+  margin-bottom: 8px;
 }
 
 body.has-shell .codex-context-item .k {

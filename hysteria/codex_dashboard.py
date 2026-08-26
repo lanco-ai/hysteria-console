@@ -159,16 +159,19 @@ def render_page(payload, *, render_admin_shell, asset_version=''):
 
   <div class="codex-context-grid">
     <div class="codex-context-item">
+      <span class="codex-context-icon" aria-hidden="true"></span>
       <div class="k">当前方案</div>
       <div class="v" data-role="plan-type">{_esc(plan_label)}</div>
       <div class="small">额度组 <span data-role="limit-id">{_esc(account.get('limit_id') or 'codex')}</span></div>
     </div>
     <div class="codex-context-item">
+      <span class="codex-context-icon" aria-hidden="true"></span>
       <div class="k">采集节奏</div>
       <div class="v">每 3 分钟</div>
       <div class="small">下次采集 <strong data-role="next-poll">计算中</strong></div>
     </div>
     <div class="codex-context-item">
+      <span class="codex-context-icon" aria-hidden="true"></span>
       <div class="k">可重置次数</div>
       <div class="v" data-role="reset-credits">{_esc(reset_credits_copy)}</div>
       <div class="small">由 Codex 当前账户响应提供</div>
