@@ -84,3 +84,14 @@ def test_delete_never_restores_detached_controls():
     assert "row.__detached" in catch
     # The unconditional restore is gone from the failure path.
     assert "if (!(row && row.__detached)) restoreButtons(true);" in catch
+
+
+def test_sidebar_collapse_controls_exist_in_shell():
+    src = _read("hysteria/subscription_service.py")
+    css = _read("hysteria/admin.css")
+    assert 'id="sidebar-collapse"' in src
+    assert 'hy2.sidebar' in src
+    assert 'aria-pressed' in src
+    assert '.sidebar.collapsed' in css
+    assert 'inset 2px 0 0 var(--data)' in css
+    assert 'id="total-used"' in src

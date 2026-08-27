@@ -1728,6 +1728,10 @@ body.has-shell {
   min-height: 100vh;
 }
 
+.app.sidebar-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
 /* Sidebar */
 .sidebar {
   position: sticky;
@@ -1737,8 +1741,14 @@ body.has-shell {
   flex-direction: column;
   height: 100vh;
   overflow-y: auto;
-  background: #FAF9F6;
-  border-right: 1px solid var(--border);
+  overflow-x: hidden;
+  background: var(--bg-page);
+  border-right: 1px solid var(--hairline);
+  transition: width 180ms ease;
+}
+
+.sidebar.collapsed {
+  width: 64px;
 }
 
 .sidebar-brand {
@@ -1820,8 +1830,9 @@ body.has-shell {
 .sidebar-link.active {
   color: var(--text-primary);
   font-weight: 600;
-  background: #F0EFEB;
+  background: var(--data-soft);
   border-left-color: var(--data);
+  box-shadow: inset 2px 0 0 var(--data);
 }
 
 .sidebar-link.active svg { opacity: 0.8; }
@@ -1852,6 +1863,107 @@ body.has-shell {
 }
 
 .sidebar-logout svg { width: 16px; height: 16px; }
+
+.sidebar-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 8px 16px 12px;
+  padding: 0;
+  color: var(--text-tertiary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.sidebar-collapse:hover,
+.sidebar-collapse:focus-visible {
+  color: var(--text-primary);
+  background: var(--data-soft);
+}
+
+.sidebar-collapse svg {
+  width: 16px;
+  height: 16px;
+}
+
+.sidebar.collapsed .sidebar-brand-text,
+.sidebar.collapsed .sidebar-section,
+.sidebar.collapsed .sidebar-link span,
+.sidebar.collapsed .sidebar-logout span,
+.sidebar.collapsed .sidebar-close {
+  display: none;
+}
+
+.sidebar.collapsed .sidebar-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar.collapsed .sidebar-link,
+.sidebar.collapsed .sidebar-logout {
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+
+.sidebar.collapsed .sidebar-collapse {
+  margin: 8px auto 12px;
+}
+
+.sidebar.collapsed .sidebar-footer {
+  padding: 12px 8px;
+}
+
+html.sidebar-pre-collapsed .app {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+html.sidebar-pre-collapsed .sidebar {
+  width: 64px;
+}
+html.sidebar-pre-collapsed .sidebar-brand-text,
+html.sidebar-pre-collapsed .sidebar-section,
+html.sidebar-pre-collapsed .sidebar-link span,
+html.sidebar-pre-collapsed .sidebar-logout span,
+html.sidebar-pre-collapsed .sidebar-close {
+  display: none;
+}
+html.sidebar-pre-collapsed .sidebar-brand {
+  justify-content: center;
+  padding: 0;
+}
+html.sidebar-pre-collapsed .sidebar-link,
+html.sidebar-pre-collapsed .sidebar-logout {
+  justify-content: center;
+  padding: 0;
+  gap: 0;
+}
+
+@media (max-width: 880px) {
+  .sidebar-collapse { display: none; }
+  .app.sidebar-collapsed,
+  html.sidebar-pre-collapsed .app {
+    grid-template-columns: 1fr;
+  }
+  html.sidebar-pre-collapsed .sidebar {
+    width: min(260px, 85vw);
+  }
+  html.sidebar-pre-collapsed .sidebar-brand-text,
+  html.sidebar-pre-collapsed .sidebar-section,
+  html.sidebar-pre-collapsed .sidebar-link span,
+  html.sidebar-pre-collapsed .sidebar-logout span {
+    display: revert;
+  }
+  html.sidebar-pre-collapsed .sidebar-link,
+  html.sidebar-pre-collapsed .sidebar-logout {
+    justify-content: flex-start;
+    padding: 0 16px;
+    gap: 10px;
+  }
+}
 
 /* Main Area */
 .main {
@@ -2006,25 +2118,14 @@ body.has-shell .btn-ghost:hover {
 .overview-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  background: transparent;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  border-radius: 0;
   overflow: hidden;
   margin-bottom: 32px;
-  box-shadow: inset 0 1px 0 #fff, var(--shadow-xs);
+  box-shadow: none;
   position: relative;
-}
-
-.overview-stats::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--hairline) 1px, transparent 1px),
-    linear-gradient(90deg, var(--hairline) 1px, transparent 1px);
-  background-size: 32px 32px;
-  opacity: 0.035;
-  pointer-events: none;
 }
 
 .overview-stat {
