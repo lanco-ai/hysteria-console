@@ -25,6 +25,7 @@ import cycle as cycle_util
 import display as display_config
 import health
 import health_widgets
+import hysteria_update
 import http_utils
 import incident_console
 import revocation_queue
@@ -4972,6 +4973,7 @@ def render_health(host, flash=''):
 
         # --- Cost calibrator (advanced ops) ---
         + render_cost_calibrator()
+        + hysteria_update.render_history()
 
         + '</div>'
         + '''<span class="sr-only" id="health-refresh-announcer" role="status" aria-live="polite"></span>
@@ -7933,6 +7935,34 @@ class Handler(BaseHTTPRequestHandler):
             # receiver, so we report "dispatched" rather than guaranteed-sent.
             _fire_test_alert(cfg, self.get_admin_actor())
             self.redirect('/admin/health?msg=alert+dispatched')
+            return
+
+        if path == '/admin/hysteria-update/check':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            try:
+                info = hysteria_update.check_latest()
+                hysteria_update.record_check(info)
+                flash = 'checked ' + (info.get('latest') or '')
+            except Exception:
+                flash = 'err:hysteria_update_check_failed'
+            self.redirect('/admin/health?msg=' + flash.replace(' ', '+'))
+            return
+
+        if path == '/admin/hysteria-update/apply':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            result = hysteria_update.apply_update()
+            status = result.get('status')
+            if status == 'done':
+                flash = 'hysteria_updated'
+            elif status == 'rolled_back':
+                flash = 'err:hysteria_update_rolled_back'
+            else:
+                flash = 'err:hysteria_update_failed'
+            self.redirect('/admin/health?msg=' + flash)
             return
 
         if path == '/admin/cost-multiplier/apply':
