@@ -279,6 +279,9 @@
     setEditValue('quota_extra_gb', btn.dataset.quotaExtraGb || '0');
     setEditValue('expires_at', btn.dataset.expiresAt || '');
     setEditValue('note', btn.dataset.note || '');
+    setEditValue('landing_isp', btn.dataset.landingIsp || '');
+    setEditValue('landing_region', btn.dataset.landingRegion || '');
+    setEditValue('landing_note', btn.dataset.landingNote || '');
     var metered = editForm.querySelector('[name="guest"]');
     var tuic = editForm.querySelector('[name="tuic_enabled"]');
     if (metered) metered.checked = btn.dataset.metered === '1';

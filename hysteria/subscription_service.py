@@ -2548,6 +2548,40 @@ def is_logged_in(handler):
     return True
 
 
+def render_panel_link_required():
+    """Shown when /user/panel is opened without a user session.
+
+    Share recipients should not land on the admin/user login form. This page
+    has no username, no token field, and no credential prompt — only a
+    pointer back to the dedicated login route for password users who
+    arrived here by mistake.
+    """
+    body = '''<header class="auth-header">
+  <div class="auth-header-inner">
+    <a href="/" class="auth-header-logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      Hysteria
+    </a>
+    <a href="/" class="auth-header-back">← 返回首页</a>
+  </div>
+</header>
+<div class="auth-scene auth-scene-single">
+  <div class="auth-card">
+    <div class="auth-card-brand">
+      <div class="auth-card-logo">H</div>
+      <div class="auth-card-brand-text">
+        <strong>Hysteria</strong>
+        <small>用户面板</small>
+      </div>
+    </div>
+    <h1 class="auth-card-title">请使用管理员提供的专属链接</h1>
+    <p class="auth-card-subtitle">此页面需要通过管理员发给你的专属面板链接打开。链接打开后地址栏不再包含密钥。</p>
+    <a class="auth-back" href="/login">前往登录</a>
+  </div>
+</div>'''
+    return html_page('专属链接 · Hysteria', body, body_class='page-auth')
+
+
 def html_page(title, body, body_class=''):
     cls = f' class="{body_class}"' if body_class else ''
     css_version = BASE_CSS_ETAG.strip('"')
@@ -2666,13 +2700,22 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
         current = ' aria-current="page"' if key == active else ''
         active_class = 'active' if key == active else ''
         nav_parts.append(
-            f'<a href="{href}" class="sidebar-link {active_class}"{current}>'
+            f'<a href="{href}" class="sidebar-link {active_class}"{current} title="{html.escape(label, quote=True)}" aria-label="{html.escape(label, quote=True)}">'
             f'{icon(icon_name)}<span>{html.escape(label)}</span></a>'
         )
     nav_items = ''.join(nav_parts)
     badge_html = f'<span class="badge">{html.escape(badge)}</span>' if badge else ''
     sub_html = f'<small>{html.escape(subtitle)}</small>' if subtitle else ''
-    body = f'''<a class="skip-link" href="#main-content">跳到主内容</a>
+    body = f'''<script>
+(function(){{
+  try {{
+    if (localStorage.getItem('hy2.sidebar') === 'collapsed') {{
+      document.documentElement.classList.add('sidebar-pre-collapsed');
+    }}
+  }} catch (e) {{}}
+}})();
+</script>
+<a class="skip-link" href="#main-content">跳到主内容</a>
 <div class="app">
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-brand">
@@ -2685,13 +2728,16 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
+  <button class="sidebar-collapse" id="sidebar-collapse" type="button" aria-label="折叠侧边栏" aria-pressed="false" title="折叠侧边栏">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
   <nav class="sidebar-nav" aria-label="管理导航">
     <div class="sidebar-section">控制中心</div>
     {nav_items}
   </nav>
   <div class="sidebar-footer">
     <form method="post" action="/logout">
-      <button type="submit" class="sidebar-logout">{icon("logout")}<span>退出登录</span></button>
+      <button type="submit" class="sidebar-logout" title="退出登录" aria-label="退出登录">{icon("logout")}<span>退出登录</span></button>
     </form>
   </div>
 </aside>
@@ -2717,9 +2763,29 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   var sc = document.getElementById('scrim');
   var bt = document.getElementById('sidebar-toggle');
   var cb = document.getElementById('sidebar-close');
+  var collapseBtn = document.getElementById('sidebar-collapse');
+  var app = document.querySelector('.app');
   var main = document.querySelector('.main');
   var skip = document.querySelector('.skip-link');
   if (!sb || !sc || !bt || !cb) return;
+  function setCollapsed(collapsed) {{
+    collapsed = Boolean(collapsed) && !isMobile();
+    sb.classList.toggle('collapsed', collapsed);
+    if (app) app.classList.toggle('sidebar-collapsed', collapsed);
+    document.documentElement.classList.toggle('sidebar-pre-collapsed', collapsed);
+    if (collapseBtn) {{
+      collapseBtn.setAttribute('aria-pressed', collapsed ? 'true' : 'false');
+      collapseBtn.setAttribute('aria-label', collapsed ? '展开侧边栏' : '折叠侧边栏');
+      collapseBtn.setAttribute('title', collapsed ? '展开侧边栏' : '折叠侧边栏');
+    }}
+    try {{ localStorage.setItem('hy2.sidebar', collapsed ? 'collapsed' : 'expanded'); }} catch (e) {{}}
+  }}
+  try {{
+    setCollapsed(localStorage.getItem('hy2.sidebar') === 'collapsed');
+  }} catch (e) {{}}
+  if (collapseBtn) collapseBtn.addEventListener('click', function() {{
+    setCollapsed(!sb.classList.contains('collapsed'));
+  }});
   function isMobile() {{ return window.innerWidth <= 880; }}
   function focusableItems() {{
     return Array.prototype.slice.call(
@@ -2779,7 +2845,17 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
       }}
     }}
   }});
-  window.addEventListener('resize', function() {{ setOpen(sb.classList.contains('open')); }});
+  window.addEventListener('resize', function() {{
+    setOpen(sb.classList.contains('open'));
+    if (isMobile()) {{
+      sb.classList.remove('collapsed');
+      if (app) app.classList.remove('sidebar-collapsed');
+    }} else {{
+      try {{
+        setCollapsed(localStorage.getItem('hy2.sidebar') === 'collapsed');
+      }} catch (e) {{}}
+    }}
+  }});
   document.addEventListener('submit', function(ev) {{
     var form = ev.target;
     if (ev.defaultPrevented || !form || form.tagName !== 'FORM') return;
@@ -2862,6 +2938,8 @@ def flash_text(msg):
         'quota_extra_invalid': '加量包必须是 0–10240 之间的整数',
         'expiry_invalid': '到期日无效，请使用 YYYY-MM-DD 格式',
         'note_too_long': '备注不能超过 200 个字符',
+        'landing_too_long': '落地家宽信息不能超过 120 个字符',
+        'landing_invalid': '落地家宽信息不能包含控制字符',
         'settlement_invalid': '结算日无效（请输入 1–28 之间的整数）',
         'cycle_length_invalid': f'周期长度无效（请输入 {CYCLE_LENGTH_MIN}–{CYCLE_LENGTH_MAX} 之间的整数）',
     }
@@ -3822,6 +3900,33 @@ def render_user_panel(
 
     profile_meta = SUBSCRIPTION_PROFILES.get('default', {})
     profile_label = profile_meta.get('label', '默认')
+    landing = user_compat.landing_fields(cfg)
+    landing_section = ''
+    if landing:
+        rows = ''
+        if landing.get('landing_isp'):
+            rows += (
+                '<div><dt>运营商</dt><dd>'
+                f'{html.escape(landing["landing_isp"])}</dd></div>'
+            )
+        if landing.get('landing_region'):
+            rows += (
+                '<div><dt>地区</dt><dd>'
+                f'{html.escape(landing["landing_region"])}</dd></div>'
+            )
+        if landing.get('landing_note'):
+            rows += (
+                '<div><dt>说明</dt><dd>'
+                f'{html.escape(landing["landing_note"])}</dd></div>'
+            )
+        landing_section = (
+            '<aside class="plan-section" aria-label="落地家宽">'
+            '<header class="section-head">'
+            '<h2 class="section-title">落地家宽</h2>'
+            '</header>'
+            f'<dl class="user-kv">{rows}</dl>'
+            '</aside>'
+        )
 
     body = f'''<div class="wrap user-panel">
 {notice_banner}
@@ -3902,6 +4007,7 @@ def render_user_panel(
     <div><dt>有效期</dt><dd>{html.escape(expiry["label"])}</dd></div>
   </dl>
 </aside>
+{landing_section}
 
 <section class="trend-section" aria-label="近 30 天用量趋势">
   <header class="section-head">
@@ -4118,6 +4224,9 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
           data-edit-user="{user_esc}" data-user-revision="{user_revision}" data-max-devices="{max_devices}"
           data-quota-gb="{base_gb}" data-quota-extra-gb="{extra_gb}"
           data-expires-at="{expires_attr}" data-note="{note_attr}"
+          data-landing-isp="{html.escape(user_compat.landing_field(cfg, 'landing_isp'), quote=True)}"
+          data-landing-region="{html.escape(user_compat.landing_field(cfg, 'landing_region'), quote=True)}"
+          data-landing-note="{html.escape(user_compat.landing_field(cfg, 'landing_note'), quote=True)}"
           data-metered="{'1' if metered else '0'}" data-tuic-enabled="{'1' if tuic_allowed else '0'}">编辑套餐</button>
   {summary_preview}
 </div>
@@ -4143,7 +4252,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
   <div class="link-row">
     <a href="{html.escape(panel)}" target="_blank" rel="noopener">{icon("dashboard")}<span>面板</span></a>
     <button type="button" class="btn ghost btn-sm copy-link" data-copy="{html.escape(panel)}"
-            title="复制面板链接" aria-label="复制 {user_esc} 的面板链接">{icon("copy")}</button>
+            title="复制专属面板链接（首次打开后地址栏不再含密钥）" aria-label="复制 {user_esc} 的专属面板链接">{icon("copy")}</button>
   </div>
   <div class="link-row">
     <a href="{html.escape(sub_http)}" target="_blank" rel="noopener">{icon("open")}<span>订阅</span></a>
@@ -4277,6 +4386,12 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
           <input id="edit-expires-at" name="expires_at" type="date" min="2000-01-01" max="2099-12-31"><span class="hint">留空 = 不限期；年份范围 2000–2099</span></div>
         <div class="form-field" style="grid-column:1/-1"><label for="edit-note">备注</label>
           <input id="edit-note" name="note" maxlength="200" placeholder="可选"></div>
+        <div class="form-field"><label for="edit-landing-isp">落地运营商</label>
+          <input id="edit-landing-isp" name="landing_isp" maxlength="120" placeholder="可选，仅展示"></div>
+        <div class="form-field"><label for="edit-landing-region">落地地区</label>
+          <input id="edit-landing-region" name="landing_region" maxlength="120" placeholder="可选，仅展示"></div>
+        <div class="form-field" style="grid-column:1/-1"><label for="edit-landing-note">落地说明</label>
+          <input id="edit-landing-note" name="landing_note" maxlength="120" placeholder="可选，仅展示，不影响出口"></div>
         <div class="form-field"><label for="edit-panel-password">面板密码</label>
           <input id="edit-panel-password" name="panel_password" type="password" minlength="8" maxlength="256"
                  autocomplete="new-password" placeholder="留空保持不变"><span class="hint">至少 8 位</span></div>
@@ -6379,7 +6494,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/user/panel':
             user, session_kind = get_logged_in_user_context(self)
             if not user:
-                self.redirect('/login')
+                self.send_response_body(
+                    403,
+                    render_panel_link_required(),
+                    'text/html; charset=utf-8',
+                    send_payload,
+                )
                 return
             cfg = load_json(USERS_FILE, {}).get(user)
             if not isinstance(cfg, dict):
@@ -6502,6 +6622,12 @@ class Handler(BaseHTTPRequestHandler):
             cfg = check_user_token(user, token)
             if not cfg:
                 self.send_response_body(403, '无权限访问', send_body=send_payload)
+                return
+            if cfg.get('disabled'):
+                self.send_response_body(403, '账号已停用，请联系管理员', send_body=send_payload)
+                return
+            if user_compat.is_expired(cfg, today=local_now().date()):
+                self.send_response_body(403, '账号已到期，请联系管理员续费', send_body=send_payload)
                 return
             if send_payload:
                 sid = create_user_session(
@@ -7372,6 +7498,16 @@ class Handler(BaseHTTPRequestHandler):
             note_raw = (form.get('note') or [''])[0]
             expires_at = parse_date_field(expires_raw)
             note = parse_note_field(note_raw)
+            landing_values = {}
+            landing_error = None
+            for landing_name in user_compat.LANDING_FIELDS:
+                value, err = user_compat.parse_landing_write(
+                    (form.get(landing_name) or [''])[0],
+                )
+                if err:
+                    landing_error = err
+                    break
+                landing_values[landing_name] = value
             guest = 'guest' in form
             tuic_enabled = 'tuic_enabled' in form
 
@@ -7407,6 +7543,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if len(str(note_raw).strip()) > 200:
                 respond_update_error('err:note_too_long')
+                return
+            if landing_error:
+                respond_update_error('err:' + landing_error)
                 return
             if panel_password and len(panel_password) < 8:
                 self.redirect('/admin?msg=err:panel_password_short')
@@ -7460,6 +7599,11 @@ class Handler(BaseHTTPRequestHandler):
                     cfg['note'] = note
                 else:
                     cfg.pop('note', None)
+                for landing_name, landing_value in landing_values.items():
+                    if landing_value:
+                        cfg[landing_name] = landing_value
+                    else:
+                        cfg.pop(landing_name, None)
                 cfg['metered'] = guest
                 cfg['guest'] = guest
                 cfg['tuic_enabled'] = tuic_enabled
