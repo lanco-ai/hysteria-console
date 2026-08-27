@@ -6,6 +6,7 @@ always fails closed: a hash/sanity/readyz failure restores last-good.
 """
 from datetime import datetime, timezone
 import hashlib
+import html
 import json
 import os
 import re
@@ -24,9 +25,18 @@ LAST_GOOD_PATH = '/root/hysteria/state/hysteria.binary.last-good'
 STATE_PATH = '/root/hysteria/state/hysteria-update.json'
 POLICY_PATH = '/root/hysteria/state/hysteria-update-policy.json'
 LOCK_PATH = '/root/hysteria/state/hysteria-update.lock'
-RELEASES_URL = 'https://api.github.com/repos/apernet/hysteria/releases/latest'
+# apernet/hysteria only survives as a rename redirect; point at the
+# canonical repository so checks do not depend on that redirect.
+RELEASES_URL = 'https://api.github.com/repos/HyNetworks/hysteria/releases/latest'
 ASSET_NAME = 'hysteria-linux-amd64'
-CHECKSUMS_NAME = 'hysteria-linux-amd64.sha256'
+# Upstream publishes ONE combined listing for every platform, built with
+# `sha256sum build/* >> build/hashes.txt`. There is no per-asset
+# '<asset>.sha256' file, so the previous name never resolved and every
+# apply failed with 'release assets missing'.
+CHECKSUMS_NAME = 'hashes.txt'
+# Checksum listings decorate the file name: sha256sum binary mode prefixes
+# '*', BSD mode wraps it in parentheses.
+_CHECKSUM_NAME_TRIM = '()*'
 UNIT = 'hysteria-server.service'
 DEFAULT_POLICY = {
     'enabled': False,
@@ -132,14 +142,57 @@ def _download(url, dest, *, opener=None, max_bytes=80 * 1024 * 1024):
             out.write(chunk)
 
 
+def _sha256_hex(value):
+    """Normalize a digest to bare lowercase hex, or '' when unusable.
+
+    GitHub asset metadata carries digest values as 'sha256:<hex>'.
+    """
+    text = str(value or '').strip().lower()
+    if text.startswith('sha256:'):
+        text = text[len('sha256:'):]
+    return text if re.fullmatch(r'[0-9a-f]{64}', text) else ''
+
+
 def _parse_checksums(text, asset_name=ASSET_NAME):
-    for line in str(text or '').splitlines():
+    """Pull the sha256 for asset_name out of a checksum listing.
+
+    Accepts sha256sum output ('<hex>  build/<name>'), the reversed order,
+    and BSD 'SHA256 (<name>) = <hex>'. A bare hash with no file name is
+    only trusted when the listing is a single line: hashes.txt covers
+    every platform, so a nameless match could return another binary's
+    hash and turn a real mismatch into a silent pass.
+    """
+    lines = [line for line in str(text or '').splitlines() if line.strip()]
+    for line in lines:
         parts = line.split()
-        if len(parts) >= 2 and parts[-1].endswith(asset_name):
-            return parts[0].lower()
-        if len(parts) == 1 and re.fullmatch(r'[0-9a-fA-F]{64}', parts[0]):
-            return parts[0].lower()
+        if len(parts) < 2:
+            continue
+        named = any(
+            os.path.basename(part.strip(_CHECKSUM_NAME_TRIM)) == asset_name
+            for part in parts
+        )
+        if not named:
+            continue
+        for candidate in (parts[0], parts[-1]):
+            digest = _sha256_hex(candidate)
+            if digest:
+                return digest
+    if len(lines) == 1 and len(lines[0].split()) == 1:
+        return _sha256_hex(lines[0].strip())
     return ''
+
+
+def _release_version(tag):
+    """Normalize a release tag for comparison.
+
+    Upstream tags are namespaced ('app/v2.12.2'). Without dropping that
+    prefix the numeric tuple parse fails, and an unparseable candidate
+    used to be reported as an available update forever.
+    """
+    text = str(tag or '').strip()
+    if '/' in text:
+        text = text.rsplit('/', 1)[-1].strip()
+    return health._normalize_hysteria_version(text)
 
 
 def check_latest(*, opener=None, runner=subprocess.run, binary_path=BINARY_PATH):
@@ -153,28 +206,45 @@ def check_latest(*, opener=None, runner=subprocess.run, binary_path=BINARY_PATH)
             (out.stdout or '') + '\n' + (out.stderr or ''),
         ) or ''
     except Exception:
-        current = health._current_hysteria_version(runner=runner) or ''
+        # An unreadable local version stays unknown. The comparison below
+        # then refuses to claim an update rather than guessing.
+        current = ''
     release = _http_json(RELEASES_URL, opener=opener)
     tag = str(release.get('tag_name') or '').strip()
-    assets = {
-        str(item.get('name') or ''): str(item.get('browser_download_url') or '')
-        for item in release.get('assets') or []
-        if isinstance(item, dict)
-    }
+    assets = {}
+    for item in release.get('assets') or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or '')
+        if not name:
+            continue
+        assets[name] = {
+            'url': str(item.get('browser_download_url') or ''),
+            'sha256': _sha256_hex(item.get('digest')),
+        }
+    asset = assets.get(ASSET_NAME) or {}
+    checksums = assets.get(CHECKSUMS_NAME) or {}
     info = {
         'ok': True,
         'current': current,
         'latest': tag,
-        'asset_url': assets.get(ASSET_NAME, ''),
-        'checksum_url': assets.get(CHECKSUMS_NAME, ''),
+        'published_at': str(release.get('published_at') or ''),
+        'asset_url': asset.get('url') or '',
+        # Per-asset digest published by GitHub: primary source of truth,
+        # and it removes one network round trip.
+        'asset_sha256': asset.get('sha256') or '',
+        'checksum_url': checksums.get('url') or '',
         'update_available': False,
     }
-    cand = health._normalize_hysteria_version(tag)
+    cand = _release_version(tag)
     curr = health._normalize_hysteria_version(current)
     if cand and curr and cand != curr:
         cand_t = health._hysteria_version_tuple(cand)
         curr_t = health._hysteria_version_tuple(curr)
-        if cand_t is None or curr_t is None or cand_t > curr_t:
+        # Unknown ordering is not an upgrade signal. The old
+        # 'cand_t is None or curr_t is None' branch made update_available
+        # permanently true for namespaced tags.
+        if cand_t is not None and curr_t is not None and cand_t > curr_t:
             info['update_available'] = True
     return info
 
@@ -192,8 +262,8 @@ def record_check(info, *, path=STATE_PATH):
 
 
 def _ready(runner, connection_factory=None):
-    kwargs = {'runner': runner} if False else {}
-    del kwargs
+    # runner is accepted for call-site symmetry only: readiness is an HTTP
+    # probe against the loopback auth bridge, not a subprocess.
     if connection_factory is not None:
         return health.probe_auth_readiness(connection_factory=connection_factory)
     return health.probe_auth_readiness()
@@ -268,9 +338,16 @@ def apply_update(
             })
             save_state(state, state_path)
             return state
-        if not info.get('asset_url') or not info.get('checksum_url'):
+        if not info.get('asset_url'):
             state.update({
-                'status': 'failed', 'error': 'release assets missing',
+                'status': 'failed', 'error': 'release asset missing',
+                'ts': _now_iso(),
+            })
+            save_state(state, state_path)
+            return state
+        if not info.get('asset_sha256') and not info.get('checksum_url'):
+            state.update({
+                'status': 'failed', 'error': 'release checksum unavailable',
                 'ts': _now_iso(),
             })
             save_state(state, state_path)
@@ -279,7 +356,6 @@ def apply_update(
         work = tempfile.mkdtemp(prefix='hy-upd.')
         try:
             asset = os.path.join(work, ASSET_NAME)
-            sums = os.path.join(work, CHECKSUMS_NAME)
             state.update({
                 'status': 'downloading', 'version': info['latest'],
                 'previous_version': info.get('current') or '',
@@ -287,8 +363,12 @@ def apply_update(
             })
             save_state(state, state_path)
             _download(info['asset_url'], asset, opener=opener)
-            _download(info['checksum_url'], sums, opener=opener)
-            expected = _parse_checksums(open(sums, encoding='utf-8').read())
+            expected = info.get('asset_sha256') or ''
+            if not expected:
+                sums = os.path.join(work, CHECKSUMS_NAME)
+                _download(info['checksum_url'], sums, opener=opener)
+                with open(sums, encoding='utf-8') as handle:
+                    expected = _parse_checksums(handle.read())
             actual = _sha256_file(asset)
             if not expected or expected != actual:
                 raise ValueError('checksum mismatch')
@@ -395,12 +475,12 @@ def reconcile(*, runner=subprocess.run, binary_path=BINARY_PATH,
 
 def render_history(state=None):
     data = state or load_state()
-    status = html_escape = __import__('html').escape
-    st = status(str(data.get('status') or 'idle'))
-    ver = status(str(data.get('version') or '—'))
-    prev = status(str(data.get('previous_version') or '—'))
-    ts = status(str(data.get('ts') or '—'))
-    err = status(str(data.get('error') or ''))
+    esc = html.escape
+    st = esc(str(data.get('status') or 'idle'))
+    ver = esc(str(data.get('version') or '—'))
+    prev = esc(str(data.get('previous_version') or '—'))
+    ts = esc(str(data.get('ts') or '—'))
+    err = esc(str(data.get('error') or ''))
     err_row = f'<div class="small">{err}</div>' if err else ''
     return (
         '<div class="card hysteria-update-history">'
