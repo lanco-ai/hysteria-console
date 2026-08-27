@@ -302,18 +302,71 @@ def test_panel_tls_probe_rejects_ambiguous_certificate_directive(tmp_path):
     ) == {'ok': False, 'label': '配置异常'}
 
 
+def _hysteria_update_runner(journal, version_stdout):
+    def runner(cmd, *_args, **_kwargs):
+        argv = list(cmd) if cmd is not None else []
+        if argv and argv[0] == 'journalctl':
+            return type('R', (), {'stdout': journal, 'stderr': '', 'returncode': 0})()
+        return type('R', (), {
+            'stdout': version_stdout, 'stderr': '', 'returncode': 0,
+        })()
+    return runner
+
+
 def test_probe_hysteria_update_marks_urgent_bad():
     payload = ('Jun 22 15:37 hysteria[1]: update available '
                '{"version":"v2.9.2","url":"https://example","urgent":true}\n')
 
-    def runner(*_args, **_kwargs):
-        return type('R', (), {'stdout': payload, 'returncode': 0})()
-
-    out = health.probe_hysteria_update(runner=runner)
+    out = health.probe_hysteria_update(
+        runner=_hysteria_update_runner(payload, 'Version:\tv2.6.0\n'),
+    )
 
     assert out['ok'] is False
     assert 'v2.9.2' in out['label']
     assert 'urgent' in out['label']
+
+
+def test_probe_hysteria_update_ignores_stale_journal_after_upgrade():
+    payload = ('Jun 22 15:37 hysteria[1]: update available '
+               '{"version":"v2.9.3","url":"https://example","urgent":false}\n')
+
+    out = health.probe_hysteria_update(
+        runner=_hysteria_update_runner(payload, 'Version:\tv2.9.3\n'),
+    )
+
+    assert out == {'ok': True, 'label': '已是最新'}
+
+
+def test_probe_hysteria_update_reports_newer_candidate():
+    payload = ('Jun 22 15:37 hysteria[1]: update available '
+               '{"version":"v2.4.0","url":"https://example","urgent":false}\n')
+
+    out = health.probe_hysteria_update(
+        runner=_hysteria_update_runner(payload, 'Version:\tv2.3.0\n'),
+    )
+
+    assert out == {'ok': True, 'label': 'v2.4.0 可更新'}
+
+
+def test_probe_hysteria_update_unknown_when_version_probe_fails():
+    payload = ('Jun 22 15:37 hysteria[1]: update available '
+               '{"version":"v2.4.0","url":"https://example","urgent":false}\n')
+
+    def runner(cmd, *_args, **_kwargs):
+        argv = list(cmd) if cmd is not None else []
+        if argv and argv[0] == 'journalctl':
+            return type('R', (), {'stdout': payload, 'stderr': '', 'returncode': 0})()
+        raise OSError('hysteria missing')
+
+    out = health.probe_hysteria_update(runner=runner)
+    assert out == {'ok': False, 'label': '未知'}
+
+
+def test_probe_hysteria_update_no_journal_match():
+    out = health.probe_hysteria_update(
+        runner=_hysteria_update_runner('no updates here\n', 'Version:\tv2.9.3\n'),
+    )
+    assert out == {'ok': True, 'label': '无更新提示'}
 
 
 def test_probe_recent_backup_reports_latest_age_and_disk(tmp_path):

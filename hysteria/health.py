@@ -200,7 +200,65 @@ def probe_file_mode(path, *, mode, group=None):
         return {'ok': False, 'label': '未知'}
 
 
+def _parse_hysteria_version(text):
+    """Extract a version token from `hysteria version` stdout.
+
+    The banner is decorative ASCII art; the real value is a line like
+    `Version:\tv2.9.3`. Returns None when nothing parseable is present.
+    """
+    if not text:
+        return None
+    match = re.search(
+        r'(?im)^\s*version\s*[:：]\s*(v?\d+(?:\.\d+){0,3}\w*)\s*$',
+        text,
+    )
+    if match:
+        return match.group(1).strip()
+    match = re.search(r'\bv?\d+\.\d+(?:\.\d+)?\w*\b', text)
+    return match.group(0) if match else None
+
+
+def _normalize_hysteria_version(value):
+    text = str(value or '').strip()
+    if not text or text in ('未知版本', '未知'):
+        return None
+    return text[1:] if text[:1] in 'vV' else text
+
+
+def _hysteria_version_tuple(normalized):
+    """Best-effort numeric tuple for comparison. None if not comparable."""
+    if not normalized:
+        return None
+    parts = re.split(r'[.\-+]', normalized)
+    nums = []
+    for part in parts:
+        if not part.isdigit():
+            break
+        nums.append(int(part))
+    return tuple(nums) if nums else None
+
+
+def _current_hysteria_version(*, runner=subprocess.run):
+    """Return the running binary's version string, or None on failure."""
+    try:
+        out = runner(
+            ['/usr/local/bin/hysteria', 'version'],
+            capture_output=True, text=True, timeout=3,
+        )
+        text = (out.stdout or '') + '\n' + (out.stderr or '')
+        return _parse_hysteria_version(text)
+    except Exception:
+        return None
+
+
 def probe_hysteria_update(*, runner=subprocess.run):
+    """Report whether a newer Hysteria release is actually pending.
+
+    Journal lines of the form `update available {json}` survive across
+    upgrades, so the candidate version is compared against the currently
+    running binary. Equal versions are "already current"; a failed version
+    probe is reported as unknown rather than as a false update.
+    """
     try:
         out = runner(
             ['journalctl', '-u', 'hysteria-server.service', '-n', '200', '--no-pager'],
@@ -211,11 +269,22 @@ def probe_hysteria_update(*, runner=subprocess.run):
         if not matches:
             return {'ok': True, 'label': '无更新提示'}
         payload = json.loads(matches[-1])
-        version = str(payload.get('version') or '未知版本')
+        candidate = str(payload.get('version') or '未知版本')
         urgent = bool(payload.get('urgent'))
+        current = _current_hysteria_version(runner=runner)
+        if current is None:
+            return {'ok': False, 'label': '未知'}
+        cand_n = _normalize_hysteria_version(candidate)
+        curr_n = _normalize_hysteria_version(current)
+        if cand_n and curr_n and cand_n == curr_n:
+            return {'ok': True, 'label': '已是最新'}
+        cand_t = _hysteria_version_tuple(cand_n)
+        curr_t = _hysteria_version_tuple(curr_n)
+        if cand_t is not None and curr_t is not None and cand_t <= curr_t:
+            return {'ok': True, 'label': '已是最新'}
         return {
             'ok': not urgent,
-            'label': f'{version} urgent' if urgent else f'{version} 可更新',
+            'label': f'{candidate} urgent' if urgent else f'{candidate} 可更新',
         }
     except Exception:
         return {'ok': False, 'label': '未知'}
