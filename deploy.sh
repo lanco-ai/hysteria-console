@@ -97,11 +97,20 @@ declare -a DEPLOY_MANAGED_UNITS=(
   fail2ban.service
   systemd-journald.service
 )
-declare -a CRITICAL_UNITS=(
+declare -a QUIESCE_FIRST_UNITS=(
+  hy2-health-check.timer
   hy2-hysteria-update.timer
-  hy2-hysteria-update.service
   hysteria-traffic-limiter.timer
+  codex-quota-collector.timer
+  hy2-backup.timer
+  hy2-health-check.service
+  hy2-hysteria-update.service
   hysteria-traffic-limiter.service
+  codex-quota-collector.service
+  hy2-backup.service
+)
+declare -a CRITICAL_UNITS=(
+  nginx.service
   hysteria-subscription.service
   hysteria-auth.service
   hysteria-server.service
@@ -1383,30 +1392,62 @@ wait_for_stable_readiness() {
   return 1
 }
 
-require_unit_quiescent() {
+capture_unit_active_state() {
   # systemctl may fail with no stdout when D-Bus is unavailable.  Treat only
   # the documented, non-active state/exit-status combinations as authoritative;
   # an empty or otherwise ambiguous observation must stop the deployment.
-  local unit="$1" unit_state unit_state_rc
-  if unit_state="$(LC_ALL=C systemctl is-active "$unit" 2>/dev/null)"; then
-    unit_state_rc=0
+  local unit="$1" unit_stderr_path
+  unit_stderr_path="$(mktemp)" ||
+    die "Could not create temporary systemctl diagnostic file"
+  if SYSTEMCTL_ACTIVE_STATE="$(LC_ALL=C systemctl is-active "$unit" 2>"$unit_stderr_path")"; then
+    SYSTEMCTL_ACTIVE_RC=0
   else
-    unit_state_rc=$?
+    SYSTEMCTL_ACTIVE_RC=$?
   fi
-  case "$unit_state_rc:$unit_state" in
-    3:inactive|3:failed|4:unknown)
+  if ! SYSTEMCTL_ACTIVE_STDERR="$(<"$unit_stderr_path")"; then
+    rm -f -- "$unit_stderr_path"
+    die "Could not read systemctl diagnostics for $unit"
+  fi
+  rm -f -- "$unit_stderr_path" ||
+    die "Could not remove temporary systemctl diagnostic file"
+}
+
+require_unit_quiescent() {
+  local unit="$1"
+  capture_unit_active_state "$unit"
+  if [[ -n "$SYSTEMCTL_ACTIVE_STDERR" ]]; then
+    die "Could not authoritatively quiesce $unit (systemctl rc: $SYSTEMCTL_ACTIVE_RC, state: ${SYSTEMCTL_ACTIVE_STATE:-<empty>}, diagnostics present)"
+  fi
+  case "$SYSTEMCTL_ACTIVE_RC:$SYSTEMCTL_ACTIVE_STATE" in
+    3:inactive|3:failed|4:unknown|4:inactive)
       return 0
       ;;
     *)
-      die "Could not authoritatively quiesce $unit (systemctl rc: $unit_state_rc, state: ${unit_state:-<empty>})"
+      die "Could not authoritatively quiesce $unit (systemctl rc: $SYSTEMCTL_ACTIVE_RC, state: ${SYSTEMCTL_ACTIVE_STATE:-<empty>})"
       ;;
   esac
 }
 
+require_unit_active() {
+  local unit="$1"
+  capture_unit_active_state "$unit"
+  if [[ -n "$SYSTEMCTL_ACTIVE_STDERR" ||
+        "$SYSTEMCTL_ACTIVE_RC:$SYSTEMCTL_ACTIVE_STATE" != "0:active" ]]; then
+    die "Required service is not authoritatively active: $unit (systemctl rc: $SYSTEMCTL_ACTIVE_RC, state: ${SYSTEMCTL_ACTIVE_STATE:-<empty>})"
+  fi
+}
+
 # Quiesce every critical reader/writer only after package and binary
-# installation has succeeded. Stopping the timer alone is insufficient when
-# its oneshot is already active. Never overwrite runtime code while a writer
-# remains active or is still transitioning.
+# installation has succeeded. Block every scheduled activation first, then
+# drain and verify its worker before stopping core dependencies. Stopping a
+# timer alone is insufficient when its oneshot is already active. Never
+# overwrite runtime code while a writer remains active or is transitioning.
+for unit in "${QUIESCE_FIRST_UNITS[@]}"; do
+  systemctl stop "$unit" 2>/dev/null || true
+done
+for unit in "${QUIESCE_FIRST_UNITS[@]}"; do
+  require_unit_quiescent "$unit"
+done
 for unit in "${CRITICAL_UNITS[@]}"; do
   systemctl stop "$unit" 2>/dev/null || true
 done
@@ -2053,10 +2094,8 @@ wait_for_stable_readiness 3 15 1 ||
 
 log "Status:"
 for unit in "${required_active_units[@]}"; do
-  unit_state="$(systemctl is-active "$unit" 2>/dev/null || true)"
-  printf '  %-40s %s\n' "$unit" "$unit_state"
-  [[ "$unit_state" == "active" ]] ||
-    die "Required service became unavailable during validation: $unit"
+  require_unit_active "$unit"
+  printf '  %-40s active\n' "$unit"
 done
 
 # Commit only after every sustained readiness and final activity check passes.

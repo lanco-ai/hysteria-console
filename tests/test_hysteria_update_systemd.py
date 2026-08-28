@@ -130,6 +130,8 @@ def test_static_and_transient_updaters_hold_deploy_lock():
     ]
 
     deploy = DEPLOY.read_text(encoding='utf-8')
-    critical = deploy.split('declare -a CRITICAL_UNITS=(', 1)[1].split(')', 1)[0]
-    assert 'hy2-hysteria-update.timer' in critical
-    assert 'hy2-hysteria-update.service' in critical
+    quiesce_first = deploy.split(
+        'declare -a QUIESCE_FIRST_UNITS=(', 1
+    )[1].split(')', 1)[0]
+    assert 'hy2-hysteria-update.timer' in quiesce_first
+    assert 'hy2-hysteria-update.service' in quiesce_first

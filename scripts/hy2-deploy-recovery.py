@@ -75,6 +75,20 @@ BOOT_ID_RE = re.compile(
 SNAPSHOT_RE = re.compile(r"snapshot-[0-9]{4}")
 SELF_UNIT = "hy2-deploy-recovery.service"
 DEFERRED_RESTART_UNITS = {"systemd-journald.service"}
+QUIESCE_TIMER_UNITS = (
+    "hy2-health-check.timer",
+    "hy2-hysteria-update.timer",
+    "hysteria-traffic-limiter.timer",
+    "codex-quota-collector.timer",
+    "hy2-backup.timer",
+)
+QUIESCE_WORKER_UNITS = (
+    "hy2-health-check.service",
+    "hy2-hysteria-update.service",
+    "hysteria-traffic-limiter.service",
+    "codex-quota-collector.service",
+    "hy2-backup.service",
+)
 
 
 # Production destinations remain deliberately narrow.  The manifest is
@@ -1057,11 +1071,18 @@ def _authoritative_active_state(
     unit: str,
 ) -> bool:
     active_state = result.stdout.strip()
+    if result.stderr.strip():
+        raise RecoveryError(
+            f"Could not capture an authoritative active state for {unit}."
+        )
     if result.returncode == 0 and active_state == "active":
         return True
     if (
-        result.returncode in {3, 4}
-        and active_state in {"inactive", "failed", "unknown"}
+        (result.returncode == 3 and active_state in {"inactive", "failed"})
+        or (
+            result.returncode == 4
+            and active_state in {"inactive", "unknown"}
+        )
     ):
         return False
     raise RecoveryError(
@@ -1204,23 +1225,39 @@ def _stop_runtime_units(
         test_mode=test_mode,
         test_root=test_root,
     )
-    to_stop: list[str] = []
-    for unit in units:
-        if unit == SELF_UNIT or unit in DEFERRED_RESTART_UNITS:
-            continue
-        active = _run(
-            [systemctl, "is-active", unit],
-            check=False,
-        )
-        if _authoritative_active_state(active, unit):
-            to_stop.append(unit)
+    excluded = {SELF_UNIT, *DEFERRED_RESTART_UNITS}
+    scheduled = {*QUIESCE_TIMER_UNITS, *QUIESCE_WORKER_UNITS}
+    groups = (
+        ([unit for unit in QUIESCE_TIMER_UNITS if unit in units], True),
+        ([unit for unit in QUIESCE_WORKER_UNITS if unit in units], True),
+        ([unit for unit in units if unit not in excluded | scheduled], False),
+    )
     stopped: list[str] = []
     try:
-        for unit in to_stop:
-            result = _run([systemctl, "stop", unit], check=False)
-            if result.returncode != 0:
-                raise RecoveryError(f"Could not stop managed unit: {unit}")
-            stopped.append(unit)
+        for group, verify_quiescent in groups:
+            to_stop: list[str] = []
+            for unit in group:
+                active = _run(
+                    [systemctl, "is-active", unit],
+                    check=False,
+                )
+                if _authoritative_active_state(active, unit):
+                    to_stop.append(unit)
+            for unit in to_stop:
+                result = _run([systemctl, "stop", unit], check=False)
+                if result.returncode != 0:
+                    raise RecoveryError(f"Could not stop managed unit: {unit}")
+                stopped.append(unit)
+            if verify_quiescent:
+                for unit in group:
+                    active = _run(
+                        [systemctl, "is-active", unit],
+                        check=False,
+                    )
+                    if _authoritative_active_state(active, unit):
+                        raise RecoveryError(
+                            f"Managed unit remained active after stop: {unit}"
+                        )
     except BaseException:
         if restart_on_failure:
             _restart_specific_units(

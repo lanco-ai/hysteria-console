@@ -203,6 +203,7 @@ def _fake_systemctl(
     enabled_stderr="",
     active_stdout="inactive",
     active_returncode=4,
+    active_stderr="",
 ):
     command_dir = recovery["root"] / name
     command_dir.mkdir(mode=0o700)
@@ -211,6 +212,7 @@ def _fake_systemctl(
         "#!/bin/sh\n"
         "case \"$1\" in\n"
         f"  is-active) printf '%s' '{active_stdout}'; "
+        f"printf '%s' '{active_stderr}' >&2; "
         f"exit {active_returncode} ;;\n"
         f"  is-enabled) printf '%s' '{enabled_stdout}'; "
         f"printf '%s' '{enabled_stderr}' >&2; "
@@ -837,6 +839,65 @@ def test_prepare_persists_and_recover_restores_runtime_state(recovery):
     ]
 
 
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    (
+        (0, "active\n", True),
+        (3, "inactive\n", False),
+        (3, "failed\n", False),
+        (4, "unknown\n", False),
+        (4, "inactive\n", False),
+    ),
+)
+def test_capture_active_state_preserves_authoritative_systemd_tuples(
+    returncode,
+    stdout,
+    expected,
+):
+    namespace = runpy.run_path(str(HELPER))
+    interpret = namespace["_authoritative_active_state"]
+    result = subprocess.CompletedProcess(
+        ["systemctl", "is-active", "example.service"],
+        returncode,
+        stdout,
+        "",
+    )
+
+    assert interpret(result, "example.service") is expected
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "stderr"),
+    (
+        (0, "inactive\n", ""),
+        (3, "unknown\n", ""),
+        (4, "active\n", ""),
+        (4, "failed\n", ""),
+        (4, "deactivating\n", ""),
+        (4, "inactive\n", "Failed to connect to bus\n"),
+        (4, "inactive\n", "Access denied\n"),
+        (127, "", "systemctl: command not found\n"),
+    ),
+)
+def test_capture_active_state_rejects_non_authoritative_systemd_tuples(
+    returncode,
+    stdout,
+    stderr,
+):
+    namespace = runpy.run_path(str(HELPER))
+    interpret = namespace["_authoritative_active_state"]
+    recovery_error = namespace["RecoveryError"]
+    result = subprocess.CompletedProcess(
+        ["systemctl", "is-active", "example.service"],
+        returncode,
+        stdout,
+        stderr,
+    )
+
+    with pytest.raises(recovery_error, match="authoritative active state"):
+        interpret(result, "example.service")
+
+
 def test_capture_enable_state_accepts_not_found_exit_4(recovery):
     systemctl = _fake_systemctl(
         recovery,
@@ -945,6 +1006,8 @@ def test_prepare_accepts_absent_updater_units_on_first_deploy(recovery):
     command_dir = recovery["root"] / "first-deploy-commands"
     command_dir.mkdir(mode=0o700)
     installed = recovery["root"] / "updater-units-installed"
+    stopped = recovery["root"] / "updater-units-stopped"
+    stopped.mkdir(mode=0o700)
     command_log = recovery["root"] / "first-deploy-systemctl.log"
     systemctl = command_dir / "systemctl"
     systemctl.write_text(
@@ -952,15 +1015,17 @@ def test_prepare_accepts_absent_updater_units_on_first_deploy(recovery):
         f"printf '%s\\n' \"$*\" >> '{command_log}'\n"
         "case \"$1\" in\n"
         "  is-active)\n"
-        f"    if [ -f '{installed}' ]; then\n"
+        f"    if [ -f '{installed}' ] && [ ! -f '{stopped}/'\"$2\" ]; then\n"
         "      printf 'active\\n'; exit 0\n"
         "    fi\n"
+        f"    if [ -f '{installed}' ]; then printf 'inactive\\n'; exit 3; fi\n"
         "    printf 'inactive\\n'; exit 4 ;;\n"
         "  is-enabled)\n"
         f"    if [ -f '{installed}' ]; then\n"
         "      printf 'enabled\\n'; exit 0\n"
         "    fi\n"
         "    printf 'not-found\\n'; exit 4 ;;\n"
+        f"  stop) touch '{stopped}/'\"$2\"; exit 0 ;;\n"
         "  *) exit 0 ;;\n"
         "esac\n",
         encoding="utf-8",
@@ -1293,94 +1358,348 @@ def test_snapshot_is_single_and_precedes_every_static_commit():
     )
 
 
+def _run_quiescence_gate(returncode, state, stderr=""):
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    capture = _shell_function(deploy, "capture_unit_active_state")
+    function = _shell_function(deploy, "require_unit_quiescent")
+    harness = f"""\
+set -u
+SYSTEMCTL_STATE="$1"
+SYSTEMCTL_RC="$2"
+SYSTEMCTL_STDERR="$3"
+systemctl() {{
+  printf '%s\\n' "$SYSTEMCTL_STATE"
+  printf '%s' "$SYSTEMCTL_STDERR" >&2
+  return "$SYSTEMCTL_RC"
+}}
+die() {{
+  printf '%s\\n' "$*" >&2
+  exit 97
+}}
+{capture}
+{function}
+require_unit_quiescent example.service
+"""
+    return subprocess.run(
+        [
+            "/usr/bin/bash",
+            "-c",
+            harness,
+            "quiescence-test",
+            state,
+            str(returncode),
+            stderr,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+
 @pytest.mark.parametrize(
-    ("returncode", "state"),
+    ("returncode", "state", "stderr"),
     (
-        (3, "inactive"),
-        (3, "failed"),
-        (4, "unknown"),
+        (3, "inactive", ""),
+        (3, "failed", ""),
+        (4, "unknown", ""),
+        (4, "inactive", ""),
     ),
 )
 def test_quiescence_gate_accepts_only_authoritative_inactive_states(
     returncode,
     state,
+    stderr,
 ):
-    deploy = DEPLOY.read_text(encoding="utf-8")
-    function = _shell_function(deploy, "require_unit_quiescent")
-    harness = f"""\
-set -u
-SYSTEMCTL_STATE="$1"
-SYSTEMCTL_RC="$2"
-systemctl() {{
-  printf '%s\\n' "$SYSTEMCTL_STATE"
-  return "$SYSTEMCTL_RC"
-}}
-die() {{
-  printf '%s\\n' "$*" >&2
-  exit 97
-}}
-{function}
-require_unit_quiescent example.service
-"""
-
-    result = subprocess.run(
-        ["/usr/bin/bash", "-c", harness, "quiescence-test", state, str(returncode)],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    result = _run_quiescence_gate(returncode, state, stderr)
 
     assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize(
-    ("returncode", "state"),
+    ("returncode", "state", "stderr"),
     (
-        (1, ""),
-        (1, "inactive"),
-        (0, ""),
-        (0, "active"),
-        (3, "activating"),
-        (3, "unknown"),
-        (4, "inactive"),
-        (4, "failed"),
-        (4, ""),
+        (1, "", ""),
+        (1, "inactive", ""),
+        (0, "", ""),
+        (0, "active", ""),
+        (3, "activating", ""),
+        (3, "unknown", ""),
+        (4, "active", ""),
+        (4, "failed", ""),
+        (4, "deactivating", ""),
+        (4, "", ""),
+        (4, "inactive", "Failed to connect to bus"),
+        (4, "inactive", "Access denied"),
+        (127, "", "systemctl: command not found"),
     ),
 )
 def test_quiescence_gate_rejects_ambiguous_or_active_systemctl_results(
     returncode,
     state,
+    stderr,
 ):
-    deploy = DEPLOY.read_text(encoding="utf-8")
-    function = _shell_function(deploy, "require_unit_quiescent")
-    harness = f"""\
-set -u
-SYSTEMCTL_STATE="$1"
-SYSTEMCTL_RC="$2"
-systemctl() {{
-  printf '%s\\n' "$SYSTEMCTL_STATE"
-  return "$SYSTEMCTL_RC"
-}}
-die() {{
-  printf '%s\\n' "$*" >&2
-  exit 97
-}}
-{function}
-require_unit_quiescent example.service
-"""
-
-    result = subprocess.run(
-        ["/usr/bin/bash", "-c", harness, "quiescence-test", state, str(returncode)],
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
+    result = _run_quiescence_gate(returncode, state, stderr)
 
     assert result.returncode == 97
     assert "Could not authoritatively quiesce example.service" in result.stderr
     assert f"systemctl rc: {returncode}" in result.stderr
     if not state:
         assert "state: <empty>" in result.stderr
+
+
+def test_first_deploy_absent_updaters_pass_prepare_and_shell_quiescence(
+    recovery,
+):
+    systemctl = _fake_systemctl(
+        recovery,
+        "first-deploy-prepare-and-quiesce",
+        enabled_stdout="not-found\n",
+        enabled_returncode=4,
+        active_stdout="inactive\n",
+        active_returncode=4,
+    )
+    updater_units = (
+        "hy2-hysteria-update.timer",
+        "hy2-hysteria-update.service",
+    )
+    command = ["prepare"]
+    for unit in updater_units:
+        command.extend(("--unit", unit))
+
+    prepared = recovery["run"](
+        *command,
+        extra_env={"HY2_DEPLOY_RECOVERY_SYSTEMCTL": str(systemctl)},
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    function = _shell_function(
+        DEPLOY.read_text(encoding="utf-8"),
+        "require_unit_quiescent",
+    )
+    capture = _shell_function(
+        DEPLOY.read_text(encoding="utf-8"),
+        "capture_unit_active_state",
+    )
+    harness = f"""\
+set -u
+die() {{ printf '%s\\n' "$*" >&2; exit 97; }}
+{capture}
+{function}
+require_unit_quiescent hy2-hysteria-update.timer
+require_unit_quiescent hy2-hysteria-update.service
+printf 'quiescence-complete\\n'
+"""
+    result = subprocess.run(
+        ["/usr/bin/bash", "-c", harness],
+        env={**os.environ, "PATH": f"{systemctl.parent}:/usr/bin:/bin"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "quiescence-complete\n"
+    artifact = recovery["artifact_dir"] / "first-deploy-artifact"
+    artifact.write_bytes(b"original")
+    snapshotted = recovery["run"]("snapshot", "--path", artifact)
+    assert snapshotted.returncode == 0, snapshotted.stderr
+    completed = recovery["run"]("complete")
+    assert completed.returncode == 0, completed.stderr
+    assert recovery["run"]("status").stdout.strip() == "clean"
+
+
+def test_scheduled_workers_are_drained_before_core_services(tmp_path):
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    declarations = "\n".join(
+        match.group(0)
+        for match in re.finditer(
+            r"(?ms)^declare -a [A-Z_]+UNITS=\(\n.*?^\)$",
+            deploy,
+        )
+    )
+    quiesce_block = deploy.split(
+        "# Quiesce every critical reader/writer", 1
+    )[1].split(
+        "# Freeze the one complete static allowlist", 1
+    )[0]
+    function = _shell_function(deploy, "require_unit_quiescent")
+    capture = _shell_function(deploy, "capture_unit_active_state")
+    command_log = tmp_path / "systemctl.log"
+    harness = f"""\
+set -u
+LOG="$1"
+systemctl() {{
+  printf '%s\\n' "$*" >> "$LOG"
+  if [[ "$1" == "is-active" ]]; then
+    printf 'inactive\\n'
+    return 3
+  fi
+  return 0
+}}
+die() {{ printf '%s\\n' "$*" >&2; exit 97; }}
+{declarations}
+{capture}
+{function}
+{quiesce_block}
+"""
+    result = subprocess.run(
+        ["/usr/bin/bash", "-c", harness, "ordering-test", str(command_log)],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0, result.stderr
+    commands = command_log.read_text(encoding="utf-8").splitlines()
+    first_core_stop = min(
+        commands.index(f"stop {unit}")
+        for unit in (
+            "nginx.service",
+            "hysteria-subscription.service",
+            "hysteria-auth.service",
+            "hysteria-server.service",
+            "xray.service",
+            "tuic-server.service",
+        )
+    )
+    for timer, service in (
+        ("hy2-health-check.timer", "hy2-health-check.service"),
+        ("hy2-hysteria-update.timer", "hy2-hysteria-update.service"),
+        ("hysteria-traffic-limiter.timer", "hysteria-traffic-limiter.service"),
+        ("codex-quota-collector.timer", "codex-quota-collector.service"),
+        ("hy2-backup.timer", "hy2-backup.service"),
+    ):
+        assert commands.index(f"stop {timer}") < commands.index(f"stop {service}")
+        assert commands.index(f"is-active {timer}") < first_core_stop
+        assert commands.index(f"is-active {service}") < first_core_stop
+    for unit in (
+        "nginx.service",
+        "hysteria-subscription.service",
+        "hysteria-auth.service",
+        "hysteria-server.service",
+        "xray.service",
+        "tuic-server.service",
+    ):
+        assert f"stop {unit}" in commands
+
+
+def test_shell_and_recovery_scheduled_quiescence_sets_match():
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    namespace = runpy.run_path(str(HELPER))
+
+    assert _shell_array(deploy, "QUIESCE_FIRST_UNITS") == {
+        *namespace["QUIESCE_TIMER_UNITS"],
+        *namespace["QUIESCE_WORKER_UNITS"],
+    }
+
+
+def test_recovery_stops_timers_then_drains_workers_before_core(
+    recovery,
+    monkeypatch,
+):
+    namespace = runpy.run_path(str(HELPER))
+    stop_runtime = namespace["_stop_runtime_units"]
+    command_dir = recovery["root"] / "recovery-quiesce-order"
+    command_dir.mkdir(mode=0o700)
+    command_log = recovery["root"] / "recovery-quiesce.log"
+    timer_stopped = recovery["root"] / "timer-stopped"
+    worker_active = recovery["root"] / "worker-active"
+    core_stopped = recovery["root"] / "core-stopped"
+    systemctl = command_dir / "systemctl"
+    systemctl.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> '{command_log}'\n"
+        "case \"$1:$2\" in\n"
+        "  is-active:hy2-health-check.timer)\n"
+        f"    if [ -f '{timer_stopped}' ]; then printf 'inactive\\n'; exit 3; fi\n"
+        "    printf 'active\\n'; exit 0 ;;\n"
+        "  is-active:hy2-health-check.service)\n"
+        f"    if [ -f '{worker_active}' ]; then printf 'active\\n'; exit 0; fi\n"
+        "    printf 'inactive\\n'; exit 3 ;;\n"
+        "  is-active:nginx.service)\n"
+        f"    if [ -f '{core_stopped}' ]; then printf 'inactive\\n'; exit 3; fi\n"
+        "    printf 'active\\n'; exit 0 ;;\n"
+        "  stop:hy2-health-check.timer)\n"
+        f"    touch '{timer_stopped}' '{worker_active}'; exit 0 ;;\n"
+        "  stop:hy2-health-check.service)\n"
+        f"    rm -f '{worker_active}'; exit 0 ;;\n"
+        "  stop:nginx.service)\n"
+        f"    touch '{core_stopped}'; exit 0 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o700)
+    monkeypatch.setenv("HY2_DEPLOY_RECOVERY_SYSTEMCTL", str(systemctl))
+    payload = {
+        "boot_id": "12345678-1234-4234-8234-123456789abc",
+        "runtime": {
+            "units": {
+                "nginx.service": {"active": True, "enabled": "enabled"},
+                "hy2-health-check.timer": {
+                    "active": True,
+                    "enabled": "enabled",
+                },
+                "hy2-health-check.service": {
+                    "active": False,
+                    "enabled": "static",
+                },
+            },
+            "sysctls": {},
+            "log_dirs": {},
+        },
+    }
+
+    stopped = stop_runtime(
+        payload,
+        test_mode=True,
+        test_root=str(recovery["root"]),
+    )
+
+    commands = command_log.read_text(encoding="utf-8").splitlines()
+    timer_stop = commands.index("stop hy2-health-check.timer")
+    worker_stop = commands.index("stop hy2-health-check.service")
+    core_stop = commands.index("stop nginx.service")
+    assert timer_stop < worker_stop < core_stop
+    assert commands.index(
+        "is-active hy2-health-check.timer", timer_stop + 1
+    ) < worker_stop
+    assert commands.index(
+        "is-active hy2-health-check.service", worker_stop + 1
+    ) < core_stop
+    assert stopped == [
+        "hy2-health-check.timer",
+        "hy2-health-check.service",
+        "nginx.service",
+    ]
+
+
+def test_final_validation_rejects_non_authoritative_active_result():
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    capture = _shell_function(deploy, "capture_unit_active_state")
+    require_active = _shell_function(deploy, "require_unit_active")
+    status_block = deploy.split('log "Status:"', 1)[1].split(
+        "# Commit only after every sustained readiness", 1
+    )[0]
+    harness = f"""\
+set -u
+required_active_units=(example.service)
+systemctl() {{ printf 'active\\n'; return 4; }}
+die() {{ printf '%s\\n' "$*" >&2; exit 97; }}
+{capture}
+{require_active}
+{status_block}
+"""
+
+    result = subprocess.run(
+        ["/usr/bin/bash", "-c", harness],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 97
+    assert "authoritatively active" in result.stderr
 
 
 def test_static_mutation_helpers_are_wal_routed_and_fail_closed():
@@ -1493,7 +1812,7 @@ def test_complete_is_the_core_commit_point_before_https():
     deploy = DEPLOY.read_text(encoding="utf-8")
     readiness = deploy.index("wait_for_stable_readiness 3 15 1")
     final_active = deploy.index(
-        '[[ "$unit_state" == "active" ]]',
+        'require_unit_active "$unit"',
         readiness,
     )
     complete = deploy.index("\nouter_recovery complete", final_active)

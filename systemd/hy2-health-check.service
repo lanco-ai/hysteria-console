@@ -4,13 +4,17 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/hy2-health-check.sh
+ExecStart=/usr/local/sbin/hy2-lock-exec.py --lock-file /run/hy2-locks/deploy.lock --timeout 0 --success-if-locked -- /usr/local/sbin/hy2-health-check.sh
 User=root
 Group=root
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
+ReadWritePaths=/run/hy2-locks
 ReadOnlyPaths=/root/hysteria /etc/letsencrypt
+RuntimeDirectory=hy2-locks
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

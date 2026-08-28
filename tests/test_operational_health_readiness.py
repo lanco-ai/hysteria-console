@@ -1,10 +1,14 @@
+import fcntl
 import os
 from pathlib import Path
+import shlex
 import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "hy2-health-check.sh"
+UNIT = ROOT / "systemd" / "hy2-health-check.service"
+LOCK_HELPER = ROOT / "scripts" / "hy2-lock-exec.py"
 
 
 def _write_executable(path, body):
@@ -66,6 +70,53 @@ def test_operational_health_check_requires_auth_service_and_deep_readiness():
     assert "--connect-timeout 1" in script
     assert "--max-time 3" in script
     assert "authentication dependencies are not ready" in script
+
+
+def test_health_check_skips_planned_deploy_window_under_deploy_lock(tmp_path):
+    unit = UNIT.read_text(encoding="utf-8")
+    exec_start = next(
+        line.removeprefix("ExecStart=")
+        for line in unit.splitlines()
+        if line.startswith("ExecStart=")
+    )
+    command = shlex.split(exec_start)
+
+    assert command == [
+        "/usr/local/sbin/hy2-lock-exec.py",
+        "--lock-file",
+        "/run/hy2-locks/deploy.lock",
+        "--timeout",
+        "0",
+        "--success-if-locked",
+        "--",
+        "/usr/local/sbin/hy2-health-check.sh",
+    ]
+    assert "ReadWritePaths=/run/hy2-locks" in unit.splitlines()
+    assert "RuntimeDirectory=hy2-locks" in unit.splitlines()
+    assert "RuntimeDirectoryMode=0700" in unit.splitlines()
+    assert "RuntimeDirectoryPreserve=yes" in unit.splitlines()
+
+    lock_path = tmp_path / "deploy.lock"
+    sentinel = tmp_path / "health-ran"
+    probe = tmp_path / "health-probe"
+    _write_executable(probe, f"touch '{sentinel}'\nexit 1\n")
+    lock_path.touch(mode=0o600)
+    lock_path.chmod(0o600)
+    command[0] = str(LOCK_HELPER)
+    command[command.index("/run/hy2-locks/deploy.lock")] = str(lock_path)
+    command[-1] = str(probe)
+
+    with lock_path.open("r+") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+    assert result.returncode == 0, result.stderr
+    assert not sentinel.exists()
 
 
 def test_operational_health_check_uses_the_configured_tls_identity():

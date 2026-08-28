@@ -531,7 +531,7 @@ def test_success_gate_requires_active_services_and_panel_readiness():
         "http://127.0.0.1:8081/healthz", active_check
     )
     final_status_check = deploy.index(
-        '[[ "$unit_state" == "active" ]]', readiness
+        'require_unit_active "$unit"', readiness
     )
     success = deploy.index("DEPLOY_SUCCEEDED=1", final_status_check)
 
@@ -545,7 +545,9 @@ def test_deploy_restores_critical_services_after_a_late_failure():
     assert 'systemctl disable --now hysteria-server.service' not in deploy
     assert 'for unit in "${CRITICAL_UNITS[@]}"; do' in deploy
     assert 'systemctl stop "$unit"' in deploy
-    assert 'unit_state="$(systemctl is-active "$unit"' in deploy
+    assert 'capture_unit_active_state "$unit"' in deploy
+    assert 'require_unit_quiescent "$unit"' in deploy
+    assert 'require_unit_active "$unit"' in deploy
     assert 'PREVIOUSLY_ACTIVE_UNITS+=("$unit")' in deploy
     assert 'systemctl start "$unit"' in deploy
     assert "restore_unit_enable_state" in deploy
