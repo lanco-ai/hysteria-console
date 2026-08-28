@@ -23,6 +23,7 @@
 
   var pollStatus = document.querySelector('[data-role="admin-poll-status"]');
   var pollAnnouncer = document.getElementById('admin-poll-announcer');
+  var hasOverview = document.querySelector('.users-table') !== null;
   var needsReload = false;
   var REQUEST_TIMEOUT_MS = 10000;
   var POLL_BASE_MS = 30000;
@@ -219,7 +220,7 @@
     }
   }
   function start(){
-    if (running) return;
+    if (!hasOverview || running) return;
     running = true;
     consecutiveFailures = 0;
     if (!inflight) tick();
@@ -244,7 +245,7 @@
       tick();
     }
   });
-  start();
+  if (hasOverview) start();
 
   // One edit dialog and one hidden action form replace all per-row forms. This
   // keeps the table DOM small while preserving the same POST contracts.
@@ -298,6 +299,7 @@
     if (action === 'refresh-user-usage') return confirm('确认将用户 '+name+' 的用量归零？服务器本周期总计会保留这部分流量。');
     if (action === 'reset-all') return confirm('确认清空全部用户本周期已用流量？');
     if (action === 'delete-rule') return confirm('确认删除此规则？');
+    if (action === 'hysteria-update-apply') return confirm('确认在后台下载、校验并更新 Hysteria？失败会自动回滚。');
     return true;
   }
   document.addEventListener('click', function(ev){
@@ -559,6 +561,73 @@
     }
   }
 
+  var HYSTERIA_UPDATE_STATUS_URL = '/admin/hysteria-update/status.json';
+  var HYSTERIA_UPDATE_POLL_FIRST_MS = 600;
+  var HYSTERIA_UPDATE_POLL_NEXT_MS = 1500;
+  var HYSTERIA_UPDATE_POLL_MAX_MS = 120000;
+  var hysteriaUpdateWatch = null;
+
+  function clearHysteriaUpdateWatch(){
+    if (hysteriaUpdateWatch && hysteriaUpdateWatch.timer) {
+      clearTimeout(hysteriaUpdateWatch.timer);
+    }
+    hysteriaUpdateWatch = null;
+  }
+
+  function finishHysteriaUpdateWatch(data){
+    clearHysteriaUpdateWatch();
+    var status = data && data.status ? String(data.status) : 'failed';
+    if (status === 'done') {
+      flashPollStatus('Hysteria 已更新', 'is-live', 2500);
+    } else if (status === 'rolled_back') {
+      setPollStatus('更新失败，已自动回滚', 'is-paused');
+      announce('Hysteria 更新失败，已自动回滚');
+    } else if (status === 'skipped') {
+      setPollStatus('更新已跳过', 'is-paused');
+      announce('Hysteria 更新已跳过');
+    } else {
+      setPollStatus('Hysteria 更新失败，请查看日志', 'is-error');
+      announce('Hysteria 更新或回滚失败，请查看日志');
+    }
+  }
+
+  function watchHysteriaUpdateStatus(){
+    clearHysteriaUpdateWatch();
+    var started = Date.now();
+    hysteriaUpdateWatch = {timer: null};
+    var watch = hysteriaUpdateWatch;
+    function poll(){
+      if (hysteriaUpdateWatch !== watch) return;
+      if (Date.now() - started > HYSTERIA_UPDATE_POLL_MAX_MS) {
+        clearHysteriaUpdateWatch();
+        setPollStatus('后台更新仍在进行，请稍后确认', 'is-paused');
+        announce('Hysteria 后台更新仍在进行');
+        return;
+      }
+      fetchWithTimeout(HYSTERIA_UPDATE_STATUS_URL, {
+        credentials: 'same-origin', cache: 'no-store'
+      }).then(function(r){
+        if (r.status === 401) throw new Error('login_required');
+        if (!r.ok) throw new Error('update_status_' + r.status);
+        return r.json();
+      }).then(function(data){
+        if (!data || hysteriaUpdateWatch !== watch) return;
+        if (!data.pending) { finishHysteriaUpdateWatch(data); return; }
+        watch.timer = setTimeout(poll, HYSTERIA_UPDATE_POLL_NEXT_MS);
+      }).catch(function(err){
+        if (hysteriaUpdateWatch !== watch) return;
+        if (err && err.message === 'login_required') {
+          clearHysteriaUpdateWatch();
+          setPollStatus('登录已失效 · 点此登录', 'is-error');
+          announce('登录已失效，请重新登录');
+          return;
+        }
+        watch.timer = setTimeout(poll, HYSTERIA_UPDATE_POLL_NEXT_MS);
+      });
+    }
+    watch.timer = setTimeout(poll, HYSTERIA_UPDATE_POLL_FIRST_MS);
+  }
+
   // Global single-flight: one mutation at a time across all users. Each
   // mutation can rewrite the whole static-access plan server-side, so
   // overlapping mutations would race on the same config; keep this global
@@ -580,6 +649,8 @@
     'rotate-user-token': true,
     'delete-user': true,
     'reset-all': true,
+    'hysteria-update-check': true,
+    'hysteria-update-apply': true,
   };
 
   function mutationErrorMessage(reason) {
@@ -588,6 +659,9 @@
     else if (reason === 'user_not_found')   return '用户不存在';
     else if (reason === 'invalid_desired')  return '请求状态无效';
     else if (reason === 'state_mismatch')   return '状态同步未完成，请稍后重试';
+    else if (reason === 'update_busy')      return '另一个更新正在进行中，请稍后重试';
+    else if (reason === 'update_check_failed') return '检查更新失败，请查看日志';
+    else if (reason === 'update_schedule_failed') return '后台更新启动失败，请查看日志';
     return '操作失败，请重试';
   }
 
@@ -634,7 +708,12 @@
     pendingMutation = name || action;
 
     // Confirm (especially important for destructive actions)
-    if (!confirmAdminAction(action, name)) { releaseMutation(); return; }
+    if (f.__hy2Confirmed) {
+      f.__hy2Confirmed = false;
+    } else if (!confirmAdminAction(action, name)) {
+      releaseMutation();
+      return;
+    }
 
     // From here on, any overview fetch already in flight predates this
     // mutation; tick() will drop its response by epoch mismatch.
@@ -728,7 +807,7 @@
       .then(function (rowRemoved) {
         // delete-user already detached the row's buttons; restoring them
         // would spin on nodes that are no longer in the document.
-        if (!rowRemoved) restoreButtons(false);
+        if (!rowRemoved) restoreButtons(!row);
         releaseMutation();
         // Mutation finished and rows were patched; any overview response
         // still in flight may predate the commit — bump again so tick()
@@ -764,6 +843,21 @@
   // Returns true when the row was removed from the document (delete-user),
   // so the caller skips restoring buttons that no longer exist.
   function handleMutationResult(action, name, data, row) {
+    if (action === 'hysteria-update-check') {
+      flashPollStatus(
+        data.update_available ? '发现 Hysteria 新版本' : 'Hysteria 已是最新',
+        'is-live', 2200
+      );
+      return false;
+    }
+
+    if (action === 'hysteria-update-apply') {
+      setPollStatus('Hysteria 后台更新中…', 'is-live');
+      announce('Hysteria 更新已进入后台队列');
+      watchHysteriaUpdateStatus();
+      return false;
+    }
+
     if (action === 'enable-user' || action === 'disable-user') {
       // Server confirmed success and returned the fresh row in the same
       // schema as /admin/overview.json — patch directly, no extra fetch.
@@ -833,7 +927,7 @@
 
   document.addEventListener('submit', function(ev){
     var f = ev.target;
-    if (!f || f.tagName !== 'FORM') return;
+    if (ev.defaultPrevented || !f || f.tagName !== 'FORM') return;
     var name = f.dataset.user || '';
     var action = f.dataset.action || '';
     var submitter = ev.submitter || f.__pendingSubmitter || null;

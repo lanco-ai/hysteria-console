@@ -181,6 +181,8 @@ def test_apply_prefers_the_asset_digest_over_a_checksum_download(tmp_path, monke
         last_good_path=str(last_good),
         state_path=str(state_path),
         ready_probe=lambda: {'ok': True},
+        force=True,
+        backup_result={'ok': True, 'label': 'x'},
     )
     assert result['status'] == 'done', result
     assert result['error'] == ''
@@ -208,6 +210,8 @@ def test_apply_fails_closed_when_the_release_has_no_checksum(tmp_path):
         last_good_path=str(tmp_path / 'last-good'),
         state_path=str(state_path),
         ready_probe=lambda: {'ok': True},
+        force=True,
+        backup_result={'ok': True, 'label': 'x'},
     )
     assert result['status'] == 'failed'
     assert 'checksum' in result['error']

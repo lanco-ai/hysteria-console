@@ -2861,7 +2861,10 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
     var form = ev.target;
     if (ev.defaultPrevented || !form || form.tagName !== 'FORM') return;
     var message = form.getAttribute('data-confirm');
-    if (message && !window.confirm(message)) ev.preventDefault();
+    if (message) {{
+      if (!window.confirm(message)) ev.preventDefault();
+      else form.__hy2Confirmed = true;
+    }}
   }});
   setOpen(false);
 }})();
@@ -4910,6 +4913,13 @@ _HEALTH_FLASH = {
     'multiplier_invalid': '建议倍率无效，未应用',
     'multiplier_delta_too_large': '建议倍率变化过大，未应用',
     'multiplier_auto_saved': '自动调倍率策略已保存',
+    'hysteria_updated': 'Hysteria 已更新到目标版本',
+    'hysteria_update_check_failed': '检查更新失败，请查看日志',
+    'hysteria_update_rolled_back': '更新失败，已自动回滚到上一个版本',
+    'hysteria_update_failed': '更新失败，请查看日志或手动回滚',
+    'hysteria_update_skipped': '更新已跳过：缺少新鲜备份或受策略限制',
+    'hysteria_update_busy': '另一个更新正在进行中，请稍后重试',
+    'hysteria_update_scheduled': 'Hysteria 更新已进入后台队列',
 }
 
 
@@ -4976,6 +4986,7 @@ def render_health(host, flash=''):
         + hysteria_update.render_history()
 
         + '</div>'
+        + f'''<script src="/static/admin-poll.js?v={ADMIN_POLL_JS_ETAG.strip('"')}" defer></script>'''
         + '''<span class="sr-only" id="health-refresh-announcer" role="status" aria-live="polite"></span>
 <script>
 (function(){
@@ -5069,6 +5080,8 @@ def render_health(host, flash=''):
     refresh_controls = (
         '<button class="btn ghost btn-sm" id="health-refresh-now" type="button">立即刷新</button>'
         '<span class="badge poll-status" id="health-refresh-status">自动更新 · 30s</span>'
+        '<span class="badge poll-status" data-role="admin-poll-status">更新器就绪</span>'
+        '<span class="sr-only" id="admin-poll-announcer" role="status" aria-live="polite"></span>'
     )
     return render_admin_shell('health', '健康状态', content,
                               badge=host, subtitle='状态卡片每 30 秒自动更新',
@@ -6740,6 +6753,25 @@ class Handler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == '/admin/hysteria-update/status.json':
+            if not is_logged_in(self):
+                self.send_response_body(
+                    401, '{"ok":false,"reason":"login_required"}',
+                    'application/json; charset=utf-8', send_payload,
+                    extra_headers={'Cache-Control': 'no-store'},
+                )
+                return
+            payload = hysteria_update.public_status()
+            self.send_response_body(
+                200,
+                json.dumps(
+                    payload, ensure_ascii=False, separators=(',', ':'),
+                ),
+                'application/json; charset=utf-8', send_payload,
+                extra_headers={'Cache-Control': 'no-store'},
+            )
+            return
+
         if path == '/admin/analytics.json':
             if not is_logged_in(self):
                 self.send_response_body(
@@ -7939,30 +7971,71 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == '/admin/hysteria-update/check':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
             try:
-                info = hysteria_update.check_latest()
-                hysteria_update.record_check(info)
+                info = hysteria_update.check_and_record()
                 flash = 'checked ' + (info.get('latest') or '')
+            except state_store.LockTimeout:
+                if _json_request(self):
+                    self._send_mutation_json(
+                        409, {'ok': False, 'reason': 'update_busy'},
+                    )
+                    return
+                flash = 'err:hysteria_update_busy'
             except Exception:
+                if _json_request(self):
+                    self._send_mutation_json(
+                        502, {'ok': False, 'reason': 'update_check_failed'},
+                    )
+                    return
                 flash = 'err:hysteria_update_check_failed'
+            else:
+                if _json_request(self):
+                    self._send_mutation_json(200, {
+                        'ok': True,
+                        'status': 'checked',
+                        'current': info.get('current') or '',
+                        'latest': info.get('latest') or '',
+                        'update_available': bool(
+                            info.get('update_available')
+                        ),
+                        'pending': False,
+                    })
+                    return
             self.redirect('/admin/health?msg=' + flash.replace(' ', '+'))
             return
 
         if path == '/admin/hysteria-update/apply':
             if not is_logged_in(self):
-                self.redirect('/login')
+                self._mutation_unauthorized()
                 return
-            result = hysteria_update.apply_update()
-            status = result.get('status')
-            if status == 'done':
-                flash = 'hysteria_updated'
-            elif status == 'rolled_back':
-                flash = 'err:hysteria_update_rolled_back'
-            else:
-                flash = 'err:hysteria_update_failed'
-            self.redirect('/admin/health?msg=' + flash)
+            try:
+                state = hysteria_update.schedule_apply_async()
+            except state_store.LockTimeout:
+                if _json_request(self):
+                    self._send_mutation_json(
+                        409, {'ok': False, 'reason': 'update_busy'},
+                    )
+                    return
+                self.redirect('/admin/health?msg=err:hysteria_update_busy')
+                return
+            except Exception:
+                if _json_request(self):
+                    self._send_mutation_json(
+                        503, {'ok': False, 'reason': 'update_schedule_failed'},
+                    )
+                    return
+                self.redirect(
+                    '/admin/health?msg=err:hysteria_update_failed'
+                )
+                return
+            if _json_request(self):
+                self._send_mutation_json(
+                    202, hysteria_update.public_status(state),
+                )
+                return
+            self.redirect('/admin/health?msg=hysteria_update_scheduled')
             return
 
         if path == '/admin/cost-multiplier/apply':

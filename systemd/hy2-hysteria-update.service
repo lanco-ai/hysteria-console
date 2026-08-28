@@ -1,0 +1,30 @@
+[Unit]
+Description=hy2 Hysteria binary auto-update (policy-gated)
+After=network-online.target hysteria-server.service
+# Reconciles any interrupted apply, then checks + applies only when the
+# policy gate (hysteria-update-policy.json enabled=true) allows. With the
+# default policy (enabled=false) this only records a daily probe and exits 1
+# (marked success via SuccessExitStatus=1).
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/hy2-lock-exec.py --lock-file /run/hy2-locks/deploy.lock --wait /usr/bin/python3 -I -c 'import runpy,sys;sys.path.insert(0,"/root/hysteria");runpy.run_module("hysteria_update",run_name="__main__")' --auto
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/usr/local/bin /root/hysteria/state /run/hy2-locks
+RuntimeDirectory=hy2-locks
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+SuccessExitStatus=1

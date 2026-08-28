@@ -150,6 +150,21 @@ def test_format_unknown_kind_does_not_raise():
     assert isinstance(msg, str) and 'x' in msg and 'mystery' in msg
 
 
+def test_format_hysteria_update_reports_sanitized_terminal_outcome():
+    msg = alerts.format_message({
+        'kind': 'hysteria_update',
+        'user': 'system',
+        'details': {
+            'status': 'rollback_failed',
+            'version': 'v2.12.2',
+            'previous_version': 'v2.11.0',
+        },
+    })
+    assert 'rollback_failed' in msg
+    assert 'v2.12.2' in msg
+    assert 'v2.11.0' in msg
+
+
 # ---------- dispatch / transports ---------------------------------------------
 
 class FakeOpener:

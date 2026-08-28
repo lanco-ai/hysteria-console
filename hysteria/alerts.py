@@ -296,6 +296,12 @@ def format_message(event):
         return f"⛔ {user} 已于 {details.get('expires_at','?')} 到期"
     if kind == 'test':
         return f"✅ 测试告警 · 来自管理面板（{user}）"
+    if kind == 'hysteria_update':
+        return (
+            f"Hysteria 更新 {details.get('status', 'unknown')} · "
+            f"{details.get('previous_version', '?')} → "
+            f"{details.get('version', '?')}"
+        )
     return f"{kind}: {user}"
 
 

@@ -95,3 +95,23 @@ def test_sidebar_collapse_controls_exist_in_shell():
     assert '.sidebar.collapsed' in css
     assert 'inset 2px 0 0 var(--data)' in css
     assert 'id="total-used"' in src
+
+
+def test_hysteria_update_buttons_use_ajax_and_poll_background_status():
+    js = _read("hysteria/admin_poll.js")
+    updater = _read("hysteria/hysteria_update.py")
+
+    assert 'data-action="hysteria-update-check"' in updater
+    assert 'data-action="hysteria-update-apply"' in updater
+    assert "'hysteria-update-check': true" in js
+    assert "'hysteria-update-apply': true" in js
+    assert "HYSTERIA_UPDATE_STATUS_URL" in js
+    assert "function watchHysteriaUpdateStatus()" in js
+    assert "HYSTERIA_UPDATE_POLL_MAX_MS = 120000" in js
+    assert "watchHysteriaUpdateStatus();" in js
+    for reason in (
+        "update_busy",
+        "update_check_failed",
+        "update_schedule_failed",
+    ):
+        assert reason in js

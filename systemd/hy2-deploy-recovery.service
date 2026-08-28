@@ -8,6 +8,7 @@ Before=hysteria-traffic-limiter.timer xray.service tuic-server.service
 Before=hy2-https-recovery.service codex-quota-collector.service
 Before=codex-quota-collector.timer hy2-backup.service hy2-backup.timer
 Before=hy2-health-check.service hy2-health-check.timer
+Before=hy2-hysteria-update.service hy2-hysteria-update.timer
 Before=snap.certbot.renew.timer fail2ban.service
 
 [Service]
@@ -28,7 +29,10 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ReadWritePaths=-/root/hysteria
-ReadWritePaths=/usr/local /etc /var/lib/hysteria -/var/log/xray
+ReadWritePaths=/usr/local /etc /var/lib/hysteria -/var/log/xray /run/hy2-locks
+RuntimeDirectory=hy2-locks
+RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 ProtectHostname=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -52,4 +56,5 @@ RequiredBy=hysteria-traffic-limiter.timer xray.service tuic-server.service
 RequiredBy=hy2-https-recovery.service codex-quota-collector.service
 RequiredBy=codex-quota-collector.timer hy2-backup.service hy2-backup.timer
 RequiredBy=hy2-health-check.service hy2-health-check.timer
+RequiredBy=hy2-hysteria-update.service hy2-hysteria-update.timer
 RequiredBy=snap.certbot.renew.timer fail2ban.service

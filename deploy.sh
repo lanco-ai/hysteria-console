@@ -89,6 +89,8 @@ declare -a DEPLOY_MANAGED_UNITS=(
   hy2-backup.service
   hy2-health-check.timer
   hy2-health-check.service
+  hy2-hysteria-update.timer
+  hy2-hysteria-update.service
   xray.service
   tuic-server.service
   snap.certbot.renew.timer
@@ -96,6 +98,8 @@ declare -a DEPLOY_MANAGED_UNITS=(
   systemd-journald.service
 )
 declare -a CRITICAL_UNITS=(
+  hy2-hysteria-update.timer
+  hy2-hysteria-update.service
   hysteria-traffic-limiter.timer
   hysteria-traffic-limiter.service
   hysteria-subscription.service
@@ -310,6 +314,8 @@ build_durable_artifact_set() {
     "$SYSTEMD_DIR/tuic-server.service" \
     "$SYSTEMD_DIR/hy2-health-check.service" \
     "$SYSTEMD_DIR/hy2-health-check.timer" \
+    "$SYSTEMD_DIR/hy2-hysteria-update.service" \
+    "$SYSTEMD_DIR/hy2-hysteria-update.timer" \
     "$SYSTEMD_DIR/hy2-https-recovery.service" \
     "$SYSTEMD_DIR/hy2-deploy-recovery.service" \
     "$SYSTEMD_DIR/hy2-deploy-watchdog.service" \
@@ -1562,6 +1568,8 @@ for artifact in \
   "$SYSTEMD_DIR/tuic-server.service" \
   "$SYSTEMD_DIR/hy2-health-check.service" \
   "$SYSTEMD_DIR/hy2-health-check.timer" \
+  "$SYSTEMD_DIR/hy2-hysteria-update.service" \
+  "$SYSTEMD_DIR/hy2-hysteria-update.timer" \
   "$SYSTEMD_DIR/hy2-https-recovery.service" \
   "$SYSTEMD_DIR/xray.service.d/20-hy2-hardening.conf" \
   /etc/fail2ban/filter.d/tuic-auth.conf \
@@ -1949,6 +1957,10 @@ install_atomic 644 "$REPO_DIR/systemd/hy2-health-check.service" \
   "$SYSTEMD_DIR/hy2-health-check.service"
 install_atomic 644 "$REPO_DIR/systemd/hy2-health-check.timer" \
   "$SYSTEMD_DIR/hy2-health-check.timer"
+install_atomic 644 "$REPO_DIR/systemd/hy2-hysteria-update.service" \
+  "$SYSTEMD_DIR/hy2-hysteria-update.service"
+install_atomic 644 "$REPO_DIR/systemd/hy2-hysteria-update.timer" \
+  "$SYSTEMD_DIR/hy2-hysteria-update.timer"
 install_atomic 644 "$REPO_DIR/systemd/hy2-https-recovery.service" \
   "$SYSTEMD_DIR/hy2-https-recovery.service"
 install_atomic 644 "$REPO_DIR/systemd/hy2-deploy-recovery.service" \
@@ -1995,6 +2007,7 @@ systemctl enable --now hysteria-traffic-limiter.timer
 systemctl enable --now codex-quota-collector.timer
 systemctl enable --now hy2-backup.timer
 systemctl enable --now hy2-health-check.timer
+systemctl enable --now hy2-hysteria-update.timer
 systemctl enable --now xray.service
 systemctl enable --now tuic-server.service
 
@@ -2031,6 +2044,7 @@ required_active_units=(
   codex-quota-collector.timer
   hy2-backup.timer
   hy2-health-check.timer
+  hy2-hysteria-update.timer
   xray.service
   tuic-server.service
 )

@@ -865,6 +865,8 @@ def test_recovery_unit_is_a_fail_closed_pre_service_gate():
         "hy2-backup.timer",
         "hy2-health-check.service",
         "hy2-health-check.timer",
+        "hy2-hysteria-update.service",
+        "hy2-hysteria-update.timer",
         "snap.certbot.renew.timer",
         "fail2ban.service",
     }
@@ -879,6 +881,17 @@ def test_recovery_unit_is_a_fail_closed_pre_service_gate():
     assert "/usr/local/sbin/hy2-deploy-recovery.py recover" in unit
     assert "RemainAfterExit=yes" in unit
     assert "ConditionPathExists=" not in unit
+    assert "RuntimeDirectory=hy2-locks" in unit
+    assert "RuntimeDirectoryMode=0700" in unit
+    assert "RuntimeDirectoryPreserve=yes" in unit
+    writable = {
+        token
+        for line in unit.splitlines()
+        if line.startswith("ReadWritePaths=")
+        for token in line.removeprefix("ReadWritePaths=").split()
+    }
+    assert "/run/hy2-locks" in writable
+    assert "/run" not in writable
     for directive in (
         "User=root",
         "UMask=0077",
@@ -983,6 +996,22 @@ def test_prepare_runtime_contract_matches_helper_allowlists():
     assert 'for key in "${HY2_SYSCTL_KEYS[@]}"; do' in prepare_block
     assert 'prepare_args+=(--sysctl-key "$key")' in prepare_block
     assert "prepare_args+=(--log-dir /var/log/xray)" in prepare_block
+
+
+def test_hysteria_updater_is_covered_by_durable_recovery_contract():
+    """Removing any updater artifact/unit from recovery must fail this test."""
+    allowed_paths = set(_python_literal("EXACT_ALLOWED_PATHS"))
+    allowed_units = set(_python_literal("EXACT_ALLOWED_UNITS"))
+
+    assert {
+        "/root/hysteria/hysteria_update.py",
+        "/etc/systemd/system/hy2-hysteria-update.service",
+        "/etc/systemd/system/hy2-hysteria-update.timer",
+    } <= allowed_paths
+    assert {
+        "hy2-hysteria-update.service",
+        "hy2-hysteria-update.timer",
+    } <= allowed_units
 
 
 def test_frozen_static_allowlist_exactly_matches_helper_contract(tmp_path):
