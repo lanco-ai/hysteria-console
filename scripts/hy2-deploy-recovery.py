@@ -1069,6 +1069,24 @@ def _authoritative_active_state(
     )
 
 
+def _authoritative_enable_state(
+    result: subprocess.CompletedProcess[str],
+    unit: str,
+) -> str:
+    enabled = result.stdout.strip()
+    if enabled in VALID_ENABLE_STATES and result.returncode in {0, 1}:
+        return enabled
+    if (
+        enabled == "not-found"
+        and result.returncode == 4
+        and not result.stderr.strip()
+    ):
+        return enabled
+    raise RecoveryError(
+        f"Could not capture an authoritative enable state for {unit}."
+    )
+
+
 def _capture_runtime(
     *,
     units: list[str],
@@ -1112,14 +1130,7 @@ def _capture_runtime(
                 [systemctl, "is-enabled", unit],
                 check=False,
             )
-            enabled = enabled_result.stdout.strip() or "not-found"
-            if (
-                enabled not in VALID_ENABLE_STATES
-                or enabled_result.returncode not in {0, 1}
-            ):
-                raise RecoveryError(
-                    f"Could not capture an authoritative enable state for {unit}."
-                )
+            enabled = _authoritative_enable_state(enabled_result, unit)
             runtime["units"][unit] = {
                 "active": active,
                 "enabled": enabled,

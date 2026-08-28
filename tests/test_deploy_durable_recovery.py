@@ -194,6 +194,35 @@ def _manifest(recovery):
     )
 
 
+def _fake_systemctl(
+    recovery,
+    name,
+    *,
+    enabled_stdout,
+    enabled_returncode,
+    enabled_stderr="",
+    active_stdout="inactive",
+    active_returncode=4,
+):
+    command_dir = recovery["root"] / name
+    command_dir.mkdir(mode=0o700)
+    systemctl = command_dir / "systemctl"
+    systemctl.write_text(
+        "#!/bin/sh\n"
+        "case \"$1\" in\n"
+        f"  is-active) printf '%s' '{active_stdout}'; "
+        f"exit {active_returncode} ;;\n"
+        f"  is-enabled) printf '%s' '{enabled_stdout}'; "
+        f"printf '%s' '{enabled_stderr}' >&2; "
+        f"exit {enabled_returncode} ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o700)
+    return systemctl
+
+
 def _kill_after_before(recovery, artifact, candidate, *, rename):
     harness = """
 import os
@@ -806,6 +835,172 @@ def test_prepare_persists_and_recover_restores_runtime_state(recovery):
         "-n net.example.value",
         "-q -w net.example.value=4096",
     ]
+
+
+def test_capture_enable_state_accepts_not_found_exit_4(recovery):
+    systemctl = _fake_systemctl(
+        recovery,
+        "absent-unit-commands",
+        enabled_stdout="not-found",
+        enabled_returncode=4,
+    )
+
+    prepared = recovery["run"](
+        "prepare",
+        "--unit",
+        "absent.service",
+        extra_env={"HY2_DEPLOY_RECOVERY_SYSTEMCTL": str(systemctl)},
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    payload = json.loads(_manifest(recovery).read_text(encoding="utf-8"))
+    assert payload["runtime"]["units"]["absent.service"] == {
+        "active": False,
+        "enabled": "not-found",
+    }
+
+
+@pytest.mark.parametrize(
+    ("stdout", "stderr"),
+    (
+        ("", ""),
+        ("unknown", ""),
+        ("enabled", ""),
+        ("disabled", ""),
+        ("masked", ""),
+        ("static", ""),
+        ("permission-denied", "Access denied"),
+        ("not-found", "D-Bus unavailable"),
+    ),
+)
+def test_capture_enable_state_rejects_unknown_exit_4_result(
+    recovery,
+    stdout,
+    stderr,
+):
+    systemctl = _fake_systemctl(
+        recovery,
+        f"unknown-enable-{stdout or 'empty'}",
+        enabled_stdout=stdout,
+        enabled_stderr=stderr,
+        enabled_returncode=4,
+    )
+
+    prepared = recovery["run"](
+        "prepare",
+        "--unit",
+        "ambiguous.service",
+        extra_env={"HY2_DEPLOY_RECOVERY_SYSTEMCTL": str(systemctl)},
+    )
+
+    assert prepared.returncode != 0
+    assert "authoritative enable state" in prepared.stderr
+    assert recovery["run"]("status").stdout.strip() == "clean"
+
+
+@pytest.mark.parametrize(
+    ("state", "returncode"),
+    (
+        ("enabled", 0),
+        ("enabled-runtime", 0),
+        ("masked", 1),
+        ("masked-runtime", 1),
+        ("disabled", 1),
+        ("not-found", 1),
+        ("static", 0),
+        ("indirect", 0),
+        ("generated", 0),
+        ("transient", 0),
+        ("linked", 0),
+        ("linked-runtime", 0),
+        ("alias", 0),
+    ),
+)
+def test_capture_enable_state_preserves_supported_results(
+    recovery,
+    state,
+    returncode,
+):
+    systemctl = _fake_systemctl(
+        recovery,
+        f"enable-state-{state}",
+        enabled_stdout=state,
+        enabled_returncode=returncode,
+        active_returncode=3,
+    )
+
+    prepared = recovery["run"](
+        "prepare",
+        "--unit",
+        "supported.service",
+        extra_env={"HY2_DEPLOY_RECOVERY_SYSTEMCTL": str(systemctl)},
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    payload = json.loads(_manifest(recovery).read_text(encoding="utf-8"))
+    assert payload["runtime"]["units"]["supported.service"]["enabled"] == state
+
+
+def test_prepare_accepts_absent_updater_units_on_first_deploy(recovery):
+    command_dir = recovery["root"] / "first-deploy-commands"
+    command_dir.mkdir(mode=0o700)
+    installed = recovery["root"] / "updater-units-installed"
+    command_log = recovery["root"] / "first-deploy-systemctl.log"
+    systemctl = command_dir / "systemctl"
+    systemctl.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> '{command_log}'\n"
+        "case \"$1\" in\n"
+        "  is-active)\n"
+        f"    if [ -f '{installed}' ]; then\n"
+        "      printf 'active\\n'; exit 0\n"
+        "    fi\n"
+        "    printf 'inactive\\n'; exit 4 ;;\n"
+        "  is-enabled)\n"
+        f"    if [ -f '{installed}' ]; then\n"
+        "      printf 'enabled\\n'; exit 0\n"
+        "    fi\n"
+        "    printf 'not-found\\n'; exit 4 ;;\n"
+        "  *) exit 0 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    systemctl.chmod(0o700)
+    updater_units = (
+        "hy2-hysteria-update.service",
+        "hy2-hysteria-update.timer",
+    )
+    command = ["prepare"]
+    for unit in updater_units:
+        command.extend(("--unit", unit))
+
+    prepared = recovery["run"](
+        *command,
+        extra_env={"HY2_DEPLOY_RECOVERY_SYSTEMCTL": str(systemctl)},
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    payload = json.loads(_manifest(recovery).read_text(encoding="utf-8"))
+    assert payload["runtime"]["units"] == {
+        unit: {"active": False, "enabled": "not-found"}
+        for unit in updater_units
+    }
+    installed.touch()
+
+    recovered = recovery["run"](
+        "recover",
+        extra_env={"HY2_DEPLOY_RECOVERY_SYSTEMCTL": str(systemctl)},
+    )
+
+    assert recovered.returncode == 0, recovered.stderr
+    commands = command_log.read_text(encoding="utf-8").splitlines()
+    for unit in updater_units:
+        assert f"stop {unit}" in commands
+        assert f"disable {unit}" in commands
+        assert f"unmask {unit}" in commands
+        assert f"--no-block start {unit}" not in commands
+    assert "daemon-reload" in commands
+    assert recovery["run"]("status").stdout.strip() == "clean"
 
 
 def test_prepare_rejects_non_authoritative_systemctl_failure(recovery):
