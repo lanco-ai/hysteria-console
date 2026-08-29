@@ -133,6 +133,47 @@ def test_sidebar_collapse_animates_grid_track_after_first_paint():
     )
 
 
+def test_sidebar_motion_override_is_explicit_desktop_only_preference():
+    src = _read("hysteria/subscription_service.py")
+    css = _read("hysteria/admin.css")
+
+    assert 'id="sidebar-motion-toggle"' in src
+    assert "localStorage.getItem('hy2.sidebar-motion') === 'enabled'" in src
+    assert "localStorage.setItem('hy2.sidebar-motion', 'enabled')" in src
+    assert "localStorage.removeItem('hy2.sidebar-motion')" in src
+    assert "classList.add('sidebar-motion-enabled')" in src
+    assert "classList.toggle('sidebar-motion-enabled'" in src
+
+    override = re.search(
+        r"@media \(prefers-reduced-motion: reduce\) and "
+        r"\(min-width: 881px\) \{(?P<body>.*?)\n\}",
+        css,
+        re.DOTALL,
+    )
+    assert override
+    assert "html.sidebar-motion-enabled .app.anim-ready" in override.group("body")
+    assert (
+        "transition: grid-template-columns 220ms "
+        "cubic-bezier(.16, 1, .3, 1) !important;"
+        in override.group("body")
+    )
+
+    import subscription_service as ss
+    settings = ss.render_settings("panel.test")
+    assert 'id="sidebar-motion-toggle"' in settings
+    assert "本浏览器强制显示侧边栏动画" in settings
+
+
+def test_panel_copy_control_has_visible_secure_share_feedback():
+    src = _read("hysteria/subscription_service.py")
+    js = _read("hysteria/admin_poll.js")
+
+    assert '<span class="copy-label">复制专属面板</span>' in src
+    assert '打开后地址栏会安全归一为 <code>/user/panel</code>' in src
+    assert "label.textContent = '已复制';" in js
+    assert "label.textContent = previousLabel;" in js
+
+
 def test_hysteria_update_buttons_use_ajax_and_poll_background_status():
     js = _read("hysteria/admin_poll.js")
     updater = _read("hysteria/hysteria_update.py")

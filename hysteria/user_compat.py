@@ -4,6 +4,7 @@ Centralizes the `metered` / `guest` alias mapping so callers don't hardcode the
 fallback chain. See CONTEXT.md `### User types` for the canonical vocabulary.
 """
 from datetime import date, datetime
+import ipaddress
 import re
 import uuid
 
@@ -187,7 +188,9 @@ def is_inactive(cfg, today=None):
 # Display-only landing notes. Never consulted by authorization_config_error
 # or the static-access plan — a malformed value here must not deny proxy
 # access. Write-path validation lives in the admin update handler.
-LANDING_FIELDS = ('landing_isp', 'landing_region', 'landing_note')
+LANDING_FIELDS = (
+    'landing_isp', 'landing_region', 'landing_note', 'landing_ip',
+)
 LANDING_MAX_LENGTH = 120
 
 
@@ -220,6 +223,23 @@ def parse_landing_write(raw):
     return text, None
 
 
+def parse_landing_ip_write(raw):
+    """Validate and canonicalize an optional display-only IP address."""
+    if raw is None:
+        return None, None
+    if not isinstance(raw, str):
+        return None, 'landing_ip_invalid'
+    if _landing_control_chars(raw) or _landing_has_markup(raw) or '%' in raw:
+        return None, 'landing_ip_invalid'
+    text = raw.strip()
+    if not text:
+        return None, None
+    try:
+        return str(ipaddress.ip_address(text)), None
+    except ValueError:
+        return None, 'landing_ip_invalid'
+
+
 def landing_field(cfg, name):
     """Lenient reader: non-str / overlong / control chars become empty."""
     if not isinstance(cfg, dict) or name not in LANDING_FIELDS:
@@ -232,11 +252,18 @@ def landing_field(cfg, name):
         return ''
     if _landing_control_chars(text) or _landing_has_markup(text):
         return ''
+    if name == 'landing_ip':
+        if _landing_control_chars(value) or '%' in value:
+            return ''
+        try:
+            return str(ipaddress.ip_address(text))
+        except ValueError:
+            return ''
     return text
 
 
 def landing_fields(cfg):
-    """All three display fields. Empty dict when nothing is showable."""
+    """All display fields. Empty dict when nothing is showable."""
     out = {name: landing_field(cfg, name) for name in LANDING_FIELDS}
     if not any(out.values()):
         return {}

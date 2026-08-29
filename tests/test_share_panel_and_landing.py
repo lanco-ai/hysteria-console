@@ -5,6 +5,7 @@ from datetime import datetime
 from http.server import ThreadingHTTPServer
 import http.client
 import json
+from pathlib import Path
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
@@ -177,10 +178,36 @@ def test_unknown_panel_token_does_not_leak_existence(tmp_path, monkeypatch):
     assert missing_user[2] == bad_token[2]
 
 
-def test_admin_copy_button_describes_share_link():
-    from pathlib import Path
-    src = Path("hysteria/subscription_service.py").read_text(encoding="utf-8")
-    assert "复制专属面板链接（首次打开后地址栏不再含密钥）" in src
+def test_admin_copy_button_exposes_unique_share_link(tmp_path, monkeypatch):
+    _configure_state(tmp_path, monkeypatch, users={"alice": _alice()})
+
+    row = ss.row_form(
+        "alice", _alice(), {}, "panel.test", "https://panel.test",
+        daily={}, now=NOW,
+    )
+    bob = _alice(
+        sub_token="bob-token",
+        vless_uuid="22222222-2222-4222-8222-222222222222",
+    )
+    bob_row = ss.row_form(
+        "bob", bob, {}, "panel.test", "https://panel.test",
+        daily={}, now=NOW,
+    )
+
+    assert '<span class="copy-label">复制专属面板</span>' in row
+    assert (
+        'data-copy="https://panel.test/panel/alice?token=alice-token"'
+        in row
+    )
+    assert 'data-copy="https://panel.test/user/panel"' not in row
+    assert 'data-copy="https://panel.test/panel/bob?token=bob-token"' in bob_row
+    assert "alice-token" not in bob_row
+
+    poll_js = (Path(ss.__file__).parent / "admin_poll.js").read_text(
+        encoding="utf-8",
+    )
+    assert "anchor.setAttribute('href', url);" in poll_js
+    assert "copyBtn.dataset.copy = url;" in poll_js
 
 
 def test_landing_write_rejects_overlong_and_control_chars():
@@ -194,8 +221,62 @@ def test_landing_write_rejects_overlong_and_control_chars():
     assert value is None and err is None
     value, err = user_compat.parse_landing_write("<b>test</b>")
     assert value is None and err == "landing_invalid"
-    value, err = user_compat.parse_landing_write("<script>alert(1)</script>")
-    assert value is None and err == "landing_invalid"
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (" 203.0.113.9 ", "203.0.113.9"),
+        ("2001:0db8:0:0:0:0:0:1", "2001:db8::1"),
+    ],
+)
+def test_landing_ip_write_accepts_and_normalizes_ip_addresses(raw, expected):
+    assert user_compat.parse_landing_ip_write(raw) == (expected, None)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "home.example.com",
+        "203.0.113.9:443",
+        "2001:db8::1/64",
+        "fe80::1%eth0",
+        "<203.0.113.9>",
+        "203.0.113.9\n",
+    ],
+)
+def test_landing_ip_write_rejects_non_ip_endpoints(raw):
+    assert user_compat.parse_landing_ip_write(raw) == (
+        None, "landing_ip_invalid",
+    )
+
+
+def test_admin_update_rejects_invalid_landing_ip_without_mutation(
+    tmp_path, monkeypatch,
+):
+    state = _configure_state(tmp_path, monkeypatch, users={"alice": _alice()})
+    before = state["USERS_FILE"].read_text(encoding="utf-8")
+    revision = ss.user_config_revision(json.loads(before)["alice"])
+    monkeypatch.setattr(ss, "is_logged_in", lambda _h: True)
+
+    with _running_server() as server:
+        status, _headers, body = _request(
+            server,
+            "POST",
+            "/admin/update?token=admin-token",
+            form={
+                "user": "alice",
+                "user_revision": revision,
+                "max_devices": "2",
+                "quota_gb": "1",
+                "quota_extra_gb": "0",
+                "landing_ip": "home.example.com",
+            },
+        )
+
+    assert status == 422
+    assert "请输入合法的 IPv4 或 IPv6 地址" in body.decode("utf-8")
+    assert state["USERS_FILE"].read_text(encoding="utf-8") == before
 
 
 def test_landing_reader_treats_garbage_as_empty():
@@ -209,6 +290,12 @@ def test_landing_reader_treats_garbage_as_empty():
     assert user_compat.landing_field(
         {"landing_note": "<b>x</b>"}, "landing_note",
     ) == ""
+    assert user_compat.landing_field(
+        {"landing_ip": "home.example.com"}, "landing_ip",
+    ) == ""
+    assert user_compat.landing_field(
+        {"landing_ip": "2001:0db8::1"}, "landing_ip",
+    ) == "2001:db8::1"
 
 
 def test_landing_does_not_affect_static_access_plan(tmp_path, monkeypatch):
@@ -220,6 +307,7 @@ def test_landing_does_not_affect_static_access_plan(tmp_path, monkeypatch):
             vless_uuid="22222222-2222-4222-8222-222222222222",
             landing_isp="<script>x</script>",
             landing_note="x" * 500,
+            landing_ip="203.0.113.9",
         ),
     }
     users["bob"]["sub_token"] = "bob-token"
@@ -240,9 +328,13 @@ def test_landing_does_not_affect_static_access_plan(tmp_path, monkeypatch):
     plan_a = ss._build_static_access_plan(users, daily, meta, now=NOW)
     users["bob"].pop("landing_isp")
     users["bob"].pop("landing_note")
+    users["bob"].pop("landing_ip")
     plan_b = ss._build_static_access_plan(users, daily, meta, now=NOW)
     assert plan_a == plan_b
     assert user_compat.authorization_config_error(users["alice"]) is None
+    assert user_compat.authorization_config_error({
+        **users["alice"], "landing_ip": "not-an-ip",
+    }) is None
 
 
 def test_landing_saved_via_admin_update_and_shown_on_panel(tmp_path, monkeypatch):
@@ -269,6 +361,7 @@ def test_landing_saved_via_admin_update_and_shown_on_panel(tmp_path, monkeypatch
                 "landing_isp": "电信",
                 "landing_region": "上海",
                 "landing_note": "家宽备注",
+                "landing_ip": "2001:0db8:0:0:0:0:0:1",
             },
         )
     assert status == 302
@@ -276,6 +369,7 @@ def test_landing_saved_via_admin_update_and_shown_on_panel(tmp_path, monkeypatch
     assert saved["landing_isp"] == "电信"
     assert saved["landing_region"] == "上海"
     assert saved["landing_note"] == "家宽备注"
+    assert saved["landing_ip"] == "2001:db8::1"
     html = ss.render_user_panel(
         "panel.test", "https://panel.test", "alice", "alice-token", saved,
         session_auth=True,
@@ -284,6 +378,42 @@ def test_landing_saved_via_admin_update_and_shown_on_panel(tmp_path, monkeypatch
     assert "电信" in html
     assert "上海" in html
     assert "家宽备注" in html
+    assert "家宽 IP" in html
+    assert "2001:db8::1" in html
+
+
+def test_landing_ip_can_be_cleared_via_admin_update(tmp_path, monkeypatch):
+    state = _configure_state(
+        tmp_path, monkeypatch,
+        users={"alice": _alice(landing_ip="203.0.113.9")},
+    )
+    revision = ss.user_config_revision(
+        json.loads(state["USERS_FILE"].read_text(encoding="utf-8"))["alice"]
+    )
+    monkeypatch.setattr(ss, "is_logged_in", lambda _h: True)
+    monkeypatch.setattr(
+        ss, "_sync_static_access_from_users",
+        lambda _users, **_k: (False, False),
+    )
+
+    with _running_server() as server:
+        status, _headers, _body = _request(
+            server,
+            "POST",
+            "/admin/update?token=admin-token",
+            form={
+                "user": "alice",
+                "user_revision": revision,
+                "max_devices": "2",
+                "quota_gb": "1",
+                "quota_extra_gb": "0",
+                "landing_ip": "",
+            },
+        )
+
+    saved = json.loads(state["USERS_FILE"].read_text(encoding="utf-8"))["alice"]
+    assert status == 302
+    assert "landing_ip" not in saved
 
 
 def test_empty_landing_omits_panel_section():

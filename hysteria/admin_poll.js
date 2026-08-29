@@ -283,6 +283,7 @@
     setEditValue('landing_isp', btn.dataset.landingIsp || '');
     setEditValue('landing_region', btn.dataset.landingRegion || '');
     setEditValue('landing_note', btn.dataset.landingNote || '');
+    setEditValue('landing_ip', btn.dataset.landingIp || '');
     var metered = editForm.querySelector('[name="guest"]');
     var tuic = editForm.querySelector('[name="tuic_enabled"]');
     if (metered) metered.checked = btn.dataset.metered === '1';
@@ -960,8 +961,11 @@
     if (!navigator.clipboard) { manualCopy(); return; }
     navigator.clipboard.writeText(text).then(function() {
       btn.classList.add('copied');
+      var label = btn.querySelector('.copy-label');
+      var previousLabel = label ? label.textContent : '';
       var prev = btn.getAttribute('title') || '';
       var prevLabel = btn.getAttribute('aria-label') || prev;
+      if (label) label.textContent = '已复制';
       btn.setAttribute('title', '已复制 ✓');
       btn.setAttribute('aria-label', '已复制');
       announce('链接已复制');
@@ -969,6 +973,7 @@
         btn.classList.remove('copied');
         btn.setAttribute('title', prev);
         btn.setAttribute('aria-label', prevLabel);
+        if (label) label.textContent = previousLabel;
       }, 1200);
     }).catch(manualCopy);
   });

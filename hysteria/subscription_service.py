@@ -2710,6 +2710,9 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
     body = f'''<script>
 (function(){{
   try {{
+    if (localStorage.getItem('hy2.sidebar-motion') === 'enabled') {{
+      document.documentElement.classList.add('sidebar-motion-enabled');
+    }}
     if (localStorage.getItem('hy2.sidebar') === 'collapsed') {{
       document.documentElement.classList.add('sidebar-pre-collapsed');
     }}
@@ -2768,6 +2771,7 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   var app = document.querySelector('.app');
   var main = document.querySelector('.main');
   var skip = document.querySelector('.skip-link');
+  var motionToggle = document.getElementById('sidebar-motion-toggle');
   if (!sb || !sc || !bt || !cb) return;
   function setCollapsed(collapsed) {{
     collapsed = Boolean(collapsed) && !isMobile();
@@ -2793,6 +2797,17 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   if (collapseBtn) collapseBtn.addEventListener('click', function() {{
     setCollapsed(!sb.classList.contains('collapsed'));
   }});
+  if (motionToggle) {{
+    motionToggle.checked = document.documentElement.classList.contains('sidebar-motion-enabled');
+    motionToggle.addEventListener('change', function() {{
+      var enabled = Boolean(motionToggle.checked);
+      document.documentElement.classList.toggle('sidebar-motion-enabled', enabled);
+      try {{
+        if (enabled) localStorage.setItem('hy2.sidebar-motion', 'enabled');
+        else localStorage.removeItem('hy2.sidebar-motion');
+      }} catch (e) {{}}
+    }});
+  }}
   function isMobile() {{ return window.innerWidth <= 880; }}
   function focusableItems() {{
     return Array.prototype.slice.call(
@@ -2950,6 +2965,7 @@ def flash_text(msg):
         'note_too_long': '备注不能超过 200 个字符',
         'landing_too_long': '落地家宽信息不能超过 120 个字符',
         'landing_invalid': '落地家宽信息不能包含控制字符',
+        'landing_ip_invalid': '请输入合法的 IPv4 或 IPv6 地址',
         'settlement_invalid': '结算日无效（请输入 1–28 之间的整数）',
         'cycle_length_invalid': f'周期长度无效（请输入 {CYCLE_LENGTH_MIN}–{CYCLE_LENGTH_MAX} 之间的整数）',
     }
@@ -3924,6 +3940,11 @@ def render_user_panel(
                 '<div><dt>地区</dt><dd>'
                 f'{html.escape(landing["landing_region"])}</dd></div>'
             )
+        if landing.get('landing_ip'):
+            rows += (
+                '<div><dt>家宽 IP</dt><dd><code class="mono">'
+                f'{html.escape(landing["landing_ip"])}</code></dd></div>'
+            )
         if landing.get('landing_note'):
             rows += (
                 '<div><dt>说明</dt><dd>'
@@ -4237,6 +4258,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
           data-landing-isp="{html.escape(user_compat.landing_field(cfg, 'landing_isp'), quote=True)}"
           data-landing-region="{html.escape(user_compat.landing_field(cfg, 'landing_region'), quote=True)}"
           data-landing-note="{html.escape(user_compat.landing_field(cfg, 'landing_note'), quote=True)}"
+          data-landing-ip="{html.escape(user_compat.landing_field(cfg, 'landing_ip'), quote=True)}"
           data-metered="{'1' if metered else '0'}" data-tuic-enabled="{'1' if tuic_allowed else '0'}">编辑套餐</button>
   {summary_preview}
 </div>
@@ -4262,7 +4284,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
   <div class="link-row">
     <a href="{html.escape(panel)}" target="_blank" rel="noopener">{icon("dashboard")}<span>面板</span></a>
     <button type="button" class="btn ghost btn-sm copy-link" data-copy="{html.escape(panel)}"
-            title="复制专属面板链接（首次打开后地址栏不再含密钥）" aria-label="复制 {user_esc} 的专属面板链接">{icon("copy")}</button>
+            title="复制专属面板链接（首次打开后地址栏不再含密钥）" aria-label="复制 {user_esc} 的专属面板链接">{icon("copy")}<span class="copy-label">复制专属面板</span></button>
   </div>
   <div class="link-row">
     <a href="{html.escape(sub_http)}" target="_blank" rel="noopener">{icon("open")}<span>订阅</span></a>
@@ -4400,6 +4422,8 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
           <input id="edit-landing-isp" name="landing_isp" maxlength="120" placeholder="可选，仅展示"></div>
         <div class="form-field"><label for="edit-landing-region">落地地区</label>
           <input id="edit-landing-region" name="landing_region" maxlength="120" placeholder="可选，仅展示"></div>
+        <div class="form-field"><label for="edit-landing-ip">家宽 IP</label>
+          <input id="edit-landing-ip" name="landing_ip" maxlength="45" autocomplete="off" spellcheck="false" placeholder="可选，仅支持 IPv4 / IPv6"></div>
         <div class="form-field" style="grid-column:1/-1"><label for="edit-landing-note">落地说明</label>
           <input id="edit-landing-note" name="landing_note" maxlength="120" placeholder="可选，仅展示，不影响出口"></div>
         <div class="form-field"><label for="edit-panel-password">面板密码</label>
@@ -4433,6 +4457,7 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
       <span class="filter-count" id="filter-count" role="status" aria-live="polite">{len(users)} 用户</span>
     </div>
   </div>
+  <div class="small faint mt-sm">“复制专属面板”会复制每位用户各自的安全入口；打开后地址栏会安全归一为 <code>/user/panel</code>。</div>
   <div class="users-table-wrap">
     <table class="users-table" data-user-count="{len(users)}"><caption class="sr-only">用户、套餐用量、管理操作与订阅链接</caption><thead><tr><th>用户</th><th>趋势</th><th>用量</th><th>操作</th><th>链接</th></tr></thead><tbody>{rows}</tbody></table>
   </div>
@@ -5174,6 +5199,12 @@ def render_settings(host, flash=''):
     <div class="form-section-title">管理员账号</div>
     <div class="form-section-desc">当前登录的管理员账号名称。</div>
     <div class="small">账号：<code>{admin_user}</code></div>
+  </section>
+
+  <section class="form-section" style="max-width:560px;">
+    <div class="form-section-title">侧边栏动画</div>
+    <div class="form-section-desc">默认跟随系统的减少动态效果设置；此偏好仅保存在当前浏览器，且只影响桌面侧边栏。</div>
+    <label class="switch"><input type="checkbox" id="sidebar-motion-toggle">本浏览器强制显示侧边栏动画</label>
   </section>
 
   <section class="form-section" style="max-width:560px;">
@@ -7541,7 +7572,12 @@ class Handler(BaseHTTPRequestHandler):
             landing_values = {}
             landing_error = None
             for landing_name in user_compat.LANDING_FIELDS:
-                value, err = user_compat.parse_landing_write(
+                parser = (
+                    user_compat.parse_landing_ip_write
+                    if landing_name == 'landing_ip'
+                    else user_compat.parse_landing_write
+                )
+                value, err = parser(
                     (form.get(landing_name) or [''])[0],
                 )
                 if err:

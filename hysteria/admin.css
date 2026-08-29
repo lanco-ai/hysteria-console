@@ -5578,3 +5578,9 @@ html.home-prepaint .preview-mini-bar-fill {
   .home-scan-line { display: none; }
   .home-hero-grid.is-drifting { animation: none; }
 }
+
+@media (prefers-reduced-motion: reduce) and (min-width: 881px) {
+  html.sidebar-motion-enabled .app.anim-ready {
+    transition: grid-template-columns 220ms cubic-bezier(.16, 1, .3, 1) !important;
+  }
+}
