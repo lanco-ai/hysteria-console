@@ -40,6 +40,19 @@ def test_isolated_service_command_can_import_sibling_modules():
     assert "ModuleNotFoundError" not in result.stderr
 
 
+def test_static_updater_uses_trusted_working_directory_without_isolated_mode():
+    unit = UNIT.read_text(encoding="utf-8")
+
+    assert (
+        "ExecStart=/usr/local/sbin/hy2-lock-exec.py "
+        "--lock-file /run/hy2-locks/deploy.lock --wait "
+        "/usr/bin/python3 /root/hysteria/hysteria_update.py --auto"
+        in unit.splitlines()
+    )
+    assert "WorkingDirectory=/root/hysteria" in unit.splitlines()
+    assert " -I " not in unit
+
+
 def test_transient_worker_has_static_unit_security_and_exit_contract(
     tmp_path, monkeypatch,
 ):

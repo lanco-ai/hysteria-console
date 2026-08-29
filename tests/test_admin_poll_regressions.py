@@ -97,6 +97,37 @@ def test_sidebar_collapse_controls_exist_in_shell():
     assert 'id="total-used"' in src
 
 
+def test_sidebar_collapse_animates_grid_track_after_first_paint():
+    src = _read("hysteria/subscription_service.py")
+    css = _read("hysteria/admin.css")
+    animated_app = re.search(
+        r"\.app\.anim-ready \{(.*?)\n\}", css, re.DOTALL,
+    )
+    assert animated_app
+    assert (
+        "transition: grid-template-columns 220ms "
+        "cubic-bezier(.16, 1, .3, 1);"
+        in animated_app.group(1)
+    )
+    assert "transition: width 180ms ease" not in css
+    assert ".sidebar.collapsed {\n  width: 64px;\n}" not in css
+
+    reduced_motion = css[css.index("@media (prefers-reduced-motion: reduce)"):]
+    assert ".app.anim-ready { transition: none; }" in reduced_motion
+    mobile = css[
+        css.index("@media (max-width: 880px)"):
+        css.index("/* Main Area */")
+    ]
+    assert ".app.anim-ready { transition: none; }" in mobile
+    assert "app.classList.add('anim-ready')" in src
+    assert re.search(
+        r"requestAnimationFrame\(function\(\) \{\{\s*"
+        r"requestAnimationFrame\(function\(\) \{\{\s*"
+        r"if \(app\) app\.classList\.add\('anim-ready'\)",
+        src,
+    )
+
+
 def test_hysteria_update_buttons_use_ajax_and_poll_background_status():
     js = _read("hysteria/admin_poll.js")
     updater = _read("hysteria/hysteria_update.py")

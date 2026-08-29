@@ -2784,6 +2784,11 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   try {{
     setCollapsed(localStorage.getItem('hy2.sidebar') === 'collapsed');
   }} catch (e) {{}}
+  requestAnimationFrame(function() {{
+    requestAnimationFrame(function() {{
+      if (app) app.classList.add('anim-ready');
+    }});
+  }});
   if (collapseBtn) collapseBtn.addEventListener('click', function() {{
     setCollapsed(!sb.classList.contains('collapsed'));
   }});

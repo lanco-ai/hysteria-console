@@ -8,7 +8,8 @@ After=network-online.target hysteria-server.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/hy2-lock-exec.py --lock-file /run/hy2-locks/deploy.lock --wait /usr/bin/python3 -I -c 'import runpy,sys;sys.path.insert(0,"/root/hysteria");runpy.run_module("hysteria_update",run_name="__main__")' --auto
+ExecStart=/usr/local/sbin/hy2-lock-exec.py --lock-file /run/hy2-locks/deploy.lock --wait /usr/bin/python3 /root/hysteria/hysteria_update.py --auto
+WorkingDirectory=/root/hysteria
 User=root
 Group=root
 NoNewPrivileges=true
