@@ -53,6 +53,9 @@ def test_backup_excludes_live_login_sessions(tmp_path):
     state_dir = hy_dir / 'state'
     state_dir.mkdir(parents=True)
     (hy_dir / 'users.json').write_text('{}')
+    (hy_dir / 'landing_egresses.json').write_text(
+        '{"version":1,"nodes":{}}', encoding='utf-8',
+    )
     (state_dir / 'usage.json').write_text('{}')
     (state_dir / 'panel_sessions.json').write_text('{"sid":{"exp":9999999999}}')
     (state_dir / 'user_panel_sessions.json').write_text('{"usid":{"exp":9999999999}}')
@@ -77,6 +80,7 @@ def test_backup_excludes_live_login_sessions(tmp_path):
         names = tf.getnames()
 
     assert any(name.endswith('/users.json') for name in names)
+    assert any(name.endswith('/landing_egresses.json') for name in names)
     assert any(name.endswith('/state/usage.json') for name in names)
     assert not any(name.endswith('/state/panel_sessions.json') for name in names)
     assert not any(name.endswith('/state/user_panel_sessions.json') for name in names)
@@ -118,6 +122,31 @@ def test_restore_check_accepts_plain_backup_archive(tmp_path):
 
     assert 'OK: hy2 backup dry-run passed' in result.stdout
     assert 'would_overwrite=' in result.stdout
+
+
+def test_restore_check_rejects_invalid_landing_egress_registry(tmp_path):
+    stage = tmp_path / 'stage'
+    hy_dir = stage / 'root' / 'hysteria'
+    hy_dir.mkdir(parents=True)
+    (hy_dir / 'landing_egresses.json').write_text(
+        '{"version":1,"nodes":{"bad":{"socks_password":"secret"}}}',
+        encoding='utf-8',
+    )
+    archive = tmp_path / 'invalid.tar.gz'
+    with tarfile.open(archive, 'w:gz') as tf:
+        tf.add(stage / 'root', arcname='root')
+    write_checksum(archive)
+    env = isolated_backup_env(tmp_path, tmp_path / 'live')
+
+    result = subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-restore-check.sh'), str(archive)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode != 0
+    assert 'landing_egresses.json' in result.stderr
 
 
 def test_backup_encryption_and_restore_check(tmp_path):

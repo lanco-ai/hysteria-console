@@ -236,6 +236,7 @@ build_durable_artifact_set() {
     auth_backend.py \
     auth_service.py \
     subscription_service.py \
+    landing_egress.py \
     traffic_limiter.py \
     alerts.py \
     anomaly.py \
@@ -1520,6 +1521,7 @@ for artifact in \
   "$HY_DIR/auth_backend.py" \
   "$HY_DIR/auth_service.py" \
   "$HY_DIR/subscription_service.py" \
+  "$HY_DIR/landing_egress.py" \
   "$HY_DIR/traffic_limiter.py" \
   "$HY_DIR/alerts.py" \
   "$HY_DIR/anomaly.py" \
@@ -1678,6 +1680,7 @@ render "$REPO_DIR/hysteria/config.yaml.tpl"          "$HY_DIR/config.yaml"
 render "$REPO_DIR/hysteria/auth_backend.py"          "$HY_DIR/auth_backend.py"
 render "$REPO_DIR/hysteria/auth_service.py"          "$HY_DIR/auth_service.py"
 render "$REPO_DIR/hysteria/subscription_service.py"  "$HY_DIR/subscription_service.py"
+render "$REPO_DIR/hysteria/landing_egress.py"         "$HY_DIR/landing_egress.py"
 render "$REPO_DIR/hysteria/traffic_limiter.py"       "$HY_DIR/traffic_limiter.py"
 render "$REPO_DIR/hysteria/alerts.py"                "$HY_DIR/alerts.py"
 render "$REPO_DIR/hysteria/anomaly.py"               "$HY_DIR/anomaly.py"
@@ -1723,6 +1726,7 @@ chmod 700 \
   "$HY_DIR/auth_backend.py" \
   "$HY_DIR/auth_service.py" \
   "$HY_DIR/subscription_service.py" \
+  "$HY_DIR/landing_egress.py" \
   "$HY_DIR/traffic_limiter.py" \
   "$HY_DIR/alerts.py" \
   "$HY_DIR/anomaly.py" \
@@ -1784,6 +1788,7 @@ import os
 import sys
 from pathlib import Path
 
+import landing_egress
 import state_store
 import subscription_service
 import traffic_limiter
@@ -1847,8 +1852,19 @@ with state_store.file_lock(usage_lock):
     xray_initialized = xray_config.initialize_from_file(
         candidate, path=xray_target,
     )
+    egress_registry = landing_egress.load_registry(
+        hy_dir / 'landing_egresses.json',
+    )
+    egress_nodes = egress_registry['nodes']
+    landing_plan = subscription_service._build_landing_access_plan(
+        users, access_plan, egress_nodes,
+    )
     xray_changed = xray_config.apply_user_plan(
-        access_plan, path=xray_target, prune_unknown=True,
+        access_plan,
+        landing_plan=landing_plan,
+        egress_nodes=egress_nodes,
+        path=xray_target,
+        prune_unknown=True,
     )
     tuic_changed = tuic_config.sync_user_plan(users, access_plan)
 

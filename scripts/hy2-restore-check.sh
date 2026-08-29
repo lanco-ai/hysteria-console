@@ -350,6 +350,27 @@ for p in root.rglob('*.json'):
         errors.append('users.json must be a JSON object')
     if rel.endswith('root/hysteria/subscription_meta.json') and not isinstance(data, dict):
         errors.append('subscription_meta.json must be a JSON object')
+    if rel.endswith('root/hysteria/landing_egresses.json'):
+        valid = (
+            isinstance(data, dict)
+            and data.get('version') == 1
+            and isinstance(data.get('nodes'), dict)
+        )
+        if valid:
+            for node_id, node in data['nodes'].items():
+                if (
+                    not isinstance(node_id, str)
+                    or not isinstance(node, dict)
+                    or node.get('id') != node_id
+                    or not isinstance(node.get('socks_ip'), str)
+                    or not isinstance(node.get('socks_port'), int)
+                    or not isinstance(node.get('expected_exit_ip'), str)
+                    or not isinstance(node.get('enabled'), bool)
+                ):
+                    valid = False
+                    break
+        if not valid:
+            errors.append('landing_egresses.json has invalid registry structure')
 
 template = root / 'root/hysteria/template.yaml'
 if template.exists() and yaml is not None:

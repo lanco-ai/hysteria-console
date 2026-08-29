@@ -186,6 +186,7 @@ acquire_snapshot_locks
 
 for p in \
   "$HY_DIR/users.json" \
+  "$HY_DIR/landing_egresses.json" \
   "$HY_DIR/subscription_meta.json" \
   "$HY_DIR/admin_initial_password.txt" \
   "$HY_DIR/template.yaml" \

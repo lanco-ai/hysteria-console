@@ -1295,6 +1295,24 @@ def test_hysteria_updater_is_covered_by_durable_recovery_contract():
     } <= allowed_units
 
 
+def test_landing_egress_module_is_a_durable_deploy_artifact():
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    allowed_paths = set(_python_literal("EXACT_ALLOWED_PATHS"))
+
+    assert "/root/hysteria/landing_egress.py" in allowed_paths
+    assert "landing_egress.py" in _shell_function(
+        deploy, "build_durable_artifact_set",
+    )
+    assert (
+        'render "$REPO_DIR/hysteria/landing_egress.py"'
+        in deploy
+    )
+    assert "/root/hysteria/landing_egresses.json" not in allowed_paths
+    assert "landing_egress.load_registry" in deploy
+    assert "landing_plan=landing_plan" in deploy
+    assert "egress_nodes=egress_nodes" in deploy
+
+
 def test_frozen_static_allowlist_exactly_matches_helper_contract(tmp_path):
     deploy = DEPLOY.read_text(encoding="utf-8")
     hy_dir = tmp_path / "hysteria"

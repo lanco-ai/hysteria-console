@@ -17,6 +17,7 @@ GOOGLE_GROUP = '🌐 Google 优化'
 TELEGRAM_GROUP = '✈️ Telegram 优化'
 HY2_UDP_PROXY = '🇺🇸 美国 UDP (端口跳跃)'
 TUIC_UDP_PROXY = '🇺🇸 美国 UDP TUIC'
+LANDING_VLESS_PROXY = '🏠 家宽 TCP VLESS'
 VLESS_TCP_PROXY = '🇺🇸 美国 TCP (VLESS+REALITY)'
 VLESS_BACKUP_PROXY = '🇺🇸 美国 TCP 备用 (VLESS+REALITY)'
 DIRECT_IP_RULE = 'IP-CIDR,47.245.53.96/32,DIRECT,no-resolve'
@@ -273,6 +274,44 @@ def apply_user_transport_policy(cfg, user_cfg):
     return cfg
 
 
+def apply_landing_vless(cfg, user_cfg):
+    """Append a distinct TCP-only residential credential when provisioned."""
+    if not isinstance(user_cfg, dict):
+        return cfg
+    landing_uuid = str(user_cfg.get('landing_vless_uuid') or '').strip()
+    allowed = user_cfg.get('landing_allowed_egress_ids')
+    selected = user_cfg.get('landing_selected_egress_id')
+    if (
+        not landing_uuid
+        or not isinstance(allowed, list)
+        or selected not in allowed
+    ):
+        return cfg
+    primary = next((
+        proxy for proxy in (cfg.get('proxies') or [])
+        if isinstance(proxy, dict) and proxy.get('name') == VLESS_TCP_PROXY
+    ), None)
+    if primary is None:
+        return cfg
+    residential = dict(primary)
+    residential.update({
+        'name': LANDING_VLESS_PROXY,
+        'uuid': landing_uuid,
+        'port': 443,
+        'network': 'tcp',
+        'udp': False,
+    })
+    _remove_proxy_everywhere(cfg, LANDING_VLESS_PROXY)
+    cfg.setdefault('proxies', []).append(residential)
+    for group in cfg.get('proxy-groups') or []:
+        if group.get('name') != NODE_GROUP:
+            continue
+        proxies = group.setdefault('proxies', [])
+        if LANDING_VLESS_PROXY not in proxies:
+            proxies.append(LANDING_VLESS_PROXY)
+    return cfg
+
+
 def apply_user_clash_overrides(cfg, user_cfg):
     if not isinstance(user_cfg, dict):
         return cfg
@@ -499,6 +538,17 @@ def render_user_clash_overrides_yaml(text, user_cfg):
         return text
 
 
+def render_landing_vless_yaml(text, user_cfg):
+    try:
+        import yaml
+        data = yaml.safe_load(text) or {}
+        apply_landing_vless(data, user_cfg)
+        return _dump_yaml(data)
+    except Exception:
+        log.exception('failed to render landing VLESS proxy')
+        return text
+
+
 def build_yaml(ctx, username, auth_secret, profile='default', *, generated_at=None):
     if not ctx.template_file.exists():
         return ''
@@ -526,5 +576,6 @@ def build_yaml(ctx, username, auth_secret, profile='default', *, generated_at=No
     text = render_profile_yaml(text, profile)
     text = render_user_transport_policy_yaml(text, user_cfg)
     text = render_user_clash_overrides_yaml(text, user_cfg)
+    text = render_landing_vless_yaml(text, user_cfg)
     return prepend_subscription_header(
         text, username, profile, ctx.template_file, generated_at=generated_at)

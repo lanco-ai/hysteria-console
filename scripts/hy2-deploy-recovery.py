@@ -157,6 +157,7 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/auth_backend.py",
     "/root/hysteria/auth_service.py",
     "/root/hysteria/subscription_service.py",
+    "/root/hysteria/landing_egress.py",
     "/root/hysteria/traffic_limiter.py",
     "/root/hysteria/alerts.py",
     "/root/hysteria/anomaly.py",

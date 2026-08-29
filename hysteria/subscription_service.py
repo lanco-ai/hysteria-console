@@ -28,6 +28,7 @@ import health_widgets
 import hysteria_update
 import http_utils
 import incident_console
+import landing_egress
 import revocation_queue
 import rotation_recovery
 import static_access
@@ -1124,6 +1125,62 @@ def _build_static_access_plan(users, daily, meta, *, now=None, usage_version=Non
     return plan
 
 
+def _build_landing_access_plan(users, direct_plan, egress_nodes):
+    """Derive fail-closed residential VLESS identities from active users."""
+    result = {}
+    claimed = {}
+    for direct_user, value in (direct_plan or {}).items():
+        if not value:
+            continue
+        try:
+            key = uuid.UUID(str(value).strip()).hex
+        except (ValueError, AttributeError, TypeError):
+            _critical_authorization_state(
+                f'user {direct_user!r}: active vless_uuid is invalid',
+            )
+        claimed[key] = f'direct:{direct_user}'
+    nodes = egress_nodes if isinstance(egress_nodes, dict) else {}
+    for username, cfg in sorted((users or {}).items()):
+        if not direct_plan.get(username) or not isinstance(cfg, dict):
+            continue
+        allowed = cfg.get('landing_allowed_egress_ids')
+        if allowed is None or allowed == []:
+            continue
+        if not isinstance(allowed, list):
+            _critical_authorization_state(
+                f'user {username!r}: landing authorization is invalid',
+            )
+        raw_uuid = str(cfg.get('landing_vless_uuid') or '').strip()
+        try:
+            parsed = uuid.UUID(raw_uuid)
+        except (ValueError, AttributeError, TypeError):
+            _critical_authorization_state(
+                f'user {username!r}: landing_vless_uuid is invalid',
+            )
+        uuid_key = parsed.hex
+        previous = claimed.get(uuid_key)
+        if previous is not None:
+            _critical_authorization_state(
+                f'landing identity for {username!r} conflicts with {previous}',
+            )
+        allowed_ids = {
+            value for value in allowed
+            if isinstance(value, str) and value in nodes
+        }
+        if not allowed_ids:
+            continue
+        selected = cfg.get('landing_selected_egress_id')
+        if selected not in allowed_ids:
+            selected = None
+        parsed_uuid = str(parsed)
+        claimed[uuid_key] = f'landing:{username}'
+        result[str(username)] = {
+            'uuid': parsed_uuid,
+            'selected_id': selected,
+        }
+    return result
+
+
 def _sync_static_access_from_users(users, *, now=None):
     """Exact-reconcile both generated proxy configs. Caller holds usage_lock."""
     live = _using_live_core_state()
@@ -1140,10 +1197,21 @@ def _sync_static_access_from_users(users, *, now=None):
     plan = _build_static_access_plan(
         users, daily, meta, now=now, usage_version=usage_version,
     )
+    try:
+        egress_registry = landing_egress.load_registry()
+    except state_store.InvalidJsonState:
+        egress_registry = landing_egress.empty_registry()
+    egress_nodes = egress_registry['nodes']
+    landing_plan = _build_landing_access_plan(users, plan, egress_nodes)
     xray_kwargs = {'prune_unknown': True}
     tuic_kwargs = {}
     try:
-        xray_changed = xray_config.apply_user_plan(plan, **xray_kwargs)
+        xray_changed = xray_config.apply_user_plan(
+            plan,
+            landing_plan=landing_plan,
+            egress_nodes=egress_nodes,
+            **xray_kwargs,
+        )
         static_access.recover_if_pending(
             xray_config.RELOAD_SERVICE,
             live=live,
@@ -2689,9 +2757,155 @@ _SIDEBAR_NAV = [
     ('health', '/admin/health', '健康状态', 'pulse'),
     ('config', '/admin/config', '模板配置', 'config'),
     ('rules', '/admin/rules', '路由规则', 'rules'),
+    ('landing-egresses', '/admin/landing-egresses', '家宽出口', 'rules'),
     ('logs', '/admin/logs', '清零日志', 'logs'),
     ('settings', '/admin/settings', '设置', 'lock'),
 ]
+
+
+def _landing_registry_or_empty():
+    try:
+        return landing_egress.load_registry()
+    except (state_store.InvalidJsonState, OSError):
+        return landing_egress.empty_registry()
+
+
+def _authorized_landing_nodes(cfg, registry=None):
+    registry = registry or _landing_registry_or_empty()
+    nodes = registry.get('nodes', {}) if isinstance(registry, dict) else {}
+    allowed = cfg.get('landing_allowed_egress_ids', []) if isinstance(cfg, dict) else []
+    if not isinstance(allowed, list):
+        return []
+    return [
+        nodes[node_id]
+        for node_id in allowed
+        if isinstance(node_id, str)
+        and isinstance(nodes.get(node_id), dict)
+        and nodes[node_id].get('enabled') is True
+    ]
+
+
+def render_landing_egress_selector(cfg, *, password_session):
+    nodes = _authorized_landing_nodes(cfg)
+    if not nodes:
+        return ''
+    selected = str(cfg.get('landing_selected_egress_id') or '')
+    rows = []
+    options = []
+    for node in nodes:
+        public = landing_egress.public_node(node)
+        node_id = public['id']
+        checked = ' selected' if node_id == selected else ''
+        options.append(
+            f'<option value="{html.escape(node_id, quote=True)}"{checked}>'
+            f'{html.escape(public["name"])}</option>'
+        )
+        health = public.get('health') or {}
+        health_label = str(health.get('status') or '未探测')
+        rows.append(
+            '<div><dt>' + html.escape(public['name']) + '</dt><dd>'
+            '<code class="mono">' + html.escape(public['exit_ip']) + '</code>'
+            + (' · ' + html.escape(public.get('isp', '')) if public.get('isp') else '')
+            + (' · ' + html.escape(public.get('region', '')) if public.get('region') else '')
+            + ' · ' + html.escape(health_label) + '</dd></div>'
+        )
+    if password_session:
+        action = (
+            '<form method="post" action="/user/landing-egress/select" class="mt-md">'
+            f'<input type="hidden" name="user_revision" value="{user_config_revision(cfg)}">'
+            '<label>选择家宽出口<select name="egress_id" required>'
+            + ''.join(options)
+            + '</select></label>'
+            '<button class="btn primary mt-sm" type="submit">切换出口</button>'
+            '<div class="small faint mt-sm">切换前会验证真实出口 IP；60 秒内只能切换一次。</div>'
+            '</form>'
+        )
+    else:
+        action = '<div class="small faint mt-md">使用面板密码登录后可切换。</div>'
+    return (
+        '<aside class="plan-section" aria-label="真实家宽出口">'
+        '<header class="section-head"><h2 class="section-title">真实家宽出口</h2></header>'
+        '<dl class="user-kv">' + ''.join(rows) + '</dl>' + action + '</aside>'
+    )
+
+
+def render_landing_egresses(host, flash=''):
+    registry = _landing_registry_or_empty()
+    users = load_json(USERS_FILE, {})
+    cards = []
+    for node_id, node in sorted(registry.get('nodes', {}).items()):
+        public = landing_egress.public_node(node)
+        endpoint = f'{node["socks_ip"]}:{node["socks_port"]}'
+        cards.append(
+            '<tr><td>' + html.escape(public['name']) + '</td>'
+            '<td><code class="mono">' + html.escape(endpoint) + '</code></td>'
+            '<td><code class="mono">' + html.escape(public['exit_ip']) + '</code></td>'
+            '<td>' + ('启用' if public.get('enabled') else '禁用') + '</td>'
+            '<td><div class="row gap-sm">'
+            '<form method="post" action="/admin/landing-egress/check">'
+            f'<input type="hidden" name="id" value="{html.escape(node_id, quote=True)}">'
+            '<button class="btn ghost btn-sm" type="submit">健康检查</button></form>'
+            '<form method="post" action="/admin/landing-egress/delete">'
+            f'<input type="hidden" name="id" value="{html.escape(node_id, quote=True)}">'
+            '<button class="btn danger-btn btn-sm" type="submit">删除</button></form>'
+            '</div></td></tr>'
+        )
+    rows = ''.join(cards) or '<tr><td colspan="5" class="faint">尚未配置家宽出口</td></tr>'
+    access_forms = []
+    for username, cfg in sorted(users.items()):
+        if not isinstance(cfg, dict):
+            continue
+        allowed = cfg.get('landing_allowed_egress_ids', [])
+        allowed = allowed if isinstance(allowed, list) else []
+        choices = []
+        for node_id, node in sorted(registry.get('nodes', {}).items()):
+            checked = ' checked' if node_id in allowed else ''
+            disabled = ' disabled' if node.get('enabled') is not True else ''
+            choices.append(
+                '<label class="inline-form-row">'
+                f'<input type="checkbox" name="egress_id" value="{html.escape(node_id, quote=True)}"{checked}{disabled}>'
+                f' {html.escape(node.get("name", node_id))}</label>'
+            )
+        access_forms.append(
+            '<form method="post" action="/admin/user-landing-access" class="card mt-sm">'
+            f'<strong>{html.escape(str(username))}</strong>'
+            f'<input type="hidden" name="user" value="{html.escape(str(username), quote=True)}">'
+            f'<input type="hidden" name="user_revision" value="{user_config_revision(cfg)}">'
+            + ''.join(choices)
+            + '<button class="btn secondary btn-sm" type="submit">保存授权</button></form>'
+        )
+    flash_html = render_alert(flash) if flash else ''
+    content = f'''{flash_html}
+<div class="card">
+  <h2 class="section-title">家宽出口节点</h2>
+  <p class="small faint">SOCKS5 密码只写入服务器状态文件，不会在页面中回显。</p>
+  <div class="table-wrap"><table><thead><tr><th>名称</th><th>SOCKS5 入口</th><th>预期出口</th><th>状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></div>
+</div>
+<div class="card mt-md">
+  <h2 class="section-title">新增或更新节点</h2>
+  <form method="post" action="/admin/landing-egress/save">
+    <input type="hidden" name="registry_revision" value="{content_revision(registry)}">
+    <label>节点 ID<input name="id" required></label>
+    <label>显示名称<input name="name" required></label>
+    <label>SOCKS5 IP<input name="socks_ip" required></label>
+    <label>SOCKS5 端口<input name="socks_port" type="number" min="1" max="65535" required></label>
+    <label>SOCKS5 用户名<input name="socks_username" autocomplete="off"></label>
+    <label>SOCKS5 密码<input name="socks_password" type="password" autocomplete="new-password"></label>
+    <label>预期出口 IP<input name="expected_exit_ip" required></label>
+    <label>运营商<input name="isp"></label>
+    <label>地区<input name="region"></label>
+    <label><input name="enabled" type="checkbox" value="1" checked> 启用</label>
+    <button class="btn primary mt-md" type="submit">保存节点</button>
+  </form>
+</div>
+<div class="card mt-md">
+  <h2 class="section-title">用户授权</h2>
+  {''.join(access_forms) if access_forms else '<div class="faint">暂无用户</div>'}
+</div>'''
+    return render_admin_shell(
+        'landing-egresses', '家宽出口', content, badge=host,
+        subtitle='真实 SOCKS5 出口与授权',
+    )
 
 
 def render_admin_shell(active, page_title, content, *, badge='', subtitle='', topbar_extra=''):
@@ -3958,6 +4172,10 @@ def render_user_panel(
             f'<dl class="user-kv">{rows}</dl>'
             '</aside>'
         )
+    real_landing_section = render_landing_egress_selector(
+        cfg,
+        password_session=password_session,
+    )
 
     body = f'''<div class="wrap user-panel">
 {notice_banner}
@@ -4039,6 +4257,7 @@ def render_user_panel(
   </dl>
 </aside>
 {landing_section}
+{real_landing_section}
 
 <section class="trend-section" aria-label="近 30 天用量趋势">
   <header class="section-head">
@@ -6983,6 +7202,17 @@ class Handler(BaseHTTPRequestHandler):
                                     'text/html; charset=utf-8', send_payload)
             return
 
+        if path == '/admin/landing-egresses':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            flash = (q.get('msg') or [''])[0]
+            self.send_response_body(
+                200, render_landing_egresses(host, flash=flash),
+                'text/html; charset=utf-8', send_payload,
+            )
+            return
+
         if path == '/admin/config':
             if not is_logged_in(self):
                 self.redirect('/login')
@@ -7546,6 +7776,314 @@ class Handler(BaseHTTPRequestHandler):
             )
             self.redirect('/user/panel', cookie=user_session_cookie(
                 sid, secure=is_secure_request(self)))
+            return
+
+        if path == '/user/landing-egress/select':
+            user, session_kind = get_logged_in_user_context(self)
+            if not user or session_kind != USER_SESSION_PANEL_PASSWORD:
+                self.send_response_body(403, '仅面板密码会话可以切换家宽出口')
+                return
+            requested_id = (form.get('egress_id') or [''])[0].strip()
+            users = load_json(USERS_FILE, {})
+            cfg = users.get(user)
+            if not isinstance(cfg, dict):
+                self.send_response_body(403, '用户状态无效')
+                return
+            if user_panel_access_error(
+                cfg, session_kind, today=local_now().date(),
+            ):
+                self.send_response_body(403, '当前账户不能切换家宽出口')
+                return
+            if not revision_matches(cfg, request_user_revision):
+                self.send_response_body(409, '用户配置已更新，请刷新后重试')
+                return
+            registry = _landing_registry_or_empty()
+            nodes = registry.get('nodes', {})
+            allowed = cfg.get('landing_allowed_egress_ids', [])
+            node = nodes.get(requested_id)
+            if (
+                not isinstance(allowed, list)
+                or requested_id not in allowed
+                or not isinstance(node, dict)
+                or node.get('enabled') is not True
+            ):
+                self.send_response_body(403, '无权选择该家宽出口')
+                return
+            probed_node_revision = content_revision(node)
+            changed_at = str(cfg.get('landing_egress_changed_at') or '')
+            if changed_at:
+                try:
+                    previous_change = datetime.fromisoformat(changed_at)
+                    elapsed = (local_now() - previous_change).total_seconds()
+                except (TypeError, ValueError):
+                    self.send_response_body(409, '家宽出口状态无法确认')
+                    return
+                if elapsed < 60:
+                    self.send_response_body(
+                        429, '切换过于频繁，请稍后重试',
+                        extra_headers={'Retry-After': str(max(1, int(60 - elapsed)))},
+                    )
+                    return
+            try:
+                landing_egress.probe_exit(node)
+            except landing_egress.LandingEgressProbeError:
+                self.send_response_body(422, '家宽出口健康检查失败，未修改选择')
+                return
+            with usage_lock():
+                original_users_text = Path(USERS_FILE).read_text(
+                    encoding='utf-8',
+                )
+                users = load_json(USERS_FILE, {})
+                cfg = users.get(user)
+                registry = _landing_registry_or_empty()
+                node = registry.get('nodes', {}).get(requested_id)
+                allowed = cfg.get('landing_allowed_egress_ids', []) if isinstance(cfg, dict) else []
+                if not isinstance(cfg, dict) or not revision_matches(cfg, request_user_revision):
+                    self.send_response_body(409, '用户配置已更新，请刷新后重试')
+                    return
+                if (
+                    not isinstance(allowed, list)
+                    or requested_id not in allowed
+                    or not isinstance(node, dict)
+                    or node.get('enabled') is not True
+                ):
+                    self.send_response_body(403, '无权选择该家宽出口')
+                    return
+                if content_revision(node) != probed_node_revision:
+                    self.send_response_body(409, '家宽出口配置已更新，请重试')
+                    return
+                cfg['landing_selected_egress_id'] = requested_id
+                cfg['landing_egress_changed_at'] = local_now().isoformat()
+                users[user] = cfg
+                save_json(USERS_FILE, users)
+                try:
+                    xray_changed, tuic_changed = (
+                        _sync_static_access_from_users(users)
+                    )
+                except Exception:
+                    state_store.save_text_atomic(
+                        USERS_FILE,
+                        original_users_text,
+                    )
+                    original_users = json.loads(original_users_text)
+                    try:
+                        _sync_static_access_from_users(original_users)
+                    except Exception:
+                        pass
+                    raise
+            if xray_changed:
+                xray_config.reload_async()
+            if tuic_changed:
+                tuic_config.reload_async()
+            self.redirect(
+                '/user/panel?' + urlencode({'msg': 'landing_egress_selected'}),
+                status=303,
+            )
+            return
+
+        if path == '/admin/landing-egress/save':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            node_id = (form.get('id') or [''])[0].strip()
+            expected_registry_revision = (
+                form.get('registry_revision') or ['']
+            )[0]
+            with usage_lock():
+                registry = landing_egress.load_registry()
+                if not hmac.compare_digest(
+                    content_revision(registry),
+                    str(expected_registry_revision),
+                ):
+                    self.send_response_body(409, '节点列表已更新，请刷新后重试')
+                    return
+                existing = registry.get('nodes', {}).get(node_id, {})
+                username = (form.get('socks_username') or [''])[0]
+                password = (form.get('socks_password') or [''])[0]
+                if isinstance(existing, dict):
+                    if not username and existing.get('socks_username'):
+                        username = existing['socks_username']
+                    if not password and existing.get('socks_password'):
+                        password = existing['socks_password']
+                raw_node = {
+                    'id': node_id,
+                    'name': (form.get('name') or [''])[0],
+                    'socks_ip': (form.get('socks_ip') or [''])[0],
+                    'socks_port': (form.get('socks_port') or [''])[0],
+                    'socks_username': username,
+                    'socks_password': password,
+                    'expected_exit_ip': (form.get('expected_exit_ip') or [''])[0],
+                    'isp': (form.get('isp') or [''])[0],
+                    'region': (form.get('region') or [''])[0],
+                    'enabled': 'enabled' in form,
+                }
+                if isinstance(existing, dict) and existing.get('health'):
+                    raw_node['health'] = existing['health']
+                try:
+                    node = landing_egress.validate_node(raw_node)
+                except landing_egress.LandingEgressValidationError as exc:
+                    self.send_response_body(422, '节点配置无效：' + exc.code)
+                    return
+                registry['nodes'][node_id] = node
+                landing_egress.save_registry(registry)
+                users = load_json(USERS_FILE, {})
+                xray_changed, tuic_changed = _sync_static_access_from_users(users)
+            if xray_changed:
+                xray_config.reload_async()
+            if tuic_changed:
+                tuic_config.reload_async()
+            self.redirect(
+                '/admin/landing-egresses?' + urlencode({'msg': '节点已保存'}),
+                status=303,
+            )
+            return
+
+        if path == '/admin/landing-egress/delete':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            node_id = (form.get('id') or [''])[0].strip()
+            with usage_lock():
+                users = load_json(USERS_FILE, {})
+                referenced = any(
+                    isinstance(cfg, dict)
+                    and (
+                        node_id in cfg.get('landing_allowed_egress_ids', [])
+                        or cfg.get('landing_selected_egress_id') == node_id
+                    )
+                    for cfg in users.values()
+                )
+                if referenced:
+                    self.send_response_body(409, '节点仍被用户引用，无法删除')
+                    return
+                registry = landing_egress.load_registry()
+                registry.get('nodes', {}).pop(node_id, None)
+                landing_egress.save_registry(registry)
+                xray_changed, tuic_changed = _sync_static_access_from_users(users)
+            if xray_changed:
+                xray_config.reload_async()
+            if tuic_changed:
+                tuic_config.reload_async()
+            self.redirect(
+                '/admin/landing-egresses?' + urlencode({'msg': '节点已删除'}),
+                status=303,
+            )
+            return
+
+        if path == '/admin/landing-egress/check':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            node_id = (form.get('id') or [''])[0].strip()
+            registry = landing_egress.load_registry()
+            node = registry.get('nodes', {}).get(node_id)
+            if not isinstance(node, dict):
+                self.send_response_body(404, '节点不存在')
+                return
+            probed_node_revision = content_revision(node)
+            try:
+                observed = landing_egress.probe_exit(node)
+            except landing_egress.LandingEgressProbeError as exc:
+                status = 'unhealthy'
+                observed = ''
+                error_code = exc.code
+            else:
+                status = 'healthy'
+                error_code = ''
+            with usage_lock():
+                registry = landing_egress.load_registry()
+                current = registry.get('nodes', {}).get(node_id)
+                if not isinstance(current, dict):
+                    self.send_response_body(409, '节点已被修改')
+                    return
+                if content_revision(current) != probed_node_revision:
+                    self.send_response_body(409, '节点已被修改')
+                    return
+                current['health'] = {
+                    'status': status,
+                    'observed_ip': observed,
+                    'checked_at': local_now().isoformat(),
+                    'error_code': error_code,
+                }
+                registry['nodes'][node_id] = current
+                landing_egress.save_registry(registry)
+            self.redirect(
+                '/admin/landing-egresses?' + urlencode({
+                    'msg': '节点健康' if status == 'healthy' else '节点不可用',
+                }),
+                status=303,
+            )
+            return
+
+        if path == '/admin/user-landing-access':
+            if not is_logged_in(self):
+                self.redirect('/login')
+                return
+            username = (form.get('user') or [''])[0].strip()
+            requested_ids = list(dict.fromkeys(form.get('egress_id') or []))
+            with usage_lock():
+                original_users_text = Path(USERS_FILE).read_text(
+                    encoding='utf-8',
+                )
+                users = load_json(USERS_FILE, {})
+                cfg = users.get(username)
+                if not isinstance(cfg, dict):
+                    self.send_response_body(404, '用户不存在')
+                    return
+                if not revision_matches(cfg, request_user_revision):
+                    self.send_response_body(409, '用户配置已更新，请刷新后重试')
+                    return
+                registry = landing_egress.load_registry()
+                nodes = registry.get('nodes', {})
+                if any(
+                    node_id not in nodes or nodes[node_id].get('enabled') is not True
+                    for node_id in requested_ids
+                ):
+                    self.send_response_body(422, '授权节点无效或已禁用')
+                    return
+                cfg['landing_allowed_egress_ids'] = requested_ids
+                if requested_ids and not str(cfg.get('landing_vless_uuid') or '').strip():
+                    direct_ids = {
+                        str(item.get('vless_uuid') or '').strip().lower()
+                        for item in users.values() if isinstance(item, dict)
+                    }
+                    landing_ids = {
+                        str(item.get('landing_vless_uuid') or '').strip().lower()
+                        for item in users.values() if isinstance(item, dict)
+                    }
+                    while True:
+                        candidate = str(uuid.uuid4())
+                        if candidate not in direct_ids and candidate not in landing_ids:
+                            cfg['landing_vless_uuid'] = candidate
+                            break
+                if cfg.get('landing_selected_egress_id') not in requested_ids:
+                    cfg.pop('landing_selected_egress_id', None)
+                users[username] = cfg
+                save_json(USERS_FILE, users)
+                try:
+                    xray_changed, tuic_changed = (
+                        _sync_static_access_from_users(users)
+                    )
+                except Exception:
+                    state_store.save_text_atomic(
+                        USERS_FILE,
+                        original_users_text,
+                    )
+                    try:
+                        _sync_static_access_from_users(
+                            json.loads(original_users_text),
+                        )
+                    except Exception:
+                        pass
+                    raise
+            if xray_changed:
+                xray_config.reload_async()
+            if tuic_changed:
+                tuic_config.reload_async()
+            self.redirect(
+                '/admin/landing-egresses?' + urlencode({'msg': '用户授权已更新'}),
+                status=303,
+            )
             return
 
         if path == '/admin/update':

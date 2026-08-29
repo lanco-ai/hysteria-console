@@ -41,6 +41,9 @@ LEGACY_MANAGED_LOG_PATHS = {
 # ``@`` is outside the creatable username alphabet, so a primary user such as
 # ``alice-backup`` can never collide with a generated backup identity.
 BACKUP_SUFFIX = '@hy2-backup.invalid'
+LANDING_EMAIL_PREFIX = 'landing:'
+LANDING_OUTBOUND_PREFIX = 'landing-egress-'
+LANDING_RULE_PREFIX = 'hy2-landing-'
 RELOAD_SCHEDULE_TIMEOUT_SECONDS = 5
 RELOAD_RESTART_TIMEOUT_SECONDS = 30
 RELOAD_READINESS_DELAY_SECONDS = 0.25
@@ -62,6 +65,10 @@ def email_for(port, username):
 def strip_backup_suffix(email):
     """Reduce a possibly-suffixed xray client email back to its canonical user id."""
     return email[: -len(BACKUP_SUFFIX)] if email.endswith(BACKUP_SUFFIX) else email
+
+
+def landing_email(username):
+    return f'{LANDING_EMAIL_PREFIX}{username}'
 
 
 def _load_config(path):
@@ -462,6 +469,139 @@ def _apply_managed_plan(cfg, plan):
     return changed
 
 
+def _apply_landing_clients(cfg, landing_plan):
+    desired = [
+        (str(username), str((entry or {}).get('uuid') or '').strip())
+        for username, entry in sorted((landing_plan or {}).items())
+        if str((entry or {}).get('uuid') or '').strip()
+    ]
+    changed = False
+    for inbound in cfg.get('inbounds') or []:
+        if (
+            inbound.get('protocol') != 'vless'
+            or inbound.get('port') not in INBOUND_PORTS
+        ):
+            continue
+        settings = inbound.setdefault('settings', {})
+        clients = settings.get('clients') or []
+        retained = [
+            client for client in clients
+            if not str(client.get('email') or '').startswith(
+                LANDING_EMAIL_PREFIX,
+            )
+        ]
+        if inbound['port'] == PRIMARY_PORT:
+            retained.extend({
+                'id': uid,
+                'email': landing_email(username),
+                'flow': 'xtls-rprx-vision',
+            } for username, uid in desired)
+        if clients != retained:
+            settings['clients'] = retained
+            changed = True
+    return changed
+
+
+def _landing_outbound(node_id, node):
+    server = {
+        'address': node['socks_ip'],
+        'port': node['socks_port'],
+    }
+    if node.get('socks_username'):
+        server['users'] = [{
+            'user': node['socks_username'],
+            'pass': node['socks_password'],
+        }]
+    return {
+        'protocol': 'socks',
+        'tag': LANDING_OUTBOUND_PREFIX + node_id,
+        'settings': {'servers': [server]},
+    }
+
+
+def _apply_landing_outbounds(cfg, egress_nodes):
+    outbounds = cfg.setdefault('outbounds', [])
+    retained = [
+        outbound for outbound in outbounds
+        if not str(outbound.get('tag') or '').startswith(
+            LANDING_OUTBOUND_PREFIX,
+        )
+    ]
+    retained.extend(
+        _landing_outbound(node_id, node)
+        for node_id, node in sorted((egress_nodes or {}).items())
+        if isinstance(node, dict) and node.get('enabled') is True
+    )
+    if outbounds == retained:
+        return False
+    cfg['outbounds'] = retained
+    return True
+
+
+def _landing_rules(landing_plan, egress_nodes):
+    rules = []
+    nodes = egress_nodes or {}
+    for username, entry in sorted((landing_plan or {}).items()):
+        if not str((entry or {}).get('uuid') or '').strip():
+            continue
+        selected_id = (entry or {}).get('selected_id')
+        selected = nodes.get(selected_id)
+        identity = landing_email(str(username))
+        if not isinstance(selected, dict) or selected.get('enabled') is not True:
+            rules.append({
+                'type': 'field',
+                'ruleTag': f'{LANDING_RULE_PREFIX}block-{username}',
+                'user': [identity],
+                'network': 'tcp,udp',
+                'outboundTag': 'block',
+            })
+            continue
+        rules.extend((
+            {
+                'type': 'field',
+                'ruleTag': f'{LANDING_RULE_PREFIX}udp-{username}',
+                'user': [identity],
+                'network': 'udp',
+                'outboundTag': 'block',
+            },
+            {
+                'type': 'field',
+                'ruleTag': f'{LANDING_RULE_PREFIX}tcp-{username}',
+                'user': [identity],
+                'network': 'tcp',
+                'outboundTag': LANDING_OUTBOUND_PREFIX + selected_id,
+            },
+        ))
+    return rules
+
+
+def _apply_landing_routes(cfg, landing_plan, egress_nodes):
+    routing = cfg.setdefault('routing', {})
+    rules = routing.setdefault('rules', [])
+    retained = [
+        rule for rule in rules
+        if not str(rule.get('ruleTag') or '').startswith(LANDING_RULE_PREFIX)
+    ]
+    insertion = 0
+    while insertion < len(retained) and retained[insertion].get(
+        'outboundTag',
+    ) == 'api':
+        insertion += 1
+    desired = _landing_rules(landing_plan, egress_nodes)
+    updated = retained[:insertion] + desired + retained[insertion:]
+    if rules == updated:
+        return False
+    routing['rules'] = updated
+    return True
+
+
+def _apply_landing_plan(cfg, landing_plan, egress_nodes):
+    changed = _apply_landing_clients(cfg, landing_plan)
+    changed = _apply_landing_outbounds(cfg, egress_nodes) or changed
+    changed = _apply_landing_routes(cfg, landing_plan, egress_nodes) or changed
+    return changed
+
+
 def _migrate_legacy_managed_log_paths(cfg):
     """Move only the repository's former default Xray log paths.
 
@@ -511,7 +651,14 @@ def remove_user(username, *, path=None):
         return changed or _has_reload_pending(p)
 
 
-def apply_user_plan(plan, *, path=None, prune_unknown=False):
+def apply_user_plan(
+    plan,
+    *,
+    landing_plan=None,
+    egress_nodes=None,
+    path=None,
+    prune_unknown=False,
+):
     """Batch-apply a `{username: vless_uuid_or_None}` plan with one read + one write.
 
     The cron tick used to call sync_user / remove_user once per user, each of
@@ -536,6 +683,12 @@ def apply_user_plan(plan, *, path=None, prune_unknown=False):
                     changed = _apply_sync(cfg, username, uid) or changed
                 else:
                     changed = _apply_remove(cfg, username) or changed
+        if landing_plan is not None or egress_nodes is not None:
+            changed = _apply_landing_plan(
+                cfg,
+                landing_plan or {},
+                egress_nodes or {},
+            ) or changed
         if changed:
             _mark_reload_pending(p)
             _save_config(p, cfg)
