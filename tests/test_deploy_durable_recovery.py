@@ -325,6 +325,27 @@ def test_snapshot_accepts_a_strict_root_owned_allowlist_file(recovery):
     assert payload["allowlist"] == [str(first), str(second)]
 
 
+def test_snapshot_accepts_exact_deploy_static_artifacts(recovery):
+    static_artifacts = [
+        "/root/hysteria/static/home.js",
+        "/root/hysteria/static/fonts/inter-var.woff2",
+        "/root/hysteria/static/fonts/jetbrains-mono.woff2",
+    ]
+    prepared = recovery["run"]("prepare")
+    assert prepared.returncode == 0, prepared.stderr
+    namespace = runpy.run_path(str(HELPER))
+
+    namespace["_snapshot"](
+        SimpleNamespace(path=static_artifacts, allowlist_file=[]),
+        recovery_root=str(recovery["root"] / "recovery"),
+        test_mode=False,
+        test_root=None,
+    )
+
+    payload = json.loads(_manifest(recovery).read_text(encoding="utf-8"))
+    assert payload["allowlist"] == static_artifacts
+
+
 def test_sigkill_before_rename_recovers_without_touching_original(recovery):
     artifact = recovery["artifact_dir"] / "service.py"
     artifact.write_bytes(b"original generation\n")
