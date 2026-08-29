@@ -615,7 +615,9 @@ def test_static_assets_are_versioned_and_honor_etag_revalidation(
         assert fresh.status == 200
         assert body == ss.BASE_CSS_BYTES
         assert fresh.getheader("ETag") == ss.BASE_CSS_ETAG
-        assert fresh.getheader("Cache-Control") == "public, max-age=86400"
+        assert fresh.getheader("Cache-Control") == (
+            "public, max-age=31536000, immutable"
+        )
 
         conn.request(
             "GET",
@@ -630,5 +632,51 @@ def test_static_assets_are_versioned_and_honor_etag_revalidation(
         assert cached.status == 304
         assert cached_body == b""
         assert cached.getheader("ETag") == ss.BASE_CSS_ETAG
-        assert cached.getheader("Cache-Control") == "public, max-age=86400"
+        assert cached.getheader("Cache-Control") == (
+            "public, max-age=31536000, immutable"
+        )
+
+        conn.request(
+            "GET",
+            "/static/style.css?v=stale-version",
+            headers={"Host": "panel.test"},
+        )
+        stale_version = conn.getresponse()
+        stale_version.read()
+        assert stale_version.status == 200
+        assert stale_version.getheader("Cache-Control") == "public, max-age=86400"
+
+        conn.request(
+            "GET",
+            "/static/style.css",
+            headers={"Host": "panel.test"},
+        )
+        unversioned = conn.getresponse()
+        unversioned.read()
+        assert unversioned.status == 200
+        assert unversioned.getheader("Cache-Control") == "public, max-age=86400"
+
+        for asset_path, asset_etag, asset_body in (
+            ("/static/admin-poll.js", ss.ADMIN_POLL_JS_ETAG, ss.ADMIN_POLL_JS_BYTES),
+            ("/static/usage.js", ss.USAGE_JS_ETAG, ss.USAGE_JS_BYTES),
+            (
+                "/static/codex-quota.js",
+                ss.CODEX_QUOTA_JS_ETAG,
+                ss.CODEX_QUOTA_JS_BYTES,
+            ),
+            ("/static/home.js", ss.HOME_JS_ETAG, ss.HOME_JS_BYTES),
+        ):
+            asset_version = asset_etag.strip('"')
+            conn.request(
+                "GET",
+                f"{asset_path}?v={asset_version}",
+                headers={"Host": "panel.test"},
+            )
+            asset_response = conn.getresponse()
+            assert asset_response.read() == asset_body
+            assert asset_response.status == 200
+            assert asset_response.getheader("ETag") == asset_etag
+            assert asset_response.getheader("Cache-Control") == (
+                "public, max-age=31536000, immutable"
+            )
         conn.close()

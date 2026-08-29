@@ -374,6 +374,14 @@ def _etag_matches(raw_header, current_etag):
     return False
 
 
+def _static_asset_cache_control(query, etag):
+    requested = str((query.get('v') or [''])[0])
+    current = str(etag or '').strip('"')
+    if requested and hmac.compare_digest(requested, current):
+        return 'public, max-age=31536000, immutable'
+    return 'public, max-age=86400'
+
+
 def load_json(path, default, *, required=None):
     critical_paths = {
         str(Path(USERS_FILE)),
@@ -2785,6 +2793,46 @@ def _authorized_landing_nodes(cfg, registry=None):
     ]
 
 
+def _enabled_landing_public_nodes(registry=None):
+    registry = registry or _landing_registry_or_empty()
+    nodes = registry.get('nodes', {}) if isinstance(registry, dict) else {}
+    return [
+        landing_egress.public_node(node)
+        for _node_id, node in sorted(nodes.items())
+        if isinstance(node, dict) and node.get('enabled') is True
+    ]
+
+
+def _ensure_landing_vless_uuid(cfg, users):
+    current = str(cfg.get('landing_vless_uuid') or '').strip()
+    if current:
+        return current
+
+    def uuid_identity(value):
+        raw = str(value or '').strip()
+        if not raw:
+            return ''
+        try:
+            return uuid.UUID(raw).hex
+        except (ValueError, AttributeError):
+            # Invalid persisted values remain occupied as raw identities here;
+            # their schema validation still fails closed in config generation.
+            return 'raw:' + raw.lower()
+
+    occupied = {
+        uuid_identity(item.get(field))
+        for item in users.values() if isinstance(item, dict)
+        for field in ('vless_uuid', 'landing_vless_uuid')
+    }
+    occupied.add(uuid_identity(cfg.get('vless_uuid')))
+    occupied.discard('')
+    while True:
+        candidate = str(uuid.uuid4())
+        if uuid_identity(candidate) not in occupied:
+            cfg['landing_vless_uuid'] = candidate
+            return candidate
+
+
 def render_landing_egress_selector(cfg, *, password_session):
     nodes = _authorized_landing_nodes(cfg)
     if not nodes:
@@ -2840,68 +2888,90 @@ def render_landing_egresses(host, flash=''):
             '<tr><td>' + html.escape(public['name']) + '</td>'
             '<td><code class="mono">' + html.escape(endpoint) + '</code></td>'
             '<td><code class="mono">' + html.escape(public['exit_ip']) + '</code></td>'
-            '<td>' + ('启用' if public.get('enabled') else '禁用') + '</td>'
+            '<td><span class="badge '
+            + ('badge-success">启用' if public.get('enabled') else 'badge-neutral">禁用')
+            + '</span></td>'
             '<td><div class="row gap-sm">'
             '<form method="post" action="/admin/landing-egress/check">'
             f'<input type="hidden" name="id" value="{html.escape(node_id, quote=True)}">'
-            '<button class="btn ghost btn-sm" type="submit">健康检查</button></form>'
+            '<button class="btn btn-ghost btn-sm" type="submit">健康检查</button></form>'
             '<form method="post" action="/admin/landing-egress/delete">'
             f'<input type="hidden" name="id" value="{html.escape(node_id, quote=True)}">'
             '<button class="btn danger-btn btn-sm" type="submit">删除</button></form>'
             '</div></td></tr>'
         )
-    rows = ''.join(cards) or '<tr><td colspan="5" class="faint">尚未配置家宽出口</td></tr>'
+    rows = ''.join(cards) or (
+        '<tr><td colspan="5" class="empty">尚未配置家宽出口</td></tr>'
+    )
     access_forms = []
-    for username, cfg in sorted(users.items()):
-        if not isinstance(cfg, dict):
-            continue
-        allowed = cfg.get('landing_allowed_egress_ids', [])
-        allowed = allowed if isinstance(allowed, list) else []
-        choices = []
-        for node_id, node in sorted(registry.get('nodes', {}).items()):
-            checked = ' checked' if node_id in allowed else ''
-            disabled = ' disabled' if node.get('enabled') is not True else ''
-            choices.append(
-                '<label class="inline-form-row">'
-                f'<input type="checkbox" name="egress_id" value="{html.escape(node_id, quote=True)}"{checked}{disabled}>'
-                f' {html.escape(node.get("name", node_id))}</label>'
+    registry_nodes = registry.get('nodes', {})
+    if registry_nodes:
+        for username, cfg in sorted(users.items()):
+            if not isinstance(cfg, dict):
+                continue
+            allowed = cfg.get('landing_allowed_egress_ids', [])
+            allowed = allowed if isinstance(allowed, list) else []
+            choices = []
+            for node_id, node in sorted(registry_nodes.items()):
+                checked = ' checked' if node_id in allowed else ''
+                disabled = ' disabled' if node.get('enabled') is not True else ''
+                state = '（已禁用）' if disabled else ''
+                choices.append(
+                    '<label class="landing-access-choice">'
+                    f'<input type="checkbox" name="egress_id" value="{html.escape(node_id, quote=True)}"{checked}{disabled}>'
+                    f'<span>{html.escape(node.get("name", node_id))}{state}</span></label>'
+                )
+            access_forms.append(
+                '<form method="post" action="/admin/user-landing-access" class="landing-access-row">'
+                '<div class="landing-access-user"><strong>'
+                f'{html.escape(str(username))}</strong>'
+                '<span class="small faint">可授权一个或多个出口</span></div>'
+                f'<input type="hidden" name="user" value="{html.escape(str(username), quote=True)}">'
+                f'<input type="hidden" name="user_revision" value="{user_config_revision(cfg)}">'
+                '<fieldset class="landing-access-choices"><legend class="sr-only">'
+                f'{html.escape(str(username))} 可使用的家宽出口</legend>'
+                + ''.join(choices)
+                + '</fieldset><button class="btn btn-secondary btn-sm" type="submit">保存授权</button></form>'
             )
-        access_forms.append(
-            '<form method="post" action="/admin/user-landing-access" class="card mt-sm">'
-            f'<strong>{html.escape(str(username))}</strong>'
-            f'<input type="hidden" name="user" value="{html.escape(str(username), quote=True)}">'
-            f'<input type="hidden" name="user_revision" value="{user_config_revision(cfg)}">'
-            + ''.join(choices)
-            + '<button class="btn secondary btn-sm" type="submit">保存授权</button></form>'
+    if not registry_nodes:
+        access_content = (
+            '<div class="landing-empty">请先添加家宽出口节点，再为用户分配访问权限。</div>'
         )
+    elif access_forms:
+        access_content = '<div class="landing-access-list">' + ''.join(access_forms) + '</div>'
+    else:
+        access_content = '<div class="landing-empty">暂无用户</div>'
     flash_html = render_alert(flash) if flash else ''
     content = f'''{flash_html}
-<div class="card">
-  <h2 class="section-title">家宽出口节点</h2>
-  <p class="small faint">SOCKS5 密码只写入服务器状态文件，不会在页面中回显。</p>
-  <div class="table-wrap"><table><thead><tr><th>名称</th><th>SOCKS5 入口</th><th>预期出口</th><th>状态</th><th>操作</th></tr></thead><tbody>{rows}</tbody></table></div>
-</div>
-<div class="card mt-md">
-  <h2 class="section-title">新增或更新节点</h2>
-  <form method="post" action="/admin/landing-egress/save">
+<section class="form-section landing-node-list" aria-labelledby="landing-node-list-title">
+  <h2 class="form-section-title" id="landing-node-list-title">家宽出口节点</h2>
+  <p class="form-section-desc">管理真实 SOCKS5 出口。密码仅写入服务器状态文件，不会在页面中回显。</p>
+  <div class="data-table-wrap" tabindex="0" aria-label="家宽出口节点表格，可横向滚动"><table class="data-table"><caption class="sr-only">家宽出口节点列表</caption><thead><tr><th scope="col">名称</th><th scope="col">SOCKS5 入口</th><th scope="col">预期出口</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead><tbody>{rows}</tbody></table></div>
+</section>
+<section class="form-section" aria-labelledby="landing-node-form-title">
+  <h2 class="form-section-title" id="landing-node-form-title">新增或更新节点</h2>
+  <p class="form-section-desc">节点 ID 保存后保持不变；更新凭据时填写新值，留空则保留原值。</p>
+  <form method="post" action="/admin/landing-egress/save" class="landing-node-form">
     <input type="hidden" name="registry_revision" value="{content_revision(registry)}">
-    <label>节点 ID<input name="id" required></label>
-    <label>显示名称<input name="name" required></label>
-    <label>SOCKS5 IP<input name="socks_ip" required></label>
-    <label>SOCKS5 端口<input name="socks_port" type="number" min="1" max="65535" required></label>
-    <label>SOCKS5 用户名<input name="socks_username" autocomplete="off"></label>
-    <label>SOCKS5 密码<input name="socks_password" type="password" autocomplete="new-password"></label>
-    <label>预期出口 IP<input name="expected_exit_ip" required></label>
-    <label>运营商<input name="isp"></label>
-    <label>地区<input name="region"></label>
-    <label><input name="enabled" type="checkbox" value="1" checked> 启用</label>
-    <button class="btn primary mt-md" type="submit">保存节点</button>
+    <div class="form-grid landing-node-grid">
+      <div class="form-field"><label for="landing-node-id">节点 ID</label><input id="landing-node-id" name="id" required autocomplete="off" spellcheck="false"></div>
+      <div class="form-field"><label for="landing-node-name">显示名称</label><input id="landing-node-name" name="name" required></div>
+      <div class="form-field"><label for="landing-socks-ip">SOCKS5 IP</label><input id="landing-socks-ip" name="socks_ip" required autocomplete="off" spellcheck="false"></div>
+      <div class="form-field"><label for="landing-socks-port">SOCKS5 端口</label><input id="landing-socks-port" name="socks_port" type="number" min="1" max="65535" required></div>
+      <div class="form-field"><label for="landing-socks-username">SOCKS5 用户名</label><input id="landing-socks-username" name="socks_username" autocomplete="off"></div>
+      <div class="form-field"><label for="landing-socks-password">SOCKS5 密码</label><input id="landing-socks-password" name="socks_password" type="password" autocomplete="new-password"></div>
+      <div class="form-field"><label for="landing-expected-exit-ip">预期出口 IP</label><input id="landing-expected-exit-ip" name="expected_exit_ip" required autocomplete="off" spellcheck="false"></div>
+      <div class="form-field"><label for="landing-isp">运营商</label><input id="landing-isp" name="isp"></div>
+      <div class="form-field"><label for="landing-region">地区</label><input id="landing-region" name="region"></div>
+    </div>
+    <div class="landing-node-actions"><label class="switch"><input name="enabled" type="checkbox" value="1" checked>启用节点</label><button class="btn btn-primary" type="submit">保存节点</button></div>
   </form>
-</div>
-<div class="card mt-md">
-  <h2 class="section-title">用户授权</h2>
-  {''.join(access_forms) if access_forms else '<div class="faint">暂无用户</div>'}
-</div>'''
+</section>
+<section class="form-section" aria-labelledby="landing-access-title">
+  <h2 class="form-section-title" id="landing-access-title">用户授权</h2>
+  <p class="form-section-desc">用户只能在这里授权的节点中切换；SOCKS5 地址和凭据不会显示在用户面板。</p>
+  {access_content}
+</section>'''
     return render_admin_shell(
         'landing-egresses', '家宽出口', content, badge=host,
         subtitle='真实 SOCKS5 出口与授权',
@@ -4516,6 +4586,7 @@ def row_form(user, cfg, online, host, base_url, usage_month=None, daily=None, no
 
 def render_admin(host, base_url, flash='', *, create_draft=None, create_error_field=''):
     users = load_json(USERS_FILE, {})
+    landing_registry = _landing_registry_or_empty()
     online = load_json(ONLINE_FILE, {})
     now = local_now()
     mk = month_key(now)
@@ -4576,6 +4647,32 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
     create_quota_extra_gb = draft_value('quota_extra_gb', 0)
     create_expires_at = draft_value('expires_at')
     create_note = draft_value('note')
+    create_landing_initial = str(draft.get('landing_initial_egress_id') or '')
+    landing_options = ['<option value="">暂不分配</option>']
+    for public_node in _enabled_landing_public_nodes(landing_registry):
+        node_id = str(public_node['id'])
+        selected = ' selected' if node_id == create_landing_initial else ''
+        landing_options.append(
+            f'<option value="{html.escape(node_id, quote=True)}"{selected}>'
+            f'{html.escape(public_node["name"])}</option>'
+        )
+    if len(landing_options) > 1:
+        create_landing_field = (
+            '<div class="form-field"><label for="create-landing-initial-egress">'
+            '初始家宽出口</label><select class="select" '
+            'id="create-landing-initial-egress" name="landing_initial_egress_id"'
+            f'{validation_attrs("create-landing-initial-egress")}>'
+            + ''.join(landing_options)
+            + '</select><span class="hint">选中后立即授权并设为初始出口；后续可增加更多节点</span></div>'
+        )
+    else:
+        create_landing_field = (
+            '<div class="form-field"><label for="create-landing-initial-egress">'
+            '初始家宽出口</label><select class="select" '
+            'id="create-landing-initial-egress" name="landing_initial_egress_id" disabled>'
+            '<option value="">暂无可用节点</option></select>'
+            '<span class="hint"><a href="/admin/landing-egresses">先添加或启用家宽出口节点</a></span></div>'
+        )
     create_open = ' open' if recovering_create else ''
     create_guest_checked = ' checked' if (
         bool(draft.get('guest')) if recovering_create else True
@@ -4693,6 +4790,7 @@ def render_admin(host, base_url, flash='', *, create_draft=None, create_error_fi
         <div class="form-field"><label for="create-quota-gb">流量上限 GB</label><input id="create-quota-gb" name="quota_gb" type="number" value="{create_quota_gb}" min="0" max="10240" required{validation_attrs('create-quota-gb')}><span class="hint">0 = 不限</span></div>
         <div class="form-field"><label for="create-quota-extra-gb">加量包 GB</label><input id="create-quota-extra-gb" name="quota_extra_gb" type="number" value="{create_quota_extra_gb}" min="0" max="10240" required{validation_attrs('create-quota-extra-gb')}></div>
         <div class="form-field"><label for="create-expires-at">到期日</label><input id="create-expires-at" name="expires_at" type="date" value="{create_expires_at}" min="2000-01-01" max="2099-12-31"><span class="hint">留空 = 不限期；年份范围 2000–2099</span></div>
+        {create_landing_field}
         <div class="form-field" style="grid-column:1/-1"><label for="create-note">备注</label><input id="create-note" name="note" value="{create_note}" maxlength="200" placeholder="可选"></div>
       </div>
       <div class="form-options">
@@ -6642,27 +6740,35 @@ class Handler(BaseHTTPRequestHandler):
                     return
 
         if path == '/static/style.css':
-            self._serve_static(BASE_CSS_BYTES, BASE_CSS_ETAG, 'text/css; charset=utf-8', send_payload)
+            self._serve_static(
+                BASE_CSS_BYTES, BASE_CSS_ETAG, 'text/css; charset=utf-8',
+                send_payload,
+                cache_control=_static_asset_cache_control(q, BASE_CSS_ETAG),
+            )
             return
 
         if path == '/static/admin-poll.js':
             self._serve_static(ADMIN_POLL_JS_BYTES, ADMIN_POLL_JS_ETAG,
-                               'application/javascript; charset=utf-8', send_payload)
+                               'application/javascript; charset=utf-8', send_payload,
+                               cache_control=_static_asset_cache_control(q, ADMIN_POLL_JS_ETAG))
             return
 
         if path == '/static/usage.js':
             self._serve_static(USAGE_JS_BYTES, USAGE_JS_ETAG,
-                               'application/javascript; charset=utf-8', send_payload)
+                               'application/javascript; charset=utf-8', send_payload,
+                               cache_control=_static_asset_cache_control(q, USAGE_JS_ETAG))
             return
 
         if path == '/static/codex-quota.js':
             self._serve_static(CODEX_QUOTA_JS_BYTES, CODEX_QUOTA_JS_ETAG,
-                               'application/javascript; charset=utf-8', send_payload)
+                               'application/javascript; charset=utf-8', send_payload,
+                               cache_control=_static_asset_cache_control(q, CODEX_QUOTA_JS_ETAG))
             return
 
         if path == '/static/home.js':
             self._serve_static(HOME_JS_BYTES, HOME_JS_ETAG,
-                               'application/javascript; charset=utf-8', send_payload)
+                               'application/javascript; charset=utf-8', send_payload,
+                               cache_control=_static_asset_cache_control(q, HOME_JS_ETAG))
             return
 
         font_entry = STATIC_FONT_FILES.get(path)
@@ -8042,20 +8148,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_response_body(422, '授权节点无效或已禁用')
                     return
                 cfg['landing_allowed_egress_ids'] = requested_ids
-                if requested_ids and not str(cfg.get('landing_vless_uuid') or '').strip():
-                    direct_ids = {
-                        str(item.get('vless_uuid') or '').strip().lower()
-                        for item in users.values() if isinstance(item, dict)
-                    }
-                    landing_ids = {
-                        str(item.get('landing_vless_uuid') or '').strip().lower()
-                        for item in users.values() if isinstance(item, dict)
-                    }
-                    while True:
-                        candidate = str(uuid.uuid4())
-                        if candidate not in direct_ids and candidate not in landing_ids:
-                            cfg['landing_vless_uuid'] = candidate
-                            break
+                if requested_ids:
+                    _ensure_landing_vless_uuid(cfg, users)
                 if cfg.get('landing_selected_egress_id') not in requested_ids:
                     cfg.pop('landing_selected_egress_id', None)
                 users[username] = cfg
@@ -8256,6 +8350,9 @@ class Handler(BaseHTTPRequestHandler):
             )
             expires_raw = (form.get('expires_at') or [''])[0]
             note_raw = (form.get('note') or [''])[0]
+            landing_initial_egress_id = (
+                form.get('landing_initial_egress_id') or ['']
+            )[0].strip()
             expires_at = parse_date_field(expires_raw)
             note = parse_note_field(note_raw)
             guest = 'guest' in form
@@ -8266,6 +8363,7 @@ class Handler(BaseHTTPRequestHandler):
                 'quota_extra_gb': quota_extra_gb_raw,
                 'expires_at': expires_raw,
                 'note': note_raw,
+                'landing_initial_egress_id': landing_initial_egress_id,
                 'guest': guest,
                 'tuic_enabled': tuic_enabled,
             }
@@ -8332,10 +8430,39 @@ class Handler(BaseHTTPRequestHandler):
                     'err:proxy_password_long', 'create-proxy-password',
                 )
                 return
+            if landing_initial_egress_id:
+                registry = _landing_registry_or_empty()
+                initial_node = registry.get('nodes', {}).get(
+                    landing_initial_egress_id,
+                )
+                if (
+                    not isinstance(initial_node, dict)
+                    or initial_node.get('enabled') is not True
+                ):
+                    respond_create_error(
+                        '家宽出口已不可用，请重新选择',
+                        'create-landing-initial-egress',
+                    )
+                    return
             user_exists = False
+            landing_became_unavailable = False
             with usage_lock():
+                original_users_text = Path(USERS_FILE).read_text(
+                    encoding='utf-8',
+                )
                 users = load_json(USERS_FILE, {})
-                if username in users:
+                if landing_initial_egress_id:
+                    registry = landing_egress.load_registry()
+                    initial_node = registry.get('nodes', {}).get(
+                        landing_initial_egress_id,
+                    )
+                    landing_became_unavailable = (
+                        not isinstance(initial_node, dict)
+                        or initial_node.get('enabled') is not True
+                    )
+                if landing_became_unavailable:
+                    pass
+                elif username in users:
                     user_exists = True
                 else:
                     entry = {
@@ -8358,11 +8485,38 @@ class Handler(BaseHTTPRequestHandler):
                     if panel_password:
                         entry['panel_pass_hash'] = hash_secret(panel_password)
                         entry['panel_password_must_change'] = True
+                    if landing_initial_egress_id:
+                        entry['landing_allowed_egress_ids'] = [
+                            landing_initial_egress_id,
+                        ]
+                        entry['landing_selected_egress_id'] = (
+                            landing_initial_egress_id
+                        )
+                        _ensure_landing_vless_uuid(entry, users)
                     users[username] = entry
                     save_json(USERS_FILE, users)
-                    xray_changed, tuic_changed = (
-                        _sync_static_access_from_users(users)
-                    )
+                    try:
+                        xray_changed, tuic_changed = (
+                            _sync_static_access_from_users(users)
+                        )
+                    except Exception:
+                        state_store.save_text_atomic(
+                            USERS_FILE,
+                            original_users_text,
+                        )
+                        try:
+                            _sync_static_access_from_users(
+                                json.loads(original_users_text),
+                            )
+                        except Exception:
+                            pass
+                        raise
+            if landing_became_unavailable:
+                respond_create_error(
+                    '家宽出口已不可用，请重新选择',
+                    'create-landing-initial-egress',
+                )
+                return
             if user_exists:
                 respond_create_error(
                     'user_exists_use_reset_token', 'create-user',

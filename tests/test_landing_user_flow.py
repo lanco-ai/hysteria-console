@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import pytest
 
@@ -513,3 +514,231 @@ def test_admin_page_contains_node_controls_and_user_authorization(
     assert 'action="/admin/user-landing-access"' in page
     assert 'value="la-home-1" checked' in page
     assert 'name="user_revision"' in page
+
+
+def test_admin_registry_page_uses_existing_accessible_layout_components(
+    tmp_path, monkeypatch,
+):
+    _state(tmp_path, monkeypatch, selected="la-home-1")
+
+    page = ss.render_landing_egresses("panel.test")
+
+    assert (
+        '<div class="data-table-wrap" tabindex="0" '
+        'aria-label="家宽出口节点表格，可横向滚动">'
+    ) in page
+    assert '<table class="data-table">' in page
+    assert '<caption class="sr-only">家宽出口节点列表</caption>' in page
+    assert page.count('<th scope="col">') == 5
+    assert '<form method="post" action="/admin/landing-egress/save" class="landing-node-form">' in page
+    assert '<div class="form-grid landing-node-grid">' in page
+    for field_id in (
+        "landing-node-id",
+        "landing-node-name",
+        "landing-socks-ip",
+        "landing-socks-port",
+        "landing-socks-username",
+        "landing-socks-password",
+        "landing-expected-exit-ip",
+        "landing-isp",
+        "landing-region",
+    ):
+        assert f'<label for="{field_id}">' in page
+        assert f'id="{field_id}"' in page
+
+
+def test_empty_registry_explains_setup_before_rendering_user_access_forms(
+    tmp_path, monkeypatch,
+):
+    _state(tmp_path, monkeypatch)
+    le.save_registry(le.empty_registry())
+
+    page = ss.render_landing_egresses("panel.test")
+
+    assert "请先添加家宽出口节点" in page
+    assert 'action="/admin/user-landing-access"' not in page
+    assert "保存授权" not in page
+
+
+def test_create_user_form_offers_only_enabled_public_landing_nodes(
+    tmp_path, monkeypatch,
+):
+    _state(tmp_path, monkeypatch)
+    registry = le.load_registry()
+    registry["nodes"]["ny-home-1"]["enabled"] = False
+    le.save_registry(registry)
+
+    page = ss.render_admin("panel.test", "https://panel.test")
+
+    assert 'id="create-landing-initial-egress"' in page
+    assert 'name="landing_initial_egress_id"' in page
+    assert '<option value="">暂不分配</option>' in page
+    assert '<option value="la-home-1">洛杉矶家宽</option>' in page
+    assert '<option value="ny-home-1">' not in page
+    assert "proxy-user" not in page
+    assert "proxy-secret" not in page
+    assert "8.8.8.8:1080" not in page
+
+
+def test_admin_add_with_initial_egress_creates_ready_landing_assignment(
+    tmp_path, monkeypatch,
+):
+    state = _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+
+    with _running_server() as server:
+        status, headers, body = _request(
+            server,
+            "POST",
+            "/admin/add",
+            form={
+                "user": "bob",
+                "quota_gb": "150",
+                "quota_extra_gb": "0",
+                "landing_initial_egress_id": "la-home-1",
+            },
+        )
+
+    saved = json.loads(state["USERS_FILE"].read_text())["bob"]
+    assert status == 302
+    assert headers["location"] == "/admin?msg=created+bob"
+    assert body == b""
+    assert saved["landing_allowed_egress_ids"] == ["la-home-1"]
+    assert saved["landing_selected_egress_id"] == "la-home-1"
+    assert uuid.UUID(saved["landing_vless_uuid"]).version == 4
+    assert saved["landing_vless_uuid"] != saved["vless_uuid"]
+
+
+@pytest.mark.parametrize("requested_id", ["missing-node", "ny-home-1"])
+def test_admin_add_rejects_unknown_or_disabled_initial_egress_without_mutation(
+    tmp_path, monkeypatch, requested_id,
+):
+    state = _state(tmp_path, monkeypatch)
+    registry = le.load_registry()
+    registry["nodes"]["ny-home-1"]["enabled"] = False
+    le.save_registry(registry)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+    before = state["USERS_FILE"].read_text()
+
+    with _running_server() as server:
+        status, _headers, body = _request(
+            server,
+            "POST",
+            "/admin/add",
+            form={
+                "user": "bob",
+                "quota_gb": "150",
+                "quota_extra_gb": "0",
+                "landing_initial_egress_id": requested_id,
+            },
+        )
+
+    assert status == 422
+    assert "家宽出口已不可用".encode() in body
+    assert state["USERS_FILE"].read_text() == before
+
+
+def test_admin_add_revalidates_initial_egress_after_acquiring_usage_lock(
+    tmp_path, monkeypatch,
+):
+    state = _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+    before = state["USERS_FILE"].read_text()
+    enabled_registry = le.load_registry()
+    disabled_registry = json.loads(json.dumps(enabled_registry))
+    disabled_registry["nodes"]["la-home-1"]["enabled"] = False
+    registries = iter((enabled_registry, disabled_registry))
+
+    def changing_registry():
+        return next(registries, disabled_registry)
+
+    monkeypatch.setattr(le, "load_registry", changing_registry)
+    with _running_server() as server:
+        status, _headers, body = _request(
+            server,
+            "POST",
+            "/admin/add",
+            form={
+                "user": "bob",
+                "quota_gb": "150",
+                "quota_extra_gb": "0",
+                "landing_initial_egress_id": "la-home-1",
+            },
+        )
+
+    assert status == 422
+    assert "家宽出口已不可用".encode() in body
+    assert state["USERS_FILE"].read_text() == before
+
+
+def test_admin_add_without_initial_egress_keeps_landing_access_unassigned(
+    tmp_path, monkeypatch,
+):
+    state = _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+
+    with _running_server() as server:
+        status, _headers, _body = _request(
+            server,
+            "POST",
+            "/admin/add",
+            form={
+                "user": "bob",
+                "quota_gb": "150",
+                "quota_extra_gb": "0",
+                "landing_initial_egress_id": "",
+            },
+        )
+
+    saved = json.loads(state["USERS_FILE"].read_text())["bob"]
+    assert status == 302
+    assert "landing_allowed_egress_ids" not in saved
+    assert "landing_selected_egress_id" not in saved
+    assert "landing_vless_uuid" not in saved
+
+
+def test_admin_add_initial_egress_sync_failure_rolls_back_new_user(
+    tmp_path, monkeypatch,
+):
+    state = _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+    before_text = state["USERS_FILE"].read_text()
+
+    def fail_sync(_users, **_kwargs):
+        raise ss.state_store.CriticalStateUnavailable("candidate invalid")
+
+    monkeypatch.setattr(ss, "_sync_static_access_from_users", fail_sync)
+    with _running_server() as server:
+        status, _headers, body = _request(
+            server,
+            "POST",
+            "/admin/add",
+            form={
+                "user": "bob",
+                "quota_gb": "150",
+                "quota_extra_gb": "0",
+                "landing_initial_egress_id": "la-home-1",
+            },
+        )
+
+    assert status == 503
+    assert b"candidate invalid" not in body
+    assert state["USERS_FILE"].read_text() == before_text
+
+
+def test_landing_uuid_generation_rejects_equivalent_noncanonical_collision(
+    monkeypatch,
+):
+    occupied = uuid.UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+    available = uuid.UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+    users = {
+        "alice": {"vless_uuid": occupied.hex},
+        "bob": {},
+    }
+    candidates = iter((occupied, available))
+    monkeypatch.setattr(ss.uuid, "uuid4", lambda: next(candidates))
+
+    generated = ss._ensure_landing_vless_uuid(users["bob"], users)
+
+    assert generated == str(available)
+    assert users["bob"]["landing_vless_uuid"] == str(available)
