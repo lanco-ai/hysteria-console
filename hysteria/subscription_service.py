@@ -2786,6 +2786,7 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
   }} catch (e) {{}}
   requestAnimationFrame(function() {{
     requestAnimationFrame(function() {{
+      document.documentElement.classList.remove('sidebar-pre-collapsed');
       if (app) app.classList.add('anim-ready');
     }});
   }});

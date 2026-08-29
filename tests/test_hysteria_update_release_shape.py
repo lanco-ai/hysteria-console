@@ -112,6 +112,62 @@ def test_unknown_local_version_is_not_an_update():
     assert info['update_available'] is False
 
 
+def test_record_check_preserves_pending_operation_state(tmp_path):
+    path = tmp_path / 'update.json'
+    before = dict(hu.IDLE_STATE)
+    before.update({
+        'status': 'applying',
+        'version': 'app/v2.12.2',
+        'pending_confirm': True,
+        'operation_id': 'op-active',
+    })
+    hu.save_state(before, path)
+
+    result = hu.record_check(
+        {'current': 'v2.11.0', 'latest': 'app/v2.13.0'}, path=path,
+    )
+
+    assert result == before
+    assert hu.load_state(path) == before
+
+
+def test_record_check_preserves_rollback_failed_evidence(tmp_path):
+    path = tmp_path / 'update.json'
+    before = dict(hu.IDLE_STATE)
+    before.update({
+        'status': 'rollback_failed',
+        'version': 'app/v2.12.2',
+        'primary_error': 'readiness_failed',
+        'rollback_error': 'restart_failed',
+    })
+    hu.save_state(before, path)
+
+    result = hu.record_check(
+        {'current': 'v2.11.0', 'latest': 'app/v2.13.0'}, path=path,
+    )
+
+    assert result == before
+    assert hu.load_state(path) == before
+
+
+def test_record_check_updates_non_pending_state(tmp_path):
+    for initial_status in ('idle', 'checked'):
+        path = tmp_path / f'{initial_status}.json'
+        before = dict(hu.IDLE_STATE)
+        before.update({'status': initial_status, 'error': 'stale'})
+        hu.save_state(before, path)
+
+        result = hu.record_check(
+            {'current': 'v2.11.0', 'latest': 'app/v2.12.2'}, path=path,
+        )
+
+        assert result['status'] == 'checked'
+        assert result['previous_version'] == 'v2.11.0'
+        assert result['version'] == 'app/v2.12.2'
+        assert result['error'] == ''
+        assert hu.load_state(path) == result
+
+
 def test_asset_digest_is_exposed_and_normalized():
     digest = 'a' * 64
     info = hu.check_latest(

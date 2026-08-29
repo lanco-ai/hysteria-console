@@ -575,6 +575,8 @@ def check_latest(*, opener=None, runner=subprocess.run, binary_path=BINARY_PATH)
 
 def record_check(info, *, path=STATE_PATH):
     state = load_state(path)
+    if public_status(state)['pending'] or state.get('status') == 'rollback_failed':
+        return state
     state['status'] = 'checked'
     state['version'] = info.get('latest') or ''
     state['previous_version'] = info.get('current') or ''

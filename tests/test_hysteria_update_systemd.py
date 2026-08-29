@@ -1,4 +1,4 @@
-"""Runtime contracts for the isolated Hysteria updater systemd unit."""
+"""Runtime contracts for the Hysteria updater systemd unit."""
 
 import shlex
 import subprocess
@@ -19,8 +19,8 @@ def _exec_start():
     raise AssertionError("updater service has no ExecStart")
 
 
-def test_isolated_service_command_can_import_sibling_modules():
-    """Dropping the trusted app directory from the bootstrap must fail here."""
+def test_updater_service_command_can_import_sibling_modules():
+    """The service command must retain imports from the trusted app directory."""
     command = [
         arg.replace("/root/hysteria", str(ROOT / "hysteria"))
         for arg in _exec_start()
@@ -40,17 +40,23 @@ def test_isolated_service_command_can_import_sibling_modules():
     assert "ModuleNotFoundError" not in result.stderr
 
 
-def test_static_updater_uses_trusted_working_directory_without_isolated_mode():
+def test_static_updater_uses_trusted_working_directory_and_safe_python_flags():
     unit = UNIT.read_text(encoding="utf-8")
 
     assert (
         "ExecStart=/usr/local/sbin/hy2-lock-exec.py "
         "--lock-file /run/hy2-locks/deploy.lock --wait "
-        "/usr/bin/python3 /root/hysteria/hysteria_update.py --auto"
+        "/usr/bin/python3 -s -E /root/hysteria/hysteria_update.py --auto"
         in unit.splitlines()
     )
     assert "WorkingDirectory=/root/hysteria" in unit.splitlines()
     assert " -I " not in unit
+
+
+def test_static_updater_allows_enough_time_for_a_real_apply():
+    unit = UNIT.read_text(encoding="utf-8")
+
+    assert "TimeoutStartSec=15min" in unit.splitlines()
 
 
 def test_transient_worker_has_static_unit_security_and_exit_contract(

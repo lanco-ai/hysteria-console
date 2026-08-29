@@ -114,15 +114,20 @@ def test_sidebar_collapse_animates_grid_track_after_first_paint():
 
     reduced_motion = css[css.index("@media (prefers-reduced-motion: reduce)"):]
     assert ".app.anim-ready { transition: none; }" in reduced_motion
-    mobile = css[
-        css.index("@media (max-width: 880px)"):
-        css.index("/* Main Area */")
-    ]
-    assert ".app.anim-ready { transition: none; }" in mobile
+    mobile = re.search(
+        r"@media \(max-width: 880px\) \{"
+        r"(?P<body>(?:[^{}]+|\{[^{}]*\})*)\}",
+        css,
+        re.DOTALL,
+    )
+    assert mobile
+    assert ".app.anim-ready { transition: none; }" in mobile.group("body")
     assert "app.classList.add('anim-ready')" in src
     assert re.search(
         r"requestAnimationFrame\(function\(\) \{\{\s*"
         r"requestAnimationFrame\(function\(\) \{\{\s*"
+        r"document\.documentElement\.classList\.remove\("
+        r"'sidebar-pre-collapsed'\);\s*"
         r"if \(app\) app\.classList\.add\('anim-ready'\)",
         src,
     )
