@@ -184,15 +184,15 @@ POST   /api/v1/user/credentials/rotate
 PUT    /api/v1/user/landing-egress
 
 GET    /api/v1/admin/overview
-GET    /api/v1/admin/users/:id
+GET    /api/v1/admin/users/:user
 POST   /api/v1/admin/users
-PATCH  /api/v1/admin/users/:id
-DELETE /api/v1/admin/users/:id
-POST   /api/v1/admin/users/:id/pause
-POST   /api/v1/admin/users/:id/resume
-POST   /api/v1/admin/users/:id/credentials/rotate
-POST   /api/v1/admin/users/:id/usage/reset
-PUT    /api/v1/admin/users/:id/landing-egress-access
+PATCH  /api/v1/admin/users/:user
+DELETE /api/v1/admin/users/:user
+POST   /api/v1/admin/users/:user/pause
+POST   /api/v1/admin/users/:user/resume
+POST   /api/v1/admin/users/:user/credentials/rotate
+POST   /api/v1/admin/users/:user/usage/reset
+PUT    /api/v1/admin/users/:user/landing-egress-access
 
 GET    /api/v1/admin/usage
 GET    /api/v1/admin/usage/history
