@@ -13,6 +13,7 @@ __pycache__/
 *.tar.gz.sha256
 backups/
 .superpowers/
+.worktrees/
 
 # Local backup files
 *.bak
