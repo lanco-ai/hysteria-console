@@ -16,10 +16,11 @@ def _read(rel):
 
 
 def _presentation_source():
-    # These inline scripts now belong to their presentation modules.
+    # Markup and external shell interactions are separate source owners.
     return '\n'.join(_read('hysteria/' + name) for name in (
         'subscription_service.py', 'console_shell_views.py',
         'admin_views.py', 'operations_views.py',
+        'static/shell.js', 'static/shell-preferences.js',
     ))
 
 
@@ -132,8 +133,8 @@ def test_sidebar_collapse_animates_grid_track_after_first_paint():
     assert ".app.anim-ready { transition: none; }" in mobile.group("body")
     assert "app.classList.add('anim-ready')" in src
     assert re.search(
-        r"requestAnimationFrame\(function\(\) \{\{\s*"
-        r"requestAnimationFrame\(function\(\) \{\{\s*"
+        r"requestAnimationFrame\(function\(\) \{\s*"
+        r"requestAnimationFrame\(function\(\) \{\s*"
         r"document\.documentElement\.classList\.remove\("
         r"'sidebar-pre-collapsed'\);\s*"
         r"if \(app\) app\.classList\.add\('anim-ready'\)",

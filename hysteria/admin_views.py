@@ -126,9 +126,9 @@ def row_form(
     online_n = int(online.get(user, 0) or 0)
     return f'''<tr data-user="{user_esc}" data-online="{online_n}" data-percent="{percent:.1f}" data-revision="{user_revision}">
 <td headers="users-col-user" data-label="用户">
-  <div class="row gap-sm" style="flex-wrap:nowrap;">
+  <div class="row gap-sm user-identity">
     <div class="user-avatar" aria-hidden="true">{html.escape(user[:1].upper())}</div>
-    <div style="min-width:0;">
+    <div class="user-identity-copy">
       <div class="bold">{user_esc} {guest_badge}{tuic_badge}{disabled_badge}{expired_badge}</div>
       <div class="small">{online_device_summary}</div>
       {note_preview}
@@ -137,7 +137,7 @@ def row_form(
 </td>
 {spark_cell}
 <td headers="users-col-usage" data-label="本周期用量">
-  <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+  <div class="row usage-label">
     <span class="bold" data-role="used">{ctx.fmt_bytes(used)}</span>
     <span class="small">/ {quota_label}</span>
   </div>
@@ -175,7 +175,7 @@ def row_form(
   <button class="btn danger-btn btn-sm user-action" type="submit" form="user-action-form" name="user"
           value="{user_esc}" data-user="{user_esc}" formaction="/admin/delete?{revision_query}" data-action="delete-user">删除</button>
 </div>
-<div class="row-error small" style="display:none;color:var(--danger);margin-top:4px;"></div>
+<div class="row-error small" style="display:none;"></div>
 </td>
 <td class="link-cell" headers="users-col-links" data-label="链接">
   <div class="link-row">
@@ -211,14 +211,14 @@ def render_admin(
     cycle_range = f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")} · 第 {cycle_day}/{cycle_length} 天'
     settle_form = (
         f'<form method="post" action="/admin/cycle-config" class="inline-form-row cycle-config-form" '
-        f'data-confirm="更改结算日或周期会重新锚定计费日历，确认保存？" style="margin:0;">'
-        f'<label for="cycle-day" class="small" style="margin-right:6px;">结算日</label>'
+        f'data-confirm="更改结算日或周期会重新锚定计费日历，确认保存？">'
+        f'<label for="cycle-day" class="small">结算日</label>'
         f'<input id="cycle-day" name="day" type="number" min="1" max="28" value="{settlement_day}" '
-        f'style="width:60px;margin-right:6px;" required>'
-        f'<label for="cycle-length" class="small" style="margin-right:6px;">周期</label>'
+        f'required>'
+        f'<label for="cycle-length" class="small">周期</label>'
         f'<input id="cycle-length" name="length" type="number" min="{ctx.CYCLE_LENGTH_MIN}" max="{ctx.CYCLE_LENGTH_MAX}" '
-        f'value="{cycle_length}" style="width:60px;margin-right:2px;" required>'
-        f'<span class="small" style="margin-right:6px;">天</span>'
+        f'value="{cycle_length}" required>'
+        f'<span class="small">天</span>'
         f'<button class="btn ghost btn-sm" type="submit">保存</button>'
         f'</form>'
     )
@@ -308,7 +308,7 @@ def render_admin(
   <div class="overview-stat">
     <div class="label">快速操作</div>
     <form method="post" action="/admin/reset-usage-all" data-action="reset-all">
-      <button class="btn btn-sm danger-btn" type="submit" style="margin-top:10px;">清空本周期用量</button>
+      <button class="btn btn-sm danger-btn reset-all-button" type="submit">清空本周期用量</button>
     </form>
     <div class="quick-actions">
       <a class="btn btn-sm" href="/admin/usage.csv?window=cycle">导出 CSV</a>
@@ -342,7 +342,7 @@ def render_admin(
           <input id="edit-quota-extra-gb" name="quota_extra_gb" type="number" min="0" max="10240" value="0"></div>
         <div class="form-field"><label for="edit-expires-at">到期日</label>
           <input id="edit-expires-at" name="expires_at" type="date" min="2000-01-01" max="2099-12-31"><span class="hint">留空 = 不限期；年份范围 2000–2099</span></div>
-        <div class="form-field" style="grid-column:1/-1"><label for="edit-note">备注</label>
+        <div class="form-field form-field-wide"><label for="edit-note">备注</label>
           <input id="edit-note" name="note" maxlength="200" placeholder="可选"></div>
         <div class="form-field"><label for="edit-landing-isp">落地运营商</label>
           <input id="edit-landing-isp" name="landing_isp" maxlength="120" placeholder="可选，仅展示"></div>
@@ -350,7 +350,7 @@ def render_admin(
           <input id="edit-landing-region" name="landing_region" maxlength="120" placeholder="可选，仅展示"></div>
         <div class="form-field"><label for="edit-landing-ip">家宽 IP</label>
           <input id="edit-landing-ip" name="landing_ip" maxlength="45" autocomplete="off" spellcheck="false" placeholder="可选，仅支持 IPv4 / IPv6"></div>
-        <div class="form-field" style="grid-column:1/-1"><label for="edit-landing-note">落地说明</label>
+        <div class="form-field form-field-wide"><label for="edit-landing-note">落地说明</label>
           <input id="edit-landing-note" name="landing_note" maxlength="120" placeholder="可选，仅展示，不影响出口"></div>
         <div class="form-field"><label for="edit-panel-password">面板密码</label>
           <input id="edit-panel-password" name="panel_password" type="password" minlength="8" maxlength="256"
@@ -401,7 +401,7 @@ def render_admin(
         <div class="form-field"><label for="create-quota-extra-gb">加量包 GB</label><input id="create-quota-extra-gb" name="quota_extra_gb" type="number" value="{create_quota_extra_gb}" min="0" max="10240" required{validation_attrs('create-quota-extra-gb')}></div>
         <div class="form-field"><label for="create-expires-at">到期日</label><input id="create-expires-at" name="expires_at" type="date" value="{create_expires_at}" min="2000-01-01" max="2099-12-31"><span class="hint">留空 = 不限期；年份范围 2000–2099</span></div>
         {create_landing_field}
-        <div class="form-field" style="grid-column:1/-1"><label for="create-note">备注</label><input id="create-note" name="note" value="{create_note}" maxlength="200" placeholder="可选"></div>
+        <div class="form-field form-field-wide"><label for="create-note">备注</label><input id="create-note" name="note" value="{create_note}" maxlength="200" placeholder="可选"></div>
       </div>
       <div class="form-options">
         <label class="switch"><input type="checkbox" name="guest"{create_guest_checked}>按量用户</label>

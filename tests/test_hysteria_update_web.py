@@ -273,7 +273,8 @@ def test_updater_ajax_consumes_shell_confirmation_without_second_prompt():
     shell = ss.render_admin_shell('health', 'Health', '<main></main>')
     js = ss.ADMIN_POLL_JS_BYTES.decode('utf-8')
 
-    assert '__hy2Confirmed' in shell
+    assert '/static/shell.js?v=' in shell
+    assert '__hy2Confirmed' in ss.web_assets.ASSETS['/static/shell.js'][0].decode()
     assert '__hy2Confirmed' in js
     assert 'ev.preventDefault()' in js
 
@@ -308,6 +309,8 @@ const context = {
   clearTimeout: () => {}
 };
 vm.createContext(context);
+vm.runInContext(CORE, context);
+window.Hy2UI = context.Hy2UI;
 vm.runInContext(SOURCE, context);
 if (submitHandlers.length !== 1) throw new Error('submit handler missing');
 const form = {
@@ -321,7 +324,7 @@ submitHandlers[0]({
 if (confirms !== 0 || fetches !== 0) {
   throw new Error('cancelled submit continued: confirms=' + confirms + ' fetches=' + fetches);
 }
-'''.replace('SOURCE', json.dumps(source))
+'''.replace('CORE', json.dumps(ss.web_assets.ASSETS['/static/ui-core.js'][0].decode())).replace('SOURCE', json.dumps(source))
 
     result = subprocess.run(
         ['node', '-e', harness], capture_output=True, text=True, timeout=5,

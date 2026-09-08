@@ -1,0 +1,544 @@
+/* =====================================================
+   INCIDENTS PAGE
+   ===================================================== */
+body.has-shell .incidents-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+body.has-shell .incident-page-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* Recommendation action panel */
+body.has-shell .incident-rec {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+body.has-shell .incident-rec-entry {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+body.has-shell .incident-rec-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+body.has-shell .incident-rec-reason {
+  font-size: var(--text-body);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Dual equal-height panels */
+body.has-shell .incident-dual-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+body.has-shell .incident-diagnostic-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* Radar summary (compact for incidents page) */
+body.has-shell .radar-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+body.has-shell .radar-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+body.has-shell .radar-summary-row:last-child {
+  border-bottom: none;
+}
+
+/* Incident table action buttons */
+body.has-shell .incident-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Config Editor */
+body.has-shell .code-editor {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+body.has-shell .code-editor textarea {
+  width: 100%;
+  min-height: 400px;
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  line-height: 1.6;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: none;
+  resize: vertical;
+  outline: none;
+}
+
+body.has-shell .code-editor textarea:focus,
+body.has-shell .code-editor textarea:focus-visible {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent-soft);
+}
+
+/* Rules page */
+.rule-index-column { width: 50px; }
+.rule-actions-column { width: 90px; }
+
+body.has-shell .rules-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+body.has-shell .rules-table th,
+body.has-shell .rules-table td {
+  padding: 12px 16px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+body.has-shell .rules-table th {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  background: #F5F4F0;
+}
+
+body.has-shell .rules-table tbody tr:hover {
+  background: var(--bg-subtle);
+}
+
+/* =====================================================
+   /admin/rules: 信息架构重构
+   ===================================================== */
+
+/* ---- Rules intro note ---- */
+body.has-shell .rules-intro {
+  margin-bottom: 24px;
+}
+
+body.has-shell .rules-intro-note {
+  font-size: var(--text-ui);
+  color: var(--text-tertiary);
+  line-height: 1.6;
+}
+
+/* ---- Rules operations grid: 双栏操作区 ---- */
+body.has-shell .rules-ops-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+/* ---- Individual operation panel ---- */
+body.has-shell .op-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+body.has-shell .op-panel-title {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+  letter-spacing: -0.01em;
+}
+
+body.has-shell .op-panel-desc {
+  font-size: var(--text-ui);
+  color: var(--text-tertiary);
+  line-height: 1.6;
+  margin-bottom: 20px;
+}
+
+/* ---- Op form grid: 2-column field layout ---- */
+body.has-shell .op-form {
+  display: flex;
+  flex-direction: column;
+}
+
+body.has-shell .op-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+body.has-shell .op-form-grid .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 0;
+}
+
+body.has-shell .op-form-grid .field label {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+body.has-shell .op-form-grid .field .select,
+body.has-shell .op-form-grid .field .input {
+  height: 44px;
+  font-size: var(--text-ui);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Op form footer: helper left + button right ---- */
+body.has-shell .op-form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+
+body.has-shell .op-footer-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ---- Raw editor (Layer 2): default collapsed ---- */
+body.has-shell .rules-raw-editor {
+  margin-bottom: 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+body.has-shell .rules-raw-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  cursor: pointer;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--text-secondary);
+  user-select: none;
+  list-style: none;
+  transition: background var(--transition), color var(--transition);
+}
+
+body.has-shell .rules-raw-summary::-webkit-details-marker {
+  display: none;
+}
+
+body.has-shell .rules-raw-summary::before {
+  content: '';
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 6px solid var(--text-tertiary);
+  margin-right: 10px;
+  transition: transform var(--transition);
+  flex-shrink: 0;
+}
+
+body.has-shell .details[open] > .rules-raw-summary::before,
+body.has-shell details[open] > .rules-raw-summary::before {
+  transform: rotate(90deg);
+}
+
+body.has-shell .rules-raw-summary:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+body.has-shell .rules-raw-badge {
+  font-size: var(--text-caption);
+  font-weight: 500;
+  color: var(--text-tertiary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  letter-spacing: 0.04em;
+}
+
+body.has-shell .rules-raw-body {
+  padding: 0 20px 20px;
+  border-top: 1px solid var(--border);
+}
+
+body.has-shell .rules-raw-help {
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+  margin: 16px 0;
+  line-height: 1.5;
+}
+
+body.has-shell .rules-raw-help code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+}
+
+body.has-shell .rules-raw-textarea {
+  width: 100%;
+  min-height: 360px;
+  max-height: 520px;
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  resize: vertical;
+  outline: none;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+body.has-shell .rules-raw-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1100px) {
+  body.has-shell .rules-ops-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.has-shell .op-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  body.has-shell .op-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  body.has-shell .rules-raw-textarea {
+    min-height: 280px;
+  }
+}
+
+/* Logs page */
+body.has-shell .logs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-ui);
+}
+
+body.has-shell .logs-table th,
+body.has-shell .logs-table td {
+  padding: 10px 14px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+body.has-shell .logs-table th {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  background: #F5F4F0;
+}
+
+body.has-shell .logs-table tbody tr:hover {
+  background: var(--bg-subtle);
+}
+
+/* Settings page */
+body.has-shell .settings-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+body.has-shell .settings-section-title {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+body.has-shell .settings-section-desc {
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+  margin-bottom: 20px;
+}
+
+body.has-shell .settings-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 24px;
+}
+
+body.has-shell .settings-row:last-child {
+  border-bottom: none;
+}
+
+body.has-shell .settings-row-label {
+  flex: 1;
+}
+
+body.has-shell .settings-row-label strong {
+  display: block;
+  font-size: var(--text-ui);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+body.has-shell .settings-row-label span {
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+}
+
+body.has-shell .settings-row-control {
+  flex-shrink: 0;
+}
+
+/* Page header for sub-pages */
+body.has-shell .admin-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+body.has-shell .admin-page-eyebrow {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+body.has-shell .admin-page-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+
+body.has-shell .admin-page-desc {
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+body.has-shell .admin-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* Wrap / Card container for error pages */
+body.has-shell .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+}
+
+/* Line / Radar chart */
+body.has-shell .line-radar-wrap {
+  margin-top: 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: inset 0 1px 0 #fff, var(--shadow-xs);
+}
+
+body.has-shell .line-radar-title {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+body.has-shell .line-radar-canvas {
+  width: 100%;
+  height: 180px;
+}
+
+/* Cost calibrator */
+body.has-shell .cost-calibrator {
+  margin-top: 24px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: inset 0 1px 0 #fff, var(--shadow-xs);
+}
+
+body.has-shell .cost-calibrator-title {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}

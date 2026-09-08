@@ -1,0 +1,20 @@
+{
+  "name": "hysteria-console-frontend",
+  "private": true,
+  "engines": { "node": ">=22.13.0" },
+  "scripts": {
+    "build:css": "node scripts/build-css.cjs",
+    "check:css-build": "node scripts/build-css.cjs --check",
+    "lint:js": "eslint \"hysteria/**/*.js\" \"tests/*.cjs\" \"scripts/*.cjs\"",
+    "lint:css": "stylelint \"hysteria/**/*.css\"",
+    "test:gates": "node --test tests/frontend-quality.test.cjs tests/css-build.test.cjs tests/ui-core.test.cjs",
+    "test:browser": "python3 tests/run_frontend_browser.py",
+    "check:frontend": "npm run check:css-build && npm run lint:js && npm run lint:css && npm run test:gates && npm run test:browser"
+  },
+  "devDependencies": {
+    "globals": "17.12.0",
+    "eslint": "10.10.0",
+    "stylelint": "17.15.0",
+    "@playwright/test": "1.63.0"
+  }
+}

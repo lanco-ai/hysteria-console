@@ -301,8 +301,10 @@ def test_pages_expose_skip_target_main_landmark_and_current_navigation():
         'id="sidebar-close" type="button" aria-label="关闭导航"'
         in admin_page
     )
-    assert "cb.addEventListener('click'" in admin_page
-    assert "sb.querySelector('#sidebar-close, a, button')" in admin_page
+    assert '/static/shell.js?v=' in admin_page
+    shell_js = ss.web_assets.ASSETS['/static/shell.js'][0].decode()
+    assert "cb.addEventListener('click'" in shell_js
+    assert "sb.querySelector('#sidebar-close, a, button')" in shell_js
 
     icon = ss.icon("lock")
     assert 'aria-hidden="true"' in icon
@@ -528,7 +530,7 @@ def test_destructive_admin_actions_have_consequence_aware_confirmations(
         'action="/admin/reset-usage-all" data-action="reset-all"' in page
     )
     assert (
-        '<button class="btn btn-sm danger-btn" type="submit" style="margin-top:10px;">'
+        '<button class="btn btn-sm danger-btn reset-all-button" type="submit">'
         "清空本周期用量</button>" in page
     )
 
@@ -554,7 +556,7 @@ def test_destructive_admin_actions_have_consequence_aware_confirmations(
 
     rules_page = ss.render_rules("panel.test")
     assert 'data-action="delete-rule"' in rules_page
-    assert "confirm('确认删除此规则？')" in rules_page
+    assert '/static/rules.js?v=' in rules_page
 
 
 def test_static_assets_are_versioned_and_honor_etag_revalidation(

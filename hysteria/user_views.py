@@ -1,13 +1,13 @@
 """User panel and password presentation; no runtime service import."""
 
 import html
-import json
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import user_compat
+import web_assets
 
 
 @dataclass(frozen=True)
@@ -219,153 +219,9 @@ def render_user_panel(
             f'{ctx.icon("logout")}<span>退出登录</span></button></form>'
             f'</div>'
         )
-    # Suspended accounts get a 403 from /panel/<user>.json, so don't emit the
-    # live-refresh loop (it would just spam '刷新失败'). The embedded URL escapes
-    # '<' so a malicious username can't break out of the <script> element.
-    poll_url_js = json.dumps(json_path).replace('<', '\\u003c')
-    poll_js = (
-        ''
-        if inactive
-        else f"""  var pollUrl = {poll_url_js};
-  var statusEl = document.querySelector('[data-role="poll-status"]');
-  var statusAnnouncer = document.getElementById('panel-status-announcer');
-  function fmtBytes(n) {{
-    var v = Math.max(0, Number(n) || 0);
-    var u = ['B', 'KB', 'MB', 'GB', 'TB'], i = 0;
-    while (v >= 1024 && i < u.length - 1) {{ v /= 1024; i++; }}
-    return v.toFixed(2) + ' ' + u[i];
-  }}
-  function fmtQuota(n, total) {{
-    return Number(total) <= 0 ? '不限' : fmtBytes(n);
-  }}
-  function setRole(role, txt) {{
-    var el = document.querySelector('[data-role="' + role + '"]');
-    if (el && txt !== undefined) el.textContent = txt;
-  }}
-  function setStatus(txt, cls) {{
-    if (!statusEl) return;
-    statusEl.textContent = txt;
-    statusEl.classList.remove('is-live', 'is-paused', 'is-error');
-    if (cls) statusEl.classList.add(cls);
-  }}
-  function announce(txt) {{
-    if (statusAnnouncer && statusAnnouncer.textContent !== txt) statusAnnouncer.textContent = txt;
-  }}
-  function stamp() {{
-    return new Date().toLocaleTimeString([], {{ hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }});
-  }}
-  var timer = null, inflight = false, running = false;
-  var failures = 0, activeController = null;
-  function retryDelay() {{
-    var exponent = Math.min(failures, 3);
-    var base = Math.min(240000, 30000 * Math.pow(2, exponent));
-    return Math.min(240000, base + (failures ? Math.floor(Math.random() * 4001) : 0));
-  }}
-  function clearScheduled() {{
-    if (timer) {{ clearTimeout(timer); timer = null; }}
-  }}
-  function scheduleNext() {{
-    if (!running || document.hidden || timer) return;
-    timer = setTimeout(function() {{ timer = null; tick(); }}, retryDelay());
-  }}
-  function tick() {{
-    if (inflight || !running || document.hidden) return;
-    clearScheduled();
-    inflight = true;
-    setStatus('刷新中', 'is-live');
-    var controller = typeof AbortController === 'function' ? new AbortController() : null;
-    activeController = controller;
-    var timedOut = false;
-    var timeout = setTimeout(function() {{
-      timedOut = true;
-      if (controller) controller.abort();
-    }}, 8000);
-    fetch(pollUrl, {{ credentials: 'same-origin', cache: 'no-store', signal: controller ? controller.signal : undefined }})
-      .then(function(r) {{
-        if (r.status === 401) {{
-          stop();
-          setStatus('登录已失效', 'is-error');
-          announce('登录已失效，请重新登录');
-          return null;
-        }}
-        if (r.status === 403) {{
-          return r.json()
-            .catch(function() {{ return {{ error: 'forbidden' }}; }})
-            .then(function(payload) {{
-              return {{ accessError: payload.error || 'forbidden' }};
-            }});
-        }}
-        return r.ok ? r.json() : null;
-      }})
-      .catch(function(error) {{
-        if (error && error.name === 'AbortError' && !timedOut) {{
-          return {{ stopped: true }};
-        }}
-        return null;
-      }})
-      .then(function(d) {{
-        if (d && d.stopped) return;
-        if (d && d.accessError) {{
-          stop();
-          var accessMessages = {{
-            disabled: '账号已停用，请联系管理员',
-            expired: '账号已到期，请联系管理员续费',
-            password_change_required: '请先修改初始密码',
-            forbidden: '账号状态已变化，请重新登录'
-          }};
-          var accessMessage = accessMessages[d.accessError] || accessMessages.forbidden;
-          setStatus(accessMessage, 'is-error');
-          announce(accessMessage);
-          return;
-        }}
-        if (!d) {{
-          failures = Math.min(failures + 1, 8);
-          if (statusEl && statusEl.textContent !== '登录已失效') {{
-            setStatus(timedOut ? '请求超时 · 稍后重试' : '更新失败 · 稍后重试', 'is-error');
-            announce(timedOut ? '用量更新请求超时，系统稍后自动重试' : '用量自动更新失败，系统稍后自动重试');
-          }}
-          return;
-        }}
-        failures = 0;
-        setRole('used', fmtBytes(d.used_bytes));
-        setRole('remain', fmtQuota(d.remain_bytes, d.total_bytes));
-        setRole('online', d.online);
-        setRole('device-limit', Number(d.max_devices) === 0 ? '· 设备不限' : '/ ' + d.max_devices);
-        var p = Number(d.percent);
-        setRole('percent', Number(d.total_bytes) <= 0 ? '不限' : p.toFixed(2) + '%');
-        setRole('txrx', '上传 ' + fmtBytes(d.tx_bytes) + ' · 下载 ' + fmtBytes(d.rx_bytes));
-        var bar = document.querySelector('[data-role="bar"]');
-        if (bar) {{
-          bar.style.width = Number(d.total_bytes) <= 0 ? '0%' : p.toFixed(2) + '%';
-          bar.classList.toggle('danger', Number(d.total_bytes) > 0 && p >= 90);
-          bar.classList.toggle('unlimited', Number(d.total_bytes) <= 0);
-          bar.setAttribute('aria-valuenow', Number(d.total_bytes) <= 0 ? '0' : p.toFixed(2));
-          bar.setAttribute('aria-valuetext', Number(d.total_bytes) <= 0 ? '不限' : p.toFixed(2) + '%');
-        }}
-        setStatus('更新于 ' + stamp(), 'is-live');
-      }})
-      .finally(function() {{
-        clearTimeout(timeout);
-        if (activeController === controller) activeController = null;
-        inflight = false;
-        scheduleNext();
-      }});
-  }}
-  function start() {{
-    if (running) return;
-    running = true;
-    failures = 0;
-    tick();
-  }}
-  function stop() {{
-    running = false;
-    clearScheduled();
-    if (activeController) activeController.abort();
-  }}
-  document.addEventListener('visibilitychange', function() {{ if (document.hidden) {{ stop(); setStatus('已暂停', 'is-paused'); }} else start(); }});
-  window.addEventListener('pagehide', stop);
-  start();"""
-    )
+    # Inactive accounts never load the polling script or expose a poll URL.
+    poll_attrs = '' if inactive else f' data-poll-url="{html.escape(json_path, quote=True)}"'
+    poll_script = '' if inactive else web_assets.script_tag('user-poll')
     if password_session:
         panel_link_hint = '此地址不含订阅令牌，其他设备需要先使用用户名和面板密码登录。'
     elif session_auth:
@@ -443,7 +299,7 @@ def render_user_panel(
         password_session=password_session,
     )
 
-    body = f'''<div class="wrap user-panel">
+    body = f'''<div class="wrap user-panel"{poll_attrs}>
 {notice_banner}
 {disabled_banner}
 <header class="user-panel-header">
@@ -491,7 +347,7 @@ def render_user_panel(
   <div class="usage-progress">
     <div class="usage-progress-head">
       <span class="k">本周期</span>
-      <span class="bold" data-role="percent" style="font-variant-numeric:tabular-nums;">{percent_label}</span>
+      <span class="bold numeric" data-role="percent">{percent_label}</span>
     </div>
     <div class="bar"><div class="fill {cls}" data-role="bar" role="progressbar"
          aria-label="本周期流量" aria-valuemin="0" aria-valuemax="100"
@@ -545,96 +401,6 @@ def render_user_panel(
 </section>
 
 </div>
-<script>
-(function() {{
-  var profileOptions = document.querySelectorAll('[data-profile-option]');
-  var profileBadge = document.getElementById('profile-selected-badge');
-  var profileTitle = document.getElementById('profile-selected-title');
-  var profileDesc = document.getElementById('profile-selected-desc');
-  var profileCopy = document.getElementById('profile-copy');
-  var profileOpen = document.getElementById('profile-open');
-  var profileShowQr = document.getElementById('profile-show-qr');
-  var profileQrPanel = document.getElementById('profile-qr-panel');
-  var profileQrImage = document.getElementById('profile-qr-image');
-  var profileQrStatus = document.getElementById('profile-qr-status');
-  var profileSubUrl = document.getElementById('sub');
-  function setQrStatus(text) {{ if (profileQrStatus) profileQrStatus.textContent = text; }}
-  function selectProfile(option) {{
-    if (!option) return;
-    profileOptions.forEach(function(item) {{
-      var selected = item === option;
-      item.classList.toggle('selected', selected);
-      item.setAttribute('aria-current', selected ? 'true' : 'false');
-    }});
-    var label = option.getAttribute('data-profile-label') || '';
-    var desc = option.getAttribute('data-profile-desc') || '';
-    var url = option.getAttribute('data-profile-url') || option.href || '';
-    var qr = option.getAttribute('data-profile-qr') || '';
-    if (profileBadge) profileBadge.textContent = label;
-    if (profileTitle) profileTitle.textContent = label;
-    if (profileDesc) profileDesc.textContent = desc;
-    // Visible subscription URL text must mirror the active profile so the
-    // displayed value and the copied value stay in sync after every switch.
-    if (profileSubUrl) profileSubUrl.textContent = url;
-    if (profileCopy) profileCopy.setAttribute('data-copy', url);
-    if (profileOpen) profileOpen.setAttribute('href', url);
-    if (profileShowQr) profileShowQr.setAttribute('data-qr', qr);
-    if (profileQrImage) profileQrImage.setAttribute('alt', label + '订阅二维码');
-    if (profileQrPanel && !profileQrPanel.hidden && profileQrImage) {{
-      setQrStatus('二维码生成中…');
-      profileQrImage.src = qr;
-    }} else if (profileQrImage) {{
-      profileQrImage.removeAttribute('src');
-    }}
-  }}
-  if (profileQrImage) {{
-    profileQrImage.addEventListener('load', function() {{ setQrStatus('二维码已生成，可在另一台设备上扫码导入。'); }});
-    profileQrImage.addEventListener('error', function() {{
-      setQrStatus('二维码暂不可用，请使用“复制当前模式链接”导入。');
-    }});
-  }}
-  function flashCopied(btn) {{
-    var label = btn.querySelector('span');
-    var prev = label ? label.textContent : '';
-    if (label) label.textContent = '已复制 ✓';
-    btn.disabled = true;
-    setTimeout(function() {{ if (label) label.textContent = prev; btn.disabled = false; }}, 1400);
-  }}
-  document.addEventListener('click', function(ev) {{
-    var option = ev.target.closest ? ev.target.closest('[data-profile-option]') : null;
-    if (option) {{ ev.preventDefault(); selectProfile(option); return; }}
-    var qrButton = ev.target.closest ? ev.target.closest('#profile-show-qr') : null;
-    if (qrButton && profileQrPanel && profileQrImage) {{
-      ev.preventDefault();
-      var opening = profileQrPanel.hidden;
-      profileQrPanel.hidden = !opening;
-      qrButton.setAttribute('aria-expanded', opening ? 'true' : 'false');
-      var qrLabel = qrButton.querySelector('span');
-      if (qrLabel) qrLabel.textContent = opening ? '隐藏二维码' : '显示二维码';
-      if (opening) {{
-        setQrStatus('二维码生成中…');
-        profileQrImage.src = qrButton.getAttribute('data-qr') || '';
-      }} else {{
-        profileQrImage.removeAttribute('src');
-        setQrStatus('在另一台设备上用客户端扫码导入；二维码仅在这里按需生成。');
-      }}
-      return;
-    }}
-    var btn = ev.target.closest ? ev.target.closest('[data-copy]') : null;
-    if (!btn) return;
-    var text = btn.getAttribute('data-copy');
-    function manualCopy() {{ if (window.prompt) window.prompt('自动复制不可用，请手动复制下面的链接', text); }}
-    if (!navigator.clipboard) {{ manualCopy(); return; }}
-    navigator.clipboard.writeText(text).then(function() {{ flashCopied(btn); }})
-      .catch(manualCopy);
-  }});
-  document.addEventListener('submit', function(ev) {{
-    var f = ev.target;
-    if (f && f.dataset && f.dataset.action === 'rotate-token') {{
-      if (!confirm('确认重置订阅 Token？旧链接将立即失效。')) ev.preventDefault();
-    }}
-  }});
-{poll_js}
-}})();
-</script>'''
+{web_assets.script_tag('user-panel')}
+{poll_script}'''
     return ctx.html_page(f'{user} 用户面板', body)

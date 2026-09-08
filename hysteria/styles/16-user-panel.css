@@ -1,0 +1,529 @@
+/* =====================================================
+   USER PANEL — Hysteria 个人控制台
+   ===================================================== */
+.wrap.user-panel {
+  max-width: 1200px;
+  margin-inline: auto;
+  padding: 28px 32px 72px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ---- Page Header ---- */
+.wrap.user-panel .user-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wrap.user-panel .user-panel-brand {
+  display: flex;
+  flex-direction: column;
+}
+
+.wrap.user-panel .user-panel-title {
+  font-family: var(--font-sans);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  margin: 2px 0 0 0;
+}
+
+.wrap.user-panel .user-panel-subtitle {
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+  margin-top: 4px;
+}
+
+.wrap.user-panel .user-panel-account {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.wrap.user-panel .user-panel-name {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wrap.user-panel .user-panel-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wrap.user-panel .user-panel-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---- Generic section head + Panel shell ---- */
+.wrap.user-panel .section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.wrap.user-panel .section-head .section-title {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.wrap.user-panel .usage-section,
+.wrap.user-panel .connection-section,
+.wrap.user-panel .plan-section,
+.wrap.user-panel .trend-section,
+.wrap.user-panel .account-section {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+}
+
+/* ---- 1. Usage ---- */
+.wrap.user-panel .usage-kpis {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.wrap.user-panel .usage-kpi .k {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.wrap.user-panel .usage-kpi .v {
+  font-family: var(--font-num);
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+}
+
+.wrap.user-panel .usage-kpi .v.usage-date {
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.wrap.user-panel .usage-kpi .sub {
+  font-family: var(--font-sans);
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.wrap.user-panel .usage-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.wrap.user-panel .usage-progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-sans);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+}
+
+.wrap.user-panel .usage-progress .bar {
+  height: 6px;
+  background: var(--bg-subtle);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.wrap.user-panel .usage-progress .bar .fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 200ms ease;
+}
+
+.wrap.user-panel .usage-progress .bar .fill.danger {
+  background: var(--danger);
+}
+
+.wrap.user-panel .usage-progress .bar .fill.unlimited {
+  background: var(--text-tertiary);
+}
+
+/* ---- 2. Connection panel (formerly import-assistant) ---- */
+.wrap.user-panel .connection-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.wrap.user-panel .connection-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.wrap.user-panel .connection-head .k {
+  font-family: var(--font-sans);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.wrap.user-panel .connection-desc {
+  color: var(--text-secondary);
+}
+
+.wrap.user-panel .connection-muted {
+  font-family: var(--font-sans);
+}
+
+.wrap.user-panel .profile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.wrap.user-panel .profile-tab {
+  font-family: var(--font-sans);
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 6px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.wrap.user-panel .profile-tab:hover {
+  color: var(--text-primary);
+}
+
+.wrap.user-panel .profile-tab.is-active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--border);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.wrap.user-panel .connection-url {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.wrap.user-panel .connection-url .url-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  color: var(--text-primary);
+  background: transparent;
+  border: 0;
+  padding: 6px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wrap.user-panel .connection-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.wrap.user-panel .profile-qr-panel {
+  margin-top: 8px;
+  padding: 16px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.wrap.user-panel .qr-wrap {
+  background: #ffffff;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+
+/* ---- 3. Plan & Devices (compact KV) ---- */
+.wrap.user-panel .user-kv {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+
+.wrap.user-panel .user-kv > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.wrap.user-panel .user-kv dt {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.wrap.user-panel .user-kv dd {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-align: right;
+}
+
+.wrap.user-panel .user-kv dd.mono,
+.wrap.user-panel .user-kv dd .mono {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
+/* ---- 4. Trend section — fixed sparkline styling ---- */
+.wrap.user-panel .trend-body {
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+}
+
+.wrap.user-panel .trend-body svg.spark {
+  display: block;
+  width: 100%;
+  height: 56px;
+  max-height: 56px;
+}
+
+.wrap.user-panel .trend-body svg.spark .spark-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.wrap.user-panel .trend-body svg.spark .spark-area {
+  fill: var(--accent);
+  opacity: 0.08;
+  /* prevent browser default black fill if CSS fails to load */
+  fill-opacity: 0.08;
+}
+
+.wrap.user-panel .trend-body svg.spark .spark-dot {
+  fill: var(--accent);
+}
+
+.wrap.user-panel .trend-body svg.spark .spark-dot.today {
+  fill: var(--text-primary);
+}
+
+/* ---- 5. Account & Security ---- */
+.wrap.user-panel .account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.wrap.user-panel .account-session-details {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.wrap.user-panel .account-session-details summary {
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  list-style: none;
+}
+
+.wrap.user-panel .account-session-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.wrap.user-panel .account-session-details[open] summary {
+  margin-bottom: 10px;
+  color: var(--text-tertiary);
+}
+
+.wrap.user-panel .account-session-details .copy-mono {
+  padding: 10px 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 1024px) {
+  .wrap.user-panel {
+    padding: 24px 24px 64px;
+  }
+  .wrap.user-panel .usage-kpis {
+    grid-template-columns: 1fr 1fr;
+  }
+  .wrap.user-panel .user-kv {
+    grid-template-columns: 1fr;
+  }
+  .wrap.user-panel .connection-section + .plan-section {
+    /* keep stacked on narrow desktop for readability */
+  }
+}
+
+@media (max-width: 768px) {
+  .wrap.user-panel {
+    padding: 20px 16px 56px;
+  }
+  .wrap.user-panel .usage-kpis {
+    grid-template-columns: 1fr;
+  }
+  .wrap.user-panel .user-panel-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .wrap.user-panel .user-panel-account {
+    align-items: flex-start;
+  }
+  .wrap.user-panel .connection-url {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .wrap.user-panel .connection-url .url-text {
+    overflow-x: auto;
+    white-space: nowrap;
+    text-overflow: clip;
+  }
+}
+
+/* Codex chart SVG styling — JS-drawn series, event guides, and nodes.
+   Pure color/opacity rules; never dataset. */
+body.has-shell .codex-series-area.series-week {
+  fill: #e8f4f3;
+  fill-opacity: .76;
+  stroke: none;
+}
+
+body.has-shell .codex-series-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+body.has-shell .codex-series-line.series-five {
+  stroke: var(--codex-five);
+  stroke-width: 2.5;
+  stroke-dasharray: 9 7;
+}
+
+body.has-shell .codex-series-line.series-week {
+  stroke: var(--codex-week);
+  stroke-width: 3.25;
+  stroke-dasharray: none;
+}
+
+body.has-shell .codex-week-event-line {
+  stroke: rgba(8, 127, 131, .28);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  vector-effect: non-scaling-stroke;
+}
+
+body.has-shell .codex-week-event-guide rect {
+  fill: #fff;
+  stroke: #bfdedc;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+body.has-shell .codex-week-event-guide text {
+  fill: var(--codex-week-dark);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 720;
+  font-variant-numeric: tabular-nums;
+}
+
+body.has-shell .codex-week-event-node {
+  fill: #fff;
+  stroke: var(--codex-week);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+body.has-shell .codex-week-event-node.is-highlighted {
+  fill: var(--codex-week);
+  stroke: #fff;
+  stroke-width: 2.5;
+}
+
+body.has-shell .codex-week-event-node.is-reset {
+  fill: var(--codex-week);
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+body.has-shell .codex-week-event-guide.is-reset .codex-week-event-line {
+  stroke-dasharray: none;
+  stroke-width: 1.8;
+}
+
+body.has-shell .codex-week-event-guide.is-reset rect {
+  stroke: var(--codex-week);
+  stroke-width: 1.4;
+}
+

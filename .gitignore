@@ -15,6 +15,9 @@ backups/
 .superpowers/
 .worktrees/
 .ruff_cache/
+node_modules/
+test-results/
+playwright-report/
 
 # Local backup files
 *.bak

@@ -63,6 +63,8 @@ def test_mobile_sidebar_contains_focus_and_removes_background_skip_target():
     page = ss.render_admin_shell("dashboard", "总览", "<p>content</p>")
 
     assert '<a class="skip-link" href="#main-content">' in page
+    assert '/static/shell.js?v=' in page
+    page = ss.web_assets.ASSETS['/static/shell.js'][0].decode()
     assert "var skip = document.querySelector('.skip-link')" in page
     assert "if (skip) skip.setAttribute('inert', '')" in page
     assert "if (skip) skip.removeAttribute('inert')" in page
@@ -111,8 +113,7 @@ def test_admin_and_usage_requests_timeout_back_off_and_remain_retryable():
         assert "POLL_BASE_MS = 30000" in script
         assert "POLL_MAX_MS = 240000" in script
         assert "RETRY_JITTER_MS = 4000" in script
-        assert "typeof AbortController" in script
-        assert "Promise.race([fetch(url, requestOptions), timeoutPromise])" in script
+        assert "window.Hy2UI.fetchWithTimeout(url, options, REQUEST_TIMEOUT_MS" in script
         assert "function retryDelay" in script
         assert "Math.pow(2, exponent)" in script
         assert "function scheduleNext" in script

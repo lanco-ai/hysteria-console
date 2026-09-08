@@ -1,0 +1,19 @@
+[
+  "01-public-entry.css",
+  "02-tokens-base.css",
+  "03-controls.css",
+  "04-home.css",
+  "05-auth.css",
+  "06-shell.css",
+  "07-overview-users.css",
+  "08-dialog-status.css",
+  "09-management.css",
+  "10-admin-common.css",
+  "11-health-calibration.css",
+  "12-operations-config.css",
+  "13-responsive.css",
+  "14-admin-sections.css",
+  "15-codex.css",
+  "16-user-panel.css",
+  "17-motion-workspace.css"
+]

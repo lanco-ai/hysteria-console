@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import web_assets
+
 
 @dataclass(frozen=True)
 class Context:
@@ -102,47 +104,7 @@ def render_config_editor(ctx: Context, host, flash='', *, draft=None, expected_r
     </form>
   </section>
 </div>
-<script>
-(function(){{
-  var editor = document.getElementById('configEditor');
-  var errorDiv = document.getElementById('jsonError');
-  function showError(msg) {{ errorDiv.textContent=msg; errorDiv.classList.add('visible'); editor.classList.add('invalid'); editor.setAttribute('aria-invalid', 'true'); }}
-  function clearError() {{ errorDiv.textContent=''; errorDiv.classList.remove('visible'); editor.classList.remove('invalid'); editor.removeAttribute('aria-invalid'); }}
-  function validateJson() {{
-    try {{ JSON.parse(editor.value); clearError(); return true; }}
-    catch(e) {{ showError('JSON 语法错误: ' + e.message); return false; }}
-  }}
-  document.getElementById('cfgFormat').addEventListener('click', function() {{
-    try {{ editor.value = JSON.stringify(JSON.parse(editor.value), null, 2); clearError(); }}
-    catch(e) {{ showError('JSON 语法错误: ' + e.message); }}
-  }});
-  document.getElementById('cfgCollapse').addEventListener('click', function() {{
-    try {{
-      var obj = JSON.parse(editor.value);
-      var isCompact = !editor.value.includes('\\n');
-      editor.value = isCompact ? JSON.stringify(obj, null, 2) : JSON.stringify(obj);
-    }} catch(e) {{}}
-  }});
-  var allowFocusExit = false;
-  editor.addEventListener('keydown', function(e) {{
-    if (e.key === 'Escape') {{ allowFocusExit = true; return; }}
-    if (e.key !== 'Tab') {{ allowFocusExit = false; return; }}
-    if (e.shiftKey || allowFocusExit) {{ allowFocusExit = false; return; }}
-    e.preventDefault();
-    var s=this.selectionStart, t=this.selectionEnd;
-    this.value = this.value.substring(0,s) + '  ' + this.value.substring(t);
-    this.selectionStart = this.selectionEnd = s + 2;
-  }});
-  var validateTimer;
-  editor.addEventListener('input', function() {{
-    clearTimeout(validateTimer);
-    validateTimer = setTimeout(validateJson, 500);
-  }});
-  document.getElementById('configForm').addEventListener('submit', function(e) {{
-    if (!validateJson()) {{ e.preventDefault(); editor.focus(); }}
-  }});
-}})();
-</script>'''
+{web_assets.script_tag('config-editor')}'''
     return ctx.render_admin_shell('config', '订阅模板配置', content, badge=host)
 
 
@@ -330,7 +292,7 @@ def render_rules(ctx: Context, host, flash='', *, raw_draft=None, expected_revis
     <div class="data-table-wrap" tabindex="0" aria-label="路由规则，可横向滚动">
       <table class="data-table">
         <thead>
-          <tr><th style="width:50px;">#</th><th>类型</th><th>匹配</th><th>动作</th><th style="width:90px;">操作</th></tr>
+          <tr><th class="rule-index-column">#</th><th>类型</th><th>匹配</th><th>动作</th><th class="rule-actions-column">操作</th></tr>
         </thead>
         <tbody>{rows or '<tr><td colspan="5" class="empty">暂无规则</td></tr>'}</tbody>
       </table>
@@ -338,23 +300,5 @@ def render_rules(ctx: Context, host, flash='', *, raw_draft=None, expected_revis
   </section>
 
 </div><!-- /.admin-page -->
-<script>
-var rulePackScope = document.getElementById('rule-pack-scope');
-var rulePackUser = document.getElementById('rule-pack-user');
-function syncRulePackUser() {{
-  if (!rulePackScope || !rulePackUser) return;
-  var needsUser = rulePackScope.value === 'user';
-  rulePackUser.disabled = !needsUser;
-  rulePackUser.required = needsUser;
-  if (!needsUser) rulePackUser.value = '';
-}}
-if (rulePackScope) rulePackScope.addEventListener('change', syncRulePackUser);
-syncRulePackUser();
-document.addEventListener('submit', function(ev){{
-  var f = ev.target;
-  if (f && f.tagName==='FORM' && f.dataset.action==='delete-rule') {{
-    if (!confirm('确认删除此规则？')) ev.preventDefault();
-  }}
-}});
-</script>'''
+{web_assets.script_tag('rules')}'''
     return ctx.render_admin_shell('rules', '订阅路由规则', content, badge=f'{len(rules)} 条')

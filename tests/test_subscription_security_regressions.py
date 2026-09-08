@@ -488,7 +488,7 @@ def test_inactive_password_session_gets_safe_status_page_and_no_live_data(
     assert panel.status == 403
     assert expected_message.encode("utf-8") in panel.body
     assert b"never-render-this-token" not in panel.body
-    assert b"var pollUrl" not in panel.body
+    assert b"/static/user-poll.js?v=" not in panel.body
     assert 'href="/user/change-password"'.encode() not in panel.body
     assert "退出登录".encode("utf-8") in panel.body
     assert payload.status == 403

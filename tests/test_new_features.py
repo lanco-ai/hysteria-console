@@ -586,10 +586,8 @@ def test_user_panel_wires_live_refresh_poll(tmp_path, monkeypatch):
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '/panel/alice.json?token=tok' in page
-    assert "function retryDelay()" in page
-    assert "function scheduleNext()" in page
-    assert "setInterval(tick" not in page
-    assert "activeController" in page
+    assert '/static/user-poll.js?v=' in page
+    assert 'data-poll-url="/panel/alice.json?token=tok"' in page
     for role in ('used', 'remain', 'online', 'percent', 'bar', 'txrx', 'poll-status'):
         assert f'data-role="{role}"' in page
 
@@ -977,7 +975,7 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     assert 'http://h/sub/alice?token=tok&amp;profile=work' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=lowdata' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=safe' in page
-    assert "function selectProfile(option)" in page
+    assert '/static/user-panel.js?v=' in page
 
 
 def test_protocol_hourly_accumulator_records_source_totals(tmp_path, monkeypatch):
@@ -1505,7 +1503,7 @@ def test_render_user_panel_disabled_shows_banner_and_omits_poll(tmp_path, monkey
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '账号已停用，请联系管理员' in page
     assert 'class="err"' in page
-    assert 'var pollUrl' not in page
+    assert '/static/user-poll.js?v=' not in page
     assert '/panel/alice.json' not in page
 
 
@@ -1525,7 +1523,7 @@ def test_render_user_panel_expired_shows_banner_and_omits_poll(tmp_path, monkeyp
     }
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '账号已到期，请联系管理员续费' in page
-    assert 'var pollUrl' not in page
+    assert '/static/user-poll.js?v=' not in page
     assert '/panel/alice.json' not in page
 
 
@@ -1539,7 +1537,7 @@ def test_render_user_panel_enabled_still_has_poll(tmp_path, monkeypatch):
     (tmp_path / 'meta.json').write_text('{}')
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
-    assert 'var pollUrl' in page
+    assert '/static/user-poll.js?v=' in page
     assert '<div class="err"' not in page
 
 
@@ -1584,11 +1582,10 @@ def test_user_panel_poll_url_escapes_left_angle(tmp_path, monkeypatch):
     (tmp_path / 'meta.json').write_text('{}')
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'a<b', 'tok', cfg)
-    # The poll URL line must carry the escaped form, not a raw '</'.
-    assert '\\u003c' in page
-    assert 'var pollUrl' in page
-    poll_line = [ln for ln in page.splitlines() if 'var pollUrl' in ln][0]
-    assert '<' not in poll_line
+    # Attribute encoding must preserve the URL without injecting HTML.
+    assert 'data-poll-url="/panel/a&lt;b.json?token=tok"' in page
+    assert '/static/user-poll.js?v=' in page
+    assert 'data-poll-url="/panel/a<b' not in page
 
 
 # F8: alerts.dispatch returns a result dict and reports failed channels.

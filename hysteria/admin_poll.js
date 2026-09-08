@@ -2,7 +2,7 @@
   // [hidden]{display:none!important} lives in admin.css — no runtime style
   // injection needed here.
 
-  function fmt(n){n=Math.max(0,Number(n)||0);var u=['B','KB','MB','GB','TB'],i=0;while(n>=1024&&i<u.length-1){n/=1024;i++;}return n.toFixed(2)+' '+u[i];}
+  var fmt = window.Hy2UI.formatBytes;
   function setText(el,v){ if(el && el.textContent!==v) el.textContent=v; }
   function setStyle(el,prop,v){ if(el && el.style[prop]!==v) el.style[prop]=v; }
   function setClass(el,cls,on){ if(el && el.classList.contains(cls)!==on) el.classList.toggle(cls,on); }
@@ -129,22 +129,10 @@
   }
   async function fetchWithTimeout(url, options){
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
-    var requestOptions = Object.assign({}, options || {});
-    if (controller) requestOptions.signal = controller.signal;
     activeController = controller;
-    var timeoutId = null;
-    var timeoutError = new Error('request timeout');
-    timeoutError.code = 'timeout';
-    var timeoutPromise = new Promise(function(_resolve, reject){
-      timeoutId = setTimeout(function(){
-        reject(timeoutError);
-        if (controller) controller.abort();
-      }, REQUEST_TIMEOUT_MS);
-    });
     try {
-      return await Promise.race([fetch(url, requestOptions), timeoutPromise]);
+      return await window.Hy2UI.fetchWithTimeout(url, options, REQUEST_TIMEOUT_MS, controller);
     } finally {
-      if (timeoutId) clearTimeout(timeoutId);
       if (activeController === controller) activeController = null;
     }
   }

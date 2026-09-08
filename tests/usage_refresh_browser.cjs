@@ -1,12 +1,13 @@
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const assert=require('node:assert/strict');
+const baseUrl = process.env.PREVIEW_BASE_URL || 'http://127.0.0.1:18764';
 (async()=>{
  const browser=await chromium.launch({args:['--no-sandbox']});
  try {
   const p=await browser.newPage();let count=0;
   await p.route('**/admin/analytics.json*',r=>r.fulfill({json:{stats:{current_hour_bytes:1073741824,today_bytes:2147483648,last_7d_bytes:3221225472,cycle_bytes:4294967296,online:7,cycle_day:2,cycle_total_days:30}}}));
   await p.route('**/admin/usage-history',r=>r.fulfill({contentType:'text/html',body:`<p data-test-history>快照 ${++count}</p>`}));
-  await p.goto('http://127.0.0.1:18764/admin/usage');
+  await p.goto(baseUrl + '/admin/usage');
   await p.waitForFunction(()=>document.querySelector('[data-role=usage-online]').textContent==='7');
   assert.equal(await p.locator('[data-stat=current_hour] .metric-v').textContent(),'1.00 GB');
   assert.equal(await p.locator('[data-stat=today] .metric-v').textContent(),'2.00 GB');

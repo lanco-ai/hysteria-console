@@ -34,6 +34,7 @@ import admin_account_routes
 import admin_user_status_routes
 import admin_user_delete_routes
 import auth_views
+import web_assets
 import user_views
 import admin_views
 import console_shell_views
@@ -3123,6 +3124,18 @@ class Handler(BaseHTTPRequestHandler):
                 'application/javascript; charset=utf-8',
                 send_payload,
                 cache_control=_static_asset_cache_control(q, HOME_JS_ETAG),
+            )
+            return
+
+        page_asset = web_assets.ASSETS.get(path)
+        if page_asset is not None:
+            payload, etag = page_asset
+            self._serve_static(
+                payload,
+                etag,
+                'application/javascript; charset=utf-8',
+                send_payload,
+                cache_control=_static_asset_cache_control(q, etag),
             )
             return
 

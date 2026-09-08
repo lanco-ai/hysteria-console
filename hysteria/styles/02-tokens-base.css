@@ -1,0 +1,177 @@
+/* ---- DESIGN TOKENS ---- */
+:root {
+  color-scheme: light;
+
+  /* Background */
+  --bg-page: #F8F7F3;
+  --bg-surface: #FFFFFF;
+  --bg-subtle: #F3F2EE;
+  --bg-overlay: #FAFAF8;
+
+  /* Text */
+  --text-primary: #111111;
+  --text-secondary: #5F5E59;
+  --text-tertiary: #92918B;
+  --text-disabled: #B9B8B2;
+
+  /* Border */
+  --hairline: #E6E4DE;
+  --border: #D8D6CF;
+  --border-strong: #BDBBB4;
+
+  /* Accent */
+  --accent: #111111;
+  --accent-hover: #292929;
+  --accent-soft: rgba(17, 17, 17, 0.06);
+
+  /* States */
+  --ok: #1A7F4E;
+  --ok-soft: #E8F5EE;
+  --warn: #92660A;
+  --warn-soft: #FDF4E3;
+  --danger: #B64138;
+  --danger-soft: #FFF6F5;
+
+  /* Data accent */
+  --data: #2C6E7F;
+  --data-soft: rgba(44,110,127,.10);
+
+  /* Border Radius */
+  --radius-xs: 3px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  /* Fonts */
+  --font-sans: "Inter", "Noto Sans SC", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+  --font-serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", Georgia, serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
+  --font-num: "Inter", "Noto Sans SC", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+  --font-label: "JetBrains Mono", "Noto Sans SC", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+
+  /* Font Size */
+  --text-caption: 11px;
+  --text-small: 12px;
+  --text-ui: 13px;
+  --text-body: 14px;
+  --text-body-lg: 15px;
+  --text-card-title: 16px;
+  --text-section: 28px;
+  --text-hero: 72px;
+
+  /* Shadows */
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.04);
+  --shadow-sm: 0 2px 8px rgba(0,0,0,.04);
+  --shadow-md: 0 8px 24px rgba(0,0,0,.05);
+  --shadow-lg: 0 16px 40px rgba(0,0,0,.04);
+
+  /* Transitions */
+  --transition: 150ms ease;
+  --transition-md: 250ms ease;
+}
+
+/* ---- FONT FACES ---- */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/static/fonts/inter-var.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/static/fonts/jetbrains-mono.woff2") format("woff2");
+}
+
+.stat-block-v {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-body);
+  font-family: var(--font-num);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1, "zero" 1;
+  color: var(--text-primary);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  min-height: 100%;
+  background: var(--bg-page);
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  color: var(--text-primary);
+  background: var(--bg-page);
+  font-family: var(--font-sans);
+  font-size: var(--text-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+}
+
+a { color: inherit; text-decoration: none; }
+a:hover { color: var(--accent); }
+
+img, svg { display: block; max-width: 100%; }
+
+::selection { background: rgba(17,17,17,.06); }
+
+:focus-visible {
+  outline: 1px solid var(--data);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 3px var(--data-soft);
+  border-radius: var(--radius-xs);
+}
+
+[hidden] { display: none !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: var(--radius-pill); }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ---- SKIP LINK (Accessibility) ---- */
+.skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 10000;
+  padding: 10px 14px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  line-height: 1;
+  text-decoration: none;
+  transform: translateY(-200%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform var(--transition), opacity var(--transition);
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+

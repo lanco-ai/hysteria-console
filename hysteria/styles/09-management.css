@@ -1,0 +1,413 @@
+/* Inline form (admin shell) */
+body.has-shell .user-identity { flex-wrap: nowrap; }
+body.has-shell .user-identity-copy { min-width: 0; }
+body.has-shell .usage-label { justify-content: space-between; margin-bottom: 4px; }
+body.has-shell .users-table .row-error { color: var(--danger); margin-top: 4px; }
+body.has-shell .form-field.form-field-wide { grid-column: 1 / -1; }
+body.has-shell .reset-all-button { margin-top: 10px; }
+
+.inline-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inline-form input,
+.inline-form select {
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  outline: none;
+}
+
+.inline-form input:focus,
+.inline-form select:focus {
+  border-color: var(--accent);
+}
+
+/* Inline form row */
+.inline-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inline-form-row input {
+  height: 32px;
+  padding: 0 10px;
+  font-size: var(--text-small);
+}
+
+/* Cycle config form */
+.cycle-config-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cycle-config-form label {
+  font-size: var(--text-small);
+  color: var(--text-tertiary);
+}
+
+.cycle-config-form input {
+  width: 60px;
+  height: 32px;
+  text-align: center;
+}
+
+/* User Avatar */
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+/* Danger Button Variant */
+.danger-btn {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border: 1px solid rgba(182, 65, 56, 0.15);
+}
+
+.danger-btn:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+/* Mini Progress Bar */
+.mini-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 400ms ease;
+}
+
+.mini-fill.danger { background: var(--danger); }
+.mini-fill.warn { background: var(--warn); }
+
+/* Edit User Control */
+.edit-user-control {
+  margin-bottom: 8px;
+}
+
+/* User Actions */
+.user-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.row-error {
+  font-size: var(--text-small);
+}
+
+/* Link Cell */
+.link-cell {
+  vertical-align: middle;
+}
+
+.link-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.link-row:last-child {
+  margin-bottom: 0;
+}
+
+.link-row a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-small);
+  color: var(--text-secondary);
+  transition: color var(--transition);
+}
+
+.link-row a:hover {
+  color: var(--text-primary);
+}
+
+.link-row a svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Switch / Checkbox */
+.switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-ui);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.switch input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+/* Hint Text */
+.hint {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
+}
+
+/* Spark Chart Cell */
+.spark-cell {
+  width: 120px;
+}
+
+/* Create Section */
+.create-section {
+  margin-top: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+
+.create-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  font-size: var(--text-ui);
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--transition);
+}
+
+.create-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.create-toggle::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--text-tertiary);
+  border-bottom: 1.5px solid var(--text-tertiary);
+  transform: rotate(-45deg);
+  transition: transform var(--transition);
+}
+
+.create-section[open] .create-toggle::before {
+  transform: rotate(45deg);
+}
+
+.create-section[open] .create-toggle {
+  color: var(--text-primary);
+}
+
+.create-form {
+  padding: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.create-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-field label {
+  font-size: var(--text-small);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.form-field input,
+.form-field select {
+  height: 36px;
+  padding: 0 10px;
+  font-family: var(--font-sans);
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  outline: none;
+}
+
+.form-field input:focus,
+.form-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.form-field .hint a {
+  color: var(--text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Landing egress management */
+body.has-shell .landing-node-list {
+  padding-bottom: 0;
+}
+
+body.has-shell .landing-node-list .data-table-wrap {
+  margin: 0 -24px;
+}
+
+body.has-shell .landing-node-list .data-table th:first-child,
+body.has-shell .landing-node-list .data-table td:first-child {
+  padding-left: 24px;
+}
+
+body.has-shell .landing-node-list .data-table th:last-child,
+body.has-shell .landing-node-list .data-table td:last-child {
+  padding-right: 24px;
+}
+
+body.has-shell .landing-node-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+body.has-shell .landing-access-list {
+  border-top: 1px solid var(--hairline);
+}
+
+body.has-shell .landing-access-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.7fr) minmax(260px, 2fr) auto;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+body.has-shell .landing-access-user {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+body.has-shell .landing-access-user strong {
+  overflow-wrap: anywhere;
+}
+
+body.has-shell .landing-access-choices {
+  display: flex;
+  align-items: center;
+  gap: 10px 18px;
+  min-width: 0;
+  border: 0;
+  flex-wrap: wrap;
+}
+
+body.has-shell .landing-access-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+
+body.has-shell .landing-access-choice input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+body.has-shell .landing-access-choice:has(input:disabled) {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+
+body.has-shell .landing-empty {
+  padding: 20px;
+  color: var(--text-tertiary);
+  background: var(--bg-subtle);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  text-align: center;
+}
+
+@media (max-width: 768px) {
+  body.has-shell .landing-node-list .data-table-wrap {
+    margin-right: -16px;
+    margin-left: -16px;
+  }
+
+  body.has-shell .landing-node-list .data-table th:first-child,
+  body.has-shell .landing-node-list .data-table td:first-child {
+    padding-left: 16px;
+  }
+
+  body.has-shell .landing-node-list .data-table th:last-child,
+  body.has-shell .landing-node-list .data-table td:last-child {
+    padding-right: 16px;
+  }
+
+  body.has-shell .landing-access-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  body.has-shell .landing-access-row .btn {
+    width: 100%;
+  }
+
+  body.has-shell .landing-node-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  body.has-shell .landing-node-actions .btn {
+    width: 100%;
+  }
+}
+
+.form-options {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}

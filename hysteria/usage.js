@@ -21,20 +21,8 @@
   var lastChartsAt = Date.now();
   var lastChartSignature = null;
 
-  function fmtBytes(n) {
-    var v = Math.max(0, Number(n) || 0);
-    if (!v) return "0 B";
-    var u = ["B", "KB", "MB", "GB", "TB"];
-    var i = 0;
-    while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
-    return v.toFixed(2) + " " + u[i];
-  }
-
-  function escapeHtml(value) {
-    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
-      return {"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[ch];
-    });
-  }
+  function fmtBytes(value) { return window.Hy2UI.formatBytes(value, true); }
+  var escapeHtml = window.Hy2UI.escapeHtml;
 
   function attachHover(svg) {
     if (!svg || !tip) return;
@@ -123,20 +111,7 @@
   }
 
   function fetchWithTimeout(url, options) {
-    var controller = typeof AbortController === "function" ? new AbortController() : null;
-    var requestOptions = Object.assign({}, options || {});
-    if (controller) requestOptions.signal = controller.signal;
-    var timeoutId = null;
-    var timeoutError = new Error("request timeout");
-    timeoutError.code = "timeout";
-    var timeoutPromise = new Promise(function (_resolve, reject) {
-      timeoutId = setTimeout(function () {
-        reject(timeoutError);
-        if (controller) controller.abort();
-      }, REQUEST_TIMEOUT_MS);
-    });
-    return Promise.race([fetch(url, requestOptions), timeoutPromise])
-      .finally(function () { if (timeoutId) clearTimeout(timeoutId); });
+    return window.Hy2UI.fetchWithTimeout(url, options, REQUEST_TIMEOUT_MS);
   }
 
   function updateHourlyChart(svg, series) {

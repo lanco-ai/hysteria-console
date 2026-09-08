@@ -31,11 +31,7 @@
   var MIN_EVENT_LABEL_GAP = 128;
   var REQUEST_TIMEOUT_MS = 10000;
 
-  function escapeHtml(value) {
-    return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
-      return {"&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"}[ch];
-    });
-  }
+  var escapeHtml = window.Hy2UI.escapeHtml;
 
   function numberOrNull(value) {
     var n = Number(value);

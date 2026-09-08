@@ -6,6 +6,8 @@ import html
 from dataclasses import dataclass
 from typing import Callable
 
+import web_assets
+
 
 @dataclass(frozen=True)
 class Context:
@@ -77,6 +79,7 @@ def html_page(ctx: Context, title, body, body_class=''):
         f'<meta name="theme-color" content="#F8F7F3">'
         f'<title>{html.escape(title)}</title>'
         f'<link rel="stylesheet" href="/static/style.css?v={css_version}">'
+        f'{web_assets.script_tag("ui-core")}'
         f'</head><body{cls}>{page_body}</body></html>'
     )
 

@@ -1,8 +1,9 @@
-"""Keep the pre-extraction login bodies, including escaping and identity handling."""
+"""Preserve login form contracts and escaping across script extraction."""
 
 import hashlib
 import html
 import importlib
+from html.parser import HTMLParser
 
 import pytest
 
@@ -41,4 +42,38 @@ def test_login_body_matches_pre_extraction_baseline(case):
     if case['name'] == 'render_login':
         dependencies['icon'] = lambda name: '<i></i>'
     body = getattr(views, case['name'])(**dependencies, **case['kwargs'])
-    assert hashlib.sha256(body.encode()).hexdigest() == case['hash']
+    if case['name'] == 'render_user_login':
+        assert hashlib.sha256(body.encode()).hexdigest() == case['hash']
+        return
+
+    class Fields(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.inputs = {}
+            self.forms = []
+            self.scripts = []
+
+        def handle_starttag(self, tag, attrs):
+            attributes = dict(attrs)
+            if tag == 'input':
+                self.inputs[attributes['name']] = attributes
+            elif tag == 'form':
+                self.forms.append(attributes)
+            elif tag == 'script':
+                self.scripts.append(attributes)
+
+    fields = Fields()
+    fields.feed(body)
+    assert fields.forms[0]['action'] == '/login'
+    assert fields.forms[0]['method'] == 'post'
+    assert fields.inputs['admin_password']['type'] == 'password'
+    expected = (
+        case['kwargs'].get('username', '')
+        if case['kwargs'].get('active_tab', 'admin') == 'admin'
+        else ''
+    )
+    assert fields.inputs['admin_username']['value'] == expected
+    assert 'autofocus' not in fields.inputs['admin_username']
+    assert len(fields.scripts) == 1
+    assert fields.scripts[0]['src'].startswith('/static/login.js?v=')
+    assert 'private error' not in body
