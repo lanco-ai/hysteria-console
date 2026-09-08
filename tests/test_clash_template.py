@@ -107,7 +107,8 @@ def test_ipv6_dead_end_rules_precede_proxy_rules():
     first_proxy_rule = rules.index("DOMAIN-SUFFIX,openai.com,🤖 GPT 优化")
     first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
 
-    assert rules[2:5] == ipv6_rules
+    # All three guards must precede proxy dispatch; their relative order is immaterial.
+    assert set(rules[2:5]) == set(ipv6_rules)
     assert all(rules.index(rule) < first_proxy_rule for rule in ipv6_rules)
     assert all(rules.index(rule) < first_ruleset for rule in ipv6_rules)
 
@@ -218,7 +219,9 @@ def test_overleaf_rules_precede_external_rulesets():
         "DOMAIN-SUFFIX,overleafusercontent.com,🚀 节点选择",
         "DOMAIN-SUFFIX,sharelatex.com,🚀 节点选择",
     ]
-    first_ruleset = next(i for i, rule in enumerate(rules) if rule.startswith("RULE-SET,"))
+    # Telegram's dedicated IP set cannot match Overleaf domains. The relevant
+    # boundary is the general ruleset chain, beginning with reject.
+    first_ruleset = rules.index('RULE-SET,reject,REJECT')
 
     assert all(rule in rules for rule in overleaf_rules)
     assert all(rules.index(rule) < first_ruleset for rule in overleaf_rules)
@@ -258,7 +261,60 @@ def test_google_rules_precede_external_rulesets():
     assert "DOMAIN-SUFFIX,recaptcha.net,🌐 Google 优化" in rules
     assert "DOMAIN-SUFFIX,doubleclick.net,🌐 Google 优化" in rules
     assert "DOMAIN-SUFFIX,firebaseapp.com,🌐 Google 优化" in rules
-    assert not any("google" in rule.lower() and rule.endswith(",DIRECT") for rule in rules)
+    google_direct_rules = [
+        rule for rule in rules
+        if "google" in rule.lower() and rule.endswith(",DIRECT")
+    ]
+    assert google_direct_rules == ["DOMAIN-SUFFIX,googleapis.cn,DIRECT"]
+
+
+def test_google_play_required_domains_use_google_group():
+    cfg = load_template()
+    rules = cfg["rules"]
+    first_general_rule = next(
+        i for i, rule in enumerate(rules)
+        if rule.startswith(("RULE-SET,", "GEOIP,", "MATCH,"))
+    )
+
+    for domain in (
+        "android.com",
+        "google.com",
+        "googleapis.com",
+        "gstatic.com",
+        "googleusercontent.com",
+        "ggpht.com",
+        "gvt1.com",
+        "gvt2.com",
+        "gvt3.com",
+    ):
+        rule = f"DOMAIN-SUFFIX,{domain},🌐 Google 优化"
+        assert rule in rules
+        assert rules.index(rule) < first_general_rule
+
+
+def test_google_play_store_and_mainland_download_chain_use_split_routes():
+    cfg = load_template()
+    rules = cfg["rules"]
+
+    def explicit_domain_action(host):
+        for rule in rules:
+            parts = rule.split(",")
+            if parts[0] == "RULE-SET":
+                return None
+            if parts[0] == "DOMAIN" and host == parts[1]:
+                return parts[2]
+            if parts[0] == "DOMAIN-SUFFIX" and (
+                host == parts[1] or host.endswith(f".{parts[1]}")
+            ):
+                return parts[2]
+        return None
+
+    assert explicit_domain_action("play.google.com") == "🌐 Google 优化"
+    assert explicit_domain_action("android.clients.google.com") == "🌐 Google 优化"
+    assert explicit_domain_action("services.googleapis.cn") == "DIRECT"
+    assert explicit_domain_action(
+        "rr1---sn-ni57rn7d.xn--ngstr-lra8j.com"
+    ) == "DIRECT"
 
 
 def test_telegram_rules_precede_general_rulesets():
@@ -282,56 +338,81 @@ def test_telegram_rules_precede_general_rulesets():
 def test_github_dns_uses_overseas_resolvers():
     cfg = load_template()
     policy = cfg["dns"]["nameserver-policy"]
+    direct_index = list(policy).index("rule-set:direct")
 
     for domain in ("+.github.com", "+.githubusercontent.com", "+.ghcr.io"):
         assert policy[domain] == [
             "https://1.1.1.1/dns-query",
-            "https://8.8.8.8/dns-query",
+            "https://dns.google/dns-query",
         ]
+        assert list(policy).index(domain) < direct_index
 
 
 def test_gpt_dns_uses_overseas_resolvers():
     cfg = load_template()
     policy = cfg["dns"]["nameserver-policy"]
+    direct_index = list(policy).index("rule-set:direct")
 
     for domain in ("+.openai.com", "+.chatgpt.com", "+.oaistatic.com", "+.oaiusercontent.com"):
         assert policy[domain] == [
             "https://1.1.1.1/dns-query",
-            "https://8.8.8.8/dns-query",
+            "https://dns.google/dns-query",
         ]
+        assert list(policy).index(domain) < direct_index
 
 
-def test_google_dns_uses_overseas_resolvers():
+def test_google_play_dns_uses_overseas_resolvers():
     cfg = load_template()
     policy = cfg["dns"]["nameserver-policy"]
+    direct_index = list(policy).index("rule-set:direct")
 
     for domain in (
+        "+.android.com",
         "+.google.com",
-        "+.gmail.com",
         "+.googleapis.com",
         "+.gstatic.com",
-        "+.googleadservices.com",
-        "+.googletagmanager.com",
-        "+.doubleclick.net",
-        "+.recaptcha.net",
+        "+.googleusercontent.com",
+        "+.ggpht.com",
+        "+.gvt1.com",
         "+.gvt2.com",
-        "+.firebaseapp.com",
+        "+.gvt3.com",
     ):
         assert policy[domain] == [
             "https://1.1.1.1/dns-query",
-            "https://8.8.8.8/dns-query",
+            "https://dns.google/dns-query",
         ]
+        assert list(policy).index(domain) < direct_index
+
+
+def test_google_play_mainland_download_dns_uses_domestic_resolvers():
+    cfg = load_template()
+    policy = cfg["dns"]["nameserver-policy"]
+
+    for domain in ("+.googleapis.cn", "+.xn--ngstr-lra8j.com"):
+        assert policy[domain] == [
+            "https://doh.pub/dns-query",
+            "https://dns.alidns.com/dns-query",
+        ]
+
+
+def test_direct_dns_policy_is_the_last_fallback():
+    cfg = load_template()
+    policy = cfg["dns"]["nameserver-policy"]
+
+    assert list(policy)[-1] == "rule-set:direct"
 
 
 def test_telegram_dns_uses_overseas_resolvers():
     cfg = load_template()
     policy = cfg["dns"]["nameserver-policy"]
+    direct_index = list(policy).index("rule-set:direct")
 
     for domain in ("+.telegram.org", "+.telegram.me", "+.t.me", "+.telegra.ph"):
         assert policy[domain] == [
             "https://1.1.1.1/dns-query",
-            "https://8.8.8.8/dns-query",
+            "https://dns.google/dns-query",
         ]
+        assert list(policy).index(domain) < direct_index
 
 
 def test_tcp_vless_nodes_do_not_tunnel_udp():

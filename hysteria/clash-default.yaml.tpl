@@ -39,19 +39,22 @@ dns:
 
   # nameserver-policy：
   #   - rule-set:direct → 国内 DoH（直连）
-  #   - GitHub / OpenAI / Telegram → 海外 DoH（代理）
-  #   - Steam 域名 → 国内 DoH（直连，国内 CDN 低延迟）
+  #   - GitHub / OpenAI / Google Play 海外服务 / Telegram → 海外 DoH（代理）
+  #   - Steam 与 Google Play 中国大陆下载链 → 国内 DoH（直连）
   nameserver-policy:
-    # 国内域名用国内 DNS（直连，低延迟）
-    'rule-set:direct':
-      - https://doh.pub/dns-query
-      - https://dns.alidns.com/dns-query
-
     # Steam 国内 CDN（直连，国内低延迟）
     '+.steamcontent.com':
       - https://doh.pub/dns-query
       - https://dns.alidns.com/dns-query
     '+.steamserver.net':
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+
+    # Google Play 中国大陆下载链（国内选区 API 与安装包 CDN 直连）
+    '+.googleapis.cn':
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
+    '+.xn--ngstr-lra8j.com':
       - https://doh.pub/dns-query
       - https://dns.alidns.com/dns-query
 
@@ -116,6 +119,35 @@ dns:
       - https://1.1.1.1/dns-query
       - https://dns.google/dns-query
 
+    # Google Play 海外服务：商店、认证、API 与海外 CDN 使用海外解析
+    '+.android.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.google.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.googleapis.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.gstatic.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.googleusercontent.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.ggpht.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.gvt1.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.gvt2.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+    '+.gvt3.com':
+      - https://1.1.1.1/dns-query
+      - https://dns.google/dns-query
+
     # Telegram
     '+.telegram.org':
       - https://1.1.1.1/dns-query
@@ -135,6 +167,12 @@ dns:
     '+.tdesktop.com':
       - https://1.1.1.1/dns-query
       - https://dns.google/dns-query
+
+    # 兜底：未被以上特例命中的国内域名用国内 DNS
+    # 必须放在海外域名策略之后，避免 direct 规则集抢先匹配
+    'rule-set:direct':
+      - https://doh.pub/dns-query
+      - https://dns.alidns.com/dns-query
 
   # fake-ip-filter（同前）
   fake-ip-filter:
@@ -510,7 +548,12 @@ rules:
   - 'DOMAIN-SUFFIX,chatgpt.livekit.cloud,🤖 GPT 优化'
   - 'DOMAIN,challenges.cloudflare.com,🤖 GPT 优化'
 
+  # Google Play 中国大陆下载链（国内 CDN 直连）
+  - 'DOMAIN-SUFFIX,googleapis.cn,DIRECT'
+  - 'DOMAIN-SUFFIX,xn--ngstr-lra8j.com,DIRECT'
+
   # Google（🌐 Google 优化）
+  - 'DOMAIN-SUFFIX,android.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,google.com,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,google.com.hk,🌐 Google 优化'
   - 'DOMAIN-SUFFIX,google.com.tw,🌐 Google 优化'
