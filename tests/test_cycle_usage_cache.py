@@ -61,14 +61,16 @@ def _live_state(tmp_path, monkeypatch, *, daily=None, multiplier=1.0):
 
 
 def _counting_strict(monkeypatch):
+    from authorization_service import AuthorizationService
+
     calls = []
-    original = ss._cycle_usage_sum_strict
+    original = AuthorizationService._cycle_usage_sum_strict
 
     def counting(*args, **kwargs):
         calls.append(1)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(ss, "_cycle_usage_sum_strict", counting)
+    monkeypatch.setattr(AuthorizationService, "_cycle_usage_sum_strict", counting)
     return calls
 
 

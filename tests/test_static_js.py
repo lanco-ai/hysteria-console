@@ -39,7 +39,7 @@ def test_admin_poll_reports_errors_and_handles_user_list_changes():
     text = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")
     assert "刷新失败" in text
     assert "用户列表已有变化" in text
-    assert "data-user-count" in (ROOT / "hysteria" / "subscription_service.py").read_text(encoding="utf-8")
+    assert "data-user-count" in (ROOT / "hysteria" / "admin_views.py").read_text(encoding="utf-8")
 
 
 def test_polling_uses_tiered_lightweight_endpoints():
@@ -55,7 +55,7 @@ def test_polling_uses_tiered_lightweight_endpoints():
 
 def test_admin_uses_one_reusable_edit_dialog():
     js = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")
-    service = (ROOT / "hysteria" / "subscription_service.py").read_text(encoding="utf-8")
+    service = (ROOT / "hysteria" / "admin_views.py").read_text(encoding="utf-8")
     assert "user-edit-dialog" in js
     assert "function openEditDialog" in js
     assert 'id="user-edit-dialog"' in service

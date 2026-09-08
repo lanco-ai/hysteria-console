@@ -1289,7 +1289,9 @@ def test_pre_replace_failure_replays_prepared_generation_without_rekey(
         lambda *_args, **_kwargs: (False, False),
     )
     monkeypatch.setattr(ss, "hy_kick", lambda _users: None)
-    real_save = ss._save_users_for_rotation
+    from credential_service import CredentialService
+
+    real_save = CredentialService._save_users_for_rotation
     save_calls = 0
 
     def fail_before_replace_once(*args, **kwargs):
@@ -1300,7 +1302,7 @@ def test_pre_replace_failure_replays_prepared_generation_without_rekey(
         return real_save(*args, **kwargs)
 
     monkeypatch.setattr(
-        ss,
+        CredentialService,
         "_save_users_for_rotation",
         fail_before_replace_once,
     )
@@ -2307,7 +2309,7 @@ def test_delete_retry_never_purges_same_name_new_incarnation(
     )
     schedule_calls = 0
 
-    def defer_first_handoff(service, *, changed):
+    def defer_first_handoff(_self, service, *, changed):
         del changed
         nonlocal schedule_calls
         schedule_calls += 1
@@ -2321,8 +2323,10 @@ def test_delete_retry_never_purges_same_name_new_incarnation(
             retryable=not ok,
         )
 
+    from revocation_service import RevocationService
+
     monkeypatch.setattr(
-        ss, "_schedule_static_reload", defer_first_handoff,
+        RevocationService, "_schedule_static_reload", defer_first_handoff,
     )
     monkeypatch.setattr(
         ss.static_access,

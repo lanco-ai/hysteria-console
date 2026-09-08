@@ -266,12 +266,20 @@ def test_dashboard_page_contains_interactive_chart_and_missing_window_copy():
     assert 'class="codex-dashboard is-week-only"' not in page_with_both
 
 
-def test_codex_routes_static_asset_and_nav_are_wired():
+def test_codex_routes_static_asset_and_nav_are_wired(tmp_path, monkeypatch):
+    from tests.test_reliability_regressions import _configure_state, _request, _running_server
+
+    _configure_state(tmp_path, monkeypatch)
     service = Path('hysteria/subscription_service.py').read_text(encoding='utf-8')
 
     assert "('codex', '/admin/codex', 'Codex 额度', 'chart')" in service
-    assert "if path == '/admin/codex':" in service
-    assert "if path == '/admin/codex.json':" in service
+    with _running_server() as server:
+        page = _request(server, 'GET', '/admin/codex')
+        data = _request(server, 'GET', '/admin/codex.json')
+    assert page.status == 302
+    assert page.headers['location'] == '/login'
+    assert data.status == 401
+    assert data.body == b'{"error":"login_required"}'
     assert "if path == '/static/codex-quota.js':" in service
 
 

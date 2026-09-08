@@ -1,4 +1,5 @@
 """Integration tests for /admin/usage and /admin/user/<uid> routes."""
+import ast
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -93,10 +94,23 @@ def test_analytics_summary_payload_omits_chart_arrays(tmp_path, monkeypatch):
 
 def test_usage_json_route_is_not_shadowed_by_legacy_handler():
     src = Path(ss.__file__).read_text(encoding="utf-8")
-    assert src.count("if path == '/admin/usage.json':") == 1
-    assert src.count("if path == '/admin/overview.json':") == 1
-    assert src.count("if path == '/admin/analytics.json':") == 1
-    assert src.count("if path == '/admin/usage-history':") == 1
+    console_src = Path(ss.admin_console_routes.__file__).read_text(encoding="utf-8")
+    assert console_src.count("if path == '/admin/overview.json':") == 1
+    assert "if path == '/admin/overview.json':" not in src
+    assert src.count('admin_console_routes.handle_read(') == 1
+    routes_src = Path(ss.admin_read_routes.__file__).read_text(encoding="utf-8")
+    route_map = next(
+        node.value for node in ast.parse(routes_src).body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == '_ROUTES'
+                for target in node.targets)
+    )
+    registered_paths = [ast.literal_eval(key) for key in route_map.keys]
+    assert len(registered_paths) == len(set(registered_paths))
+    assert src.count('admin_read_routes.handle_read(') == 1
+    for path in ('/admin/usage.json', '/admin/analytics.json', '/admin/usage-history'):
+        assert registered_paths.count(path) == 1
+        assert f"if path == '{path}':" not in src
 
 
 def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):

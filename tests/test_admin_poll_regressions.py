@@ -15,6 +15,14 @@ def _read(rel):
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+def _presentation_source():
+    # These inline scripts now belong to their presentation modules.
+    return '\n'.join(_read('hysteria/' + name) for name in (
+        'subscription_service.py', 'console_shell_views.py',
+        'admin_views.py', 'operations_views.py',
+    ))
+
+
 def test_patch_user_row_syncs_revision_cache_not_just_dom():
     """tick() reads row.revision while the DOM carries tr.dataset.revision.
     Updating only the DOM side makes the next poll see a phantom change and
@@ -87,7 +95,7 @@ def test_delete_never_restores_detached_controls():
 
 
 def test_sidebar_collapse_controls_exist_in_shell():
-    src = _read("hysteria/subscription_service.py")
+    src = _presentation_source()
     css = _read("hysteria/admin.css")
     assert 'id="sidebar-collapse"' in src
     assert 'hy2.sidebar' in src
@@ -98,7 +106,7 @@ def test_sidebar_collapse_controls_exist_in_shell():
 
 
 def test_sidebar_collapse_animates_grid_track_after_first_paint():
-    src = _read("hysteria/subscription_service.py")
+    src = _presentation_source()
     css = _read("hysteria/admin.css")
     animated_app = re.search(
         r"\.app\.anim-ready \{(.*?)\n\}", css, re.DOTALL,
@@ -134,7 +142,7 @@ def test_sidebar_collapse_animates_grid_track_after_first_paint():
 
 
 def test_sidebar_motion_override_is_explicit_desktop_only_preference():
-    src = _read("hysteria/subscription_service.py")
+    src = _presentation_source()
     css = _read("hysteria/admin.css")
 
     assert 'id="sidebar-motion-toggle"' in src
@@ -165,7 +173,7 @@ def test_sidebar_motion_override_is_explicit_desktop_only_preference():
 
 
 def test_panel_copy_control_has_visible_secure_share_feedback():
-    src = _read("hysteria/subscription_service.py")
+    src = _presentation_source()
     js = _read("hysteria/admin_poll.js")
 
     assert '<span class="copy-label">复制专属面板</span>' in src

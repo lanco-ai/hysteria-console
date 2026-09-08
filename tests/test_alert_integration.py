@@ -190,25 +190,39 @@ def test_expired_alert_fires_once_per_expiry_date(tmp_path, monkeypatch):
     assert b'expiry_expired' in sent[0]['body']
 
 
-def test_reset_paths_clear_cycle_daily_hourly_for_user():
-    """Manual reset must clear the user's daily + hourly entries within the
-    current cycle so that `本周期`, `今日`, and `当小时` all read 0 immediately
-    after a reset.
-
-    Background: the original spec section 6 kept hourly intact for audit. That
-    was abandoned once 本周期 was rewired to derive from usage_daily.json (to
-    enforce `本周期 >= 今日 >= 当小时`): keeping hourly intact would leave
-    `当小时` showing pre-reset traffic against a 0 cycle, which is the bug
-    operators were hitting. Reset logs preserve before-values for audit."""
-    import re
-    src = (Path(__file__).resolve().parents[1] / "hysteria" / "subscription_service.py").read_text(encoding="utf-8")
-    blocks = re.findall(
-        r"if path == .{1}/admin/reset-usage[^.]*.{1}:[\s\S]+?(?=\n        if path ==|\n    def |\Z)",
-        src,
+def test_reset_paths_clear_cycle_daily_hourly_for_user(tmp_path, monkeypatch):
+    """Actual POST resets must clear current history and preserve old history."""
+    import json
+    import subscription_service as ss
+    from tests.test_admin_mutations_ajax import (
+        _configure_state, _json_post, _revision, _running_server,
+        _seed_users, _stub_side_effects, _write_json,
     )
-    assert blocks, "could not locate reset handler blocks - test needs updating"
-    for b in blocks:
-        assert "_zero_cycle_daily_hourly_for" in b, (
-            "reset handler must call _zero_cycle_daily_hourly_for so that "
-            "post-reset display (cycle/today/current-hour) all read 0"
-        )
+
+    state = _configure_state(tmp_path, monkeypatch, users=_seed_users())
+    _stub_side_effects(monkeypatch)
+    monkeypatch.setattr(ss, 'local_now', lambda: datetime.fromisoformat('2026-01-15T12:00:00+08:00'))
+    original = {'tx': 11, 'rx': 22, 'total': 33}
+    zero = {'tx': 0, 'rx': 0, 'total': 0}
+    with _running_server() as server:
+        for route in ('reset-usage', 'refresh-usage', 'reset-usage-all'):
+            _write_json(state['USAGE_DAILY_FILE'], {
+                '2026-01-15': {'alice': original},
+                '2025-12-01': {'alice': original},
+            })
+            _write_json(state['USAGE_HOURLY_FILE'], {
+                '2026-01-15T12': {'alice': original},
+                '2025-12-01T12': {'alice': original},
+            })
+            status, _, _ = _json_post(
+                server,
+                f'/admin/{route}?token=admin-token&revision={_revision(state)}',
+                {'user': 'alice'},
+            )
+            assert status == 200
+            daily = json.loads(state['USAGE_DAILY_FILE'].read_text())
+            hourly = json.loads(state['USAGE_HOURLY_FILE'].read_text())
+            assert daily['2026-01-15']['alice'] == zero
+            assert hourly['2026-01-15T12']['alice'] == zero
+            assert daily['2025-12-01']['alice'] == original
+            assert hourly['2025-12-01T12']['alice'] == original

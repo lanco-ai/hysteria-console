@@ -342,13 +342,6 @@ def test_admin_user_forms_keep_panel_and_connection_passwords_separate(tmp_path,
     assert 'for="create-proxy-password"' in page
 
 
-def test_profile_qr_route_is_wired_before_generic_panel_route():
-    src = Path(ss.__file__).read_text(encoding='utf-8')
-    qr_pos = src.index("if path.startswith('/panel/') and path.endswith('/qr.svg'):")
-    panel_pos = src.index("if path.startswith('/panel/'):", qr_pos)
-    assert qr_pos < panel_pos
-
-
 def test_profile_qr_endpoint_validates_token_and_profile(tmp_path, monkeypatch):
     import http.client
     import threading
@@ -383,6 +376,14 @@ def test_profile_qr_endpoint_validates_token_and_profile(tmp_path, monkeypatch):
             'base_url': 'http://panel.test', 'user': 'alice',
             'token': 'tok', 'profile': 'work',
         }
+
+        conn.request('HEAD', '/panel/alice/qr.svg?token=tok&profile=work',
+                     headers={'Host': 'panel.test'})
+        head = conn.getresponse()
+        assert head.read() == b''
+        assert head.status == 200
+        assert head.getheader('Content-Type').startswith('image/svg+xml')
+        assert head.getheader('Set-Cookie') is None
 
         conn.request('GET', '/panel/alice/qr.svg?token=wrong',
                      headers={'Host': 'panel.test'})
@@ -1747,10 +1748,12 @@ def test_concurrent_meta_initialization_uses_one_retrievable_password(
 def test_meta_initialization_fails_before_creating_inaccessible_admin(
     tmp_path, monkeypatch
 ):
+    from identity_service import IdentityService
+
     meta_path = tmp_path / 'subscription_meta.json'
     monkeypatch.setattr(ss, 'META_FILE', meta_path)
     monkeypatch.setattr(
-        ss, '_write_initial_admin_password', lambda *_args: False,
+        IdentityService, '_write_initial_admin_password', lambda *_args: False,
     )
 
     with pytest.raises(ss.state_store.StateStoreError):

@@ -236,6 +236,43 @@ build_durable_artifact_set() {
     auth_backend.py \
     auth_service.py \
     subscription_service.py \
+    public_views.py \
+    auth_views.py \
+    admin_read_routes.py \
+    admin_config_routes.py \
+    admin_operations_routes.py \
+    user_views.py \
+    admin_views.py \
+    console_shell_views.py \
+    operations_views.py \
+    configuration_views.py \
+    template_store.py \
+    session_store.py \
+    login_throttle.py \
+    billing_service.py \
+    authorization_service.py \
+    credential_service.py \
+    revocation_service.py \
+    identity_service.py \
+    landing_views.py \
+    shared_views.py \
+    health_presentation.py \
+    user_state_service.py \
+    operational_service.py \
+    audit_log.py \
+    user_panel_data.py \
+    public_page_routes.py \
+    user_panel_routes.py \
+    subscription_routes.py \
+    admin_console_routes.py \
+    landing_write_routes.py \
+    rule_pack_routes.py \
+    credential_routes.py \
+    auth_routes.py \
+    admin_traffic_routes.py \
+    admin_account_routes.py \
+    admin_user_status_routes.py \
+    admin_user_delete_routes.py \
     landing_egress.py \
     traffic_limiter.py \
     alerts.py \
@@ -1521,6 +1558,43 @@ for artifact in \
   "$HY_DIR/auth_backend.py" \
   "$HY_DIR/auth_service.py" \
   "$HY_DIR/subscription_service.py" \
+  "$HY_DIR/public_views.py" \
+  "$HY_DIR/auth_views.py" \
+  "$HY_DIR/admin_read_routes.py" \
+  "$HY_DIR/admin_config_routes.py" \
+  "$HY_DIR/admin_operations_routes.py" \
+  "$HY_DIR/user_views.py" \
+  "$HY_DIR/admin_views.py" \
+  "$HY_DIR/console_shell_views.py" \
+  "$HY_DIR/operations_views.py" \
+  "$HY_DIR/configuration_views.py" \
+  "$HY_DIR/template_store.py" \
+  "$HY_DIR/session_store.py" \
+  "$HY_DIR/login_throttle.py" \
+  "$HY_DIR/billing_service.py" \
+  "$HY_DIR/authorization_service.py" \
+  "$HY_DIR/credential_service.py" \
+  "$HY_DIR/revocation_service.py" \
+  "$HY_DIR/identity_service.py" \
+  "$HY_DIR/landing_views.py" \
+  "$HY_DIR/shared_views.py" \
+  "$HY_DIR/health_presentation.py" \
+  "$HY_DIR/user_state_service.py" \
+  "$HY_DIR/operational_service.py" \
+  "$HY_DIR/audit_log.py" \
+  "$HY_DIR/user_panel_data.py" \
+  "$HY_DIR/public_page_routes.py" \
+  "$HY_DIR/user_panel_routes.py" \
+  "$HY_DIR/subscription_routes.py" \
+  "$HY_DIR/admin_console_routes.py" \
+  "$HY_DIR/landing_write_routes.py" \
+  "$HY_DIR/rule_pack_routes.py" \
+  "$HY_DIR/credential_routes.py" \
+  "$HY_DIR/auth_routes.py" \
+  "$HY_DIR/admin_traffic_routes.py" \
+  "$HY_DIR/admin_account_routes.py" \
+  "$HY_DIR/admin_user_status_routes.py" \
+  "$HY_DIR/admin_user_delete_routes.py" \
   "$HY_DIR/landing_egress.py" \
   "$HY_DIR/traffic_limiter.py" \
   "$HY_DIR/alerts.py" \
@@ -1680,6 +1754,43 @@ render "$REPO_DIR/hysteria/config.yaml.tpl"          "$HY_DIR/config.yaml"
 render "$REPO_DIR/hysteria/auth_backend.py"          "$HY_DIR/auth_backend.py"
 render "$REPO_DIR/hysteria/auth_service.py"          "$HY_DIR/auth_service.py"
 render "$REPO_DIR/hysteria/subscription_service.py"  "$HY_DIR/subscription_service.py"
+render "$REPO_DIR/hysteria/public_views.py"          "$HY_DIR/public_views.py"
+render "$REPO_DIR/hysteria/auth_views.py"            "$HY_DIR/auth_views.py"
+render "$REPO_DIR/hysteria/admin_read_routes.py"     "$HY_DIR/admin_read_routes.py"
+render "$REPO_DIR/hysteria/admin_config_routes.py"     "$HY_DIR/admin_config_routes.py"
+render "$REPO_DIR/hysteria/admin_operations_routes.py"     "$HY_DIR/admin_operations_routes.py"
+render "$REPO_DIR/hysteria/user_views.py"     "$HY_DIR/user_views.py"
+render "$REPO_DIR/hysteria/admin_views.py"     "$HY_DIR/admin_views.py"
+render "$REPO_DIR/hysteria/console_shell_views.py"     "$HY_DIR/console_shell_views.py"
+render "$REPO_DIR/hysteria/operations_views.py"     "$HY_DIR/operations_views.py"
+render "$REPO_DIR/hysteria/configuration_views.py"     "$HY_DIR/configuration_views.py"
+render "$REPO_DIR/hysteria/template_store.py"     "$HY_DIR/template_store.py"
+render "$REPO_DIR/hysteria/session_store.py"     "$HY_DIR/session_store.py"
+render "$REPO_DIR/hysteria/login_throttle.py"     "$HY_DIR/login_throttle.py"
+render "$REPO_DIR/hysteria/billing_service.py"     "$HY_DIR/billing_service.py"
+render "$REPO_DIR/hysteria/authorization_service.py"     "$HY_DIR/authorization_service.py"
+render "$REPO_DIR/hysteria/credential_service.py"     "$HY_DIR/credential_service.py"
+render "$REPO_DIR/hysteria/revocation_service.py"     "$HY_DIR/revocation_service.py"
+render "$REPO_DIR/hysteria/identity_service.py"     "$HY_DIR/identity_service.py"
+render "$REPO_DIR/hysteria/landing_views.py"     "$HY_DIR/landing_views.py"
+render "$REPO_DIR/hysteria/shared_views.py"     "$HY_DIR/shared_views.py"
+render "$REPO_DIR/hysteria/health_presentation.py"     "$HY_DIR/health_presentation.py"
+render "$REPO_DIR/hysteria/user_state_service.py"     "$HY_DIR/user_state_service.py"
+render "$REPO_DIR/hysteria/operational_service.py"     "$HY_DIR/operational_service.py"
+render "$REPO_DIR/hysteria/audit_log.py"     "$HY_DIR/audit_log.py"
+render "$REPO_DIR/hysteria/user_panel_data.py"     "$HY_DIR/user_panel_data.py"
+render "$REPO_DIR/hysteria/public_page_routes.py"     "$HY_DIR/public_page_routes.py"
+render "$REPO_DIR/hysteria/user_panel_routes.py"     "$HY_DIR/user_panel_routes.py"
+render "$REPO_DIR/hysteria/subscription_routes.py"     "$HY_DIR/subscription_routes.py"
+render "$REPO_DIR/hysteria/admin_console_routes.py"     "$HY_DIR/admin_console_routes.py"
+render "$REPO_DIR/hysteria/landing_write_routes.py"     "$HY_DIR/landing_write_routes.py"
+render "$REPO_DIR/hysteria/rule_pack_routes.py"     "$HY_DIR/rule_pack_routes.py"
+render "$REPO_DIR/hysteria/credential_routes.py"     "$HY_DIR/credential_routes.py"
+render "$REPO_DIR/hysteria/auth_routes.py"     "$HY_DIR/auth_routes.py"
+render "$REPO_DIR/hysteria/admin_traffic_routes.py"     "$HY_DIR/admin_traffic_routes.py"
+render "$REPO_DIR/hysteria/admin_account_routes.py"     "$HY_DIR/admin_account_routes.py"
+render "$REPO_DIR/hysteria/admin_user_status_routes.py"     "$HY_DIR/admin_user_status_routes.py"
+render "$REPO_DIR/hysteria/admin_user_delete_routes.py"     "$HY_DIR/admin_user_delete_routes.py"
 render "$REPO_DIR/hysteria/landing_egress.py"         "$HY_DIR/landing_egress.py"
 render "$REPO_DIR/hysteria/traffic_limiter.py"       "$HY_DIR/traffic_limiter.py"
 render "$REPO_DIR/hysteria/alerts.py"                "$HY_DIR/alerts.py"
@@ -1726,6 +1837,43 @@ chmod 700 \
   "$HY_DIR/auth_backend.py" \
   "$HY_DIR/auth_service.py" \
   "$HY_DIR/subscription_service.py" \
+  "$HY_DIR/public_views.py" \
+  "$HY_DIR/auth_views.py" \
+  "$HY_DIR/admin_read_routes.py" \
+  "$HY_DIR/admin_config_routes.py" \
+  "$HY_DIR/admin_operations_routes.py" \
+  "$HY_DIR/user_views.py" \
+  "$HY_DIR/admin_views.py" \
+  "$HY_DIR/console_shell_views.py" \
+  "$HY_DIR/operations_views.py" \
+  "$HY_DIR/configuration_views.py" \
+  "$HY_DIR/template_store.py" \
+  "$HY_DIR/session_store.py" \
+  "$HY_DIR/login_throttle.py" \
+  "$HY_DIR/billing_service.py" \
+  "$HY_DIR/authorization_service.py" \
+  "$HY_DIR/credential_service.py" \
+  "$HY_DIR/revocation_service.py" \
+  "$HY_DIR/identity_service.py" \
+  "$HY_DIR/landing_views.py" \
+  "$HY_DIR/shared_views.py" \
+  "$HY_DIR/health_presentation.py" \
+  "$HY_DIR/user_state_service.py" \
+  "$HY_DIR/operational_service.py" \
+  "$HY_DIR/audit_log.py" \
+  "$HY_DIR/user_panel_data.py" \
+  "$HY_DIR/public_page_routes.py" \
+  "$HY_DIR/user_panel_routes.py" \
+  "$HY_DIR/subscription_routes.py" \
+  "$HY_DIR/admin_console_routes.py" \
+  "$HY_DIR/landing_write_routes.py" \
+  "$HY_DIR/rule_pack_routes.py" \
+  "$HY_DIR/credential_routes.py" \
+  "$HY_DIR/auth_routes.py" \
+  "$HY_DIR/admin_traffic_routes.py" \
+  "$HY_DIR/admin_account_routes.py" \
+  "$HY_DIR/admin_user_status_routes.py" \
+  "$HY_DIR/admin_user_delete_routes.py" \
   "$HY_DIR/landing_egress.py" \
   "$HY_DIR/traffic_limiter.py" \
   "$HY_DIR/alerts.py" \

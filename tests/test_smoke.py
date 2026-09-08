@@ -16,11 +16,13 @@ def test_usage_routes_wired_in_dispatcher():
     """Smoke: the new routes appear in the GET dispatcher."""
     src = (ss.__file__).replace("\\", "/")
     text = open(src, encoding="utf-8").read()
-    assert "/admin/usage.json" in text
-    assert "/admin/usage" in text
+    assert "admin_read_routes.handle_read(" in text
+    assert "/admin/usage.json" in ss.admin_read_routes._ROUTES
+    assert "/admin/usage" in ss.admin_read_routes._ROUTES
     assert "/admin/user/" in text
     assert "/static/usage.js" in text
-    assert '/static/style.css?v=' in text
+    page = ss.html_page('smoke', '')
+    assert '/static/style.css?v=' + ss.BASE_CSS_ETAG.strip('"') in page
 
 
 def test_render_usage_page_smoke(tmp_path, monkeypatch):
