@@ -287,6 +287,7 @@ def test_incident_and_health_regions_are_h2_but_table_labels_are_not(
         subscription_profiles={"default": {"label": "默认"}},
         render_line_radar=lambda **_kwargs: line_radar,
         render_cost_calibrator=lambda **_kwargs: cost_calibrator,
+        render_line_radar_summary=lambda **_kwargs: '<p>保持默认模板</p>',
         render_admin_shell=_shell,
     )
     page = incident_console.render_incidents(ctx, "panel.test")
@@ -295,15 +296,17 @@ def test_incident_and_health_regions_are_h2_but_table_labels_are_not(
 
     assert heading_texts == [
         "事故处理",
+        "推荐处置",
         "峰值小时相关用户",
         "近期告警状态",
         "处置候选用户",
-        "线路质量雷达",
-        "成本校准器",
+        "线路质量摘要",
     ]
     assert "alice" not in heading_texts
     assert "Hysteria UDP" not in heading_texts
-    assert {"alice", "Hysteria UDP"} <= set(audit.cell_bold_texts)
+    assert "alice" in audit.cell_bold_texts
+    # Full diagnostics moved to health; their own heading semantics still apply.
+    _assert_valid_outline('<h1>健康状态</h1>' + line_radar + cost_calibrator, [1, 2, 2])
 
 
 def test_user_panel_sections_follow_its_h1_without_div_titles(

@@ -376,10 +376,10 @@
   function updatePayload(data) {
     if (!data) return;
     if (data.stats) {
-      setText("[data-stat=current_hour] .v", fmtBytes(data.stats.current_hour_bytes));
-      setText("[data-stat=today] .v", fmtBytes(data.stats.today_bytes));
-      setText("[data-stat=last_7d] .v", fmtBytes(data.stats.last_7d_bytes));
-      setText("[data-stat=cycle] .v", fmtBytes(data.stats.cycle_bytes));
+      setText("[data-stat=current_hour] .metric-v", fmtBytes(data.stats.current_hour_bytes));
+      setText("[data-stat=today] .metric-v", fmtBytes(data.stats.today_bytes));
+      setText("[data-stat=last_7d] .metric-v", fmtBytes(data.stats.last_7d_bytes));
+      setText("[data-stat=cycle] .metric-v", fmtBytes(data.stats.cycle_bytes));
       setText("[data-role=usage-online]", data.stats.online);
       setText("[data-role=usage-yesterday]", fmtBytes(data.stats.yesterday_bytes));
       setText("[data-role=usage-7d-average]", fmtBytes(Math.floor((Number(data.stats.last_7d_bytes) || 0) / 7)));
@@ -410,11 +410,19 @@
   for (var i = 0; i < bars.length; i++) attachHover(bars[i]);
 
   // The 30-day table is large and normally collapsed. Fetch it only after the
-  // user opens the section, then keep the loaded fragment for that page visit.
+  // user opens the section. Explicit refresh invalidates the cached fragment.
   var historyDetails = document.getElementById("usage-history") ||
       document.querySelector('[data-role="history-details"]');
   var historyHost = document.getElementById("usage-history-host");
   var historyState = "idle";
+  var historyRefreshPending = false;
+  var historyUpdated = null;
+  if (historyHost) {
+    historyUpdated = document.createElement('div');
+    historyUpdated.className = 'small faint';
+    historyUpdated.setAttribute('role', 'status');
+    historyHost.parentNode.insertBefore(historyUpdated, historyHost);
+  }
   function loadHistory() {
     if (!historyHost || historyState === "loading" || historyState === "loaded") return;
     historyState = "loading";
@@ -435,15 +443,31 @@
           historyHost.innerHTML = markup;
         }
         historyState = "loaded";
+        if (historyUpdated) historyUpdated.textContent = '明细更新于 ' + stamp();
       })
       .catch(function (error) {
         historyState = "idle";
+        if (historyUpdated) historyUpdated.textContent = '明细未更新成功';
         var label = error && error.code === "timeout" ? "请求超时" : "加载失败";
         historyHost.innerHTML = '<div class="empty history-placeholder">' + label + ' <button class="btn ghost btn-sm" id="usage-history-retry" type="button">重试</button></div>';
         var retry = document.getElementById("usage-history-retry");
         if (retry) retry.addEventListener("click", loadHistory);
       })
-      .finally(function () { historyHost.setAttribute("aria-busy", "false"); });
+      .finally(function () {
+        historyHost.setAttribute("aria-busy", "false");
+        if (historyRefreshPending) {
+          historyRefreshPending = false;
+          historyState = "idle";
+          if (historyDetails && historyDetails.open) loadHistory();
+        }
+      });
+  }
+  function refreshHistory() {
+    if (!historyHost) return;
+    if (historyState === 'loading') { historyRefreshPending = true; return; }
+    historyState = 'idle';
+    if (historyUpdated) historyUpdated.textContent = '明细待刷新';
+    if (historyDetails && historyDetails.open) loadHistory();
   }
   if (historyDetails) historyDetails.addEventListener("toggle", function () {
     if (historyDetails.open) loadHistory();
@@ -539,6 +563,7 @@
   if (refreshBtn) refreshBtn.addEventListener("click", function () {
     consecutiveFailures = 0;
     tick(true);
+    refreshHistory();
   });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) stop(); else start();

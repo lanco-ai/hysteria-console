@@ -213,6 +213,12 @@ def test_backup_holds_all_snapshot_locks_until_tar_can_start(tmp_path):
     )
     tuic_lock = Path(env['HY2_TUIC_LOCK'])
     tuic_lock.parent.mkdir(parents=True, exist_ok=True)
+    # Production rejects permissive lock files; fixture observers must use
+    # the same private permissions before the backup process starts.
+    for name in (*lock_names, 'HY2_TUIC_LOCK'):
+        path = Path(env[name])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch(mode=0o600)
 
     with tuic_lock.open('a+') as blocker:
         fcntl.flock(blocker.fileno(), fcntl.LOCK_EX)

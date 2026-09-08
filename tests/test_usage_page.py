@@ -548,13 +548,17 @@ def test_admin_edit_button_data_attributes_populate_form(tmp_path, monkeypatch):
 def test_admin_edit_dialog_does_not_leak_sensitive_fields(tmp_path, monkeypatch):
     """The edit dialog form must not contain sub_token or password_hash fields,
     which are server-side-only and must never reach the browser."""
-    _seed_admin(tmp_path, monkeypatch, users={"alice": {}})
+    _seed_admin(tmp_path, monkeypatch, users={"alice": {
+        "sub_token": "fixture-private-sub-token", "panel_pass_hash": "fixture-private-password-hash",
+    }})
     out = ss.render_admin("test-host", "http://test-host")
-    assert "sub_token" not in out.lower() or "sub-token" not in out.lower()
-    assert "password_hash" not in out.lower()
+    # Audit the dialog, not a developer comment or legitimate admin-only links.
+    dialog = out.split('<dialog id="user-edit-dialog"', 1)[1].split('</dialog>', 1)[0]
+    assert "fixture-private-sub-token" not in dialog
+    assert "fixture-private-password-hash" not in out
     # Token and password hash must not appear as HTML input values.
-    assert "type=\"hidden\" name=\"sub_token\"" not in out
-    assert "type=\"hidden\" name=\"password_hash\"" not in out
+    assert 'name="sub_token"' not in dialog
+    assert 'name="password_hash"' not in dialog
 
 
 def test_admin_no_duplicate_ids(tmp_path, monkeypatch):

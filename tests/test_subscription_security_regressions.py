@@ -268,11 +268,11 @@ def test_token_panel_get_exchanges_query_for_revocable_clean_session(
         "secret-token"
     )
     assert clean.status == 200
-    assert "当前会话地址".encode("utf-8") in clean.body
+    assert "查看当前会话详情".encode("utf-8") in clean.body
     assert "修改密码".encode("utf-8") not in clean.body
     assert "退出登录".encode("utf-8") in clean.body
     assert change_password.status == 302
-    assert change_password.headers["location"] == "/user/login"
+    assert change_password.headers["location"] == "/login"
 
 
 def test_admin_bearer_get_exchanges_to_clean_password_bound_session(
@@ -353,8 +353,8 @@ def test_rotated_token_revokes_exchanged_panel_session(
             headers={"Cookie": f"usid={sid}"},
         )
 
-    assert stale.status == 302
-    assert stale.headers["location"] == "/user/login"
+    assert stale.status == 403
+    assert "location" not in stale.headers
     assert sid not in json.loads(
         state["USER_SESSIONS_FILE"].read_text(encoding="utf-8")
     )
@@ -839,8 +839,8 @@ def test_self_rotation_delivers_new_token_in_clean_revocable_session(
     assert sessions["new-session"]["credential_generation"] == (
         ss._credential_generation("new-token")
     )
-    assert stale.status == 302
-    assert stale.headers["location"] == "/user/login"
+    assert stale.status == 403
+    assert "location" not in stale.headers
     assert recovered.status == 200
     assert "Token 已重置".encode("utf-8") in recovered.body
     assert b"new-token" in recovered.body

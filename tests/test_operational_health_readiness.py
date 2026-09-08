@@ -33,6 +33,8 @@ exit 0
         fake_bin / "curl",
         'printf "%s\\n" "$*" >>"$CALL_LOG"\nexit 0\n',
     )
+    # TLS behavior must not depend on the developer/CI machine's free space.
+    _write_executable(fake_bin / 'df', 'printf "Filesystem 1024-blocks Used Available Capacity Mounted on\\nfixture 100 20 80 20%% /\\n"\n')
 
     hy_dir = tmp_path / "runtime"
     backups = hy_dir / "backups"
@@ -70,6 +72,20 @@ def test_operational_health_check_requires_auth_service_and_deep_readiness():
     assert "--connect-timeout 1" in script
     assert "--max-time 3" in script
     assert "authentication dependencies are not ready" in script
+
+
+def test_operational_health_check_still_rejects_low_disk_space(tmp_path):
+    env, _ = _health_env(tmp_path)
+    _write_executable(
+        tmp_path / 'bin' / 'df',
+        'printf "Filesystem 1024-blocks Used Available Capacity Mounted on\\nfixture 100 97 3 97%% /\\n"\n',
+    )
+    result = subprocess.run(
+        ['bash', str(SCRIPT)], env=env, capture_output=True, text=True,
+        timeout=10,
+    )
+    assert result.returncode != 0
+    assert 'root disk only 3% free' in result.stdout + result.stderr
 
 
 def test_health_check_skips_planned_deploy_window_under_deploy_lock(tmp_path):

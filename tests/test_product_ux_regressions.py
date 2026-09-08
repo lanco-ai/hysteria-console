@@ -320,9 +320,7 @@ def test_feedback_alerts_are_persistent_and_have_live_region_semantics():
     assert 'aria-live="polite"' in success
 
     css = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
-    alert_rules = css.split("/* Alerts and disclosure", 1)[1].split(
-        "details > summary", 1
-    )[0]
+    alert_rules = css.split('.flash {', 1)[1].split('}', 1)[0]
     assert "animation" not in alert_rules
     assert "flash-fade" not in css
 
@@ -344,13 +342,14 @@ def test_health_status_uses_an_authenticated_local_fragment_refresh(
         "probe_recent_backup",
     ):
         monkeypatch.setattr(
-            ss, probe_name, lambda *_args, **_kwargs: {"status": "ok"}
+            ss, probe_name, lambda *_args, **_kwargs: {"ok": True, "label": "正常"}
         )
     monkeypatch.setattr(
         ss,
         "_health_card",
-        lambda title, _result: f'<article data-health="{title}">{title}</article>',
+        ss.health.health_card,
     )
+    monkeypatch.setattr(ss, 'probe_disk', lambda: {'ok': False, 'label': '磁盘告警'})
     monkeypatch.setattr(ss, "render_line_radar", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(ss, "render_cost_calibrator", lambda *_args, **_kwargs: "")
 
@@ -359,7 +358,7 @@ def test_health_status_uses_an_authenticated_local_fragment_refresh(
     assert 'http-equiv="refresh"' not in page.lower()
     assert 'id="health-live-grid"' in page
     assert 'id="health-refresh-now"' in page
-    assert "fetch('/admin/health.fragment'" in page
+    assert "fetch('/admin/health.fragment?snapshot=1'" in page
     assert "function retryDelay()" in page
     assert "function scheduleNext()" in page
     assert "setInterval(refresh" not in page
@@ -447,7 +446,7 @@ def test_corrupt_template_is_preserved_and_all_overwrite_controls_lock(
     assert raw in editor
     assert 'data-load-failed="true"' in editor
     assert 'readonly aria-readonly="true"' in editor
-    assert '<button class="btn danger-btn" type="submit" disabled' in editor
+    assert 'type="submit" disabled aria-disabled="true">保存订阅模板</button>' in editor
     assert 'href="/admin/config">重新加载模板</a>' in editor
     assert ">{}</textarea>" not in editor
 
@@ -529,8 +528,8 @@ def test_destructive_admin_actions_have_consequence_aware_confirmations(
         'action="/admin/reset-usage-all" data-action="reset-all"' in page
     )
     assert (
-        '<button class="btn danger-btn btn-sm" type="submit">'
-        "一键清空本周期用量</button>" in page
+        '<button class="btn btn-sm danger-btn" type="submit" style="margin-top:10px;">'
+        "清空本周期用量</button>" in page
     )
 
     js = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")

@@ -11,6 +11,20 @@ import uuid
 _USERNAME_RE = re.compile(r'^[A-Za-z0-9_.-]{1,64}$')
 
 
+def configured_max_devices(cfg, default=2):
+    """Stored nonnegative device cap; explicit zero means unlimited."""
+    if not isinstance(cfg, dict):
+        return default
+    raw = cfg['max_devices'] if 'max_devices' in cfg else default
+    if isinstance(raw, bool):
+        return default
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 0 else default
+
+
 def is_valid_username(value):
     return bool(
         isinstance(value, str)

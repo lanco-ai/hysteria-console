@@ -41,6 +41,8 @@ import xray_config
 from display import DISPLAY_MULTIPLIER, fmt_bytes
 from timeutil import billing_cycle_key, local_now
 from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import wraps
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from http.cookies import SimpleCookie
@@ -401,6 +403,21 @@ def load_json(path, default, *, required=None):
         raise
 
 
+_request_multiplier = ContextVar('request_display_multiplier', default=None)
+
+
+def request_multiplier_snapshot(function):
+    """Lazy, isolated snapshot, cleared even when a handler fails."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        token = _request_multiplier.set([])
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _request_multiplier.reset(token)
+    return wrapped
+
+
 def current_display_multiplier():
     """Read the active billing multiplier for each request.
 
@@ -408,11 +425,17 @@ def current_display_multiplier():
     Dynamic reads keep displayed usage and enforcement aligned immediately
     after an operator applies a calibrated multiplier.
     """
+    snapshot = _request_multiplier.get()
+    if snapshot:
+        return snapshot[0]
     path = DISPLAY_MULTIPLIER_STATE_FILE
     if not _using_live_core_state():
         path = Path(USAGE_FILE).parent / Path(path).name
     try:
-        return display_config.effective_display_multiplier_strict(path=path)
+        multiplier = display_config.effective_display_multiplier_strict(path=path)
+        if snapshot is not None:
+            snapshot.append(multiplier)
+        return multiplier
     except ValueError as exc:
         raise state_store.CriticalStateUnavailable(
             f'display multiplier policy is invalid: {path}',
@@ -496,16 +519,7 @@ def parse_bounded_int_field(raw, min_value, max_value):
 
 def configured_max_devices(cfg, default=2):
     """Return the stored device cap; an explicit zero means unlimited."""
-    if not isinstance(cfg, dict):
-        return default
-    raw = cfg['max_devices'] if 'max_devices' in cfg else default
-    if isinstance(raw, bool):
-        return default
-    try:
-        value = int(str(raw).strip())
-    except (TypeError, ValueError):
-        return default
-    return value if value >= 0 else default
+    return user_compat.configured_max_devices(cfg, default)
 
 
 def content_revision(value):
@@ -1424,12 +1438,6 @@ def _record_failure(ip, failures=None):
             oldest = next(iter(failures))
             failures.pop(oldest, None)
         failures.setdefault(ip, []).append(time.time())
-
-
-def _clear_failures(ip, failures=None):
-    failures = _login_failures if failures is None else failures
-    with _login_failures_lock:
-        failures.pop(ip, None)
 
 
 def _begin_login_attempt(ip, failures=None):
@@ -2679,6 +2687,7 @@ def html_page(title, body, body_class=''):
 
 # Inline SVG icons (24×24 stroke icons, sized down via .sidebar-link svg).
 _ICONS = {
+    'traffic': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4v16h18"/><path d="m6 14 4-5 4 3 6-7"/><path d="M16 5h4v4"/></svg>',
     'dashboard': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
     'config': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
     'rules': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
@@ -2697,13 +2706,6 @@ _ICONS = {
 def icon(name):
     raw = _ICONS.get(name, '')
     return raw.replace('<svg ', '<svg aria-hidden="true" focusable="false" ', 1) if raw else ''
-
-
-def render_nav(brand, badge):
-    return (
-        f'<div class="nav"><div class="brand">{html.escape(brand)}</div>'
-        f'<span class="badge">{html.escape(badge)}</span></div>'
-    )
 
 
 def render_alert(msg, kind='flash', *, element_id=''):
@@ -2759,7 +2761,7 @@ def render_logout_confirmation(host, *, user_panel=False):
 
 _SIDEBAR_NAV = [
     ('dashboard', '/admin', '总览', 'dashboard'),
-    ('usage', '/admin/usage', '流量分析', 'chart'),
+    ('usage', '/admin/usage', '流量分析', 'traffic'),
     ('codex', '/admin/codex', 'Codex 额度', 'chart'),
     ('incidents', '/admin/incidents', '事故处理', 'pulse'),
     ('health', '/admin/health', '健康状态', 'pulse'),
@@ -2981,7 +2983,20 @@ def render_landing_egresses(host, flash=''):
 def render_admin_shell(active, page_title, content, *, badge='', subtitle='', topbar_extra=''):
     """Wrap admin page content in the sidebar + topbar app shell."""
     nav_parts = []
-    for key, href, label, icon_name in _SIDEBAR_NAV:
+    groups = (
+        ('概览与用量', ('dashboard', 'usage', 'codex')),
+        ('运行维护', ('health', 'incidents', 'logs', 'settings')),
+        ('网络配置', ('config', 'rules', 'landing-egresses')),
+    )
+    entries = {entry[0]: entry for entry in _SIDEBAR_NAV}
+    grouped_entries = []
+    for group_title, keys in groups:
+        grouped_entries.append((None, '', group_title, ''))
+        grouped_entries.extend(entries[key] for key in keys)
+    for key, href, label, icon_name in grouped_entries:
+        if key is None:
+            nav_parts.append(f'<div class="sidebar-section">{html.escape(label)}</div>')
+            continue
         current = ' aria-current="page"' if key == active else ''
         active_class = 'active' if key == active else ''
         nav_parts.append(
@@ -3020,7 +3035,6 @@ def render_admin_shell(active, page_title, content, *, badge='', subtitle='', to
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
   </button>
   <nav class="sidebar-nav" aria-label="管理导航">
-    <div class="sidebar-section">控制中心</div>
     {nav_items}
   </nav>
   <div class="sidebar-footer">
@@ -3257,356 +3271,183 @@ def flash_text(msg):
 
 
 def render_home(host):
-    body = '''<script>
-(function(){
-  // Pre-paint bootstrap: hide the entrance-animated elements before the
-  // first paint so they cannot flash visible and then vanish. home.js
-  // primes the same elements inline, clears the failsafe and removes the
-  // class; if the script never loads, the failsafe reveals everything.
-  try {
-    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    if (typeof IntersectionObserver !== 'function') return;
-    var de = document.documentElement;
-    de.classList.add('home-prepaint');
-    window.__homePrepaintFailsafe = window.setTimeout(function(){
-      de.classList.remove('home-prepaint');
-    }, 2000);
-  } catch (e) {}
-})();
-</script>
-<header class="home-header">
-  <div class="home-header-inner">
-    <a href="/" class="home-logo">
-      <span class="home-logo-icon">H</span>
-      <span class="home-logo-text"><strong>Hysteria</strong><small>Network Console</small></span>
-    </a>
-    <nav class="home-nav">
-      <a href="/" class="home-nav-link">首页</a>
-      <a href="#services" class="home-nav-link">服务</a>
-    </nav>
-    <div class="home-nav-actions">
-      <a href="/login" class="btn btn-primary">进入控制台</a>
-    </div>
-  </div>
+    """Public product overview with explicitly illustrative, non-live previews."""
+    body = '''<header class="site-header">
+  <a href="/" class="site-brand"><span aria-hidden="true">H</span><strong>Hysteria<small>NETWORK CONSOLE</small></strong></a>
+  <nav aria-label="首页导航"><a href="#services">服务能力</a><a href="#console-preview">控制台预览</a></nav>
+  <a class="site-button site-button-small" href="/login">进入控制台 <span aria-hidden="true">↗</span></a>
 </header>
-
-<section class="home-hero">
-  <div class="home-hero-bg">
-    <div class="home-hero-glow"></div>
-    <div class="home-hero-grid"></div>
+<main class="site-main">
+<section class="site-hero">
+  <div class="site-hero-copy">
+    <p class="site-eyebrow"><span></span> YOUR NETWORK, IN FOCUS</p>
+    <h1>连接网络，<br><em>掌控全局。</em></h1>
+    <p class="site-lead">从多协议接入到流量洞察，<br>在一个清晰的控制台里，管理你的网络。</p>
+    <div class="site-actions"><a class="site-button" href="/login">进入控制台 <span aria-hidden="true">→</span></a><a class="site-text-link" href="#services">查看服务能力 <span aria-hidden="true">↓</span></a></div>
+    <div class="site-protocols"><span>接入协议</span><b>Hysteria2</b><b>VLESS Reality</b><b>TUIC</b></div>
   </div>
-  <div class="home-hero-content">
-    <div class="home-eyebrow">Hysteria 2 · Network Infrastructure</div>
-    <h1 class="home-title">Hysteria</h1>
-    <p class="home-headline">一个入口，连接你的网络。</p>
-    <p class="home-desc">简洁、稳定、透明的 Hysteria 2 服务。</p>
-    <div class="home-actions">
-      <a href="/login" class="btn btn-primary">
-        进入控制台
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-      </a>
-    </div>
-    <div class="home-protocols">
-      <span class="home-protocols-label">Supported Protocols</span>
-      <div class="home-protocols-list">
-        <span class="home-protocols-item">Hysteria 2</span>
-        <span class="home-protocols-item">Clash</span>
-        <span class="home-protocols-item">Sing-box</span>
-        <span class="home-protocols-item">WireGuard</span>
-      </div>
-    </div>
+  <div class="site-topology" role="img" aria-label="概念示意：Hysteria 控制台连接多协议接入、流量统计和健康监测">
+    <div class="site-topology-grid"></div>
+    <div class="site-topology-caption"><span>NETWORK ARCHITECTURE</span><span>连接架构示意</span></div>
+    <svg class="site-topology-lines" viewBox="0 0 520 460" fill="none" aria-hidden="true">
+      <circle cx="260" cy="230" r="155" stroke="#cbdde2" stroke-dasharray="3 9"/>
+      <circle cx="260" cy="230" r="108" stroke="#dde7e9"/>
+      <path d="M260 103V180M116 305H185L220 263M404 305H335L300 263" stroke="#85afbe" stroke-width="1.5"/>
+      <circle cx="260" cy="147" r="4" fill="#6798aa"/><circle cx="157" cy="305" r="4" fill="#6798aa"/><circle cx="363" cy="305" r="4" fill="#6798aa"/>
+    </svg>
+    <div class="site-hub"><span>H</span><strong>Hysteria</strong><small>NETWORK CONSOLE</small></div>
+    <div class="site-node site-node-top"><span>01 / ACCESS</span><strong>多协议接入</strong><small>Hysteria2 · VLESS · TUIC</small></div>
+    <div class="site-node site-node-left"><span>02 / INSIGHT</span><strong>流量统计</strong><small>用量 · 配额 · 周期</small></div>
+    <div class="site-node site-node-right"><span>03 / HEALTH</span><strong>健康监测</strong><small>状态 · 告警 · 维护</small></div>
+    <div class="site-topology-footer"><i></i> 一个入口，清晰连接每一环</div>
   </div>
 </section>
 
-<section class="home-sections" id="services">
-  <!-- Section 1: 服务状态 / 控制台概览 -->
-  <div class="home-section home-section-text-left">
-    <div class="home-section-content">
-      <div class="home-section-eyebrow">Service · 服务</div>
-      <h2 class="home-section-title">服务状态，一眼看清</h2>
-      <p class="home-section-desc">实时监控网络状态、流量使用与用户周期。透明化的数据呈现，让管理更简单。</p>
-      <div class="home-section-features">
-        <div class="home-section-feature">实时流量统计</div>
-        <div class="home-section-feature">用户周期管理</div>
-        <div class="home-section-feature">订阅统一分发</div>
-      </div>
-    </div>
-    <div class="home-section-preview">
-      <div class="preview-mini-panel">
-        <div class="preview-mini-header">
-          <span class="preview-mini-title">控制台概览</span>
-        </div>
-        <div class="stats-row">
-          <div class="stat-block">
-            <span class="stat-block-k">在线状态</span>
-            <span class="stat-block-v">
-              <span class="stat-dot"></span>正常
-            </span>
-          </div>
-          <div class="stat-block">
-            <span class="stat-block-k">活跃用户</span>
-            <span class="stat-block-v stat-block-mono" data-count-target="24" data-count-decimals="0" data-count-suffix="">24</span>
-          </div>
-          <div class="stat-block">
-            <span class="stat-block-k">计费周期</span>
-            <span class="stat-block-v stat-block-mono">2026-08</span>
-          </div>
-        </div>
-        <div class="console-divider"></div>
-        <div class="traffic-summary">
-          <div class="traffic-summary-title">本周流量</div>
-          <div class="traffic-row">
-            <span class="traffic-row-label">上行</span>
-            <div class="traffic-bar-track"><div class="traffic-bar-fill" data-target="62" style="width: 62%"></div></div>
-            <span class="traffic-row-value" data-count-target="12.4" data-count-decimals="1" data-count-suffix=" GB">12.4 GB</span>
-          </div>
-          <div class="traffic-row">
-            <span class="traffic-row-label">下行</span>
-            <div class="traffic-bar-track"><div class="traffic-bar-fill" data-target="85" style="width: 85%"></div></div>
-            <span class="traffic-row-value" data-count-target="47.8" data-count-decimals="1" data-count-suffix=" GB">47.8 GB</span>
-          </div>
-        </div>
-        <div class="console-divider"></div>
-        <div class="meta-summary">
-          <div class="meta-summary-row">
-            <span class="meta-summary-k">在线设备</span>
-            <span class="meta-summary-v" data-count-target="31" data-count-decimals="0" data-count-suffix="">31</span>
-          </div>
-          <div class="meta-summary-row">
-            <span class="meta-summary-k">规则数量</span>
-            <span class="meta-summary-v" data-count-target="137" data-count-decimals="0" data-count-suffix="">137</span>
-          </div>
-        </div>
-        <div class="console-divider"></div>
-        <div class="console-protocols">
-          <span class="console-protocol-pill">Hysteria 2</span>
-          <span class="console-protocol-pill">Clash</span>
-          <span class="console-protocol-pill">Sing-box</span>
-          <span class="console-protocol-pill">WireGuard</span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Section 2: 配置集中 / 用户与策略 -->
-  <div class="home-section home-section-text-right">
-    <div class="home-section-preview">
-      <div class="preview-mini-panel">
-        <div class="preview-mini-header">
-          <span class="preview-mini-title">用户与策略</span>
-        </div>
-        <div class="user-rows">
-          <div class="user-row">
-            <div class="user-row-top">
-              <span class="user-row-name">alice</span>
-              <span class="user-row-badge">按量</span>
-            </div>
-            <div class="user-row-bar-track">
-              <div class="user-row-bar-fill" data-target="45" style="width: 45%"></div>
-            </div>
-            <div class="user-row-meta">
-              <span class="user-row-bytes" data-count-target="56.2" data-count-decimals="1" data-count-suffix=" GB">56.2 GB</span>
-            </div>
-          </div>
-          <div class="user-row">
-            <div class="user-row-top">
-              <span class="user-row-name">bob</span>
-              <span class="user-row-badge">TUIC</span>
-            </div>
-            <div class="user-row-bar-track">
-              <div class="user-row-bar-fill" data-target="28" style="width: 28%"></div>
-            </div>
-            <div class="user-row-meta">
-              <span class="user-row-bytes" data-count-target="35.0" data-count-decimals="1" data-count-suffix=" GB">35.0 GB</span>
-            </div>
-          </div>
-          <div class="user-row">
-            <div class="user-row-top">
-              <span class="user-row-name">claire</span>
-              <span class="user-row-badge">Clash</span>
-            </div>
-            <div class="user-row-bar-track">
-              <div class="user-row-bar-fill" data-target="66" style="width: 66%"></div>
-            </div>
-            <div class="user-row-meta">
-              <span class="user-row-bytes" data-count-target="82.4" data-count-decimals="1" data-count-suffix=" GB">82.4 GB</span>
-            </div>
-          </div>
-        </div>
-        <div class="console-divider"></div>
-        <div class="meta-summary">
-          <div class="meta-summary-row">
-            <span class="meta-summary-k">默认模板</span>
-            <span class="meta-summary-v">2 个</span>
-          </div>
-          <div class="meta-summary-row">
-            <span class="meta-summary-k">路由规则</span>
-            <span class="meta-summary-v">137 条</span>
-          </div>
-          <div class="meta-summary-row">
-            <span class="meta-summary-k">支持协议</span>
-            <span class="meta-summary-v">4 项</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="home-section-content">
-      <div class="home-section-eyebrow">Control · 管理</div>
-      <h2 class="home-section-title">配置集中，状态透明</h2>
-      <p class="home-section-desc">把用户、套餐、流量与订阅统一管理，通过清晰的信息结构与轻量控制台，实现更稳定的日常维护。</p>
-      <div class="home-section-features">
-        <div class="home-section-feature">多协议订阅</div>
-        <div class="home-section-feature">精细化流量控制</div>
-        <div class="home-section-feature">统一模板与规则管理</div>
-      </div>
-    </div>
+<section class="site-services" id="services" aria-labelledby="services-title">
+  <div class="site-section-heading"><div><p class="site-eyebrow">01 / CAPABILITIES</p><h2 id="services-title">复杂的网络，清晰的管理。</h2></div><p>把连接、用量和维护，<br>放在同一个工作空间。</p></div>
+  <div class="site-feature-grid">
+    <article class="site-feature"><span class="site-feature-icon" aria-hidden="true">↗</span><span class="site-feature-index">01</span><h3>多协议接入</h3><p>集中管理接入协议与订阅模板，让不同使用场景拥有合适的连接方式。</p><div class="site-feature-tags"><span>Hysteria2</span><span>VLESS Reality</span><span>TUIC</span></div></article>
+    <article class="site-feature"><span class="site-feature-icon" aria-hidden="true">▥</span><span class="site-feature-index">02</span><h3>流量与配额</h3><p>查看流量变化，管理用户配额与账期，了解每一份用量的去向。</p><div class="site-feature-tags"><span>趋势分析</span><span>用户配额</span><span>周期管理</span></div></article>
+    <article class="site-feature"><span class="site-feature-icon" aria-hidden="true">⌁</span><span class="site-feature-index">03</span><h3>健康与维护</h3><p>汇总服务状态、证书与更新记录，为日常维护提供清晰的检查入口。</p><div class="site-feature-tags"><span>服务探测</span><span>健康状态</span><span>更新管理</span></div></article>
   </div>
 </section>
 
-<footer class="home-footer">
-  <div class="home-footer-inner">
-    <div class="home-footer-line"></div>
-    <p class="home-footer-copy">Hysteria Network Console · Hysteria 2 · Clash · Sing-box · WireGuard</p>
+<section class="site-preview-section" id="console-preview" aria-labelledby="preview-title">
+  <div class="site-section-heading"><div><p class="site-eyebrow">02 / WORKSPACE</p><h2 id="preview-title">全局在眼前，操作有条理。</h2></div><p>从细节到全貌，<br>无需在多个工具间切换。</p></div>
+  <div class="site-console">
+    <div class="site-console-top"><strong><span aria-hidden="true">H /</span> 控制台预览</strong><span class="site-demo-label">界面示意 · 非实时数据</span></div>
+    <div class="site-preview-nav" aria-label="预览内容"><a id="demo-tab-traffic" href="#demo-traffic" data-demo="traffic">流量分析</a><a id="demo-tab-users" href="#demo-users" data-demo="users">用户管理</a><a id="demo-tab-health" href="#demo-health" data-demo="health">健康状态</a></div>
+    <section class="site-demo-panel" id="demo-traffic" aria-labelledby="demo-tab-traffic">
+      <div class="site-demo-heading"><div><h3>流量趋势</h3><p>观察用量变化，合理分配资源。</p></div><span>最近 7 天 · 示例</span></div>
+      <div class="site-demo-stats"><div><span>示例总用量</span><strong>60.2 <small>GB</small></strong></div><div><span>示例上行</span><strong>12.4 <small>GB</small></strong></div><div><span>示例下行</span><strong>47.8 <small>GB</small></strong></div></div>
+      <figure class="site-chart"><svg viewBox="0 0 900 200" role="img" aria-label="示意折线图：一周内流量上下波动，并在周五达到高点，不代表实际用量">
+        <defs><linearGradient id="site-chart-fill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#87b5c5" stop-opacity=".3"/><stop offset="1" stop-color="#87b5c5" stop-opacity="0"/></linearGradient></defs>
+        <path d="M0 25H900M0 80H900M0 135H900M0 190H900" stroke="#e8edef" fill="none"/>
+        <path d="M0 160C60 160 85 91 150 104S245 158 300 118S400 99 450 68S530 108 600 40S700 118 750 81S850 72 900 48V195H0Z" fill="url(#site-chart-fill)"/>
+        <path d="M0 160C60 160 85 91 150 104S245 158 300 118S400 99 450 68S530 108 600 40S700 118 750 81S850 72 900 48" stroke="#6598ac" stroke-width="2.5" fill="none"/>
+      </svg><figcaption><span>周一</span><span>周二</span><span>周三</span><span>周四</span><span>周五</span><span>周六</span><span>周日</span></figcaption></figure>
+    </section>
+    <section class="site-demo-panel" id="demo-users" aria-labelledby="demo-tab-users">
+      <div class="site-demo-heading"><div><h3>用户与配额</h3><p>查看使用情况，维护每位用户的连接权限。</p></div><span>示例账号 · 非真实用户</span></div>
+      <div class="site-demo-user"><span class="site-demo-avatar">A</span><div><strong>示例用户 A</strong><small>本周期用量</small></div><meter min="0" max="100" value="42" aria-label="示例用户 A 已用 42% 配额">42%</meter><span>42 / 100 GB</span></div>
+      <div class="site-demo-user"><span class="site-demo-avatar">B</span><div><strong>示例用户 B</strong><small>本周期用量</small></div><meter min="0" max="100" value="68" aria-label="示例用户 B 已用 68% 配额">68%</meter><span>68 / 100 GB</span></div>
+      <div class="site-demo-user"><span class="site-demo-avatar">C</span><div><strong>示例用户 C</strong><small>本周期用量</small></div><meter min="0" max="100" value="15" aria-label="示例用户 C 已用 15% 配额">15%</meter><span>15 / 100 GB</span></div>
+      <p class="site-preview-note">实际用户、订阅链接与套餐信息仅在管理员登录后展示。</p>
+    </section>
+    <section class="site-demo-panel" id="demo-health" aria-labelledby="demo-tab-health">
+      <div class="site-demo-heading"><div><h3>服务健康</h3><p>将服务检查和维护入口集中呈现。</p></div><span>状态展示示例</span></div>
+      <div class="site-demo-health"><span>协议服务</span><span>Hysteria2 / Xray / TUIC</span><b>正常 · 示例</b></div>
+      <div class="site-demo-health"><span>认证服务</span><span>连接认证与访问控制</span><b>正常 · 示例</b></div>
+      <div class="site-demo-health"><span>证书与备份</span><span>有效期与最近备份检查</span><b>已检查 · 示例</b></div>
+      <div class="site-demo-health"><span>版本维护</span><span>检查更新与历史记录</span><b>待检查 · 示例</b></div>
+      <p class="site-preview-note">这里不提供实时运行状态，实际检查结果请进入控制台查看。</p>
+    </section>
   </div>
-</footer>
-<script src="/static/home.js?v={HOME_JS_ETAG.strip('"')}" defer></script>'''
-    return html_page('Hysteria', body, body_class='page-home')
+</section>
+
+<section class="site-closing"><div><p class="site-eyebrow">LESS FRICTION. MORE CLARITY.</p><h2>让网络管理，回归简单。</h2><p>从一个清晰的控制台开始。</p></div><a href="/login" class="site-button">进入控制台 <span aria-hidden="true">→</span></a></section>
+</main>
+<footer class="site-footer"><a href="/" class="site-footer-brand">Hysteria <span>Network Console</span></a><span>连接 · 洞察 · 管理</span></footer>'''
+    body += '<script src="/static/home.js?v=' + HOME_JS_ETAG.strip('"') + '" defer></script>'
+    return html_page('Hysteria · 连接网络，掌控全局', body, body_class='page-home page-site')
 
 
 def render_login(host, msg='', msg_kind='err', active_tab='admin', username=''):
-    """Single-card login for both admin and user realms.
-
-    The POST contract is unchanged: both forms POST to /login with the same
-    field names as before (admin_username/admin_password and
-    user_username/user_password); the realm is chosen by which form is shown,
-    not by any extra field. The .auth-error region always exists so a
-    server-side failure does not shift the card layout.
-    """
-    admin_checked = 'checked' if active_tab == 'admin' else ''
-    user_checked = 'checked' if active_tab == 'user' else ''
-
-    def auth_error(tab):
-        if msg and tab == active_tab:
-            role = ' role="alert"' if msg_kind == 'err' else ''
-            live = 'assertive' if msg_kind == 'err' else 'polite'
-            cls = 'auth-error' if msg_kind == 'err' else 'auth-error auth-error-flash'
-            return (
-                f'<div class="{cls}"{role} aria-live="{live}" aria-atomic="true">'
-                f'{html.escape(msg)}</div>'
-            )
-        return '<div class="auth-error" aria-live="polite" aria-atomic="true"></div>'
-
-    username_esc = html.escape(username, quote=True)
+    """Administrator-only entry; preserve the existing admin POST contract."""
+    username_esc = html.escape(username if active_tab == 'admin' else '', quote=True)
+    message = msg if active_tab == 'admin' else '请使用管理员账号登录控制台。'
+    error = render_alert(message, msg_kind) if message else ''
     body = f'''<header class="auth-header">
   <div class="auth-header-inner">
-    <a href="/" class="auth-header-logo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      Hysteria
-    </a>
+    <a href="/" class="auth-header-logo"><span class="login-mark" aria-hidden="true">H</span>Hysteria</a>
     <a href="/" class="auth-header-back">← 返回首页</a>
   </div>
 </header>
-
-<div class="auth-scene auth-scene-single">
-  <div class="auth-card">
-    <div class="auth-card-brand">
-      <div class="auth-card-logo">H</div>
-      <div class="auth-card-brand-text">
-        <strong>Hysteria</strong>
-        <small>Network Console</small>
+<main class="login-stage">
+  <div class="login-layout">
+    <section class="login-story" aria-labelledby="login-story-title">
+      <div class="login-eyebrow"><span></span> NETWORK CONSOLE</div>
+      <h1 id="login-story-title">连接网络，<br><span>掌控全局。</span></h1>
+      <p class="login-description">让每一次连接，清晰可见。<br>在一个控制台中，管理你的网络。</p>
+      <div class="login-network" aria-hidden="true">
+        <svg viewBox="0 0 460 220" fill="none">
+          <defs><linearGradient id="login-line"><stop stop-color="#b9d8e1"/><stop offset="1" stop-color="#68a8bf"/></linearGradient></defs>
+          <path d="M28 162H94L155 101H253L314 40H425M94 162H235L285 112H422M155 101V46H212M253 101V182H375" stroke="#d1dce0" stroke-width="1"/>
+          <path d="M28 162H94L155 101H253L314 40H425" stroke="url(#login-line)" stroke-width="2"/>
+          <circle cx="155" cy="101" r="20" fill="#dceef3" fill-opacity=".65"/>
+          <circle cx="155" cy="101" r="6" fill="#508da3" stroke="white" stroke-width="3"/>
+          <circle cx="253" cy="101" r="5" fill="#fff" stroke="#7aa5b5" stroke-width="2"/>
+          <circle cx="314" cy="40" r="5" fill="#fff" stroke="#7aa5b5" stroke-width="2"/>
+          <circle cx="285" cy="112" r="4" fill="#9bbbc6"/>
+          <rect x="365" y="170" width="30" height="24" rx="5" fill="#fff" stroke="#cad8dd"/>
+          <path d="M375 178h10m-10 7h6" stroke="#83a4b0" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="425" cy="40" r="3" fill="#83a4b0"/>
+          <circle cx="28" cy="162" r="3" fill="#83a4b0"/>
+        </svg>
       </div>
-    </div>
-    <h1 class="auth-card-title">登录控制台</h1>
-    <p class="auth-card-subtitle">管理员与用户共用的统一入口，认证成功后自动进入对应控制台。</p>
-    <div class="auth-tabs" role="radiogroup" aria-label="登录身份">
-      <input type="radio" name="auth_tab" id="tab-admin" value="admin" {admin_checked} class="auth-tab-input">
-      <label for="tab-admin" class="auth-tab-label">管理员</label>
-      <input type="radio" name="auth_tab" id="tab-user" value="user" {user_checked} class="auth-tab-input">
-      <label for="tab-user" class="auth-tab-label">用户</label>
-    </div>
-    <form method="post" action="/login" class="auth-form" id="form-admin">
-      {auth_error('admin')}
-      <div class="field">
-        <label class="label" for="admin-username">用户名</label>
-        <input class="input" id="admin-username" name="admin_username" value="{username_esc}" required autofocus autocomplete="username" placeholder="输入管理员用户名">
-      </div>
-      <div class="field">
-        <label class="label" for="admin-password">密码</label>
-        <input class="input" id="admin-password" name="admin_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
-      </div>
-      <button class="btn btn-primary btn-full auth-submit" type="submit"><span class="auth-submit-text">登录</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
-    </form>
-    <form method="post" action="/login" class="auth-form" id="form-user" style="display:none;">
-      {auth_error('user')}
-      <div class="field">
-        <label class="label" for="user-username">用户名</label>
-        <input class="input" id="user-username" name="user_username" value="{username_esc}" required autocomplete="username" placeholder="输入用户名">
-      </div>
-      <div class="field">
-        <label class="label" for="user-password">密码</label>
-        <input class="input" id="user-password" name="user_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
-      </div>
-      <button class="btn btn-primary btn-full auth-submit" type="submit"><span class="auth-submit-text">登录</span><span class="auth-submit-spinner" aria-hidden="true"></span></button>
-    </form>
-    <a class="auth-back" href="/">返回首页</a>
+      <div class="login-story-foot"><span>HYSTERIA</span><span>连接 · 洞察 · 管理</span></div>
+    </section>
+    <section class="login-panel" aria-labelledby="login-title">
+      <div class="login-panel-kicker">{icon('lock')}<span>管理员访问</span></div>
+      <h2 id="login-title">登录控制台</h2>
+      <p class="login-subtitle">使用管理员账号登录。</p>
+      <form method="post" action="/login" class="login-form" id="form-admin">
+        <div class="login-feedback">{error}</div>
+        <div class="field">
+          <label class="label" for="admin-username">管理员账号</label>
+          <input class="input" id="admin-username" name="admin_username" value="{username_esc}" required autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="输入管理员账号">
+        </div>
+        <div class="field">
+          <label class="label" for="admin-password">密码</label>
+          <div class="login-password">
+            <input class="input" id="admin-password" name="admin_password" type="password" required maxlength="{PASSWORD_MAX_LENGTH}" autocomplete="current-password" placeholder="输入密码">
+            <button type="button" id="login-password-toggle" aria-controls="admin-password" aria-label="显示密码" aria-pressed="false" hidden>显示</button>
+          </div>
+        </div>
+        <button class="btn btn-primary login-submit auth-submit" type="submit"><span class="auth-submit-text">登录控制台</span><span aria-hidden="true">→</span></button>
+        <span id="login-progress" class="sr-only" role="status" aria-live="polite"></span>
+      </form>
+      <div class="login-panel-foot">{icon('lock')}<span>仅限授权管理员访问</span></div>
+    </section>
   </div>
-</div>
+  <footer class="login-footer">Hysteria <span>／</span> Network Console</footer>
+</main>
 <script>
 (function() {{
-  var adminRadio = document.getElementById('tab-admin');
-  var userRadio = document.getElementById('tab-user');
-  var adminForm = document.getElementById('form-admin');
-  var userForm = document.getElementById('form-user');
-  function switchTab(tab) {{
-    if (tab === 'admin') {{
-      adminRadio.checked = true;
-      userRadio.checked = false;
-      adminForm.style.display = '';
-      userForm.style.display = 'none';
-      adminForm.querySelector('input[name="admin_username"]').focus();
-    }} else {{
-      adminRadio.checked = false;
-      userRadio.checked = true;
-      adminForm.style.display = 'none';
-      userForm.style.display = '';
-      userForm.querySelector('input[name="user_username"]').focus();
-    }}
-  }}
-  adminRadio.addEventListener('change', function() {{ switchTab('admin'); }});
-  userRadio.addEventListener('change', function() {{ switchTab('user'); }});
-  if (adminRadio.checked) switchTab('admin');
-  else switchTab('user');
-
-  // Submit loading state. The 'submit' event only fires after native HTML
-  // constraint validation passes, so an invalid form never enters loading.
-  function setLoading(btn, on) {{
-    btn.disabled = on;
-    btn.classList.toggle('is-loading', on);
-    if (on) btn.setAttribute('aria-busy', 'true');
-    else btn.removeAttribute('aria-busy');
-    var text = btn.querySelector('.auth-submit-text');
-    if (text) text.textContent = on ? '正在登录…' : '登录';
-  }}
-  function wireLoading(form) {{
-    if (!form) return;
-    form.addEventListener('submit', function() {{
-      var btn = form.querySelector('.auth-submit');
-      if (btn && !btn.disabled) setLoading(btn, true);
-    }});
-  }}
-  wireLoading(adminForm);
-  wireLoading(userForm);
-  // bfcache restore: navigating back must never leave a disabled button.
-  window.addEventListener('pageshow', function(ev) {{
-    if (!ev.persisted) return;
-    [adminForm, userForm].forEach(function(form) {{
-      var btn = form && form.querySelector('.auth-submit');
-      if (btn) setLoading(btn, false);
-    }});
+  var form = document.getElementById('form-admin');
+  var password = document.getElementById('admin-password');
+  var toggle = document.getElementById('login-password-toggle');
+  var button = form.querySelector('.auth-submit');
+  var progress = document.getElementById('login-progress');
+  toggle.hidden = false;
+  toggle.addEventListener('click', function() {{
+    var visible = password.type === 'password';
+    password.type = visible ? 'text' : 'password';
+    toggle.textContent = visible ? '隐藏' : '显示';
+    toggle.setAttribute('aria-label', visible ? '隐藏密码' : '显示密码');
+    toggle.setAttribute('aria-pressed', String(visible));
   }});
+  function reset() {{
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    button.querySelector('.auth-submit-text').textContent = '登录控制台';
+    progress.textContent = '';
+    password.type = 'password';
+    toggle.textContent = '显示';
+    toggle.setAttribute('aria-label', '显示密码');
+    toggle.setAttribute('aria-pressed', 'false');
+  }}
+  form.addEventListener('submit', function(event) {{
+    if (button.disabled) {{ event.preventDefault(); return; }}
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.querySelector('.auth-submit-text').textContent = '正在验证…';
+    progress.textContent = '正在验证登录信息';
+  }});
+  window.addEventListener('pageshow', reset);
 }})();
 </script>'''
-    return html_page('登录 · Hysteria', body, body_class='page-auth')
+    return html_page('管理员登录 · Hysteria', body, body_class='page-auth page-admin-login')
 
 
 def render_user_login(host, msg='', username=''):
@@ -4156,18 +3997,15 @@ def render_user_panel(
   window.addEventListener('pagehide', stop);
   start();'''
     if password_session:
-        panel_link_title = '登录面板地址'
         panel_link_hint = (
             '此地址不含订阅令牌，其他设备需要先使用用户名和面板密码登录。'
         )
     elif session_auth:
-        panel_link_title = '当前会话地址'
         panel_link_hint = (
             '此地址不含订阅令牌，仅当前设备的登录会话可直接访问；'
             '其他设备仍需使用原面板链接。'
         )
     else:
-        panel_link_title = '当前面板链接'
         panel_link_hint = '重置后旧链接立即失效，需用新链接重新订阅。'
     rotation_request_id = secrets.token_urlsafe(24)
 
@@ -4858,10 +4696,6 @@ def _usage_context():
     )
 
 
-def _scale_daily_entry(entry):
-    return usage_dashboard.scale_daily_entry(_usage_context(), entry)
-
-
 def _hour_key(dt):
     return usage_dashboard.hour_key(dt)
 
@@ -5285,8 +5119,8 @@ def render_health(host, flash=''):
         # --- Page header controls ---
         # (rendered by render_admin_shell topbar_extra)
 
-        # --- Top 4 KPIs (static, not live-refreshed) ---
-        + '<div class="health-top-kpis">' + kpi_cards + '</div>'
+        # --- Top 4 KPIs (refreshed with the service snapshot) ---
+        + '<div class="health-top-kpis" id="health-live-kpis">' + kpi_cards + '</div>'
 
         # --- Core services table (live-refreshed) ---
         + '<section class="admin-section">'
@@ -5331,7 +5165,7 @@ def render_health(host, flash=''):
 
         # --- Cost calibrator (advanced ops) ---
         + render_cost_calibrator()
-        + hysteria_update.render_history()
+        + '<div id="health-live-update">' + hysteria_update.render_history() + '</div>'
 
         + '</div>'
         + f'''<script src="/static/admin-poll.js?v={ADMIN_POLL_JS_ETAG.strip('"')}" defer></script>'''
@@ -5371,15 +5205,28 @@ def render_health(host, flash=''):
       timedOut = true;
       if (controller) controller.abort();
     }, 10000);
-    fetch('/admin/health.fragment', {credentials:'same-origin',cache:'no-store',signal:controller ? controller.signal : undefined})
+    fetch('/admin/health.fragment?snapshot=1', {credentials:'same-origin',cache:'no-store',signal:controller ? controller.signal : undefined})
       .then(function(response){
         if (response.status === 401) throw new Error('login');
         if (!response.ok) throw new Error('http');
-        return response.text();
+        return response.json();
       })
-      .then(function(markup){
+      .then(function(snapshot){
+        if (typeof snapshot.rows !== 'string' || typeof snapshot.kpis !== 'string' || typeof snapshot.update !== 'string') throw new Error('payload');
         var tbody = grid.querySelector('tbody');
-        if (tbody) tbody.innerHTML = markup;
+        if (tbody) tbody.innerHTML = snapshot.rows;
+        if (tbody) tbody.querySelectorAll('[data-health]').forEach(function(row){
+          document.querySelectorAll('.health-page [data-health]').forEach(function(other){
+            if (!grid.contains(other) && other.getAttribute('data-health') === row.getAttribute('data-health')) other.innerHTML = row.innerHTML;
+          });
+        });
+        document.getElementById('health-live-kpis').innerHTML = snapshot.kpis;
+        var update = document.getElementById('health-live-update');
+        if (!update.contains(document.activeElement) && !update.querySelector('button:disabled')) update.innerHTML = snapshot.update;
+        document.querySelectorAll('[data-local-time]').forEach(function(el){
+          var date = new Date(el.getAttribute('datetime'));
+          if (!isNaN(date.getTime())) el.textContent = date.toLocaleString();
+        });
         failures = 0;
         if (status) status.textContent = '更新 ' + stamp();
       })
@@ -5419,6 +5266,10 @@ def render_health(host, flash=''):
     else { start(); refresh(true); }
   });
   window.addEventListener('pagehide', stop);
+  document.querySelectorAll('[data-local-time]').forEach(function(el){
+    var date = new Date(el.getAttribute('datetime'));
+    if (!isNaN(date.getTime())) el.textContent = date.toLocaleString();
+  });
   start();
 })();
 </script>'''
@@ -5822,14 +5673,15 @@ def render_config_editor(
     content = f'''{alert}
 <div class="admin-page">
   <section class="form-section">
-    <div class="form-section-title">模板说明</div>
-    <div class="form-section-desc">编辑订阅模板（JSON 格式）。保存后所有用户下次拉订阅即获得新配置，每个用户的密码和 UUID 由服务端从 users.json 自动注入。</div>
+    <div class="form-section-title">模板说明与影响范围</div>
+    <div class="form-section-desc">编辑 JSON 格式的订阅模板，校验通过后转换为 YAML 保存。这是整份替换，不会合并保留遗漏的原内容。</div>
+    <ul class="template-impact"><li>影响后续订阅：用户更新订阅并应用后，客户端才会使用新配置。</li><li>不修改 Hysteria、Xray 等代理服务的运行配置，也不会重启代理服务。</li><li>每个用户的密码和 UUID 由服务端自动注入。覆盖前请自行保留原模板副本。</li></ul>
     <div class="small">模板文件：<code>{html.escape(str(TEMPLATE_FILE))}</code></div>
   </section>
 
   <section class="code-panel">
     <form method="post" action="/admin/config/save" id="configForm"
-          data-confirm="保存后所有用户下次拉取订阅都会使用这份模板，确认覆盖？">
+          data-confirm="将覆盖整份订阅模板，不会合并旧内容；影响用户后续订阅，不修改代理服务运行配置。确认保存？">
       <div class="code-panel-header">
         <div class="code-panel-title">模板 JSON</div>
         <div class="code-panel-actions">
@@ -5839,12 +5691,12 @@ def render_config_editor(
       </div>
       <div class="code-panel-body">
         <input type="hidden" name="template_revision" value="{html.escape(template_revision, quote=True)}">
-        <div class="field-help">Tab 插入两个空格；按 Esc 后再按 Tab 可移出编辑器，Shift+Tab 可直接返回上一个控件。</div>
+        <div class="field-help" id="configEditorHelp">Tab 插入两个空格；按 Esc 后再按 Tab 可移出编辑器，Shift+Tab 可直接返回上一个控件。</div>
         <div id="jsonError" class="json-error" role="alert" aria-live="assertive"></div>
-        <textarea name="config_json" id="configEditor" class="code-area code-tall"
+        <textarea name="config_json" id="configEditor" class="code-area code-tall" aria-label="订阅模板 JSON"
                   aria-describedby="configEditorHelp jsonError" spellcheck="false"{editor_error_attrs}{locked_attrs}>{html.escape(config_json)}</textarea>
         <div class="row mt-md gap-md">
-          <button class="btn btn-danger" type="submit"{disabled_attrs}>保存并覆盖模板</button>
+          <button class="btn btn-primary" type="submit"{disabled_attrs}>保存订阅模板</button>
           {recovery_actions}
         </div>
       </div>
@@ -7284,6 +7136,17 @@ class Handler(BaseHTTPRequestHandler):
                     'text/html; charset=utf-8', send_payload,
                 )
                 return
+            if q.get('snapshot') == ['1']:
+                snapshot = {
+                    'rows': render_health_fragment(),
+                    'kpis': ''.join(
+                        _health_top_kpi_card(title, result, is_text=(title == '整体状态'))
+                        for title, result in _render_health_top_kpis().items()
+                    ),
+                    'update': hysteria_update.render_history(),
+                }
+                self.send_response_body(200, json.dumps(snapshot), 'application/json; charset=utf-8', send_payload)
+                return
             self.send_response_body(
                 200, render_health_fragment(),
                 'text/html; charset=utf-8', send_payload,
@@ -7337,6 +7200,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self.send_response_body(404, '页面不存在', send_body=send_payload)
 
+    @request_multiplier_snapshot
     def do_GET(self):
         try:
             self.handle_get(send_payload=True)
@@ -7361,6 +7225,7 @@ class Handler(BaseHTTPRequestHandler):
                 'text/plain; charset=utf-8', True,
             )
 
+    @request_multiplier_snapshot
     def do_HEAD(self):
         try:
             self.handle_get(send_payload=False)
@@ -7385,6 +7250,7 @@ class Handler(BaseHTTPRequestHandler):
                 'text/plain; charset=utf-8', False,
             )
 
+    @request_multiplier_snapshot
     def do_POST(self):
         try:
             self._do_POST()

@@ -128,26 +128,16 @@ def test_admin_and_usage_requests_timeout_back_off_and_remain_retryable():
 def test_primary_controls_and_codex_light_surfaces_use_aa_text_contrast():
     styles = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
 
-    assert "background: linear-gradient(135deg, #6556d8, #493bb8);" in styles
-    assert (
-        ".filter-chips .chip.active { color: white; background: #5a4fd5;"
-        in styles
-    )
-    assert (
-        ".codex-records-table th { padding: 12px 18px; color: #53647a;"
-        in styles
-    )
-    assert (
-        ".codex-records-table .empty { color: #59697f; background: #fff; }"
-        in styles
-    )
-
+    import re
+    def token(name):
+        return re.search(r'--' + name + r':\s*(#[0-9a-fA-F]{6})', styles).group(1)
+    primary = styles.split('body.has-shell .btn-primary {', 1)[1].split('}', 1)[0]
+    background = re.search(r'background:\s*(#[0-9a-fA-F]{6})', primary).group(1)
+    assert 'color: #fff;' in primary
     for foreground, background in (
-        ("#ffffff", "#6556d8"),
-        ("#ffffff", "#493bb8"),
-        ("#ffffff", "#5a4fd5"),
-        ("#53647a", "#f6f8fb"),
-        ("#59697f", "#ffffff"),
+        ('#ffffff', background),
+        (token('text-primary'), token('bg-subtle')),
+        (token('text-secondary'), token('bg-surface')),
     ):
         assert _contrast(foreground, background) >= 4.5
 
@@ -242,6 +232,7 @@ def test_incident_and_health_wide_tables_are_keyboard_scrollable(monkeypatch):
         fmt_bytes=lambda value: f"{value} B",
         subscription_profiles={"default": {"label": "默认"}},
         render_line_radar=lambda **_kwargs: "",
+        render_line_radar_summary=lambda **_kwargs: "",
         render_cost_calibrator=lambda **_kwargs: "",
         render_admin_shell=lambda _active, _title, content, **_kwargs: content,
     )
@@ -260,7 +251,7 @@ def test_incident_and_health_wide_tables_are_keyboard_scrollable(monkeypatch):
     ).read_text(encoding="utf-8")
     for label in (
         "线路质量雷达，可横向滚动",
-        "成本校准数据，可横向滚动",
+        "多窗口倍率对比，可横向滚动",
     ):
         assert 'tabindex="0"' in health_source
         assert f'aria-label="{label}"' in health_source

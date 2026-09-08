@@ -179,7 +179,7 @@ def test_missing_users_state_fails_closed_without_recreating_it(
             "usid",
             lambda: ss.create_user_session("alice"),
             ss.get_user_sessions,
-            "/user/login",
+            "/login",
         ),
     ],
 )
@@ -272,8 +272,8 @@ def test_login_rate_limit_is_partitioned_by_real_ip_and_login_realm(
     tmp_path, monkeypatch
 ):
     _configure_state(tmp_path, monkeypatch)
-    invalid_admin = urlencode({"username": "intruder", "password": "wrong"})
-    invalid_user = urlencode({"username": "nobody", "password": "wrong"})
+    invalid_admin = urlencode({"admin_username": "intruder", "admin_password": "wrong"})
+    invalid_user = urlencode({"user_username": "nobody", "user_password": "wrong"})
 
     with _running_server() as server:
         for _ in range(ss._LOGIN_MAX):
@@ -300,7 +300,7 @@ def test_login_rate_limit_is_partitioned_by_real_ip_and_login_realm(
         other_realm = _request(
             server,
             "POST",
-            "/user/login",
+            "/login",
             body=invalid_user,
             headers={"X-Real-IP": "198.51.100.10"},
         )
@@ -334,7 +334,7 @@ def test_concurrent_login_burst_cannot_overrun_password_verification_limit(
         return False
 
     monkeypatch.setattr(ss, "verify_secret", slow_failed_verification)
-    invalid_admin = urlencode({"username": "admin", "password": "wrong"})
+    invalid_admin = urlencode({"admin_username": "admin", "admin_password": "wrong"})
 
     def attempt(server):
         return _request(
@@ -363,14 +363,14 @@ def test_concurrent_login_burst_cannot_overrun_password_verification_limit(
 
 
 @pytest.mark.parametrize(
-    ("account_state", "message"),
+    "account_state",
     [
-        ({"disabled": True}, "账号已停用"),
-        ({"expires_at": "2020-01-01"}, "账号已到期"),
+        {"disabled": True},
+        {"expires_at": "2020-01-01"},
     ],
 )
 def test_rejected_correct_user_password_releases_reservation_without_clearing_failures(
-    tmp_path, monkeypatch, account_state, message
+    tmp_path, monkeypatch, account_state
 ):
     user = {
         "sub_token": "token",
@@ -393,29 +393,30 @@ def test_rejected_correct_user_password_releases_reservation_without_clearing_fa
         rejected = _request(
             server,
             "POST",
-            "/user/login",
+            "/login",
             body=urlencode(
-                {"username": "alice", "password": "correct-password"}
+                {"user_username": "alice", "user_password": "correct-password"}
             ),
             headers={"X-Real-IP": client_ip},
         )
         final_allowed_failure = _request(
             server,
             "POST",
-            "/user/login",
-            body=urlencode({"username": "alice", "password": "wrong"}),
+            "/login",
+            body=urlencode({"user_username": "alice", "user_password": "wrong"}),
             headers={"X-Real-IP": client_ip},
         )
         now_blocked = _request(
             server,
             "POST",
-            "/user/login",
-            body=urlencode({"username": "alice", "password": "wrong"}),
+            "/login",
+            body=urlencode({"user_username": "alice", "user_password": "wrong"}),
             headers={"X-Real-IP": client_ip},
         )
 
     assert rejected.status == 200
-    assert message.encode("utf-8") in rejected.body
+    # The admin-only UI deliberately shows a neutral message for user logins.
+    assert "请使用管理员账号登录控制台。".encode("utf-8") in rejected.body
     assert "set-cookie" not in rejected.headers
     assert final_allowed_failure.status == 200
     assert now_blocked.status == 429
@@ -537,8 +538,8 @@ def test_stale_credential_generation_sessions_are_rejected_and_deleted(
             headers={"Cookie": f"sid={stale_admin_sid}"},
         )
 
-    assert stale_user.status == 302
-    assert stale_user.headers["location"] == "/user/login"
+    assert stale_user.status == 403
+    assert "location" not in stale_user.headers
     assert current_user.status == 200
     assert b"alice" in current_user.body
     assert stale_admin.status == 302
@@ -768,8 +769,8 @@ def test_delete_and_disable_routes_revoke_existing_user_panel_sessions(
     sessions = ss.get_user_sessions()
     assert alice_sessions.isdisjoint(sessions)
     assert sessions[bob_session]["user"] == "bob"
-    assert stale_cookie.status == 302
-    assert stale_cookie.headers["location"] == "/user/login"
+    assert stale_cookie.status == 403
+    assert "location" not in stale_cookie.headers
     _assert_security_headers(stale_cookie)
 
     users = json.loads(state["USERS_FILE"].read_text(encoding="utf-8"))

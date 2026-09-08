@@ -111,6 +111,34 @@ def test_check_route_uses_shared_updater_lock_helper(tmp_path, monkeypatch):
     assert headers["location"].endswith("msg=err:hysteria_update_busy")
 
 
+def test_health_snapshot_requires_auth_and_returns_all_regions(tmp_path, monkeypatch):
+    _configure_admin(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, 'render_health_fragment', lambda: '<tr data-health="Hysteria"></tr>')
+    monkeypatch.setattr(ss, '_render_health_top_kpis', lambda: {'整体状态': {'ok': True, 'label': '正常'}})
+    monkeypatch.setattr(ss.hysteria_update, 'load_state', lambda: {'status': 'skipped', 'reason': 'policy_disabled', 'ts': '2026-09-07T11:14:25+00:00'})
+    with _running_server() as server:
+        status, _, _ = _get(server, '/admin/health.fragment?snapshot=1')
+        assert status == 401
+        status, headers, body = _get(server, '/admin/health.fragment?snapshot=1&token=admin-token')
+    assert status == 200
+    assert 'application/json' in headers['content-type']
+    snapshot = json.loads(body)
+    assert 'data-health="Hysteria"' in snapshot['rows']
+    assert '正常' in snapshot['kpis']
+    assert '自动更新策略已关闭' in snapshot['update']
+    assert 'data-local-time' in snapshot['update']
+    assert 'data-confirm=' in snapshot['update']
+
+
+def test_every_sidebar_entry_has_active_navigation_and_unique_main():
+    for key, path, title, _icon in ss._SIDEBAR_NAV:
+        page = ss.render_admin_shell(key, title, '<p>页面内容</p>')
+        assert f'href="{path}" class="sidebar-link active" aria-current="page"' in page
+        assert page.count('id="main-content"') == 1
+        assert 'id="sidebar-collapse"' in page
+        assert 'id="sidebar-close"' in page
+
+
 def test_check_route_returns_ajax_json(tmp_path, monkeypatch):
     _configure_admin(tmp_path, monkeypatch)
     monkeypatch.setattr(

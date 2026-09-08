@@ -127,12 +127,12 @@ def test_user_panel_defers_qr_generation_until_requested(tmp_path, monkeypatch):
 
 # ----- B: End-user password login ------------------------------------------
 
-def test_home_and_user_login_page_expose_separate_user_entry():
+def test_home_exposes_admin_entry_without_retired_public_user_login():
     home = ss.render_home('panel.test')
     login = ss.render_user_login('panel.test')
 
-    assert 'href="/user/login"' in home
-    assert '用户登录' in home
+    assert 'href="/login"' in home
+    assert 'href="/user/login"' not in home
     assert 'action="/user/login"' in login
     assert 'autocomplete="username"' in login
     assert 'autocomplete="current-password"' in login
@@ -183,9 +183,9 @@ def test_user_password_login_reaches_clean_panel_url(tmp_path, monkeypatch):
     thread.start()
     try:
         conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
-        payload = 'username=alice&password=correct+horse'
+        payload = 'user_username=alice&user_password=correct+horse'
         conn.request(
-            'POST', '/user/login', body=payload,
+            'POST', '/login', body=payload,
             headers={
                 'Host': 'panel.test',
                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -214,8 +214,8 @@ def test_user_password_login_reaches_clean_panel_url(tmp_path, monkeypatch):
         conn.request('GET', '/user/panel', headers={'Host': 'panel.test'})
         denied = conn.getresponse()
         denied.read()
-        assert denied.status == 302
-        assert denied.getheader('Location') == '/user/login'
+        assert denied.status == 403
+        assert denied.getheader('Location') is None
         conn.close()
     finally:
         server.shutdown()
@@ -257,8 +257,8 @@ def test_user_must_change_initial_password_before_opening_panel(tmp_path, monkey
     thread.start()
     try:
         conn = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=3)
-        login = 'username=alice&password=12345678'
-        conn.request('POST', '/user/login', body=login, headers={
+        login = 'user_username=alice&user_password=12345678'
+        conn.request('POST', '/login', body=login, headers={
             'Host': 'panel.test',
             'Content-Type': 'application/x-www-form-urlencoded',
             'Content-Length': str(len(login)),
@@ -338,8 +338,8 @@ def test_admin_user_forms_keep_panel_and_connection_passwords_separate(tmp_path,
 
     assert page.count('name="panel_password"') == 2
     assert page.count('name="password"') == 2
-    assert '用户面板登录密码' in page
-    assert '代理连接密码' in page
+    assert 'for="create-panel-password"' in page
+    assert 'for="create-proxy-password"' in page
 
 
 def test_profile_qr_route_is_wired_before_generic_panel_route():
@@ -551,9 +551,9 @@ def test_user_panel_shows_quota_reset_countdown(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'local_now', lambda: now)
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
-    assert '本周期 30 天' in page
-    assert '重置于 2026-06-11' in page
-    assert '还剩 28 天' in page
+    assert '<dt>周期</dt><dd>30 天</dd>' in page
+    assert '2026-06-11' in page
+    assert '剩 28 天' in page
 
 
 def test_user_panel_shows_30day_usage_trend(tmp_path, monkeypatch):
@@ -564,18 +564,18 @@ def test_user_panel_shows_30day_usage_trend(tmp_path, monkeypatch):
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '近 30 天用量趋势' in page
-    assert 'panel-trend' in page
+    assert 'aria-label="近 30 天用量趋势"' in page
     assert 'class="spark"' in page
 
 
-def test_user_panel_has_copy_buttons_for_both_links(tmp_path, monkeypatch):
+def test_user_panel_copies_subscription_without_exposing_redundant_bearer_panel_link(tmp_path, monkeypatch):
     now = datetime(2026, 5, 14, 10, tzinfo=SH)
     _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
     monkeypatch.setattr(ss, 'local_now', lambda: now)
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert 'data-copy="http://h/sub/alice?token=tok"' in page
-    assert 'data-copy="http://h/panel/alice?token=tok"' in page
+    assert 'data-copy="http://h/panel/alice?token=tok"' not in page
 
 
 def test_user_panel_wires_live_refresh_poll(tmp_path, monkeypatch):
@@ -694,7 +694,7 @@ def test_admin_row_has_rotate_and_suspend_for_enabled_user(tmp_path, monkeypatch
     assert 'formaction="/admin/toggle-user?revision=' in row
     assert '>暂停</button>' in row
     assert 'data-action="disable-user"' in row
-    assert '已停用' not in row
+    assert 'hidden>已停用</span>' in row
 
 
 def test_admin_row_shows_enable_button_and_badge_for_disabled_user(tmp_path, monkeypatch):
@@ -967,8 +967,8 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok',
                                 {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2})
 
-    assert '快速导入' in page
-    assert '复制当前模式链接' in page
+    assert 'aria-label="连接与订阅"' in page
+    assert 'id="profile-copy"' in page
     assert 'id="profile-show-qr"' in page
     assert 'data-profile-option' in page
     assert 'data-profile="default"' in page
@@ -976,7 +976,6 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     assert 'http://h/sub/alice?token=tok&amp;profile=work' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=lowdata' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=safe' in page
-    assert '模板更新时间' in page
     assert "function selectProfile(option)" in page
 
 
@@ -1026,7 +1025,8 @@ def test_line_radar_recommends_game_when_hysteria_dominates(tmp_path, monkeypatc
     assert radar['rows'][0]['online'] == 2
     assert radar['rows'][2]['bytes'] == int(600 * ss.DISPLAY_MULTIPLIER)
     assert '线路质量雷达' in html_out
-    assert '推荐：游戏' in html_out
+    assert '游戏' in html_out
+    assert 'profile=game' in html_out
     assert '端口级总量计量' in html_out
 
 
@@ -1175,8 +1175,7 @@ def test_render_incidents_has_actions_and_evidence_link(tmp_path, monkeypatch):
     assert 'action="/admin/pause-user"' in page
     assert 'action="/admin/rotate-token"' in page
     assert 'name="next" value="/admin/incidents"' in page
-    assert '线路质量雷达' in page
-    assert '成本校准器' in page
+    assert '线路质量摘要' in page
 
 
 def test_incident_console_logic_lives_in_dedicated_module():
@@ -1232,7 +1231,7 @@ def test_admin_poll_js_confirms_destructive_admin_actions():
     text = (Path(ss.__file__).resolve().parent / 'admin_poll.js').read_text(encoding='utf-8')
     assert "action === 'rotate-user-token'" in text
     assert "action === 'disable-user'" in text
-    assert 'ev.submitter || pendingUserAction' in text
+    assert 'ev.submitter || f.__pendingSubmitter || null' in text
 
 
 def test_alerts_test_kind_has_friendly_message():

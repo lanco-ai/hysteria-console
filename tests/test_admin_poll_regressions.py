@@ -34,7 +34,7 @@ def test_patch_user_row_syncs_revision_cache_not_just_dom():
 def test_stat_dot_position_lives_in_css_not_runtime_js():
     css = _read("hysteria/admin.css")
     home = _read("hysteria/static/home.js")
-    for selector in (".stat-dot {", ".page-home .stat-dot {"):
+    for selector in (".stat-dot {",):
         block = re.search(
             re.escape(selector) + r"(.*?)\n\}", css, re.DOTALL,
         ).group(1)

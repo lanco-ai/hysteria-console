@@ -1163,7 +1163,14 @@ def reconcile(*, runner=subprocess.run, binary_path=BINARY_PATH,
 def render_history(state=None):
     data = state or load_state()
     esc = html.escape
-    st = esc(str(data.get('status') or 'idle'))
+    raw_status = str(data.get('status') or 'idle')
+    st = esc({
+        'idle': '尚未检查', 'checked': '已检查', 'skipped': '已跳过',
+        'checking': '检查中', 'applying': '更新中', 'updated': '已更新',
+        'success': '更新成功', 'failed': '更新失败',
+        'rolled_back': '已回滚', 'pending': '等待执行',
+        'scheduled': '已排队', 'downloading': '下载中', 'verifying': '校验中',
+    }.get(raw_status, raw_status))
     ver = esc(str(data.get('version') or '—'))
     prev = esc(str(data.get('previous_version') or '—'))
     ts = esc(str(data.get('ts') or '—'))
@@ -1175,22 +1182,29 @@ def render_history(state=None):
     note_row = ''
     if err:
         note_row = f'<div class="small">{err}</div>'
-    elif st == 'skipped' and reason:
-        note_row = f'<div class="small faint">{reason}</div>'
+    elif raw_status == 'skipped' and reason:
+        reason_label = {
+            'policy_disabled': '自动更新策略已关闭，本次自动更新已跳过。',
+            'no_update': '当前已是最新版本，无需更新。',
+        }.get(str(data.get('reason')), str(data.get('reason')))
+        note_row = f'<div class="small faint">{esc(reason_label)}</div>'
     return (
-        '<div class="card hysteria-update-history">'
-        '<h2 class="section-title mb-sm">Hysteria 更新</h2>'
+        '<section class="admin-section hysteria-update-history">'
+        '<div class="admin-section-header">'
+        '<h2 class="admin-section-title">Hysteria 更新</h2></div>'
+        '<div class="admin-section-body">'
         f'<div class="small">状态：{st} · 目标 {ver} · 之前 {prev}</div>'
-        f'<div class="small faint">{ts}</div>'
+        f'<div class="small faint">记录时间：<time data-local-time datetime="{ts}">{ts}</time></div>'
         f'{note_row}'
-        '<form method="post" action="/admin/hysteria-update/check" class="inline-form-row mt-sm"'
+        '<div class="hysteria-update-actions">'
+        '<form method="post" action="/admin/hysteria-update/check"'
         ' data-action="hysteria-update-check">'
         '<button class="btn ghost btn-sm" type="submit">检查更新</button></form>'
-        '<form method="post" action="/admin/hysteria-update/apply" class="inline-form-row mt-sm"'
+        '<form method="post" action="/admin/hysteria-update/apply"'
         ' data-action="hysteria-update-apply"'
         ' data-confirm="将下载官方二进制、校验哈希并重启 Hysteria。失败会自动回滚。确认继续？">'
         '<button class="btn btn-sm" type="submit">立即更新</button></form>'
-        '</div>'
+        '</div></div></section>'
     )
 
 

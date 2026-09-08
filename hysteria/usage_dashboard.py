@@ -14,16 +14,7 @@ import user_compat
 
 
 def configured_max_devices(cfg, default=2):
-    if not isinstance(cfg, dict):
-        return default
-    raw = cfg["max_devices"] if "max_devices" in cfg else default
-    if isinstance(raw, bool):
-        return default
-    try:
-        value = int(str(raw).strip())
-    except (TypeError, ValueError):
-        return default
-    return value if value >= 0 else default
+    return user_compat.configured_max_devices(cfg, default)
 
 
 @dataclass(frozen=True)
@@ -280,7 +271,7 @@ def build_overview_json_payload(ctx, *, now):
 def build_analytics_json_payload(ctx, *, now, include_charts=True):
     """Payload for the analytics page, optionally omitting chart series.
 
-    Summary polls update the numeric cards every five seconds. The larger
+    Summary polls update the numeric cards every thirty seconds. The larger
     chart arrays are requested separately at a lower cadence by the browser.
     Loading each state file once also avoids duplicate transient allocations.
     """
@@ -614,7 +605,7 @@ def render_usage_page(ctx, host):
   <section class="chart-panel">
     <div class="chart-panel-header">
       <div>
-        <div class="chart-panel-title">过去 7 天 · 每小时</div>
+        <h2 class="chart-panel-title">过去 7 天 · 每小时</h2>
         <div class="chart-panel-desc">基于滚动 7 天的小时桶聚合，点击峰值可定位到当日。</div>
       </div>
     </div>
@@ -627,7 +618,7 @@ def render_usage_page(ctx, host):
         <section class="chart-panel">
           <div class="chart-panel-header">
             <div>
-              <div class="chart-panel-title">7 天 × 24 小时 热图</div>
+              <h2 class="chart-panel-title">7 天 × 24 小时 热图</h2>
               <div class="chart-panel-desc">单元格颜色越深代表该小时流量越高。</div>
             </div>
           </div>
@@ -635,7 +626,7 @@ def render_usage_page(ctx, host):
         </section>
         <section class="admin-section" style="border:none;">
           <div class="admin-section-header">
-            <div class="admin-section-title">Top 5 · 近 24 小时</div>
+            <h2 class="admin-section-title">Top 5 · 近 24 小时</h2>
             <div class="small">活跃用户</div>
           </div>
           <div id="top-n-host">{top_html}</div>
@@ -761,10 +752,11 @@ def render_daily_table_collapsed(ctx, host):
         for dk in window:
             tx, rx, total = scale_daily_entry(ctx, (daily.get(dk) or {}).get(uid))
             cells.append(f'<td>{ctx.fmt_bytes(total) if total else "—"}</td>')
-        rows_html.append(f'<tr><th>{html.escape(uid)}</th>{"".join(cells)}</tr>')
+        rows_html.append(f'<tr><th scope="row">{html.escape(uid)}</th>{"".join(cells)}</tr>')
 
-    headers = "".join(f'<th>{dk[5:]}</th>' for dk in window)
-    return (f'<div class="scroll-x" tabindex="0" aria-label="每日用量明细，可横向滚动">'
+    headers = "".join(f'<th scope="col" class="{"is-today" if dk == today.isoformat() else ""}" title="{dk}{" · 今天" if dk == today.isoformat() else ""}">{dk[5:]}</th>' for dk in window)
+    return (f'<div class="daily-history-hint">左右滚动查看历史明细 · 用户列固定 · 日期末尾圆点表示今天</div>'
+            f'<div class="scroll-x daily-history-scroll" tabindex="0" aria-label="每日用量明细，可横向滚动">'
             f'<table class="table daily-table-collapsed">'
             f'<thead><tr><th>用户</th>{headers}</tr></thead>'
             f'<tbody>{"".join(rows_html) or f"<tr><td colspan={days + 1}>暂无数据</td></tr>"}</tbody>'

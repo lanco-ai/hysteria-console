@@ -148,7 +148,11 @@ def test_invalid_username_rerenders_422_with_safe_allowlisted_draft(
     assert response.headers["content-type"] == "text/html; charset=utf-8"
     assert response.headers["cache-control"] == "no-store"
     assert "location" not in response.headers
-    assert '<details class="summary-muted" open>' in response.body
+    create_form = next(attrs for tag, attrs in _elements(response.body)
+                       if tag == 'form' and attrs.get('action') == '/admin/add')
+    assert create_form['method'] == 'post'
+    assert any(tag == 'details' and 'open' in attrs
+               for tag, attrs in _elements(response.body))
 
     tag, error = _element_by_id(response.body, "create-add-error")
     assert tag == "div"
