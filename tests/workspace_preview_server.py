@@ -44,7 +44,6 @@ class Preview(BaseHTTPRequestHandler):
             scripts = {
                 '/static/admin-poll.js': 'admin_poll.js',
                 '/static/usage.js': 'usage.js',
-                '/static/codex-quota.js': 'codex_quota.js',
             }
             file = (
                 Path(ss.__file__).parent / scripts[path]

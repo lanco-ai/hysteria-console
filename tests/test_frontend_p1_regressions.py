@@ -9,7 +9,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import charts
-import codex_dashboard
 import health_widgets
 import incident_console
 import subscription_service as ss
@@ -76,32 +75,6 @@ def test_mobile_sidebar_contains_focus_and_removes_background_skip_target():
     assert "first.focus()" in page
 
 
-def test_codex_refresh_has_timeout_login_recovery_and_live_error_semantics():
-    page = codex_dashboard.render_page(
-        {},
-        render_admin_shell=lambda _active, _title, content, **_kwargs: content,
-    )
-    js = (ROOT / "hysteria" / "codex_quota.js").read_text(encoding="utf-8")
-
-    assert 'data-role="collector-status"' in page
-    assert 'role="status" aria-live="polite" aria-atomic="true"' in page
-    assert 'id="codex-collector-error"' in page
-    assert 'role="alert" aria-live="assertive" aria-atomic="true"' in page
-    assert "var REQUEST_TIMEOUT_MS = 10000" in js
-    assert "Promise.race([request, timeout])" in js
-    assert "response.status === 401" in js
-    assert 'authError.code = "login_required"' in js
-    assert 'auth: ["登录已失效", "is-error"]' in js
-    assert 'setCollectorStatus("auth")' in js
-    assert 'loginRequired ? "登录状态已失效"' in js
-    assert 'loginLink.href = "/login"' in js
-    assert "if (timeoutId) clearTimeout(timeoutId)" in js
-    assert "refreshBtn.disabled = false" in js
-    assert "function startCountdowns()" in js
-    assert "function stopCountdowns()" in js
-    assert "if (document.hidden) {" in js
-    assert "stopCountdowns()" in js
-    assert "if (document.hidden) return;" in js
 
 
 def test_admin_and_usage_requests_timeout_back_off_and_remain_retryable():
@@ -126,7 +99,7 @@ def test_admin_and_usage_requests_timeout_back_off_and_remain_retryable():
     assert 'id="usage-history-retry"' in usage
 
 
-def test_primary_controls_and_codex_light_surfaces_use_aa_text_contrast():
+def test_primary_controls_and_light_surfaces_use_aa_text_contrast():
     styles = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
 
     import re
@@ -157,13 +130,9 @@ def test_nonzero_heatmap_cells_keep_three_to_one_graphical_contrast():
     assert "0.60 + 0.40 * value / maxValue" in usage_js
 
 
-def test_logout_confirmation_has_complete_auth_layout_and_codex_marks_are_hidden():
+def test_logout_confirmation_has_complete_auth_layout():
     styles = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
     logout = ss.render_logout_confirmation("panel.test")
-    codex = codex_dashboard.render_page(
-        {},
-        render_admin_shell=lambda _active, _title, content, **_kwargs: content,
-    )
 
     assert 'class="auth-page"' in logout
     assert 'class="auth-wrap"' in logout
@@ -173,9 +142,6 @@ def test_logout_confirmation_has_complete_auth_layout_and_codex_marks_are_hidden
     assert ".auth-wrap { width: min(430px, 100%); }" in styles
     assert ".auth-brand {" in styles
     assert "border-radius: var(--radius-lg);" in styles
-    assert codex.count(
-        'class="codex-context-icon" aria-hidden="true"'
-    ) == 3
 
 
 def test_heatmap_has_an_expandable_semantic_hourly_data_table():

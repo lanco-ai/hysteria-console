@@ -1,6 +1,6 @@
 /* =====================================================
    ADMIN COMMON COMPONENTS
-   (For codex_dashboard, incident_console, usage_dashboard, etc.)
+   (For incident_console, usage_dashboard, etc.)
    ===================================================== */
 
 /* Card - Generic content panel */
@@ -294,4 +294,3 @@ body.has-shell .health-error .badge {
   color: var(--danger);
   background: var(--danger-soft);
 }
-

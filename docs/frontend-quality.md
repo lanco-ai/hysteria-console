@@ -24,8 +24,7 @@ external service connections and service commands; it does not need live account
 Browser coverage includes login controls, admin five-column management, responsive
 layouts, configuration formatting, cancelled rule deletion, hourly/history tables,
 subscription copy/QR, and user polling visibility, retry and disabled-account states.
-It is not an exhaustive end-to-end test of every administrative operation. Codex
-dashboard shared-helper load order is reviewed statically, not browser-covered yet.
+It is not an exhaustive end-to-end test of every administrative operation.
 
 ## Ownership
 

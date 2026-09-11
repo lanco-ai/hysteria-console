@@ -1399,6 +1399,8 @@ def test_cron_excludes_disabled_user_from_xray_plan(tmp_path, monkeypatch):
     monkeypatch.setattr(tl, 'USERS_FILE', str(tmp_path / 'users.json'), raising=False)
     monkeypatch.setattr(tl, 'RESET_STATE_FILE', str(tmp_path / 'reset.json'), raising=False)
     monkeypatch.setattr(tl, 'USAGE_LOCK_FILE', str(tmp_path / 'usage.lock'), raising=False)
+    # Core reset state is required when this test runs on settlement day.
+    (tmp_path / 'reset.json').write_text('{}')
     (tmp_path / 'users.json').write_text(json.dumps({
         'alice': {
             'vless_uuid': '11111111-1111-4111-8111-111111111111',

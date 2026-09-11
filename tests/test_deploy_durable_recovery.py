@@ -1140,8 +1140,6 @@ def test_recovery_unit_is_a_fail_closed_pre_service_gate():
         "xray.service",
         "tuic-server.service",
         "hy2-https-recovery.service",
-        "codex-quota-collector.service",
-        "codex-quota-collector.timer",
         "hy2-backup.service",
         "hy2-backup.timer",
         "hy2-health-check.service",
@@ -1263,7 +1261,7 @@ def test_prepare_runtime_contract_matches_helper_allowlists():
 
     assert _shell_array(deploy, "DEPLOY_MANAGED_UNITS") == set(
         _python_literal("EXACT_ALLOWED_UNITS")
-    )
+    ) - {"codex-quota-collector.service", "codex-quota-collector.timer"}
     assert _shell_array(deploy, "HY2_SYSCTL_KEYS") == set(
         _python_literal("EXACT_ALLOWED_SYSCTLS")
     )
@@ -1352,7 +1350,16 @@ def test_frozen_static_allowlist_exactly_matches_helper_contract(tmp_path):
     }
     helper_paths = set(_python_literal("EXACT_ALLOWED_PATHS"))
 
-    assert normalized == helper_paths
+    # Older transaction journals may still name these retired artifacts.
+    legacy_quota_paths = {
+        "/root/hysteria/codex_dashboard.py",
+        "/root/hysteria/codex_quota.py",
+        "/root/hysteria/codex_quota.js",
+        "/etc/systemd/system/codex-quota-collector.service",
+        "/etc/systemd/system/codex-quota-collector.timer",
+    }
+    assert legacy_quota_paths <= helper_paths
+    assert normalized == helper_paths - legacy_quota_paths
     for forbidden in (
         "/root/hysteria/users.json",
         "/root/hysteria/subscription_meta.json",
@@ -1605,7 +1612,6 @@ die() {{ printf '%s\\n' "$*" >&2; exit 97; }}
         ("hy2-health-check.timer", "hy2-health-check.service"),
         ("hy2-hysteria-update.timer", "hy2-hysteria-update.service"),
         ("hysteria-traffic-limiter.timer", "hysteria-traffic-limiter.service"),
-        ("codex-quota-collector.timer", "codex-quota-collector.service"),
         ("hy2-backup.timer", "hy2-backup.service"),
     ):
         assert commands.index(f"stop {timer}") < commands.index(f"stop {service}")
@@ -1629,7 +1635,7 @@ def test_shell_and_recovery_scheduled_quiescence_sets_match():
     assert _shell_array(deploy, "QUIESCE_FIRST_UNITS") == {
         *namespace["QUIESCE_TIMER_UNITS"],
         *namespace["QUIESCE_WORKER_UNITS"],
-    }
+    } - {"codex-quota-collector.service", "codex-quota-collector.timer"}
 
 
 def test_recovery_stops_timers_then_drains_workers_before_core(

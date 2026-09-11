@@ -18,7 +18,6 @@ import threading
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
-import codex_dashboard
 import subscription_service as ss
 
 
@@ -576,7 +575,6 @@ def test_static_assets_are_versioned_and_honor_etag_revalidation(
     css_version = ss.BASE_CSS_ETAG.strip('"')
     admin_version = ss.ADMIN_POLL_JS_ETAG.strip('"')
     usage_version = ss.USAGE_JS_ETAG.strip('"')
-    codex_version = ss.CODEX_QUOTA_JS_ETAG.strip('"')
 
     assert (
         f'/static/style.css?v={css_version}'
@@ -590,12 +588,6 @@ def test_static_assets_are_versioned_and_honor_etag_revalidation(
         f'/static/usage.js?v={usage_version}'
         in ss.render_usage_page("panel.test")
     )
-    codex_page = codex_dashboard.render_page(
-        {},
-        render_admin_shell=lambda _active, _title, content, **_kwargs: content,
-        asset_version=codex_version,
-    )
-    assert f'/static/codex-quota.js?v={codex_version}' in codex_page
 
     expected_css_etag = (
         '"' + hashlib.sha1(ss.BASE_CSS_BYTES).hexdigest()[:16] + '"'
@@ -660,11 +652,6 @@ def test_static_assets_are_versioned_and_honor_etag_revalidation(
         for asset_path, asset_etag, asset_body in (
             ("/static/admin-poll.js", ss.ADMIN_POLL_JS_ETAG, ss.ADMIN_POLL_JS_BYTES),
             ("/static/usage.js", ss.USAGE_JS_ETAG, ss.USAGE_JS_BYTES),
-            (
-                "/static/codex-quota.js",
-                ss.CODEX_QUOTA_JS_ETAG,
-                ss.CODEX_QUOTA_JS_BYTES,
-            ),
             ("/static/home.js", ss.HOME_JS_ETAG, ss.HOME_JS_BYTES),
         ):
             asset_version = asset_etag.strip('"')

@@ -476,20 +476,6 @@ body.has-shell svg.spark .spark-dot.today {
   fill: var(--text-primary);
 }
 
-/* Codex chart container height for predictable layout */
-body.has-shell .codex-chart-frame {
-  position: relative;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  min-height: 200px;
-}
-
-body.has-shell svg.codex-quota-chart {
-  display: block;
-  width: 100%;
-  height: auto;
-  max-height: 360px;
-}
 
 /* Responsive */
 @media (max-width: 1024px) {
@@ -517,4 +503,3 @@ body.has-shell svg.codex-quota-chart {
     flex-wrap: wrap;
   }
 }
-

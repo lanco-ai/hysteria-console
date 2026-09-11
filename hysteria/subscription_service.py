@@ -55,8 +55,6 @@ import user_state_service
 import operational_service
 import audit_log
 import user_panel_data
-import codex_dashboard
-import codex_quota
 import cost_calibrator
 import cycle as cycle_util
 import display as display_config
@@ -273,8 +271,6 @@ ADMIN_POLL_JS_BYTES = (_STATIC_DIR / 'admin_poll.js').read_bytes()
 ADMIN_POLL_JS_ETAG = '"' + hashlib.sha1(ADMIN_POLL_JS_BYTES).hexdigest()[:16] + '"'
 USAGE_JS_BYTES = (_STATIC_DIR / 'usage.js').read_bytes()
 USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
-CODEX_QUOTA_JS_BYTES = (_STATIC_DIR / 'codex_quota.js').read_bytes()
-CODEX_QUOTA_JS_ETAG = '"' + hashlib.sha1(CODEX_QUOTA_JS_BYTES).hexdigest()[:16] + '"'
 HOME_JS_BYTES = (_STATIC_DIR / 'static' / 'home.js').read_bytes()
 HOME_JS_ETAG = '"' + hashlib.sha1(HOME_JS_BYTES).hexdigest()[:16] + '"'
 
@@ -1367,7 +1363,6 @@ def render_logout_confirmation(host, *, user_panel=False):
 _SIDEBAR_NAV = [
     ('dashboard', '/admin', '总览', 'dashboard'),
     ('usage', '/admin/usage', '流量分析', 'traffic'),
-    ('codex', '/admin/codex', 'Codex 额度', 'chart'),
     ('incidents', '/admin/incidents', '事故处理', 'pulse'),
     ('health', '/admin/health', '健康状态', 'pulse'),
     ('config', '/admin/config', '模板配置', 'config'),
@@ -1747,15 +1742,6 @@ def render_daily_usage(host, days=14):
 
 def render_usage_page(host):
     return usage_dashboard.render_usage_page(_usage_context(), host)
-
-
-def render_codex_page(host):
-    payload = codex_quota.build_dashboard_payload(range_key='day')
-    return codex_dashboard.render_page(
-        payload,
-        render_admin_shell=render_admin_shell,
-        asset_version=CODEX_QUOTA_JS_ETAG.strip('"'),
-    )
 
 
 def render_user_detail_page(uid, host):
@@ -2206,7 +2192,6 @@ def is_admin_ui_document(path):
         return True
     return path in {
         '/admin',
-        '/admin/codex',
         '/admin/config',
         '/admin/daily',
         '/admin/health',
@@ -2672,7 +2657,6 @@ def _admin_console_context():
         local_now=local_now,
         render_admin=render_admin,
         render_admin_shell=render_admin_shell,
-        render_codex_page=render_codex_page,
         render_config_editor=render_config_editor,
         render_incidents=render_incidents,
         render_landing_egresses=render_landing_egresses,
@@ -3104,16 +3088,6 @@ class Handler(BaseHTTPRequestHandler):
                 'application/javascript; charset=utf-8',
                 send_payload,
                 cache_control=_static_asset_cache_control(q, USAGE_JS_ETAG),
-            )
-            return
-
-        if path == '/static/codex-quota.js':
-            self._serve_static(
-                CODEX_QUOTA_JS_BYTES,
-                CODEX_QUOTA_JS_ETAG,
-                'application/javascript; charset=utf-8',
-                send_payload,
-                cache_control=_static_asset_cache_control(q, CODEX_QUOTA_JS_ETAG),
             )
             return
 

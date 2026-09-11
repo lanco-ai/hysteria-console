@@ -4,7 +4,6 @@ import json
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
-import codex_quota
 import hysteria_update
 
 
@@ -20,7 +19,6 @@ class Context:
     local_now: Callable[..., object]
     render_admin: Callable[..., object]
     render_admin_shell: Callable[..., object]
-    render_codex_page: Callable[..., object]
     render_config_editor: Callable[..., object]
     render_incidents: Callable[..., object]
     render_landing_egresses: Callable[..., object]
@@ -47,40 +45,6 @@ def _logs(handler, ctx, path, q, host, base_url, send_payload):
         return
     handler.send_response_body(
         200, ctx.render_reset_logs(host), 'text/html; charset=utf-8', send_payload
-    )
-    return
-
-
-def _codex_page(handler, ctx, path, q, host, base_url, send_payload):
-    if not ctx.is_logged_in(handler):
-        handler.redirect('/login')
-        return
-    handler.send_response_body(
-        200,
-        ctx.render_codex_page(host),
-        'text/html; charset=utf-8',
-        send_payload,
-    )
-    return
-
-
-def _codex_json(handler, ctx, path, q, host, base_url, send_payload):
-    if not ctx.is_logged_in(handler):
-        handler.send_response_body(
-            401,
-            '{"error":"login_required"}',
-            'application/json; charset=utf-8',
-            send_payload,
-        )
-        return
-    range_key = (q.get('range') or ['day'])[0]
-    payload = codex_quota.build_dashboard_payload(range_key=range_key)
-    handler.send_response_body(
-        200,
-        json.dumps(payload, ensure_ascii=False, separators=(',', ':')),
-        'application/json; charset=utf-8',
-        send_payload,
-        extra_headers={'Cache-Control': 'no-store'},
     )
     return
 
@@ -304,10 +268,6 @@ def handle_read(
         route = _overview_page
     elif path == '/admin/logs':
         route = _logs
-    elif path == '/admin/codex':
-        route = _codex_page
-    elif path == '/admin/codex.json':
-        route = _codex_json
     elif path == '/admin/overview.json':
         route = _overview_json
     elif path == '/admin/reload-status.json':

@@ -79,7 +79,7 @@ def render_admin_shell(
     """Wrap admin page content in the sidebar + topbar app shell."""
     nav_parts = []
     groups = (
-        ('概览与用量', ('dashboard', 'usage', 'codex')),
+        ('概览与用量', ('dashboard', 'usage')),
         ('运行维护', ('health', 'incidents', 'logs', 'settings')),
         ('网络配置', ('config', 'rules', 'landing-egresses')),
     )

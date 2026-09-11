@@ -83,8 +83,6 @@ declare -a DEPLOY_MANAGED_UNITS=(
   hysteria-subscription.service
   hysteria-traffic-limiter.timer
   hysteria-traffic-limiter.service
-  codex-quota-collector.timer
-  codex-quota-collector.service
   hy2-backup.timer
   hy2-backup.service
   hy2-health-check.timer
@@ -101,12 +99,10 @@ declare -a QUIESCE_FIRST_UNITS=(
   hy2-health-check.timer
   hy2-hysteria-update.timer
   hysteria-traffic-limiter.timer
-  codex-quota-collector.timer
   hy2-backup.timer
   hy2-health-check.service
   hy2-hysteria-update.service
   hysteria-traffic-limiter.service
-  codex-quota-collector.service
   hy2-backup.service
 )
 declare -a CRITICAL_UNITS=(
@@ -279,8 +275,6 @@ build_durable_artifact_set() {
     alerts.py \
     anomaly.py \
     charts.py \
-    codex_dashboard.py \
-    codex_quota.py \
     cost_calibrator.py \
     cycle.py \
     health.py \
@@ -303,7 +297,6 @@ build_durable_artifact_set() {
     timeutil.py \
     admin.css \
     admin_poll.js \
-    codex_quota.js \
     usage.js \
     static/home.js \
     static/login.js \
@@ -361,8 +354,6 @@ build_durable_artifact_set() {
     "$SYSTEMD_DIR/hysteria-subscription.service" \
     "$SYSTEMD_DIR/hysteria-traffic-limiter.service" \
     "$SYSTEMD_DIR/hysteria-traffic-limiter.timer" \
-    "$SYSTEMD_DIR/codex-quota-collector.service" \
-    "$SYSTEMD_DIR/codex-quota-collector.timer" \
     "$SYSTEMD_DIR/hy2-backup.service" \
     "$SYSTEMD_DIR/hy2-backup.timer" \
     "$SYSTEMD_DIR/hysteria-porthop.service" \
@@ -1610,8 +1601,6 @@ for artifact in \
   "$HY_DIR/alerts.py" \
   "$HY_DIR/anomaly.py" \
   "$HY_DIR/charts.py" \
-  "$HY_DIR/codex_dashboard.py" \
-  "$HY_DIR/codex_quota.py" \
   "$HY_DIR/cost_calibrator.py" \
   "$HY_DIR/cycle.py" \
   "$HY_DIR/health.py" \
@@ -1633,7 +1622,6 @@ for artifact in \
   "$HY_DIR/timeutil.py" \
   "$HY_DIR/admin.css" \
   "$HY_DIR/admin_poll.js" \
-  "$HY_DIR/codex_quota.js" \
   "$HY_DIR/usage.js" \
   "$HY_DIR/static/home.js" \
   "$HY_DIR/static/login.js" \
@@ -1695,8 +1683,6 @@ for artifact in \
   "$SYSTEMD_DIR/hysteria-subscription.service" \
   "$SYSTEMD_DIR/hysteria-traffic-limiter.service" \
   "$SYSTEMD_DIR/hysteria-traffic-limiter.timer" \
-  "$SYSTEMD_DIR/codex-quota-collector.service" \
-  "$SYSTEMD_DIR/codex-quota-collector.timer" \
   "$SYSTEMD_DIR/hy2-backup.service" \
   "$SYSTEMD_DIR/hy2-backup.timer" \
   "$SYSTEMD_DIR/hysteria-porthop.service" \
@@ -1816,8 +1802,6 @@ render "$REPO_DIR/hysteria/traffic_limiter.py"       "$HY_DIR/traffic_limiter.py
 render "$REPO_DIR/hysteria/alerts.py"                "$HY_DIR/alerts.py"
 render "$REPO_DIR/hysteria/anomaly.py"               "$HY_DIR/anomaly.py"
 render "$REPO_DIR/hysteria/charts.py"                "$HY_DIR/charts.py"
-render "$REPO_DIR/hysteria/codex_dashboard.py"       "$HY_DIR/codex_dashboard.py"
-render "$REPO_DIR/hysteria/codex_quota.py"           "$HY_DIR/codex_quota.py"
 render "$REPO_DIR/hysteria/cost_calibrator.py"       "$HY_DIR/cost_calibrator.py"
 render "$REPO_DIR/hysteria/cycle.py"                 "$HY_DIR/cycle.py"
 render "$REPO_DIR/hysteria/health.py"                "$HY_DIR/health.py"
@@ -1840,7 +1824,6 @@ render "$REPO_DIR/hysteria/display.py"               "$HY_DIR/display.py"
 render "$REPO_DIR/hysteria/timeutil.py"              "$HY_DIR/timeutil.py"
 install_atomic 644 "$REPO_DIR/hysteria/admin.css"      "$HY_DIR/admin.css"
 install_atomic 644 "$REPO_DIR/hysteria/admin_poll.js"  "$HY_DIR/admin_poll.js"
-install_atomic 644 "$REPO_DIR/hysteria/codex_quota.js" "$HY_DIR/codex_quota.js"
 install_atomic 644 "$REPO_DIR/hysteria/usage.js"       "$HY_DIR/usage.js"
 install_atomic 644 "$REPO_DIR/hysteria/static/home.js" "$HY_DIR/static/home.js"
 install_atomic 644 "$REPO_DIR/hysteria/static/login.js" "$HY_DIR/static/login.js"
@@ -1908,8 +1891,6 @@ chmod 700 \
   "$HY_DIR/alerts.py" \
   "$HY_DIR/anomaly.py" \
   "$HY_DIR/charts.py" \
-  "$HY_DIR/codex_dashboard.py" \
-  "$HY_DIR/codex_quota.py" \
   "$HY_DIR/cost_calibrator.py" \
   "$HY_DIR/cycle.py" \
   "$HY_DIR/health.py" \
@@ -2173,10 +2154,6 @@ install_atomic 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.service" \
   "$SYSTEMD_DIR/hysteria-traffic-limiter.service"
 install_atomic 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.timer" \
   "$SYSTEMD_DIR/hysteria-traffic-limiter.timer"
-install_atomic 644 "$REPO_DIR/systemd/codex-quota-collector.service" \
-  "$SYSTEMD_DIR/codex-quota-collector.service"
-install_atomic 644 "$REPO_DIR/systemd/codex-quota-collector.timer" \
-  "$SYSTEMD_DIR/codex-quota-collector.timer"
 install_atomic 644 "$REPO_DIR/systemd/hy2-backup.service" \
   "$SYSTEMD_DIR/hy2-backup.service"
 install_atomic 644 "$REPO_DIR/systemd/hy2-backup.timer" \
@@ -2238,7 +2215,6 @@ done
 systemctl enable --now hysteria-server.service
 systemctl enable --now hysteria-subscription.service
 systemctl enable --now hysteria-traffic-limiter.timer
-systemctl enable --now codex-quota-collector.timer
 systemctl enable --now hy2-backup.timer
 systemctl enable --now hy2-health-check.timer
 systemctl enable --now hy2-hysteria-update.timer
@@ -2251,17 +2227,6 @@ systemctl restart hysteria-subscription.service
 systemctl restart xray.service
 systemctl restart tuic-server.service
 systemctl restart hysteria-traffic-limiter.timer
-if [[ -f "$HY_DIR/state/codex_quota.csv" ]]; then
-  PYTHONPATH="$HY_DIR" python3 "$HY_DIR/codex_quota.py" migrate-legacy \
-    --legacy-csv "$HY_DIR/state/codex_quota.csv" || \
-    warn "Legacy Codex quota history migration failed; the CSV was left untouched."
-fi
-if command -v codex >/dev/null 2>&1 && codex login status >/dev/null 2>&1; then
-  systemctl start codex-quota-collector.service || \
-    warn "Initial Codex quota collection failed; the timer will retry in 3 minutes."
-else
-  warn "Codex is not logged in; quota collection will start after 'codex login'."
-fi
 # Operational health is timer-owned after this transaction releases the
 # deployment flock. A fresh host has no backup yet, so synchronously running
 # the operational check here would turn the expected bootstrap state into a
@@ -2275,7 +2240,6 @@ required_active_units=(
   hysteria-server.service
   hysteria-subscription.service
   hysteria-traffic-limiter.timer
-  codex-quota-collector.timer
   hy2-backup.timer
   hy2-health-check.timer
   hy2-hysteria-update.timer

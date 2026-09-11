@@ -14,7 +14,7 @@ sections to make their names look cleaner without browser regression coverage.
 - `06–09`: shell, overview/users, dialogs/status and management controls.
 - `10–12`: shared admin elements, health/calibration, operations/configuration.
 - `13–14`: responsive rules and admin section components.
-- `15–16`: Codex and personal panel.
+- `16`: personal panel.
 - `17`: reduced motion and scoped workspace refinements.
 
 The final scoped refinements are intentionally retained in their existing position

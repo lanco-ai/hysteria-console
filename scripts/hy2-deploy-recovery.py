@@ -75,6 +75,8 @@ BOOT_ID_RE = re.compile(
 SNAPSHOT_RE = re.compile(r"snapshot-[0-9]{4}")
 SELF_UNIT = "hy2-deploy-recovery.service"
 DEFERRED_RESTART_UNITS = {"systemd-journald.service"}
+# Keep retired Codex quota paths and units below for recovery of older journals.
+# New deployments do not install or enable the quota collector.
 QUIESCE_TIMER_UNITS = (
     "hy2-health-check.timer",
     "hy2-hysteria-update.timer",
