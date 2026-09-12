@@ -1,4 +1,5 @@
 import { createRoot } from 'react-dom/client';
+import { LoginPage } from './features/auth/LoginPage';
 import { LogsPage } from './features/network-admin/logs/LogsPage';
 import { HomePage } from './features/public/HomePage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
@@ -18,6 +19,14 @@ if (window.location.pathname === '/__react/') {
   applyInitialShellPreferences();
   const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
   reactRoot.render(<LogsPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/login') {
+  document.title = '管理员登录 · Hysteria';
+  document.body.className = 'page-auth page-admin-login';
+  const passwordMaxLength = Number(root.dataset.passwordMaxLength);
+  if (!Number.isInteger(passwordMaxLength) || passwordMaxLength <= 0) {
+    throw new Error('Invalid login password length');
+  }
+  reactRoot.render(<LoginPage passwordMaxLength={passwordMaxLength}/>);
 } else {
   throw new Error(`Unsupported React entry: ${window.location.pathname}`);
 }

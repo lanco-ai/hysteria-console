@@ -1,0 +1,61 @@
+export type LoginResponse =
+  | {
+      ok: true;
+      redirect_to: '/admin?msg=login+success' | '/user/panel' | '/user/change-password';
+    }
+  | { ok: false; message: string };
+
+type Credentials = { username: string; password: string };
+
+const destinations = new Set([
+  '/admin?msg=login+success',
+  '/user/panel',
+  '/user/change-password',
+]);
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function validateLoginResponse(value: unknown, status: number): LoginResponse {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid login response');
+  const record = value as Record<string, unknown>;
+  if (
+    status === 200
+    && record.ok === true
+    && typeof record.redirect_to === 'string'
+    && destinations.has(record.redirect_to)
+    && hasExactKeys(record, ['ok', 'redirect_to'])
+  ) {
+    return record as LoginResponse;
+  }
+  if (
+    (status === 200 || status === 429)
+    && record.ok === false
+    && typeof record.message === 'string'
+    && hasExactKeys(record, ['ok', 'message'])
+  ) {
+    return { ok: false, message: record.message };
+  }
+  throw new Error('Invalid login response');
+}
+
+export async function submitLogin(credentials: Credentials, signal: AbortSignal): Promise<LoginResponse> {
+  const body = new URLSearchParams({
+    admin_username: credentials.username,
+    admin_password: credentials.password,
+  });
+  const response = await fetch('/api/v1/login', {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { Accept: 'application/json' },
+    body,
+    signal,
+  });
+  const contentType = response.headers.get('content-type') || '';
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) throw new Error('Invalid login response');
+  return validateLoginResponse(await response.json(), response.status);
+}

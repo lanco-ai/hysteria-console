@@ -1,5 +1,7 @@
+import http.client
 import json
 from urllib.error import HTTPError
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 import pytest
@@ -40,6 +42,20 @@ def _json(url, *, cookie=''):
     with urlopen(request, timeout=5) as response:
         assert response.headers.get_content_type() == 'application/json'
         return response.status, json.load(response)
+
+
+def _post_form(url, fields, *, cookie=''):
+    body = urlencode(fields).encode()
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    if cookie:
+        headers['Cookie'] = cookie
+    request = Request(url, data=body, headers=headers, method='POST')
+    try:
+        response = urlopen(request, timeout=5)
+    except HTTPError as error:
+        response = error
+    with response:
+        return response.status, response.headers, json.load(response)
 
 
 def _assert_head_matches_get(url, *, cookie=''):
@@ -103,6 +119,17 @@ def test_react_preview_serves_exact_public_entry_with_public_document_shell(runn
     _assert_head_matches_get(base_url + '/__react/')
 
 
+def test_react_preview_serves_exact_login_entry_with_password_limit(running_preview):
+    _, base_url = running_preview
+    with urlopen(base_url + '/__react/login', timeout=5) as response:
+        page = response.read().decode()
+        assert response.headers.get_content_type() == 'text/html'
+        assert '<title>管理员登录 · Hysteria</title>' in page
+        assert '<body class="page-auth page-admin-login">' in page
+        assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
+    _assert_head_matches_get(base_url + '/__react/login')
+
+
 def test_react_preview_rejects_unknown_react_api_asset_and_retired_routes(running_preview):
     _, base_url = running_preview
     for route in (
@@ -124,12 +151,70 @@ def test_react_preview_rejects_unknown_react_api_asset_and_retired_routes(runnin
         assert head_error.value.read() == b''
 
 
-def test_react_preview_is_read_only_for_every_post_including_logout(running_preview):
-    _, base_url = running_preview
-    for route in ('/__react/', '/__react/admin/logs', '/logout'):
+def test_react_preview_allows_only_login_post_and_preserves_cookie_isolation(running_preview):
+    server, base_url = running_preview
+    status, headers, failure = _post_form(
+        base_url + '/api/v1/login',
+        {'admin_username': 'admin', 'admin_password': 'wrong-fixture-password'},
+    )
+    assert status == 200
+    assert failure == {'ok': False, 'message': '用户名或密码错误'}
+    assert headers.get('Set-Cookie') is None
+
+    status, headers, success = _post_form(
+        base_url + '/api/v1/login',
+        {'admin_username': 'admin', 'admin_password': server.preview_login_password},
+    )
+    assert status == 200
+    assert success == {'ok': True, 'redirect_to': '/admin?msg=login+success'}
+    cookie = headers['Set-Cookie'].split(';', 1)[0]
+    assert cookie.startswith('sid=')
+    assert 'HttpOnly' in headers['Set-Cookie']
+
+    with pytest.raises(HTTPError) as anonymous:
+        _json(base_url + '/api/v1/session')
+    assert anonymous.value.code == 401
+    assert _json(base_url + '/api/v1/session', cookie=cookie) == (200, {'role': 'admin'})
+
+    for route in (
+        '/__react/',
+        '/__react/login',
+        '/__react/admin/logs',
+        '/login',
+        '/logout',
+        '/admin/reset-usage',
+        '/api/v1/missing',
+    ):
         with pytest.raises(HTTPError) as error:
             urlopen(Request(base_url + route, data=b'', method='POST'), timeout=5)
         assert error.value.code == 405
+
+
+def test_react_preview_rejects_bad_login_framing_before_authentication(
+    running_preview,
+    monkeypatch,
+):
+    _, base_url = running_preview
+    calls = []
+    monkeypatch.setattr(
+        preview.legacy_preview.ss,
+        'verify_secret',
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    parsed = urlsplit(base_url)
+    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=5)
+    body = b'admin_username=admin&admin_password=preview-only-password'
+    connection.putrequest('POST', '/api/v1/login')
+    connection.putheader('Content-Type', 'application/x-www-form-urlencoded')
+    connection.putheader('Content-Length', str(len(body)))
+    connection.putheader('Content-Length', str(len(body)))
+    connection.endheaders(body)
+    response = connection.getresponse()
+    assert response.status == 400
+    assert response.getheader('Content-Type').startswith('application/json')
+    assert json.loads(response.read()) == {'error': 'bad_request'}
+    connection.close()
+    assert calls == []
 
 
 def test_react_preview_preserves_authentication_and_asset_boundaries(running_preview):

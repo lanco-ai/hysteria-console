@@ -3,6 +3,7 @@
 import html
 import json
 import mimetypes
+import socket
 import sys
 import tempfile
 import threading
@@ -14,6 +15,7 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'hysteria'), str(ROOT)]
 
+import http_utils
 from fastapi.testclient import TestClient
 from web_api import create_app
 from web_api.services import LegacyPanelServices
@@ -24,8 +26,11 @@ DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
     '/__react/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site'),
     '/__react/admin/logs': ('清零日志', 'has-shell'),
+    '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
 }
 PUBLIC_HOST = 'preview.invalid'
+PREVIEW_LOGIN_PASSWORD = 'preview-only-password'
+RECEIPT_TIMEOUT = 10
 
 
 def _manifest_assets(dist):
@@ -68,14 +73,60 @@ def _handler(api_client, allowed_assets):
                 self.wfile.write(payload)
 
         def _api(self):
-            headers = {name: value for name, value in self.headers.items()}
+            headers = list(self.headers.raw_items())
+            if not any(name.lower() == 'cookie' for name, _ in headers):
+                headers.append(('Cookie', ''))
             method = 'GET' if self.command == 'HEAD' else self.command
             response = api_client.request(method, self.path, headers=headers)
             self._write(
                 response.status_code,
                 response.content,
                 response.headers.get('content-type', 'application/json'),
-                response.headers.items(),
+                response.headers.multi_items(),
+            )
+
+        def _json_error(self, status, error):
+            payload = json.dumps({'error': error}, separators=(',', ':')).encode()
+            headers = [('Cache-Control', 'no-store'), *http_utils.SECURITY_HEADERS.items()]
+            self._write(status, payload, 'application/json', headers)
+
+        def _login_api(self):
+            try:
+                content_length = http_utils.form_content_length(self.headers)
+            except http_utils.RequestTooLarge:
+                self._json_error(413, 'request_too_large')
+                return
+            except http_utils.BadRequest:
+                self._json_error(400, 'bad_request')
+                return
+
+            previous_timeout = self.connection.gettimeout()
+            self.connection.settimeout(RECEIPT_TIMEOUT)
+            try:
+                payload = self.rfile.read(content_length)
+            except socket.timeout:
+                self._json_error(408, 'request_timeout')
+                return
+            finally:
+                self.connection.settimeout(previous_timeout)
+            if len(payload) != content_length:
+                self._json_error(400, 'bad_request')
+                return
+
+            headers = list(self.headers.raw_items())
+            if not any(name.lower() == 'cookie' for name, _ in headers):
+                headers.append(('Cookie', ''))
+            response = api_client.request(
+                'POST',
+                self.path,
+                headers=headers,
+                content=payload,
+            )
+            self._write(
+                response.status_code,
+                response.content,
+                response.headers.get('content-type', 'application/json'),
+                response.headers.multi_items(),
             )
 
         def _react_asset(self, path):
@@ -95,17 +146,27 @@ def _handler(api_client, allowed_assets):
         def _react_page(self, path):
             title, body_class = REACT_PAGES[path]
             payload = (DIST / 'index.html').read_text(encoding='utf-8')
+            escaped_public_host = html.escape(PUBLIC_HOST, quote=True)
             replacements = (
                 ('<title>清零日志</title>', f'<title>{title}</title>'),
                 ('<body class="has-shell">', f'<body class="{body_class}">'),
                 (
                     'data-public-host=""',
-                    f'data-public-host="{html.escape(PUBLIC_HOST, quote=True)}"',
+                    f'data-public-host="{escaped_public_host}"',
                 ),
             )
             for marker, replacement in replacements:
                 if payload.count(marker) != 1:
                     raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
+                payload = payload.replace(marker, replacement, 1)
+            if path == '/__react/login':
+                marker = f'data-public-host="{escaped_public_host}"'
+                replacement = (
+                    marker
+                    + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'
+                )
+                if payload.count(marker) != 1:
+                    raise RuntimeError('React login bootstrap marker is missing or ambiguous')
                 payload = payload.replace(marker, replacement, 1)
             self._write(200, payload.encode(), 'text/html; charset=utf-8')
 
@@ -123,6 +184,12 @@ def _handler(api_client, allowed_assets):
         def do_HEAD(self):
             self.do_GET()
 
+        def do_POST(self):
+            if urlsplit(self.path).path == '/api/v1/login':
+                self._login_api()
+                return
+            super().do_POST()
+
     return ReactPreview
 
 
@@ -137,26 +204,50 @@ def preview_server(port=0):
         legacy_preview.isolated_preview(directory) as allowed_ports,
     ):
         service = legacy_preview.ss
-        admin_cookie = service.create_session('admin', service._credential_generation('test-hash'))
-        user_cookie = service.create_user_session(
-            'demo_alex',
-            service._credential_generation(legacy_preview.DEMO['sub_token']),
-            service.USER_SESSION_SUBSCRIPTION_TOKEN,
-        )
-        app = create_app(LegacyPanelServices(service), max_requests=4)
-        with TestClient(app) as api_client:
-            handler = _handler(api_client, allowed_assets)
-            with ThreadingHTTPServer(('127.0.0.1', port), handler) as server:
-                server.preview_admin_cookie = admin_cookie
-                server.preview_user_cookie = user_cookie
-                allowed_ports.add(server.server_port)
-                worker = threading.Thread(target=server.serve_forever, daemon=True)
-                worker.start()
-                try:
-                    yield server
-                finally:
-                    server.shutdown()
-                    worker.join(timeout=5)
+        meta = service.load_meta()
+        admin_hash = service.hash_secret(PREVIEW_LOGIN_PASSWORD)
+        meta['admin_pass_hash'] = admin_hash
+        service.save_json(service.META_FILE, meta)
+        with service._login_failures_lock:
+            login_trackers = (
+                service._login_failures,
+                service._user_login_failures,
+                service._login_attempts_inflight,
+            )
+            service._login_failures = {}
+            service._user_login_failures = {}
+            service._login_attempts_inflight = {}
+        try:
+            admin_cookie = service.create_session(
+                'admin', service._credential_generation(admin_hash)
+            )
+            user_cookie = service.create_user_session(
+                'demo_alex',
+                service._credential_generation(legacy_preview.DEMO['sub_token']),
+                service.USER_SESSION_SUBSCRIPTION_TOKEN,
+            )
+            app = create_app(LegacyPanelServices(service), max_requests=4)
+            with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
+                handler = _handler(api_client, allowed_assets)
+                with ThreadingHTTPServer(('127.0.0.1', port), handler) as server:
+                    server.preview_admin_cookie = admin_cookie
+                    server.preview_user_cookie = user_cookie
+                    server.preview_login_password = PREVIEW_LOGIN_PASSWORD
+                    allowed_ports.add(server.server_port)
+                    worker = threading.Thread(target=server.serve_forever, daemon=True)
+                    worker.start()
+                    try:
+                        yield server
+                    finally:
+                        server.shutdown()
+                        worker.join(timeout=5)
+        finally:
+            with service._login_failures_lock:
+                (
+                    service._login_failures,
+                    service._user_login_failures,
+                    service._login_attempts_inflight,
+                ) = login_trackers
 
 
 if __name__ == '__main__':

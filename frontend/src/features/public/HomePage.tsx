@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect } from 'react';
+import { useInitialFragmentNavigation } from '../../shared/useInitialFragmentNavigation';
 import { ConsolePreview } from './ConsolePreview';
 
 const fragmentTargets = new Set([
@@ -11,14 +12,7 @@ const fragmentTargets = new Set([
 ]);
 
 export function HomePage() {
-  useLayoutEffect(() => {
-    const fragment = window.location.hash.slice(1);
-    if (!fragmentTargets.has(fragment)) return;
-    const target = document.getElementById(fragment);
-    if (!target) return;
-    target.scrollIntoView();
-    if (target.hasAttribute('tabindex')) target.focus({ preventScroll: true });
-  }, []);
+  useInitialFragmentNavigation(fragmentTargets);
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) return;
