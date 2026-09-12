@@ -1,7 +1,24 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect } from 'react';
 import { ConsolePreview } from './ConsolePreview';
 
+const fragmentTargets = new Set([
+  'demo-traffic',
+  'demo-users',
+  'demo-health',
+  'services',
+  'console-preview',
+]);
+
 export function HomePage() {
+  useLayoutEffect(() => {
+    const fragment = window.location.hash.slice(1);
+    if (!fragmentTargets.has(fragment)) return;
+    const target = document.getElementById(fragment);
+    if (!target) return;
+    target.scrollIntoView();
+    if (target.tabIndex >= 0) target.focus({ preventScroll: true });
+  }, []);
+
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) return;
     const observer = new IntersectionObserver(entries => {

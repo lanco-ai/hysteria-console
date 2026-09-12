@@ -162,6 +162,46 @@ async function verifyPublicDocumentAndTabs(browser) {
   await context.close();
 }
 
+async function fragmentState(page) {
+  return page.evaluate(() => ({
+    scrollY,
+    activeId: document.activeElement?.id || '',
+    activeTag: document.activeElement?.tagName || '',
+  }));
+}
+
+async function verifyInitialFragmentNavigation(browser) {
+  const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, reducedMotion: 'reduce' });
+  for (const fragment of ['demo-traffic', 'demo-users', 'demo-health', 'services', 'console-preview', 'unknown', '']) {
+    const suffix = fragment ? `#${fragment}` : '';
+    const reactPage = await context.newPage();
+    const reactCollection = collectFailures(reactPage, `React initial fragment ${suffix || '(absent)'}`);
+    await gotoHome(reactPage, suffix);
+    await reactPage.waitForFunction(() => document.readyState === 'complete');
+
+    const legacyPage = await context.newPage();
+    const legacyCollection = collectFailures(legacyPage, `legacy initial fragment ${suffix || '(absent)'}`);
+    const legacyResponse = await legacyPage.goto(`${baseUrl}/${suffix}`);
+    assert.equal(legacyResponse.status(), 200);
+    await legacyPage.locator('.site-main').waitFor();
+    await legacyPage.waitForFunction(() => document.readyState === 'complete');
+
+    const actual = await fragmentState(reactPage);
+    const expected = await fragmentState(legacyPage);
+    assert(
+      Math.abs(actual.scrollY - expected.scrollY) <= 2,
+      `initial ${suffix || '(absent)'} scroll parity: React ${actual.scrollY}, legacy ${expected.scrollY}`,
+    );
+    assert.equal(actual.activeId, expected.activeId, `initial ${suffix || '(absent)'} active element id parity`);
+    assert.equal(actual.activeTag, expected.activeTag, `initial ${suffix || '(absent)'} active element tag parity`);
+    assertClean(reactCollection);
+    assertClean(legacyCollection);
+    await reactPage.close();
+    await legacyPage.close();
+  }
+  await context.close();
+}
+
 async function verifyLegacyParity(browser) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' });
   for (const width of [1920, 1024, 390]) {
@@ -260,6 +300,7 @@ async function verifyRevealFallbacks(browser) {
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   try {
     await verifyPublicDocumentAndTabs(browser);
+    await verifyInitialFragmentNavigation(browser);
     await verifyLegacyParity(browser);
     await verifyRevealFallbacks(browser);
     console.log('PASS: React public home content, tabs, visual parity, isolation, and reveal behavior');
