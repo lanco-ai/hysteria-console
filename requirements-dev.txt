@@ -1,3 +1,6 @@
+-r requirements-web.txt
+
+httpx==0.28.1
 pytest==7.4.4
 PyYAML==6.0.1
 ruff==0.16.6

@@ -8,6 +8,11 @@ quality_python="${PYTHON:-python3}"
 
 # Incremental adoption: expand this list when a module is cleaned up.
 adopted=(
+  hysteria/web_api/__init__.py
+  hysteria/web_api/app.py
+  hysteria/web_api/models.py
+  hysteria/web_api/services.py
+  tests/test_web_api_reads.py
   hysteria/web_assets.py tests/test_web_assets.py
   tests/workspace_preview_server.py tests/run_frontend_browser.py
   tests/test_preview_isolation.py tests/test_preview_page_parity.py
