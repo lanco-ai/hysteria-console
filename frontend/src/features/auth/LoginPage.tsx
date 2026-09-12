@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
+import { useFormAction } from '../../shared/useFormAction';
 import { useInitialFragmentNavigation } from '../../shared/useInitialFragmentNavigation';
 import { submitLogin } from './loginRequest';
 
@@ -13,46 +14,16 @@ export function LoginPage({ passwordMaxLength }: { passwordMaxLength: number }) 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState('');
   const [feedback, setFeedback] = useState('');
   const usernameRef = useRef(username);
   const passwordRef = useRef(password);
-  const pendingRef = useRef(false);
-  const requestRef = useRef<{ controller: AbortController; generation: number } | null>(null);
-  const generationRef = useRef(0);
-
-  useInitialFragmentNavigation(fragmentTargets);
-
-  const resetInteraction = () => {
-    generationRef.current += 1;
-    requestRef.current?.controller.abort();
-    requestRef.current = null;
-    pendingRef.current = false;
-    setBusy(false);
+  const { busy, run } = useFormAction(() => {
     setProgress('');
     setPasswordVisible(false);
-  };
+  });
 
-  useEffect(() => {
-    const onPageShow = () => resetInteraction();
-    const onPageHide = () => {
-      generationRef.current += 1;
-      requestRef.current?.controller.abort();
-      requestRef.current = null;
-      pendingRef.current = false;
-    };
-    window.addEventListener('pageshow', onPageShow);
-    window.addEventListener('pagehide', onPageHide);
-    return () => {
-      window.removeEventListener('pageshow', onPageShow);
-      window.removeEventListener('pagehide', onPageHide);
-      generationRef.current += 1;
-      requestRef.current?.controller.abort();
-      requestRef.current = null;
-      pendingRef.current = false;
-    };
-  }, []);
+  useInitialFragmentNavigation(fragmentTargets);
 
   const changeUsername = (value: string) => {
     usernameRef.current = value;
@@ -63,42 +34,30 @@ export function LoginPage({ passwordMaxLength }: { passwordMaxLength: number }) 
     setPassword(value);
   };
 
-  const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (pendingRef.current) return;
-    pendingRef.current = true;
     const submitted = { username: usernameRef.current, password: passwordRef.current };
-    const controller = new AbortController();
-    const generation = generationRef.current + 1;
-    generationRef.current = generation;
-    requestRef.current = { controller, generation };
-    setBusy(true);
-    setFeedback('');
-    setProgress('正在验证登录信息');
-    const timeout = window.setTimeout(() => controller.abort(), 15_000);
-    try {
-      const result = await submitLogin(submitted, controller.signal);
-      if (generationRef.current !== generation) return;
-      if (result.ok) {
-        window.location.assign(result.redirect_to);
-        return;
-      }
-      setFeedback(result.message);
-      setPasswordVisible(false);
-      if (usernameRef.current === submitted.username) changeUsername(submitted.username.trim());
-      if (passwordRef.current === submitted.password) changePassword('');
-    } catch {
-      if (generationRef.current !== generation) return;
-      setFeedback(TRANSPORT_ERROR);
-    } finally {
-      window.clearTimeout(timeout);
-      if (generationRef.current === generation) {
-        requestRef.current = null;
-        pendingRef.current = false;
-        setBusy(false);
+    void run(signal => submitLogin(submitted, signal), {
+      onStart: () => {
+        setFeedback('');
+        setProgress('正在验证登录信息');
+      },
+      onResult: result => {
         setProgress('');
-      }
-    }
+        if (result.ok) {
+          window.location.assign(result.redirect_to);
+          return;
+        }
+        setFeedback(result.message);
+        setPasswordVisible(false);
+        if (usernameRef.current === submitted.username) changeUsername(submitted.username.trim());
+        if (passwordRef.current === submitted.password) changePassword('');
+      },
+      onError: () => {
+        setProgress('');
+        setFeedback(TRANSPORT_ERROR);
+      },
+    });
   };
 
   return <>

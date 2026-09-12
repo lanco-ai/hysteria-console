@@ -18,12 +18,17 @@ def main():
     default_login_screenshots = (
         root / '.superpowers' / 'sdd' / '2026-09-12-react-login' / 'task-1-screenshots'
     )
+    default_logout_screenshots = (
+        root / '.superpowers' / 'sdd' / '2026-09-12-react-logout' / 'task-1-screenshots'
+    )
     with preview_server() as server:
         env = dict(
             os.environ,
             PREVIEW_BASE_URL=f'http://127.0.0.1:{server.server_port}',
             REACT_PREVIEW_ADMIN_COOKIE=server.preview_admin_cookie,
+            REACT_PREVIEW_ADMIN_OTHER_COOKIE=server.preview_admin_other_cookie,
             REACT_PREVIEW_USER_COOKIE=server.preview_user_cookie,
+            REACT_PREVIEW_USER_OTHER_COOKIE=server.preview_user_other_cookie,
             REACT_PREVIEW_LOGIN_PASSWORD=server.preview_login_password,
             REACT_SCREENSHOT_DIR=os.environ.get(
                 'REACT_SCREENSHOT_DIR', str(default_logs_screenshots)
@@ -34,11 +39,15 @@ def main():
             REACT_LOGIN_SCREENSHOT_DIR=os.environ.get(
                 'REACT_LOGIN_SCREENSHOT_DIR', str(default_login_screenshots)
             ),
+            REACT_LOGOUT_SCREENSHOT_DIR=os.environ.get(
+                'REACT_LOGOUT_SCREENSHOT_DIR', str(default_logout_screenshots)
+            ),
         )
         for browser_test in (
             'react_logs_browser.cjs',
             'react_home_browser.cjs',
             'react_login_browser.cjs',
+            'react_logout_browser.cjs',
         ):
             subprocess.run(
                 ['node', str(root / 'tests' / browser_test)],

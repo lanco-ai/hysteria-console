@@ -138,6 +138,22 @@ def test_react_preview_serves_exact_login_entry_with_password_limit(running_prev
     _assert_head_matches_get(base_url + '/__react/login')
 
 
+@pytest.mark.parametrize('path', ['/__react/logout', '/__react/user/logout'])
+def test_react_preview_serves_exact_logout_entries_without_private_reads(
+    running_preview,
+    path,
+):
+    _, base_url = running_preview
+    with urlopen(base_url + path, timeout=5) as response:
+        page = response.read().decode()
+        assert response.headers.get_content_type() == 'text/html'
+        assert '<title>确认退出</title>' in page
+        assert '<body class="">' in page
+        assert 'data-public-host="preview.invalid"' in page
+        assert '/static/react/assets/' in page
+    _assert_head_matches_get(base_url + path)
+
+
 def test_react_preview_rejects_unknown_react_api_asset_and_retired_routes(running_preview):
     _, base_url = running_preview
     for route in (
@@ -159,7 +175,7 @@ def test_react_preview_rejects_unknown_react_api_asset_and_retired_routes(runnin
         assert head_error.value.read() == b''
 
 
-def test_react_preview_allows_only_login_post_and_preserves_cookie_isolation(running_preview):
+def test_react_preview_allows_exact_form_posts_and_preserves_cookie_isolation(running_preview):
     server, base_url = running_preview
     status, headers, failure = _post_form(
         base_url + '/api/v1/login',
@@ -184,12 +200,52 @@ def test_react_preview_allows_only_login_post_and_preserves_cookie_isolation(run
     assert anonymous.value.code == 401
     assert _json(base_url + '/api/v1/session', cookie=cookie) == (200, {'role': 'admin'})
 
+    both_current = f'sid={server.preview_admin_cookie}; usid={server.preview_user_cookie}'
+    status, headers, logout = _post_form(base_url + '/api/v1/logout', {}, cookie=both_current)
+    assert status == 200
+    assert logout == {'ok': True, 'redirect_to': '/login'}
+    assert headers['Set-Cookie'].startswith('sid=; ')
+    assert _json(base_url + '/api/v1/session', cookie=f'usid={server.preview_user_cookie}') == (
+        200,
+        {'role': 'user', 'username': 'demo_alex'},
+    )
+    assert _json(
+        base_url + '/api/v1/session', cookie=f'sid={server.preview_admin_other_cookie}'
+    ) == (200, {'role': 'admin'})
+
+    status, headers, logout = _post_form(
+        base_url + '/api/v1/user/logout',
+        {},
+        cookie=(f'usid={server.preview_user_cookie}; sid={server.preview_admin_other_cookie}'),
+    )
+    assert status == 200
+    assert logout == {'ok': True, 'redirect_to': '/login'}
+    assert headers['Set-Cookie'].startswith('usid=; ')
+    assert _json(
+        base_url + '/api/v1/session', cookie=f'sid={server.preview_admin_other_cookie}'
+    ) == (200, {'role': 'admin'})
+    assert _json(
+        base_url + '/api/v1/session', cookie=f'usid={server.preview_user_other_cookie}'
+    ) == (200, {'role': 'user', 'username': 'demo_alex'})
+
+    for path in ('/api/v1/logout', '/api/v1/user/logout'):
+        for _ in range(2):
+            status, headers, logout = _post_form(base_url + path, {})
+            assert status == 200
+            assert logout == {'ok': True, 'redirect_to': '/login'}
+            assert headers['Set-Cookie'].startswith(
+                'sid=; ' if path == '/api/v1/logout' else 'usid=; '
+            )
+
     for route in (
         '/__react/',
         '/__react/login',
+        '/__react/logout',
+        '/__react/user/logout',
         '/__react/admin/logs',
         '/login',
         '/logout',
+        '/user/logout',
         '/admin/reset-usage',
         '/api/v1/missing',
     ):
@@ -198,21 +254,31 @@ def test_react_preview_allows_only_login_post_and_preserves_cookie_isolation(run
         assert error.value.code == 405
 
 
-def test_react_preview_rejects_bad_login_framing_before_authentication(
+@pytest.mark.parametrize(
+    'path',
+    ['/api/v1/login', '/api/v1/logout', '/api/v1/user/logout'],
+)
+def test_react_preview_rejects_bad_form_framing_before_service_dispatch(
     running_preview,
     monkeypatch,
+    path,
 ):
     _, base_url = running_preview
     calls = []
     monkeypatch.setattr(
-        preview.legacy_preview.ss,
-        'verify_secret',
+        preview.LegacyPanelServices,
+        'submit_login',
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        preview.LegacyPanelServices,
+        'submit_logout',
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
     parsed = urlsplit(base_url)
     connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=5)
     body = b'admin_username=admin&admin_password=preview-only-password'
-    connection.putrequest('POST', '/api/v1/login')
+    connection.putrequest('POST', path)
     connection.putheader('Content-Type', 'application/x-www-form-urlencoded')
     connection.putheader('Content-Length', str(len(body)))
     connection.putheader('Content-Length', str(len(body)))
@@ -223,6 +289,28 @@ def test_react_preview_rejects_bad_login_framing_before_authentication(
     assert json.loads(response.read()) == {'error': 'bad_request'}
     connection.close()
     assert calls == []
+
+
+@pytest.mark.parametrize(
+    'path',
+    ['/api/v1/login', '/api/v1/logout', '/api/v1/user/logout'],
+)
+def test_react_preview_rejects_oversized_allowed_form_before_reading_body(
+    running_preview,
+    path,
+):
+    _, base_url = running_preview
+    parsed = urlsplit(base_url)
+    connection = http.client.HTTPConnection(parsed.hostname, parsed.port, timeout=5)
+    connection.putrequest('POST', path)
+    connection.putheader('Content-Type', 'application/x-www-form-urlencoded')
+    connection.putheader('Content-Length', str(preview.http_utils.MAX_FORM_BYTES + 1))
+    connection.endheaders()
+    response = connection.getresponse()
+    assert response.status == 413
+    assert response.getheader('Content-Type').startswith('application/json')
+    assert json.loads(response.read()) == {'error': 'request_too_large'}
+    connection.close()
 
 
 def test_react_preview_teardown_closes_partial_header_connections(tmp_path, monkeypatch):
@@ -374,7 +462,7 @@ def test_react_preview_teardown_waits_for_active_auth_before_fixture_restore(
     assert order == ['auth-finished', 'fixture-restored']
 
 
-def test_login_body_receipt_uses_one_absolute_deadline():
+def test_form_body_receipt_uses_one_absolute_deadline():
     now = [0.0]
 
     class TrickledBody:

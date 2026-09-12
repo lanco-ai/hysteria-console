@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { LoginPage } from './features/auth/LoginPage';
+import { LogoutPage } from './features/auth/LogoutPage';
 import { LogsPage } from './features/network-admin/logs/LogsPage';
 import { HomePage } from './features/public/HomePage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
@@ -27,6 +28,15 @@ if (window.location.pathname === '/__react/') {
     throw new Error('Invalid login password length');
   }
   reactRoot.render(<LoginPage passwordMaxLength={passwordMaxLength}/>);
+} else if (
+  window.location.pathname === '/__react/logout'
+  || window.location.pathname === '/__react/user/logout'
+) {
+  document.title = '确认退出';
+  document.body.removeAttribute('class');
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  const realm = window.location.pathname === '/__react/logout' ? 'admin' : 'user';
+  reactRoot.render(<LogoutPage realm={realm} publicHost={publicHost}/>);
 } else {
   throw new Error(`Unsupported React entry: ${window.location.pathname}`);
 }

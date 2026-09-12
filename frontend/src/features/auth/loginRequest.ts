@@ -1,3 +1,5 @@
+import { hasExactKeys, postFormJson } from '../../shared/postForm';
+
 export type LoginResponse =
   | {
       ok: true;
@@ -12,12 +14,6 @@ const destinations = new Set([
   '/user/panel',
   '/user/change-password',
 ]);
-
-function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
 
 function validateLoginResponse(value: unknown, status: number): LoginResponse {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Invalid login response');
@@ -43,19 +39,9 @@ function validateLoginResponse(value: unknown, status: number): LoginResponse {
 }
 
 export async function submitLogin(credentials: Credentials, signal: AbortSignal): Promise<LoginResponse> {
-  const body = new URLSearchParams({
+  const { value, status } = await postFormJson('/api/v1/login', {
     admin_username: credentials.username,
     admin_password: credentials.password,
-  });
-  const response = await fetch('/api/v1/login', {
-    method: 'POST',
-    credentials: 'same-origin',
-    cache: 'no-store',
-    headers: { Accept: 'application/json' },
-    body,
-    signal,
-  });
-  const contentType = response.headers.get('content-type') || '';
-  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) throw new Error('Invalid login response');
-  return validateLoginResponse(await response.json(), response.status);
+  }, signal);
+  return validateLoginResponse(value, status);
 }

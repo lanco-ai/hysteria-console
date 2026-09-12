@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useLogout } from '../features/auth/useLogout';
 import { Icon } from './icons';
 import { navigationGroups } from './navigation';
 
@@ -36,6 +37,9 @@ export function AdminShell({ active, badge, pageTitle, children }: AdminShellPro
   const sidebarRef = useRef<HTMLElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const restoreFocusRef = useRef(false);
+  const logoutErrorRef = useRef<HTMLDivElement>(null);
+  const handledLogoutFailureRef = useRef(0);
+  const logout = useLogout('admin');
   const effectiveCollapsed = collapsed && !mobile;
 
   useLayoutEffect(() => {
@@ -49,6 +53,20 @@ export function AdminShell({ active, badge, pageTitle, children }: AdminShellPro
       toggleRef.current?.focus();
     }
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (
+      logout.failureCount === 0
+      || handledLogoutFailureRef.current === logout.failureCount
+    ) return;
+    if (mobile && open) {
+      restoreFocusRef.current = false;
+      setOpen(false);
+      return;
+    }
+    handledLogoutFailureRef.current = logout.failureCount;
+    logoutErrorRef.current?.focus();
+  }, [logout.failureCount, mobile, open]);
 
   useEffect(() => {
     let second = 0;
@@ -165,8 +183,8 @@ export function AdminShell({ active, badge, pageTitle, children }: AdminShellPro
           </div>)}
         </nav>
         <div className="sidebar-footer">
-          <form method="post" action="/logout">
-            <button type="submit" className="sidebar-logout" title="退出登录" aria-label="退出登录"><Icon name="logout"/><span>退出登录</span></button>
+          <form method="post" action="/logout" onSubmit={logout.onSubmit}>
+            <button type="submit" className="sidebar-logout" title="退出登录" aria-label="退出登录" disabled={logout.busy} aria-busy={logout.busy ? true : undefined}><Icon name="logout"/><span>{logout.busy ? '正在退出…' : '退出登录'}</span></button>
           </form>
         </div>
       </aside>
@@ -183,7 +201,10 @@ export function AdminShell({ active, badge, pageTitle, children }: AdminShellPro
             <div className="topbar-right">{badge ? <span className="badge">{badge}</span> : null}</div>
           </div>
         </header>
-        <main className="content" id="main-content" tabIndex={-1}>{children}</main>
+        <main className="content" id="main-content" tabIndex={-1}>
+          {logout.feedback ? <div ref={logoutErrorRef} className="err" role="alert" aria-live="assertive" aria-atomic="true" tabIndex={-1}>{logout.feedback}</div> : null}
+          {children}
+        </main>
       </div>
     </div>
   </>;

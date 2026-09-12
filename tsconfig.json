@@ -18,5 +18,5 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["frontend/src", "vite.config.ts"]
+  "include": ["frontend/src", "tests/react_form_action_harness.tsx", "vite.config.ts"]
 }

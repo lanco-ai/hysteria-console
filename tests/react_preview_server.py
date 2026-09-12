@@ -28,6 +28,8 @@ REACT_PAGES = {
     '/__react/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site'),
     '/__react/admin/logs': ('清零日志', 'has-shell'),
     '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
+    '/__react/logout': ('确认退出', ''),
+    '/__react/user/logout': ('确认退出', ''),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'
@@ -91,7 +93,7 @@ def _handler(api_client, allowed_assets):
             headers = [('Cache-Control', 'no-store'), *http_utils.SECURITY_HEADERS.items()]
             self._write(status, payload, 'application/json', headers)
 
-        def _login_api(self):
+        def _form_api(self):
             try:
                 content_length = http_utils.form_content_length(self.headers)
             except http_utils.RequestTooLarge:
@@ -186,8 +188,12 @@ def _handler(api_client, allowed_assets):
             self.do_GET()
 
         def do_POST(self):
-            if urlsplit(self.path).path == '/api/v1/login':
-                self._login_api()
+            if urlsplit(self.path).path in {
+                '/api/v1/login',
+                '/api/v1/logout',
+                '/api/v1/user/logout',
+            }:
+                self._form_api()
                 return
             super().do_POST()
 
@@ -222,7 +228,15 @@ def preview_server(port=0):
             admin_cookie = service.create_session(
                 'admin', service._credential_generation(admin_hash)
             )
+            admin_other_cookie = service.create_session(
+                'admin', service._credential_generation(admin_hash)
+            )
             user_cookie = service.create_user_session(
+                'demo_alex',
+                service._credential_generation(legacy_preview.DEMO['sub_token']),
+                service.USER_SESSION_SUBSCRIPTION_TOKEN,
+            )
+            user_other_cookie = service.create_user_session(
                 'demo_alex',
                 service._credential_generation(legacy_preview.DEMO['sub_token']),
                 service.USER_SESSION_SUBSCRIPTION_TOKEN,
@@ -232,7 +246,9 @@ def preview_server(port=0):
                 handler = _handler(api_client, allowed_assets)
                 with managed_preview_http_server(('127.0.0.1', port), handler) as server:
                     server.preview_admin_cookie = admin_cookie
+                    server.preview_admin_other_cookie = admin_other_cookie
                     server.preview_user_cookie = user_cookie
+                    server.preview_user_other_cookie = user_other_cookie
                     server.preview_login_password = PREVIEW_LOGIN_PASSWORD
                     allowed_ports.add(server.server_port)
                     yield server
