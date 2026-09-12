@@ -1,7 +1,10 @@
 {
   "name": "hysteria-console-frontend",
   "private": true,
-  "engines": { "node": ">=22.13.0" },
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "build:css": "node scripts/build-css.cjs",
     "check:css-build": "node scripts/build-css.cjs --check",
@@ -9,12 +12,25 @@
     "lint:css": "stylelint \"hysteria/**/*.css\"",
     "test:gates": "node --test tests/frontend-quality.test.cjs tests/css-build.test.cjs tests/ui-core.test.cjs",
     "test:browser": "python3 tests/run_frontend_browser.py",
-    "check:frontend": "npm run check:css-build && npm run lint:js && npm run lint:css && npm run test:gates && npm run test:browser"
+    "typecheck:react": "tsc --noEmit",
+    "build:react": "vite build",
+    "test:react-browser": "python3 tests/run_react_browser.py",
+    "check:react": "npm run typecheck:react && npm run build:react && npm run test:react-browser",
+    "check:frontend": "npm run check:css-build && npm run lint:js && npm run lint:css && npm run test:gates && npm run test:browser && npm run check:react"
   },
   "devDependencies": {
-    "globals": "17.12.0",
+    "@playwright/test": "1.63.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
     "eslint": "10.10.0",
+    "globals": "17.12.0",
     "stylelint": "17.15.0",
-    "@playwright/test": "1.63.0"
+    "typescript": "7.0.2",
+    "vite": "8.3.0"
+  },
+  "dependencies": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   }
 }
