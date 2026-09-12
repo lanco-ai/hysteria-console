@@ -116,33 +116,43 @@ def create_app(services, *, max_requests=32):
                 content={'error': 'server_busy'},
                 headers={'Retry-After': '1'},
             )
-        call = partial(
-            function,
-            headers=_request_headers(request),
-            path=request.url.path,
-        )
+        released = False
 
-        outcome = {}
-        complete = anyio.Event()
-
-        async def run_and_release():
-            try:
-                outcome['payload'] = await anyio.to_thread.run_sync(
-                    call,
-                    abandon_on_cancel=False,
-                )
-            except Exception as exc:
-                outcome['error'] = exc
-            finally:
+        def release_capacity():
+            nonlocal released
+            if not released:
+                released = True
                 capacity.release()
-                complete.set()
 
-        async with anyio.create_task_group() as workers:
-            workers.start_soon(run_and_release)
-            await complete.wait()
-        if 'error' in outcome:
-            raise outcome['error']
-        return outcome['payload']
+        try:
+            call = partial(
+                function,
+                headers=_request_headers(request),
+                path=request.scope['path'],
+            )
+            outcome = {}
+            complete = anyio.Event()
+
+            async def run_and_release():
+                try:
+                    outcome['payload'] = await anyio.to_thread.run_sync(
+                        call,
+                        abandon_on_cancel=False,
+                    )
+                except Exception as exc:
+                    outcome['error'] = exc
+                finally:
+                    release_capacity()
+                    complete.set()
+
+            async with anyio.create_task_group() as workers:
+                workers.start_soon(run_and_release)
+                await complete.wait()
+            if 'error' in outcome:
+                raise outcome['error']
+            return outcome['payload']
+        finally:
+            release_capacity()
 
     @app.api_route('/api/v1/session', methods=['GET', 'HEAD'])
     async def session(request: Request):

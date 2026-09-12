@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 import subscription_service as ss
+import web_api.app as web_api_app
 from fastapi.testclient import TestClient
 from web_api import create_app
 from web_api.services import LegacyPanelServices
@@ -356,7 +357,7 @@ def test_get_and_head_have_identical_status_and_headers(api_client, path):
     assert head_response.content == b''
 
 
-def _direct_asgi_exchange(app, method, path):
+def _direct_asgi_exchange(app, method, path, *, query_string=b''):
     async def exchange():
         messages = []
 
@@ -375,7 +376,7 @@ def _direct_asgi_exchange(app, method, path):
                 'scheme': 'http',
                 'path': path,
                 'raw_path': path.encode('ascii'),
-                'query_string': b'',
+                'query_string': query_string,
                 'root_path': '',
                 'headers': [],
                 'client': ('127.0.0.1', 1234),
@@ -387,6 +388,62 @@ def _direct_asgi_exchange(app, method, path):
         return messages
 
     return asyncio.run(exchange())
+
+
+def _asgi_status(messages):
+    return next(item['status'] for item in messages if item['type'] == 'http.response.start')
+
+
+def test_malformed_raw_query_does_not_leak_capacity_or_enter_legacy_path():
+    seen_paths = []
+
+    class RecordingServices:
+        def read_session(self, *, headers, path):
+            del headers
+            seen_paths.append(path)
+            return {'role': 'admin'}
+
+        def read_admin_overview(self, *, headers, path):
+            raise AssertionError('unexpected route')
+
+    app = create_app(RecordingServices(), max_requests=1)
+    responses = [
+        _direct_asgi_exchange(
+            app,
+            'GET',
+            '/api/v1/session',
+            query_string=b'bad=\xff',
+        ),
+        _direct_asgi_exchange(app, 'GET', '/api/v1/session'),
+        _direct_asgi_exchange(app, 'GET', '/api/v1/session'),
+    ]
+    assert [_asgi_status(response) for response in responses] == [200, 200, 200]
+    assert seen_paths == ['/api/v1/session'] * 3
+
+
+def test_pre_worker_preparation_exception_releases_capacity(monkeypatch):
+    original = web_api_app._request_headers
+    attempts = 0
+
+    def fail_once(request):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError('pre-worker preparation failed')
+        return original(request)
+
+    class SuccessfulServices:
+        def read_session(self, *, headers, path):
+            del headers, path
+            return {'role': 'admin'}
+
+        def read_admin_overview(self, *, headers, path):
+            raise AssertionError('unexpected route')
+
+    monkeypatch.setattr(web_api_app, '_request_headers', fail_once)
+    app = create_app(SuccessfulServices(), max_requests=1)
+    responses = [_direct_asgi_exchange(app, 'GET', '/api/v1/session') for _ in range(3)]
+    assert [_asgi_status(response) for response in responses] == [500, 200, 200]
 
 
 @pytest.mark.parametrize(
