@@ -35,6 +35,8 @@
 
 **Interfaces:** React calls `/api/v1/session` then `/api/v1/admin/logs` with same-origin cookies. Main mounts once into root and owns the complete has-shell page. Use the API DTO from Task 1. One explicit controlled preview path `/__react/admin/logs`; public `/admin/logs` remains legacy until cutover authorization.
 
+The shell badge consumes an escaped public display-host bootstrap value on the root element (for example `data-public-host`), falling back to location.hostname only when absent. The isolated preview supplies `preview.invalid`, matching the old renderer. Do not hardcode the fictional hostname in application components or expose runtime secrets through bootstrap data.
+
 ```tsx
 // Component contract: markup/classes match render_reset_logs and render_admin_shell.
 type LogRow = {
@@ -45,6 +47,13 @@ type LogsPayload = {limit: number; rows: LogRow[]};
 ```
 
 - [ ] Add exact dependency pins and lockfile using npm; retain existing quality commands. Configure strict TypeScript checking, Vite hashed assets/manifest under frontend/dist with base `/static/react/`. Link existing `/static/style.css`; do not copy/retheme CSS. Existing local fonts remain served by the preview. No Vite server needed for browser acceptance.
+
+```html
+<!-- Existing stylesheet stays owned by the Python/static release. Verify the built URL. -->
+<link rel="stylesheet" href="/static/style.css" vite-ignore>
+```
+
+Vite documents `vite-ignore` for externally served HTML asset references at https://vite.dev/guide/features.html#html. Verify the actual build keeps this URL and does not create a second CSS source. Existing font URLs are `/static/fonts/inter-var.woff2` and `/static/fonts/jetbrains-mono.woff2`.
 - [ ] Write failing browser tests before components: real authenticated logs show seven columns and fixture row, empty rows show 暂无日志记录, anonymous session shows login action without privileged content, usid-only cannot render logs. Match current sidebar groups/links/active item and title/badge.
 - [ ] Implement full React shell using console_shell_views.py markup and static/shell.js behavioral inventory: hy2.sidebar persistence, desktop collapse, mobile breakpoint <=880, open/close/scrim/Escape, focus return, focus trap, inert background/closed sidebar, skip link, resize handling, reduced-motion/current motion preference. Preserve logout POST form; no legacy shell.js or preferences script loads on React page.
 - [ ] Implement logs page and shared read hook with loading/error/empty states; HTTP and JSON-validation failures are errors with retry, not empty tables. Timeout aborts fetch; cleanup/retry ignores stale responses. Clear privileged data on authentication failure. No artificial polling added to a formerly non-polling logs page.

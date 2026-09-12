@@ -51,8 +51,8 @@ StateStoreError/OSError become 503 `{"error":"state_unavailable"}`. Before retur
 
 Admission must be bounded before dispatching synchronous work: at most max_requests active service requests; excess returns 503 `{"error":"server_busy"}` with Retry-After:1. Release capacity on success, errors and cancellation, but never release while cancelled non-abandoning worker work is still accessing state. Use an ASGI-safe request boundary with try/finally and nonblocking capacity acquisition. No global threadpool configuration.
 
-- [ ] Install pinned FastAPI 0.141.1 and HTTPX 0.28.1 into /tmp/hy2-quality-venv only; verify package metadata/Python floor. Add runtime requirements file and dev include so CI cannot silently skip API tests.
-- [ ] Write failing tests using temporary real state and sessions (reuse isolated_preview or reliability fixture after mapping all required paths). Name breaks: missing route; invalid credential accepted; user can read admin; disabled user accepted; credential rotation ignored; query token bypass; state failure becomes empty success; secret leakage; leaked capacity.
+- [x] Install pinned FastAPI 0.141.1 and HTTPX 0.28.1 into /tmp/hy2-quality-venv only; verify package metadata/Python floor. Add runtime requirements file and dev include so CI cannot silently skip API tests.
+- [x] Write failing tests using temporary real state and sessions (reuse isolated_preview or reliability fixture after mapping all required paths). Name breaks: missing route; invalid credential accepted; user can read admin; disabled user accepted; credential rotation ignored; query token bypass; state failure becomes empty success; secret leakage; leaked capacity.
 
 ```python
 def test_overview_requires_admin(api_client):
@@ -66,12 +66,14 @@ def test_unknown_api_does_not_fall_back(api_client):
     assert response.headers['content-type'].startswith('application/json')
 ```
 
-- [ ] Run focused pytest, record failures before implementation; missing package errors alone are not red evidence. An empty factory scaffold may allow boundary assertions to run and fail with 404 before routes exist.
-- [ ] Implement models and adapter. Test real authenticated overview values against hand-derived fictional tx/rx/quota/online data, plus old/new parity over the same fixed clock. Exercise admin credential replacement, session expiration, user subscription-token invalidation, disabled/expired/password-change-required user states. Retain old endpoint behavior unchanged.
-- [ ] Implement factory, security/error boundary and bounded admission. Use HTTPX/TestClient concurrent requests and an event-gated service IO seam to prove overload and recovery; assert real HTTP outcomes, not mocked methods. Check handlers execute off the ASGI event-loop thread and request multiplier context resets after failures. Inject extra secret-shaped builder fields solely to prove response allowlisting.
-- [ ] Test factory construction causes no filesystem/network/service calls; use existing isolation guards. Test GET/HEAD, no automatic docs, missing path, wrong method and sanitized internal errors. Do not mount this app in the old server or add a production service file.
-- [ ] Run focused API tests, affected identity/accounting/error regression tests, backend lint/format and full backend suite once. Add all new Python files to adopted quality checks. Run pip check and bash -n deploy.sh. Independent task review and local commit; no push/deployment.
+- [x] Run focused pytest, record failures before implementation; missing package errors alone are not red evidence. An empty factory scaffold may allow boundary assertions to run and fail with 404 before routes exist.
+- [x] Implement models and adapter. Test real authenticated overview values against hand-derived fictional tx/rx/quota/online data, plus old/new parity over the same fixed clock. Exercise admin credential replacement, session expiration, user subscription-token invalidation, disabled/expired/password-change-required user states. Retain old endpoint behavior unchanged.
+- [x] Implement factory, security/error boundary and bounded admission. Use HTTPX/TestClient concurrent requests and an event-gated service IO seam to prove overload and recovery; assert real HTTP outcomes, not mocked methods. Check handlers execute off the ASGI event-loop thread and request multiplier context resets after failures. Inject extra secret-shaped builder fields solely to prove response allowlisting.
+- [x] Test factory construction causes no filesystem/network/service calls; use existing isolation guards. Test GET/HEAD, no automatic docs, missing path, wrong method and sanitized internal errors. Do not mount this app in the old server or add a production service file.
+- [x] Run focused API tests, affected identity/accounting/error regression tests, backend lint/format and full backend suite once. Add all new Python files to adopted quality checks. Run pip check and bash -n deploy.sh. Independent task review and local commit; no push/deployment.
 
 ## Later scope retained
+
+Verified locally at c7cced6 after independent review: 42 API tests passed. Before the review fix, the single full backend run passed 1517 tests; the two added recovery regressions and all API tests passed after it. Lint/format and dependency checks passed. Two upstream dependency deprecation warnings and existing datetime warnings remain documented, not filtered. No production mount or deployment.
 
 This is the API foundation gate, not the migration's final state. Typed read-only React vertical slice follows, then all mutation flows/pages, paired staging validation, explicitly authorized production cutover, and obsolete rendering cleanup. No mutation endpoint or conflict response is fabricated in a read-only task; mutation validation, CSRF and revision-conflict tests belong with the real write adapters.
