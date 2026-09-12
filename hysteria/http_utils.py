@@ -17,10 +17,10 @@ class BadRequest(Exception):
     pass
 
 
-def parse_form(handler, *, max_bytes=MAX_FORM_BYTES):
-    if handler.headers.get('Transfer-Encoding') is not None:
+def form_content_length(headers, *, max_bytes=MAX_FORM_BYTES):
+    if headers.get('Transfer-Encoding') is not None:
         raise BadRequest
-    raw_content_type = str(handler.headers.get('Content-Type') or '')
+    raw_content_type = str(headers.get('Content-Type') or '')
     if raw_content_type:
         content_type_parts = [
             part.strip().lower()
@@ -35,11 +35,11 @@ def parse_form(handler, *, max_bytes=MAX_FORM_BYTES):
             )
         ):
             raise BadRequest
-    get_all = getattr(handler.headers, 'get_all', None)
+    get_all = getattr(headers, 'get_all', None)
     if callable(get_all):
         content_lengths = get_all('Content-Length', [])
     else:
-        raw_length = handler.headers.get('Content-Length')
+        raw_length = headers.get('Content-Length')
         content_lengths = [] if raw_length is None else [raw_length]
     if len(content_lengths) != 1:
         raise BadRequest
@@ -52,10 +52,13 @@ def parse_form(handler, *, max_bytes=MAX_FORM_BYTES):
         raise BadRequest
     if length > max_bytes:
         raise RequestTooLarge
+    return length
+
+
+def decode_form_body(raw, *, max_bytes=MAX_FORM_BYTES):
+    if len(raw) > max_bytes:
+        raise RequestTooLarge
     try:
-        raw = handler.rfile.read(length)
-        if len(raw) != length:
-            raise BadRequest
         body = raw.decode('utf-8')
         if not body:
             return {}
@@ -68,6 +71,17 @@ def parse_form(handler, *, max_bytes=MAX_FORM_BYTES):
             errors='strict',
             separator='&',
         )
+    except (UnicodeDecodeError, ValueError):
+        raise BadRequest
+
+
+def parse_form(handler, *, max_bytes=MAX_FORM_BYTES):
+    length = form_content_length(handler.headers, max_bytes=max_bytes)
+    try:
+        raw = handler.rfile.read(length)
+        if len(raw) != length:
+            raise BadRequest
+        return decode_form_body(raw, max_bytes=max_bytes)
     except (UnicodeDecodeError, ValueError):
         raise BadRequest
 
