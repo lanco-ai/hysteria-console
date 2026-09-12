@@ -117,7 +117,7 @@ header or an empty Cookie header when absent, so its internal jar never supplies
 another browser's session. Do not rely on clearing a shared jar around requests
 (that races between threads). Preserve actual incoming headers otherwise.
 
-- [ ] Write real-build browser RED for `/__react/login` (currently 404), page
+- [x] Write real-build browser RED for `/__react/login` (currently 404), page
 structure and one real failed-login feedback interaction. Record expected
 failure before component/preview changes; use fictional data only.
 
@@ -130,11 +130,11 @@ await page.getByRole('alert').filter({hasText: '用户名或密码错误'}).wait
 assert.equal(await page.locator('#admin-password').inputValue(), '');
 ```
 
-- [ ] Implement JSX, feature request helper, controlled interaction and shared
+- [x] Implement JSX, feature request helper, controlled interaction and shared
 fragment hook exactly above; retain legacy scripts only on legacy comparison
 documents. No login.js, shell.js or ui-core script in the React document.
 
-- [ ] Add preview bootstrap and the single temporary-state POST forwarding seam.
+- [x] Add preview bootstrap and the single temporary-state POST forwarding seam.
 Python preview tests must show wrong credentials produce no cookie, correct
 fixture credentials set sid and authorize `/api/v1/session`, all other POSTs
 remain 405, legacy base preview remains read-only, bad body headers cannot call
@@ -146,7 +146,7 @@ the old all-POST-read-only test to describe the exact new exception, retaining
 its old cases rather than deleting the assertions. Keep synthetic build fixtures
 so these Python tests run without Node on a clean test checkout.
 
-- [ ] Real browser tests cover required/max-length validation, no initial API,
+- [x] Real browser tests cover required/max-length validation, no initial API,
 toggle/keyboard/Enter, pending text and one request under repeated submit,
 real incorrect and correct credentials, cookie HttpOnly plus subsequent session
 authorization and exact legacy destination. For fault scenarios use narrowly
@@ -155,7 +155,7 @@ automatic retry, editable draft retention, feedback escaping, and stale response
 suppression after pageshow/pagehide/unmount. Use a controlled delayed response
 to prove editing a field during submission is not erased by the old response.
 
-- [ ] Compare legacy `/login` and React at 1920/1024/390 with the same fonts and
+- [x] Compare legacy `/login` and React at 1920/1024/390 with the same fonts and
 motion preferences. Assert text/link/field/SVG attributes and layout bounds
 (outer layout, story, panel, fields, submit), background, no horizontal overflow;
 capture paired full-page screenshots. Compare initial `#main-content` focus
@@ -165,7 +165,7 @@ only exact deliberate fault route/status pairs. Following a successful navigatio
 to a legacy page may load its scripts; do not confuse that with scripts loaded
 by the React login document.
 
-- [ ] Register the login browser test in run_react_browser.py with fixture
+- [x] Register the login browser test in run_react_browser.py with fixture
 password and screenshot directory. Update README: three controlled entries;
 only login mutates temporary preview sessions, every other POST including logout
 is still blocked. Run all frontend gates (including home/logs regressions),
@@ -177,7 +177,7 @@ PATH=/tmp/hy2-quality-venv/bin:$PATH npm run check:frontend
 git diff --check
 ```
 
-- [ ] Self-review and commit only owned files locally, with exact red/green and
+- [x] Self-review and commit only owned files locally, with exact red/green and
 covering command outputs and screenshot paths in the ignored task report. No
 full backend rerun for this frontend/fixture slice; API task already owns that gate.
 
@@ -187,3 +187,36 @@ This migrates the administrator login document and fixture-tested login action,
 not logout confirmations, password-change documents or the whole user panel.
 No production entry changes, and legacy rendering remains available until full
 parity and the separate approved cutover/rollback checkpoint.
+
+## Acceptance — 2026-09-12
+
+Source `a645d9e`, review fix `7cad057`. Exact controlled `/__react/login`
+entry, real fixture authentication/cookies, strict response handling, stale
+draft protection and shared initial-fragment behavior implemented. Independent
+task review approved the frontend behavior but found request handlers could
+outlive preview fixture guards. The fix was independently approved with all
+findings addressed and no new Critical/Important/Minor breakage.
+
+Review-driven scope extension: one `tests/preview_http_server.py` lifecycle
+helper now serves React and legacy preview servers. It shuts down accepted
+sockets and joins handlers before TestClient/fixture restoration; body receipt
+has an absolute deadline. Partial-header/body, active-authentication and legacy
+preview teardown regressions cover the shared fix. The legacy preview still
+rejects every POST; React permits only exact login into temporary fixture state.
+
+Implementation RED was the missing404 entry/405 POST seam; MIME rejection also
+had explicit RED. Full frontend checks passed on both implementation and final
+fix trees. Parent independently passed fresh check:react (typecheck/build and
+logs/home/login browser suites),26 focused Python tests, then18 preview/isolation
+tests after the fix (9.59s). Diff checks passed. Two known upstream deprecations
+remain visible, not suppressed.
+
+Parent viewed paired1920/1024/390 artifacts and checked distinct source URLs
+for capture; all three pairs were byte-identical. Independent review confirmed
+the hashes. Direct React-root unmount is not exercised by the full-navigation
+browser scenario; this nonblocking coverage limitation remains recorded for
+final integration review, alongside the inspected cleanup implementation.
+
+No push, deployment, production reads or changes to runtime configuration,
+CSS/dependencies, proxy behavior or credentials. The full migration, remaining
+pages and separately approved cutover are still outstanding.

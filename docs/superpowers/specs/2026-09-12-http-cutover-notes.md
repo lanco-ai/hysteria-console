@@ -117,3 +117,29 @@ production cache/cookie/proxy verification are still outstanding.
 
 See the FastAPI login plan for the POST route, bounded ASGI reader and full-header
 policy review gate. React login and production cutover are separate tasks.
+
+## Inspected logout boundary — not yet migrated
+
+`public_page_routes` GET/HEAD `/logout` and `/user/logout` only render the
+appropriate confirmation when their respective session exists; otherwise they
+redirect to `/login`. Merely reading these URLs must not revoke a session.
+`console_shell_views.render_logout_confirmation` has distinct administrator/user
+titles, POST targets and cancel destinations (`/admin` versus `/user/panel`).
+The existing administrator sidebar submits POST `/logout` directly; preserving
+that behavior is distinct from preserving the separately addressable confirmation
+page. Do not silently introduce a new confirmation requirement on that control.
+
+`auth_routes` POST handlers delete only the supplied `sid` or `usid` through
+the corresponding shared session-store helper, clear only that realm's cookie,
+and return 303 to `/login`. They deliberately do not require a currently valid
+session first. Empty or stale sessions still permit cookie clearing; logout
+does not mean revoking every device or the other realm. The shared store owns
+its file lock and expiry pruning, which should not be reimplemented in an API.
+
+The legacy POST wrapper checks origin, validates bounded form input and loads
+metadata before invoking either handler. Any future adapter must decide and
+test this ordering explicitly, reuse the accepted admission/body boundary, and
+classify strict-state failures with the respective legacy POST path. Do not
+report successful logout or clear a cookie after a failed session deletion.
+This audit adds no logout API or preview mutation permission; current React
+login preview work still permits only the exact login POST.
