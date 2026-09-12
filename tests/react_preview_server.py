@@ -8,18 +8,19 @@ import sys
 import tempfile
 import threading
 from contextlib import contextmanager
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / 'hysteria'), str(ROOT)]
+sys.path[:0] = [str(ROOT / 'hysteria'), str(ROOT), str(ROOT / 'tests')]
 
 import http_utils
 from fastapi.testclient import TestClient
 from web_api import create_app
 from web_api.services import LegacyPanelServices
 
+from preview_http_server import managed_preview_http_server
+from preview_http_server import read_request_body as _read_request_body
 from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
@@ -100,15 +101,16 @@ def _handler(api_client, allowed_assets):
                 self._json_error(400, 'bad_request')
                 return
 
-            previous_timeout = self.connection.gettimeout()
-            self.connection.settimeout(RECEIPT_TIMEOUT)
             try:
-                payload = self.rfile.read(content_length)
+                payload = _read_request_body(
+                    self.rfile,
+                    self.connection,
+                    content_length,
+                    timeout=RECEIPT_TIMEOUT,
+                )
             except socket.timeout:
                 self._json_error(408, 'request_timeout')
                 return
-            finally:
-                self.connection.settimeout(previous_timeout)
             if len(payload) != content_length:
                 self._json_error(400, 'bad_request')
                 return
@@ -229,18 +231,14 @@ def preview_server(port=0):
             app = create_app(LegacyPanelServices(service), max_requests=4)
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
                 handler = _handler(api_client, allowed_assets)
-                with ThreadingHTTPServer(('127.0.0.1', port), handler) as server:
+                with managed_preview_http_server(
+                    ('127.0.0.1', port), handler
+                ) as server:
                     server.preview_admin_cookie = admin_cookie
                     server.preview_user_cookie = user_cookie
                     server.preview_login_password = PREVIEW_LOGIN_PASSWORD
                     allowed_ports.add(server.server_port)
-                    worker = threading.Thread(target=server.serve_forever, daemon=True)
-                    worker.start()
-                    try:
-                        yield server
-                    finally:
-                        server.shutdown()
-                        worker.join(timeout=5)
+                    yield server
         finally:
             with service._login_failures_lock:
                 (

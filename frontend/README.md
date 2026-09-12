@@ -8,7 +8,7 @@ The preview has three controlled entries:
 - `/__react/login` renders the administrator login and submits to the real JSON login adapter using fictional, temporary preview credentials.
 - `/__react/admin/logs` renders the administrator reset log and reads the real cookie-authenticated `/api/v1/session` and `/api/v1/admin/logs` endpoints.
 
-The existing public routes, including `/` and `/admin/logs`, remain unchanged for side-by-side comparison. Both React entries reuse `/static/style.css` and its local fonts; they do not load the legacy home, shell, or UI scripts.
+The existing public routes, including `/` and `/admin/logs`, remain unchanged for side-by-side comparison. All three React entries reuse `/static/style.css` and its local fonts; they do not load the legacy home, shell, or UI scripts.
 
 ## Checks
 

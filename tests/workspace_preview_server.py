@@ -10,7 +10,7 @@ import sys
 import tempfile
 import threading
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -18,6 +18,7 @@ sys.path[:0] = [str(Path(__file__).resolve().parents[1] / 'hysteria'), str(Path(
 import pytest
 import subscription_service as ss
 from test_product_ux_regressions import _seed_state
+from preview_http_server import managed_preview_http_server
 
 
 class Preview(BaseHTTPRequestHandler):
@@ -264,15 +265,9 @@ def preview_server(port=0):
         tempfile.TemporaryDirectory(prefix='hy2-workspace-fixture-') as directory,
         isolated_preview(directory) as allowed_ports,
     ):
-        with ThreadingHTTPServer(('127.0.0.1', port), Preview) as server:
+        with managed_preview_http_server(('127.0.0.1', port), Preview) as server:
             allowed_ports.add(server.server_port)
-            worker = threading.Thread(target=server.serve_forever, daemon=True)
-            worker.start()
-            try:
-                yield server
-            finally:
-                server.shutdown()
-                worker.join(timeout=5)
+            yield server
 
 
 if __name__ == '__main__':

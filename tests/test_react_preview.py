@@ -1,5 +1,8 @@
 import http.client
 import json
+import socket
+import threading
+from contextlib import contextmanager
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -9,8 +12,7 @@ import pytest
 from tests import react_preview_server as preview
 
 
-@pytest.fixture
-def running_preview(tmp_path, monkeypatch):
+def running_preview_dist(tmp_path):
     dist = tmp_path / 'dist'
     assets = dist / 'assets'
     assets.mkdir(parents=True)
@@ -32,6 +34,12 @@ def running_preview(tmp_path, monkeypatch):
             }
         )
     )
+    return dist
+
+
+@pytest.fixture
+def running_preview(tmp_path, monkeypatch):
+    dist = running_preview_dist(tmp_path)
     monkeypatch.setattr(preview, 'DIST', dist)
     with preview.preview_server() as server:
         yield server, f'http://127.0.0.1:{server.server_port}'
@@ -215,6 +223,194 @@ def test_react_preview_rejects_bad_login_framing_before_authentication(
     assert json.loads(response.read()) == {'error': 'bad_request'}
     connection.close()
     assert calls == []
+
+
+def test_react_preview_teardown_closes_partial_header_connections(tmp_path, monkeypatch):
+    handler_started = threading.Event()
+    original_handler = preview._handler
+
+    def observed_handler(api_client, allowed_assets):
+        base = original_handler(api_client, allowed_assets)
+
+        class ObservedHandler(base):
+            def setup(self):
+                super().setup()
+                handler_started.set()
+
+        return ObservedHandler
+
+    monkeypatch.setattr(preview, '_handler', observed_handler)
+    monkeypatch.setattr(preview, 'DIST', running_preview_dist(tmp_path))
+    manager = preview.preview_server()
+    server = manager.__enter__()
+    connection = socket.create_connection(server.server_address, timeout=2)
+    try:
+        connection.settimeout(0.2)
+        connection.sendall(
+            b'POST /api/v1/login HTTP/1.1\r\nHost: preview.invalid\r\nX-Stall:'
+        )
+        assert handler_started.wait(2), 'preview did not accept the partial request'
+        manager.__exit__(None, None, None)
+        manager = None
+        assert connection.recv(1) == b''
+    finally:
+        connection.close()
+        if manager is not None:
+            manager.__exit__(None, None, None)
+
+
+def test_react_preview_teardown_closes_partial_body_before_fixture_restore(
+    tmp_path,
+    monkeypatch,
+):
+    body_read_started = threading.Event()
+    original_read_request_body = preview._read_request_body
+
+    def observed_read_request_body(*args, **kwargs):
+        body_read_started.set()
+        return original_read_request_body(*args, **kwargs)
+
+    monkeypatch.setattr(preview, '_read_request_body', observed_read_request_body)
+    monkeypatch.setattr(preview, 'DIST', running_preview_dist(tmp_path))
+    manager = preview.preview_server()
+    server = manager.__enter__()
+    connection = socket.create_connection(server.server_address, timeout=2)
+    try:
+        connection.settimeout(0.2)
+        connection.sendall(
+            b'POST /api/v1/login HTTP/1.1\r\n'
+            b'Host: preview.invalid\r\n'
+            b'Content-Type: application/x-www-form-urlencoded\r\n'
+            b'Content-Length: 100\r\n\r\n'
+            b'admin_username=admin'
+        )
+        assert body_read_started.wait(2), 'preview did not begin the partial body read'
+        manager.__exit__(None, None, None)
+        manager = None
+        assert connection.recv(1) == b''
+    finally:
+        connection.close()
+        if manager is not None:
+            manager.__exit__(None, None, None)
+
+
+def test_react_preview_teardown_waits_for_active_auth_before_fixture_restore(
+    tmp_path,
+    monkeypatch,
+):
+    auth_started = threading.Event()
+    release_auth = threading.Event()
+    auth_finished = threading.Event()
+    fixture_restored = threading.Event()
+    teardown_finished = threading.Event()
+    shutdown_finished = threading.Event()
+    order = []
+    original_isolated_preview = preview.legacy_preview.isolated_preview
+    original_submit_login = preview.LegacyPanelServices.submit_login
+
+    @contextmanager
+    def observed_isolated_preview(directory):
+        with original_isolated_preview(directory) as allowed_ports:
+            yield allowed_ports
+        order.append('fixture-restored')
+        fixture_restored.set()
+
+    def gated_submit_login(service, **kwargs):
+        auth_started.set()
+        assert release_auth.wait(2), 'test did not release active authentication'
+        assert not fixture_restored.is_set(), 'fixture restored while authentication was active'
+        result = original_submit_login(service, **kwargs)
+        order.append('auth-finished')
+        auth_finished.set()
+        return result
+
+    monkeypatch.setattr(preview.legacy_preview, 'isolated_preview', observed_isolated_preview)
+    monkeypatch.setattr(preview.LegacyPanelServices, 'submit_login', gated_submit_login)
+    monkeypatch.setattr(preview, 'DIST', running_preview_dist(tmp_path))
+    manager = preview.preview_server()
+    server = manager.__enter__()
+    original_shutdown = server.shutdown
+
+    def observed_shutdown():
+        original_shutdown()
+        shutdown_finished.set()
+
+    server.shutdown = observed_shutdown
+    request_errors = []
+
+    def submit():
+        try:
+            _post_form(
+                f'http://127.0.0.1:{server.server_port}/api/v1/login',
+                {'admin_username': 'admin', 'admin_password': server.preview_login_password},
+            )
+        except Exception as error:  # The teardown may close the response socket.
+            request_errors.append(error)
+
+    request_thread = threading.Thread(target=submit)
+    request_thread.start()
+    teardown_thread = None
+    try:
+        assert auth_started.wait(2), 'authentication did not reach the gated service'
+
+        def teardown():
+            manager.__exit__(None, None, None)
+            teardown_finished.set()
+
+        teardown_thread = threading.Thread(target=teardown)
+        teardown_thread.start()
+        assert shutdown_finished.wait(2), 'preview serving loop did not stop'
+        assert not teardown_finished.wait(0.1), 'teardown escaped while authentication was active'
+        release_auth.set()
+        assert auth_finished.wait(2), 'authentication did not finish after release'
+        assert teardown_finished.wait(2), 'preview teardown did not finish after authentication'
+    finally:
+        release_auth.set()
+        if teardown_thread is None:
+            manager.__exit__(None, None, None)
+        else:
+            teardown_thread.join(timeout=2)
+            assert not teardown_thread.is_alive(), 'controlled preview teardown did not stop'
+        request_thread.join(timeout=2)
+        assert not request_thread.is_alive(), 'controlled authentication request did not stop'
+    assert order == ['auth-finished', 'fixture-restored']
+
+
+def test_login_body_receipt_uses_one_absolute_deadline():
+    now = [0.0]
+
+    class TrickledBody:
+        reads = 0
+
+        def read1(self, _limit):
+            self.reads += 1
+            now[0] += 0.04
+            return b'x'
+
+    class Connection:
+        def __init__(self):
+            self.timeouts = []
+
+        def settimeout(self, timeout):
+            self.timeouts.append(timeout)
+
+        def gettimeout(self):
+            return None
+
+    body = TrickledBody()
+    connection = Connection()
+
+    with pytest.raises(socket.timeout):
+        preview._read_request_body(
+            body,
+            connection,
+            10,
+            timeout=0.1,
+            monotonic=lambda: now[0],
+        )
+
+    assert body.reads == 3
+    assert connection.timeouts == pytest.approx([0.1, 0.06, 0.02, None])
 
 
 def test_react_preview_preserves_authentication_and_asset_boundaries(running_preview):

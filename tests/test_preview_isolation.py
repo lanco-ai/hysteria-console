@@ -1,6 +1,8 @@
 """Preview fixtures must not leave renderer state pointing at production."""
 
 import json
+import socket
+import threading
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -33,6 +35,41 @@ def test_preview_server_owns_ephemeral_port_and_closes_socket():
             assert response.status == 200
             assert 'demo_alex' in response.read().decode()
     assert server.fileno() == -1
+
+
+def test_base_preview_teardown_closes_partial_header_connections(monkeypatch):
+    handler_started = threading.Event()
+    handler_threads = []
+    base_handler = preview.Preview
+
+    class ObservedPreview(base_handler):
+        def setup(self):
+            super().setup()
+            handler_threads.append(threading.current_thread())
+            handler_started.set()
+
+        def do_GET(self):
+            self.send_response(204)
+            self.end_headers()
+
+    monkeypatch.setattr(preview, 'Preview', ObservedPreview)
+    manager = preview.preview_server()
+    server = manager.__enter__()
+    connection = socket.create_connection(server.server_address, timeout=2)
+    try:
+        connection.settimeout(0.2)
+        connection.sendall(b'GET /admin HTTP/1.1\r\nHost: preview.invalid\r\nX-Stall:')
+        assert handler_started.wait(2), 'base preview did not accept the partial request'
+        manager.__exit__(None, None, None)
+        manager = None
+        assert connection.recv(1) == b''
+    finally:
+        connection.close()
+        if manager is not None:
+            manager.__exit__(None, None, None)
+        for thread in handler_threads:
+            thread.join(timeout=2)
+            assert not thread.is_alive(), 'controlled base preview request did not stop'
 
 
 def test_preview_refresh_endpoints_return_fictional_json():
