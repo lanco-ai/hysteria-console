@@ -17,8 +17,8 @@ from urllib.parse import parse_qs, urlsplit
 sys.path[:0] = [str(Path(__file__).resolve().parents[1] / 'hysteria'), str(Path(__file__).parent)]
 import pytest
 import subscription_service as ss
-from test_product_ux_regressions import _seed_state
 from preview_http_server import managed_preview_http_server
+from test_product_ux_regressions import _seed_state
 
 
 class Preview(BaseHTTPRequestHandler):

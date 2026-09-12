@@ -246,9 +246,7 @@ def test_react_preview_teardown_closes_partial_header_connections(tmp_path, monk
     connection = socket.create_connection(server.server_address, timeout=2)
     try:
         connection.settimeout(0.2)
-        connection.sendall(
-            b'POST /api/v1/login HTTP/1.1\r\nHost: preview.invalid\r\nX-Stall:'
-        )
+        connection.sendall(b'POST /api/v1/login HTTP/1.1\r\nHost: preview.invalid\r\nX-Stall:')
         assert handler_started.wait(2), 'preview did not accept the partial request'
         manager.__exit__(None, None, None)
         manager = None

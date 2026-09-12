@@ -16,11 +16,11 @@ sys.path[:0] = [str(ROOT / 'hysteria'), str(ROOT), str(ROOT / 'tests')]
 
 import http_utils
 from fastapi.testclient import TestClient
+from preview_http_server import managed_preview_http_server
+from preview_http_server import read_request_body as _read_request_body
 from web_api import create_app
 from web_api.services import LegacyPanelServices
 
-from preview_http_server import managed_preview_http_server
-from preview_http_server import read_request_body as _read_request_body
 from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
@@ -164,8 +164,7 @@ def _handler(api_client, allowed_assets):
             if path == '/__react/login':
                 marker = f'data-public-host="{escaped_public_host}"'
                 replacement = (
-                    marker
-                    + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'
+                    marker + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'
                 )
                 if payload.count(marker) != 1:
                     raise RuntimeError('React login bootstrap marker is missing or ambiguous')
@@ -231,9 +230,7 @@ def preview_server(port=0):
             app = create_app(LegacyPanelServices(service), max_requests=4)
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
                 handler = _handler(api_client, allowed_assets)
-                with managed_preview_http_server(
-                    ('127.0.0.1', port), handler
-                ) as server:
+                with managed_preview_http_server(('127.0.0.1', port), handler) as server:
                     server.preview_admin_cookie = admin_cookie
                     server.preview_user_cookie = user_cookie
                     server.preview_login_password = PREVIEW_LOGIN_PASSWORD
