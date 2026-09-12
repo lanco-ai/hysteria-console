@@ -1,9 +1,11 @@
 # HTTP cutover audit notes
 
-These are outstanding cutover requirements, not completed migration claims.
+These record boundary requirements and their source-level progress, not a
+completed migration or production-readiness claim. Historical preparation
+sections below explain the constraints used by the reviewed slices.
 
-- The initial FastAPI JSON-only prototype supplies no-store, nosniff, no-referrer, frame denial and same-origin opener policy. The legacy Handler additionally supplies Permissions-Policy and Content-Security-Policy. Before serving React documents or cutting over, extract/reuse the full existing header policy and verify it on success, error, redirect, HEAD and static responses; do not silently drop those two headers.
-- `subscription_service.Handler._send_security_headers` is the authoritative current policy. `send_response_body`, `_serve_static` and `redirect` also preserve Content-Length, ETag/304, cache-control and Set-Cookie behavior. New document/static responses must be checked against all of these, not only the five initial JSON API header tests.
+- The initial JSON prototype omitted Permissions-Policy and Content-Security-Policy. The login transport work now shares all six legacy invariant security headers through `http_utils.SECURITY_HEADERS`; review acceptance is recorded in the FastAPI login plan. Before document cutover, still verify success, error, redirect, HEAD and static response parity.
+- `http_utils.SECURITY_HEADERS` is the shared invariant policy, consumed by the legacy Handler and API. `send_response_body`, `_serve_static` and `redirect` separately preserve Content-Length, ETag/304, cache-control and Set-Cookie behavior. New document/static responses must be checked against these transport behaviors too; JSON header checks do not establish document or deployment parity.
 - Existing write routes already distinguish JSON responses by Accept while receiving bounded form data. React writes can retain the existing external method/path/form contracts; do not duplicate user-state/accounting rules merely to rename transport endpoints. Any FastAPI transport adapter must preserve body/field bounds, same-origin checks, revision conflicts, draft retention, actor/client-IP attribution and post-commit failure semantics.
 - Current Handler owns `_mutation_conflict`, `_mutation_user_not_found`, `_send_toggle_json`, actor lookup and audit append response orchestration. These require explicit extraction/adaptation tests, not a blind whole-Handler ASGI wrapper.
 - New query-free JSON reads do not replace existing credential-bearing subscription and dedicated-link exchange routes. Preserve exchange ordering and HEAD side-effect safety before any catch-all frontend routing.
@@ -33,6 +35,9 @@ actually finishes, even if the client disconnects.
 Login depends on the real immediate peer for `request_client_ip` and trusts
 X-Real-IP/X-Forwarded-For only for a loopback peer. A future write bridge needs
 `client_address` from the ASGI transport, not a client-selected forwarded value.
+At production server configuration time, preserve that immediate-peer value:
+do not let an upstream ASGI proxy-header middleware rewrite scope.client before
+this trust decision without an explicit equivalent trust-boundary review.
 Preserve the existing throttle buckets, password length checks, credential
 generation, cookie attributes and success redirects. Failed admin credentials
 currently render HTTP 200 with feedback; throttling is 429 plus Retry-After.
@@ -44,9 +49,9 @@ operations differ deliberately: refresh banks cleared bytes in the preserved
 bucket, reset does not. Tests must verify accounting and audit records, not just
 response shape or a disabled button.
 
-## Login extraction boundary for the following slice
+## Historical login extraction requirements
 
-`auth_routes._login` currently combines credential verification/session creation
+Before extraction, `auth_routes._login` combined credential verification/session creation
 with rendered feedback and redirects. A shared internal login decision can
 separate those responsibilities before adding a JSON login transport. Preserve
 admin-first field precedence, username trimming, password length bounds,
@@ -70,27 +75,26 @@ Inspect exception paths so a failed state read or verifier cannot leave an
 in-flight throttle reservation permanently occupied; test this explicitly
 rather than rewriting or weakening rate limiting.
 
-These are implementation preparation notes, not claims that the login API or
-React login form already exists.
+The login-service plan records acceptance of this extraction. It did not by
+itself implement the login API or React login form.
 
 ## Prepared seams after login extraction
 
 `login_service.LoginService.authenticate(form=..., meta=..., client_ip=...)`
 now returns an internal `LoginResult`; `subscription_service._login_service()`
-constructs it from authoritative current helpers. The legacy HTML adapter is
-the only consumer so far. Session creation happens after exactly-once throttle
+constructs it from authoritative current helpers. The legacy HTML adapter and
+new login API consume this service. Session creation happens after exactly-once throttle
 reservation release. Errors propagate without turning state failures into a
 successful empty or invalid-password response.
 
-The planned form extraction exposes `http_utils.form_content_length(headers,
-max_bytes=...)` and `decode_form_body(raw, max_bytes=...)`; its acceptance record
-must be checked before any ASGI consumer uses those names. The latter does not
+The accepted form extraction exposes `http_utils.form_content_length(headers,
+max_bytes=...)` and `decode_form_body(raw, max_bytes=...)`. The latter does not
 validate claimed length or own stream reading. An ASGI consumer must preserve
 duplicate raw Content-Length headers, reject header/length failures before
 receiving or loading state, cap each received chunk before appending, reject
 truncation and length mismatches, and bound body-read duration and admission.
 
-For the next login JSON slice, prefer an explicit POST-only `/api/v1/login`
+The login JSON slice adds an explicit POST-only `/api/v1/login`
 using the existing form fields. Keep legacy `/login` behavior unchanged. The
 JSON endpoint needs existing same-origin protection, typed allowlisted feedback
 and redirect destinations, matching cookie helpers, no session identifiers in
@@ -106,11 +110,10 @@ read admission tests must still pass after adapting the dispatcher. Add raw
 ASGI tests for duplicate headers, short/oversized/chunked bodies and cancellation,
 not only TestClient requests (which may normalize the malformed wire shapes).
 
-Before expanding to document routing, extract the existing complete security
-header policy from the legacy Handler into a shared constant/helper and use it
-from both HTTP boundaries; retain static cache and conditional-response rules
-outside that invariant security-header set. The current prototype's five
-headers are still not the complete legacy policy.
+The login slice also extracts the complete security-header policy into the
+shared constant used by both HTTP boundaries. Static cache and conditional
+response rules remain outside that invariant set; document routing and
+production cache/cookie/proxy verification are still outstanding.
 
-These are next-slice requirements, not claims of an implemented POST route,
-bounded ASGI reader, shared full-header policy, or production readiness.
+See the FastAPI login plan for the POST route, bounded ASGI reader and full-header
+policy review gate. React login and production cutover are separate tasks.

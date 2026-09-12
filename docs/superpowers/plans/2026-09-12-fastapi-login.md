@@ -102,7 +102,7 @@ mapping; API middleware adds those same headers plus its existing no-store.
 Do not include cache-control in the shared invariant set: legacy static caching
 must remain unchanged. No change to CSP contents, ETag, 304, redirects or cookies.
 
-- [ ] Write endpoint tests RED against current missing route, using real
+- [x] Write endpoint tests RED against current missing route, using real
 temporary metadata/users/session files and deterministic credential verification.
 Assert successful JSON and exact cookie attributes/generation binding, invalid,
 missing, user compatibility success/ineligible/forced-change, and throttled
@@ -119,7 +119,7 @@ assert 'HttpOnly' in response.headers['set-cookie']
 assert 'SameSite=Lax' in response.headers['set-cookie']
 ```
 
-- [ ] Add raw ASGI tests for duplicate equal/unequal Content-Length, invalid
+- [x] Add raw ASGI tests for duplicate equal/unequal Content-Length, invalid
 lengths, Transfer-Encoding, invalid type, short/overlong/multi-chunk bodies,
 actual maximum overflow, malformed UTF-8/percent/fields, explicit empty input,
 and timeout/disconnect. For rejected headers, a receive function that raises if
@@ -134,7 +134,7 @@ async def forbidden_receive():
 # Assert status 400, error bad_request, and submit_login call count zero.
 ```
 
-- [ ] Implement RequestHeaders and bounded read_form using the accepted helpers.
+- [x] Implement RequestHeaders and bounded read_form using the accepted helpers.
 Extend the existing dispatcher, not a second semaphore: acquire before parsing
 or body receipt; for login prepare origin/header/body data and real peer inside
 its existing try/finally, then offload submit_login with the same shielded worker
@@ -143,19 +143,19 @@ once. While a synchronous login worker is still running after caller cancellatio
 another request at capacity must get server_busy. Once work finishes, capacity
 must become usable. Existing read cancellation/handoff regressions remain unchanged.
 
-- [ ] Implement submit_login and explicit public success/failure models. Register
+- [x] Implement submit_login and explicit public success/failure models. Register
 POST `/api/v1/login` only; do not bind missing methods at factory construction so
 existing read-only fake services still instantiate the app. Translate known
 parser/origin/timeout/state outcomes as specified; unexpected failures remain
 sanitized 500. Never retry service calls automatically or include submitted
 passwords in raised public errors, logs or model validation responses.
 
-- [ ] Share feedback text and the six security headers as specified. Verify
+- [x] Share feedback text and the six security headers as specified. Verify
 complete header equality against a real legacy response, including CSP and
 Permissions-Policy, on login success/error/429/HEAD and existing API reads.
 Keep existing legacy static/cache and login-design tests passing.
 
-- [ ] Add concurrency tests with synchronization events, not timing guesses:
+- [x] Add concurrency tests with synchronization events, not timing guesses:
 pending body receipt owns capacity; body cancellation frees it without a service
 call; cancelled synchronous verifier retains admission until released; event
 loop remains responsive; parser failure/timeout/worker exceptions cannot leak
@@ -163,7 +163,7 @@ slots. Test immediate peer versus forged forwarded IP with separate throttle
 buckets, reusing existing real LoginThrottle. Verify state exceptions classify
 with post_path='/login' and never mutate sessions on failed state reads.
 
-- [ ] Add new API module/test to adopted quality files. Run focused API login
+- [x] Add new API module/test to adopted quality files. Run focused API login
 and reads, shared form, login service/routes/views/design, reliability and
 subscription security tests; then lint-only. Run full backend quality once
 after focused green because the shared security-header extraction touches the
@@ -175,7 +175,7 @@ PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh
 git diff --check
 ```
 
-- [ ] Self-review, commit owned source/tests locally, and record exact RED/GREEN,
+- [x] Self-review, commit owned source/tests locally, and record exact RED/GREEN,
 covering/full commands and outputs. No push or runtime operations.
 
 ## Scope limit
@@ -184,3 +184,22 @@ This adds a fixture-testable login JSON endpoint, not complete HTTP cutover.
 React login, controlled preview forwarding of this exact mutation, immutable
 assets, all remaining routes, staging and approved deployment remain separate
 deliverables. The production service still uses its existing entry point.
+
+## Acceptance — 2026-09-12
+
+Source commits `d596ab7` and `cff57c9`. Task review found one framing defect:
+Content-Length zero skipped receipt. The fix requires a terminal ASGI event
+for empty input and rejects zero-claimed nonempty/oversized bodies before
+authentication. Scoped independent re-review approved the fix, with no new
+findings. No remaining task-scoped Critical/Important findings.
+
+Initial RED verified the missing route/adapter; implementation checks passed
+269 covering tests and the full backend suite (1661 passed, 71 known warnings).
+Parent independently passed the same 269 covering tests plus lint/format.
+Fix RED was 2 failed/1 passed, then 3 passed; parent independently passed
+161 transport/read/parser tests in 2.17s after the fix. Fix lint and whitespace
+checks passed. Existing upstream deprecations remain integration debt.
+
+No preview POST activation, frontend, runtime, push or deployment changes were
+made by this slice. Production routing and all remaining parity gates remain
+outstanding.

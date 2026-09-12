@@ -12,7 +12,8 @@ This is an acceptance index, not a claim that the full migration is complete.
 | Shared-module release packaging | Reset log reader registered; source import-closure regression added | `54114f4`, shared-module-deploy-contract plan |
 | Login service | Shared decision and exception-safe reservation cleanup verified; existing HTML route remains consumer | `4734582`, login-service-boundary plan |
 | Shared strict form decoding | Header and byte helpers extracted; legacy consumer and rejection behavior verified | `e7b14b2`, shared-form-decoding plan |
-| React login and write transport | Not yet implemented | HTTP cutover notes list boundary requirements |
+| FastAPI login transport | POST `/api/v1/login`, shared login decision, bounded receipt/admission and full security headers; no production mount | `d596ab7`, `cff57c9`, fastapi-login plan |
+| React login | Planned next; controlled preview does not yet forward login POST | react-login plan |
 | Remaining administrator pages and mutations | Legacy implementation remains authoritative | full spec parity register |
 | React user panel | Not yet implemented; legacy panel unchanged | full spec parity register |
 | Staging, production switch, cleanup | Not started; explicit deployment checkpoint required | full spec cutover and completion gates |
