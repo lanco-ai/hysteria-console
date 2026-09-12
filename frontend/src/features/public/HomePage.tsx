@@ -7,6 +7,7 @@ const fragmentTargets = new Set([
   'demo-health',
   'services',
   'console-preview',
+  'main-content',
 ]);
 
 export function HomePage() {
@@ -16,7 +17,7 @@ export function HomePage() {
     const target = document.getElementById(fragment);
     if (!target) return;
     target.scrollIntoView();
-    if (target.tabIndex >= 0) target.focus({ preventScroll: true });
+    if (target.hasAttribute('tabindex')) target.focus({ preventScroll: true });
   }, []);
 
   useEffect(() => {

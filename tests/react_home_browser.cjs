@@ -172,7 +172,7 @@ async function fragmentState(page) {
 
 async function verifyInitialFragmentNavigation(browser) {
   const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, reducedMotion: 'reduce' });
-  for (const fragment of ['demo-traffic', 'demo-users', 'demo-health', 'services', 'console-preview', 'unknown', '']) {
+  for (const fragment of ['demo-traffic', 'demo-users', 'demo-health', 'services', 'console-preview', 'main-content', 'unknown', '']) {
     const suffix = fragment ? `#${fragment}` : '';
     const reactPage = await context.newPage();
     const reactCollection = collectFailures(reactPage, `React initial fragment ${suffix || '(absent)'}`);
