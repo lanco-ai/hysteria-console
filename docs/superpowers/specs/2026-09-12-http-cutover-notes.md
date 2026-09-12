@@ -147,7 +147,7 @@ frontend checks, 25 preview/isolation tests and independent clean review. It
 permits only the two exact additional logout APIs in guarded fixtures.
 Neither slice changes the legacy routes or production routing.
 
-## Inspected password-change boundary — next authentication seam
+## Inspected password-change boundary — shared service and API accepted
 
 Source inspection: `auth_routes._change_user_password`,
 `auth_routes._change_admin_password`, `identity_service._change_admin_password`,
@@ -179,10 +179,12 @@ the password may already have changed. Preserve strict-state error classificatio
 and generation-based rejection of old sessions. Do not roll back an authoritative
 hash using a stale snapshot or return a success cookie after replacement fails.
 
-The user mutation orchestration still lives in the HTTP handler. Before adding
-JSON consumers, extract shared decisions/results rather than duplicating that
-validation, locking and persistence sequence. Keep cookies/redirect presentation
-at adapters and keep password hashes/session IDs out of public JSON and repr.
+The user mutation orchestration was extracted from the HTTP handler into
+`password_change_service.PasswordChangeService`; both legacy and JSON consumers
+now use shared decisions. Source `b8d4a71` passed independent review and426
+covering tests. Cookies/redirect presentation remain adapter-owned; password
+hashes/session IDs stay out of public JSON and result repr. The service retains
+the inspected validation, locking, persistence and replacement sequence.
 
 Existing tests provide partial evidence only: the initial-user-password HTTP
 test exercises a real successful write, but the same-password test checks only
@@ -191,3 +193,52 @@ older clear/create sequence instead of calling the current handler. New seam
 tests must exercise actual handler/service paths, real temporary credentials
 and sessions, failure ordering and a state change between initial and locked
 user checks. Do not weaken or replace accounting/security assertions elsewhere.
+
+## Authentication-page data needed after password transport
+
+`operations_views.render_settings` currently renders only administrator name,
+the browser-local sidebar-motion checkbox, and the three-field administrator
+password form. It does not expose the administrator token or full metadata.
+React settings therefore needs an authenticated allowlisted read of administrator
+name and existing password limits, not an entire metadata payload. Keep the
+motion preference local to the browser, with the existing storage key and shell
+behavior; do not invent a backend preference setting.
+
+`user_views.render_user_change_password` needs username, public host and existing
+password limits. The general session API rejects password-change-required users,
+so using that API as the page's sole access gate would deadlock their required
+password change. A dedicated minimal read must use the actual password-page
+identity/lifecycle rules and retain password-kind-only access, instead of
+weakening the general session endpoint. Its unauthorized/disabled/expired
+navigation must follow the existing user password document.
+
+The next React authentication-page slice should integrate these small reads
+with settings and user password UI together. Keep all three native field names,
+autocomplete/length attributes, current copy/classes and adapter-owned redirects.
+Server-rendered user feedback includes known message mappings; arbitrary query
+text remains escaped. Never persist password drafts or send them in URLs.
+Success returns to the existing settings/user-panel URL; a transport failure
+must warn that the outcome is uncertain, preserve an editable form and avoid
+an automatic second password mutation.
+
+Verified `shell.js` preference contract: toggling on adds the root
+`sidebar-motion-enabled` class and stores `hy2.sidebar-motion=enabled`; toggling
+off removes the class and removes that storage key (not a stored false string).
+Storage exceptions must not stop the current visible preference change. Reuse
+the React shell's initial preference application and preserve reduced-motion
+behavior, mobile drawer focus and desktop collapse tests.
+
+The current `useReadResource` keeps only an HTTP status for failed responses.
+User password-page navigation distinguishes forbidden from disabled/expired,
+so its eventual consumer must retain a strictly validated access-error code,
+not interpret every403 identically or display arbitrary server text. Any shared
+reader extension requires existing logs recovery/stale tests to remain green.
+
+Current React preview seeds real administrator sessions but user cookies are
+subscription-token-kind. Password-page browser tests will need explicit fictional
+password-kind credentials/sessions, not a weakened kind check or mocked verifier.
+Password writes revoke existing fixture sessions; isolate browser suites with
+fresh guarded preview state (or an equally explicit isolated fixture lifetime)
+rather than rely on a lucky suite order or bypass revocation. Preserve the shared
+draining server lifetime and explicit anonymous Cookie forwarding during that
+test-fixture change. No production state is a permissible fixture source.

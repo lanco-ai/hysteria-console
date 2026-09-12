@@ -123,7 +123,7 @@ validation response after a storage failure. If replacement fails after password
 write, the new hash remains authoritative and old-generation sessions must no
 longer authorize. Test this explicitly without triggering real fail-closed services.
 
-- [ ] Add characterization tests invoking actual legacy handlers with temporary
+- [x] Add characterization tests invoking actual legacy handlers with temporary
   identity/session/state helpers. Cover success, validation ordering and realm
   isolation; record baseline GREEN. Add RED for absent service/API before changes:
 
@@ -135,29 +135,29 @@ assert response.status_code == 200  # missing route currently 404
 assert response.json() == {'ok': True, 'redirect_to': '/admin/settings?msg=password+changed'}
 ```
 
-- [ ] Implement shared service and legacy consumer extraction. Tests must prove
+- [x] Implement shared service and legacy consumer extraction. Tests must prove
   actual stored hash, removed must-change flag, fresh session kind/generation,
   all old admin sessions invalidated, only target user's sessions invalidated,
   other users/realm still usable and tokens/quotas/proxy fields unchanged. Test
   wrong current/short/long/mismatch/empty fields and user same-password rejection;
   administrator same-password acceptance must remain. Use actual helper paths,
   not manually clearing/recreating sessions as a simulation of the handler.
-- [ ] Test initial and locked lifecycle states, including a deterministic state
+- [x] Test initial and locked lifecycle states, including a deterministic state
   change between the first check and lock acquisition; no sleeps. Test token-kind
   user session rejection, missing/stale/opposite-realm-only cookies and both
   cookies together. Record no credential/session write on rejected validation.
-- [ ] Implement models, narrow adapter and two fixed routes via shared form
+- [x] Implement models, narrow adapter and two fixed routes via shared form
   dispatcher. No new semaphore, catch-all route or duplicate form parser. Test
   exact response keys/codes/cookies, secure cookie attributes, no identifiers or
   hashes in JSON/repr, absent-origin legacy-compatible behavior and rejected
   cross-origin before service dispatch. Parameterize both endpoints for malformed
   framing, duplicate length, oversized/truncated input, timeout and405/404/HEAD.
-- [ ] Test metadata/read/hash-write/session-replacement failures, sanitized500,
+- [x] Test metadata/read/hash-write/session-replacement failures, sanitized500,
   strict-state503 without success cookie and snapshot cleanup. Use safe recording
   fail-closed doubles. Test real old-generation rejection after post-write failure.
   Event-controlled pending mutation must hold capacity until worker completion
   after cancellation; existing login/logout/read admission tests remain covering.
-- [ ] Register module packaging and lint paths. Retain existing module-closure
+- [x] Register module packaging and lint paths. Retain existing module-closure
   regression. Run focused tests while iterating, then covering commands once:
 
 ```bash
@@ -168,9 +168,25 @@ bash -n deploy.sh
 git diff --check
 ```
 
-- [ ] Self-review and locally commit only owned files; report exact baseline/
+- [x] Self-review and locally commit only owned files; report exact baseline/
   RED/GREEN and covering output, files and concerns in ignored task report.
   Independent task review follows. No deploy/push/preview mutation permission.
+
+## Acceptance evidence
+
+Accepted source `b8d4a71daf2d80eb83f0a21baaee2519895646f9`, independent
+Spec PASS / Quality Approved, no Critical or Important findings. Parent reran
+the exact covering pytest command:426 passed,50 existing warnings in64.76s.
+Parent exact lint-only90 adopted files plus composition root, shell syntax and
+whitespace checks passed. Implementer import-closure gate1passed. Characterization
+baseline10passed before extraction; missing service/API RED recorded before code.
+
+Review confirmed legacy parity, fixed realms, authoritative post-write state and
+generation rejection, lock/replacement ordering, explicit JSON models and shared
+admission. Existing deprecation warnings are Minor(deferred), not suppressed.
+Runtime state and historical test order cannot be reconstructed from a source
+diff alone; report/recorded milestones provide test order, and no runtime action
+was authorized or performed. Deployment script changed only module registration.
 
 ## Remaining scope
 

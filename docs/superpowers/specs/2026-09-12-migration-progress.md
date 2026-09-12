@@ -18,6 +18,7 @@ This is an acceptance index, not a claim that the full migration is complete.
 | FastAPI logout | Two fixed-realm POST endpoints; real current-device revocation, failures and concurrency verified; no production mount or preview forwarding | `f82653e`, fastapi-logout plan |
 | Preview quality adoption | Shared helper included in the adopted import/format gate; exact repository lint wrapper green | `9bed63e`, react-login acceptance |
 | React logout | Both controlled confirmations and shell direct logout; fixed realms, real sessions, faults, root lifecycle and six visual pairs verified; preview allows only login and two logout APIs | `6388522`, react-logout plan |
+| Password-change backend | Shared legacy/new API decisions for both realms; actual credentials, sessions, failure ordering and426 covering tests verified; no preview permission or production mount | `b8d4a71`, password-change-boundary plan |
 | Remaining administrator pages and mutations | Legacy implementation remains authoritative | full spec parity register |
 | React user panel | Not yet implemented; legacy panel unchanged | full spec parity register |
 | Staging, production switch, cleanup | Not started; explicit deployment checkpoint required | full spec cutover and completion gates |
