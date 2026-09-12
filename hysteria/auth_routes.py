@@ -1,7 +1,6 @@
 """Login, logout and password-change HTTP flows with explicit service dependencies."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable, Mapping
 from urllib.parse import urlencode
 
@@ -11,35 +10,21 @@ import http_utils
 
 @dataclass(frozen=True)
 class Context:
-    PASSWORD_MAX_LENGTH: int
-    PASSWORD_MIN_LENGTH: int
-    SESSIONS_FILE: Path
-    USERS_FILE: Path
-    USER_SESSIONS_FILE: Path
-    USER_SESSION_PANEL_PASSWORD: str
-    _change_admin_password: Callable[..., object]
-    _credential_generation: Callable[..., object]
-    _replace_sessions_with_new: Callable[..., object]
     authenticate_login: Callable[..., object]
+    change_admin_password: Callable[..., object]
+    change_user_password: Callable[..., object]
     clear_session_cookie: Callable[..., object]
     clear_user_session_cookie: Callable[..., object]
     configured_public_host: Callable[..., object]
     delete_session: Callable[..., object]
     delete_user_session: Callable[..., object]
     get_logged_in_user_context: Callable[..., object]
-    hash_secret: Callable[..., object]
     is_logged_in: Callable[..., object]
     is_secure_request: Callable[..., object]
-    load_json: Callable[..., object]
-    local_now: Callable[..., object]
     parse_cookies: Callable[..., object]
     render_login: Callable[..., object]
-    save_json: Callable[..., object]
     session_cookie: Callable[..., object]
-    usage_lock: Callable[..., object]
-    user_panel_access_error: Callable[..., object]
     user_session_cookie: Callable[..., object]
-    verify_secret: Callable[..., object]
 
 
 def _logout_admin(handler, ctx, form, meta):
@@ -102,16 +87,15 @@ def _login(handler, ctx, form, meta):
 
 def _change_user_password(handler, ctx, form, meta):
     user, session_kind = ctx.get_logged_in_user_context(handler)
-    if not user or session_kind != ctx.USER_SESSION_PANEL_PASSWORD:
+    result = ctx.change_user_password(
+        username=user,
+        session_kind=session_kind,
+        form=form,
+    )
+    if result.outcome == 'login_required':
         handler.redirect('/login')
         return
-    current_cfg = ctx.load_json(ctx.USERS_FILE, {}).get(user)
-    access_error = ctx.user_panel_access_error(
-        current_cfg,
-        session_kind,
-        today=ctx.local_now().date(),
-    )
-    if access_error == 'forbidden':
+    if result.outcome == 'forbidden':
         handler.redirect(
             '/login',
             cookie=ctx.clear_user_session_cookie(
@@ -119,66 +103,18 @@ def _change_user_password(handler, ctx, form, meta):
             ),
         )
         return
-    if access_error in ('disabled', 'expired'):
+    if result.outcome in ('disabled', 'expired'):
         handler.redirect('/user/panel')
         return
-    current = (form.get('current') or [''])[0]
-    new = (form.get('new') or [''])[0]
-    confirm = (form.get('confirm') or [''])[0]
-    if len(new) < ctx.PASSWORD_MIN_LENGTH:
-        handler.redirect('/user/change-password?' + urlencode({'msg': 'new password short'}))
+    if result.outcome == 'invalid':
+        handler.redirect('/user/change-password?' + urlencode({'msg': result.code}))
         return
-    if len(new) > ctx.PASSWORD_MAX_LENGTH:
-        handler.redirect('/user/change-password?' + urlencode({'msg': 'new password long'}))
-        return
-    if new != confirm:
-        handler.redirect('/user/change-password?' + urlencode({'msg': 'new password mismatch'}))
-        return
-    with ctx.usage_lock():
-        users = ctx.load_json(ctx.USERS_FILE, {})
-        cfg = users.get(user)
-        locked_access_error = ctx.user_panel_access_error(
-            cfg,
-            session_kind,
-            today=ctx.local_now().date(),
-        )
-        if locked_access_error == 'forbidden':
-            handler.redirect(
-                '/login',
-                cookie=ctx.clear_user_session_cookie(
-                    secure=ctx.is_secure_request(handler),
-                ),
-            )
-            return
-        if locked_access_error in ('disabled', 'expired'):
-            handler.redirect('/user/panel')
-            return
-        stored_hash = str(cfg.get('panel_pass_hash') or '') if isinstance(cfg, dict) else ''
-        if not (
-            len(current) <= ctx.PASSWORD_MAX_LENGTH
-            and stored_hash
-            and ctx.verify_secret(current, stored_hash)
-        ):
-            handler.redirect(
-                '/user/change-password?' + urlencode({'msg': 'current password wrong'})
-            )
-            return
-        if ctx.verify_secret(new, stored_hash):
-            handler.redirect('/user/change-password?' + urlencode({'msg': 'new password same'}))
-            return
-        new_hash = ctx.hash_secret(new)
-        cfg['panel_pass_hash'] = new_hash
-        cfg.pop('panel_password_must_change', None)
-        users[user] = cfg
-        ctx.save_json(ctx.USERS_FILE, users)
-    sid = ctx._replace_sessions_with_new(
-        ctx.USER_SESSIONS_FILE,
-        user,
-        credential_generation=ctx._credential_generation(new_hash),
-        credential_kind=ctx.USER_SESSION_PANEL_PASSWORD,
-    )
     handler.redirect(
-        '/user/panel', cookie=ctx.user_session_cookie(sid, secure=ctx.is_secure_request(handler))
+        '/user/panel',
+        cookie=ctx.user_session_cookie(
+            result.session_id,
+            secure=ctx.is_secure_request(handler),
+        ),
     )
     return
 
@@ -187,25 +123,16 @@ def _change_admin_password(handler, ctx, form, meta):
     if not ctx.is_logged_in(handler):
         handler.redirect('/login')
         return
-    current = (form.get('current') or [''])[0]
-    new = (form.get('new') or [''])[0]
-    confirm = (form.get('confirm') or [''])[0]
-    result, new_hash = ctx._change_admin_password(current, new, confirm)
-    if result != 'ok':
-        handler.redirect(f'/admin/settings?msg=err:{result}')
+    result = ctx.change_admin_password(form=form)
+    if result.outcome == 'invalid':
+        handler.redirect(f'/admin/settings?msg=err:{result.code}')
         return
-    # Revoke ALL existing admin sessions (a stolen sid is now dead),
-    # then mint a fresh session for this device so the admin stays
-    # logged in here. Mirrors the /login success cookie pattern.
-    sid = ctx._replace_sessions_with_new(
-        ctx.SESSIONS_FILE,
-        'admin',
-        revoke_all=True,
-        credential_generation=ctx._credential_generation(new_hash),
-    )
     handler.redirect(
         '/admin/settings?msg=password+changed',
-        cookie=ctx.session_cookie(sid, secure=ctx.is_secure_request(handler)),
+        cookie=ctx.session_cookie(
+            result.session_id,
+            secure=ctx.is_secure_request(handler),
+        ),
     )
     return
 

@@ -44,6 +44,7 @@ import template_store
 import session_store
 import login_throttle
 import login_service
+import password_change_service
 import billing_service
 import authorization_service
 import credential_service
@@ -888,6 +889,27 @@ def _login_service():
         is_valid_username=is_valid_username,
         load_json=load_json,
         local_now=local_now,
+        verify_secret=verify_secret,
+    )
+
+
+def _password_change_service():
+    return password_change_service.PasswordChangeService(
+        PASSWORD_MAX_LENGTH=PASSWORD_MAX_LENGTH,
+        PASSWORD_MIN_LENGTH=PASSWORD_MIN_LENGTH,
+        SESSIONS_FILE=SESSIONS_FILE,
+        USERS_FILE=USERS_FILE,
+        USER_SESSIONS_FILE=USER_SESSIONS_FILE,
+        USER_SESSION_PANEL_PASSWORD=USER_SESSION_PANEL_PASSWORD,
+        _change_admin_password=_change_admin_password,
+        _credential_generation=_credential_generation,
+        _replace_sessions_with_new=_replace_sessions_with_new,
+        hash_secret=hash_secret,
+        load_json=load_json,
+        local_now=local_now,
+        save_json=save_json,
+        usage_lock=usage_lock,
+        user_panel_access_error=user_panel_access_error,
         verify_secret=verify_secret,
     )
 
@@ -2548,35 +2570,21 @@ def _credential_routes_context():
 
 def _auth_routes_context():
     return auth_routes.Context(
-        PASSWORD_MAX_LENGTH=PASSWORD_MAX_LENGTH,
-        PASSWORD_MIN_LENGTH=PASSWORD_MIN_LENGTH,
-        SESSIONS_FILE=SESSIONS_FILE,
-        USERS_FILE=USERS_FILE,
-        USER_SESSIONS_FILE=USER_SESSIONS_FILE,
-        USER_SESSION_PANEL_PASSWORD=USER_SESSION_PANEL_PASSWORD,
-        _change_admin_password=_change_admin_password,
-        _credential_generation=_credential_generation,
-        _replace_sessions_with_new=_replace_sessions_with_new,
         authenticate_login=_login_service().authenticate,
+        change_admin_password=_password_change_service().change_admin,
+        change_user_password=_password_change_service().change_user,
         clear_session_cookie=clear_session_cookie,
         clear_user_session_cookie=clear_user_session_cookie,
         configured_public_host=configured_public_host,
         delete_session=delete_session,
         delete_user_session=delete_user_session,
         get_logged_in_user_context=get_logged_in_user_context,
-        hash_secret=hash_secret,
         is_logged_in=is_logged_in,
         is_secure_request=is_secure_request,
-        load_json=load_json,
-        local_now=local_now,
         parse_cookies=parse_cookies,
         render_login=render_login,
-        save_json=save_json,
         session_cookie=session_cookie,
-        usage_lock=usage_lock,
-        user_panel_access_error=user_panel_access_error,
         user_session_cookie=user_session_cookie,
-        verify_secret=verify_secret,
     )
 
 

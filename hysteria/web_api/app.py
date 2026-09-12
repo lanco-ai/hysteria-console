@@ -15,10 +15,14 @@ from starlette.exceptions import HTTPException
 from .models import (
     AdminLogsResponse,
     AdminOverviewResponse,
+    AdminPasswordChangeValidationResponse,
     AdminSessionResponse,
     LoginFailureResponse,
     LoginSuccessResponse,
     LogoutResponse,
+    PasswordChangeAccessErrorResponse,
+    PasswordChangeSuccessResponse,
+    UserPasswordChangeValidationResponse,
     UserSessionResponse,
 )
 from .requests import FormReadTimeout, RequestHeaders, read_form
@@ -108,6 +112,42 @@ def _login_response(reply):
 def _logout_response(reply):
     model = LogoutResponse(ok=True, redirect_to='/login')
     return JSONResponse(model.model_dump(), headers={'Set-Cookie': reply.cookie})
+
+
+def _password_change_response(reply, *, realm):
+    if realm not in ('admin', 'user'):
+        raise ValueError('invalid password-change realm')
+    result = reply.result
+    if result.outcome == 'success':
+        if reply.cookie is None or result.code:
+            raise ValueError('invalid password-change success result')
+        destination = '/admin/settings?msg=password+changed' if realm == 'admin' else '/user/panel'
+        model = PasswordChangeSuccessResponse(ok=True, redirect_to=destination)
+        return JSONResponse(model.model_dump(), headers={'Set-Cookie': reply.cookie})
+    if result.outcome == 'invalid':
+        if reply.cookie is not None:
+            raise ValueError('invalid password-change validation result')
+        model_class = (
+            AdminPasswordChangeValidationResponse
+            if realm == 'admin'
+            else UserPasswordChangeValidationResponse
+        )
+        model = model_class(ok=False, code=result.code)
+        return JSONResponse(model.model_dump())
+    if result.outcome == 'login_required':
+        if reply.cookie is not None or result.code:
+            raise ValueError('invalid password-change login result')
+        model = PasswordChangeAccessErrorResponse(error='login_required')
+        return JSONResponse(status_code=401, content=model.model_dump())
+    if realm == 'user' and result.outcome in ('forbidden', 'disabled', 'expired'):
+        if result.code:
+            raise ValueError('invalid password-change access result')
+        if (result.outcome == 'forbidden') != (reply.cookie is not None):
+            raise ValueError('invalid password-change access cookie')
+        model = PasswordChangeAccessErrorResponse(error=result.outcome)
+        headers = {'Set-Cookie': reply.cookie} if reply.cookie is not None else None
+        return JSONResponse(status_code=403, content=model.model_dump(), headers=headers)
+    raise ValueError('invalid password-change result')
 
 
 def _read_error_response(exc):
@@ -246,6 +286,24 @@ def create_app(services, *, max_requests=32):
             services.submit_logout,
             request,
             _logout_response,
+            realm='user',
+        )
+
+    @app.post('/api/v1/admin/change-password')
+    async def admin_change_password(request: Request):
+        return await dispatch_form_write(
+            services.submit_password_change,
+            request,
+            partial(_password_change_response, realm='admin'),
+            realm='admin',
+        )
+
+    @app.post('/api/v1/user/change-password')
+    async def user_change_password(request: Request):
+        return await dispatch_form_write(
+            services.submit_password_change,
+            request,
+            partial(_password_change_response, realm='user'),
             realm='user',
         )
 

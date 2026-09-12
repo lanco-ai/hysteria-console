@@ -5,6 +5,7 @@ from typing import Literal, Mapping
 
 import http_utils
 from login_service import LoginResult
+from password_change_service import PasswordChangeResult
 from reset_log_data import read_reset_logs
 
 from .requests import RequestHeaders
@@ -46,6 +47,12 @@ class LoginReply:
 @dataclass(frozen=True, slots=True)
 class LogoutReply:
     cookie: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class PasswordChangeReply:
+    result: PasswordChangeResult
+    cookie: str | None = field(default=None, repr=False)
 
 
 class LegacyPanelServices:
@@ -152,6 +159,54 @@ class LegacyPanelServices:
 
         post_path = '/logout' if realm == 'admin' else '/user/logout'
         return self._run_operation(logout, post_path=post_path)
+
+    def submit_password_change(
+        self,
+        *,
+        headers,
+        path,
+        form,
+        client_address,
+        realm: Literal['admin', 'user'],
+    ):
+        if realm not in ('admin', 'user'):
+            raise ValueError('invalid password-change realm')
+        del client_address
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def change_password():
+            service.load_meta()
+            if realm == 'admin':
+                if not service.is_logged_in(request):
+                    result = PasswordChangeResult(outcome='login_required')
+                else:
+                    result = service._password_change_service().change_admin(form=form)
+            else:
+                username, session_kind = service.get_logged_in_user_context(request)
+                result = service._password_change_service().change_user(
+                    username=username,
+                    session_kind=session_kind,
+                    form=form,
+                )
+
+            cookie = None
+            if result.outcome == 'success':
+                cookie_helper = (
+                    service.session_cookie if realm == 'admin' else service.user_session_cookie
+                )
+                cookie = cookie_helper(
+                    result.session_id,
+                    secure=http_utils.is_secure_request(request),
+                )
+            elif realm == 'user' and result.outcome == 'forbidden':
+                cookie = service.clear_user_session_cookie(
+                    secure=http_utils.is_secure_request(request),
+                )
+            return PasswordChangeReply(result=result, cookie=cookie)
+
+        post_path = '/admin/change-password' if realm == 'admin' else '/user/change-password'
+        return self._run_operation(change_password, post_path=post_path)
 
     def read_session(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)

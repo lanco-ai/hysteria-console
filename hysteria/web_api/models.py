@@ -37,6 +37,39 @@ class LogoutResponse(PublicModel):
     redirect_to: Literal['/login']
 
 
+class PasswordChangeSuccessResponse(PublicModel):
+    ok: Literal[True]
+    redirect_to: Literal[
+        '/admin/settings?msg=password+changed',
+        '/user/panel',
+    ]
+
+
+class AdminPasswordChangeValidationResponse(PublicModel):
+    ok: Literal[False]
+    code: Literal[
+        'password_wrong',
+        'password_short',
+        'password_long',
+        'password_mismatch',
+    ]
+
+
+class UserPasswordChangeValidationResponse(PublicModel):
+    ok: Literal[False]
+    code: Literal[
+        'current password wrong',
+        'new password short',
+        'new password long',
+        'new password mismatch',
+        'new password same',
+    ]
+
+
+class PasswordChangeAccessErrorResponse(PublicModel):
+    error: Literal['login_required', 'forbidden', 'disabled', 'expired']
+
+
 class OverviewUserResponse(PublicModel):
     user: str
     tx: int
