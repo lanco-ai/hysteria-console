@@ -12,6 +12,7 @@ import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 sys.path[:0] = [str(Path(__file__).resolve().parents[1] / 'hysteria'), str(Path(__file__).parent)]
 import pytest
@@ -25,9 +26,26 @@ class Preview(BaseHTTPRequestHandler):
             super().log_request(code, size)
 
     def do_GET(self):
-        path = self.path.split('?')[0]
-        if path in ('/admin/overview.json', '/admin/analytics.json', '/user/panel.json'):
-            if path == '/admin/overview.json':
+        request = urlsplit(self.path)
+        path = request.path
+        query = parse_qs(request.query)
+        if path == '/admin/health.fragment' and query.get('snapshot') != ['1']:
+            payload = ss.render_health_fragment().encode()
+            kind = 'text/html; charset=utf-8'
+        elif path in (
+            '/admin/overview.json',
+            '/admin/analytics.json',
+            '/user/panel.json',
+            '/admin/health.fragment',
+            '/admin/user/demo_alex.json',
+        ):
+            if path == '/admin/user/demo_alex.json':
+                data = ss._build_user_json_payload(
+                    'demo_alex', now=ss.local_now(), include_charts='summary=1' not in self.path
+                )
+            elif path == '/admin/health.fragment':
+                data = ss._build_health_read_snapshot()
+            elif path == '/admin/overview.json':
                 data = ss._build_overview_json_payload(now=ss.local_now())
             elif path == '/admin/analytics.json':
                 data = ss._build_analytics_json_payload(
@@ -55,6 +73,20 @@ class Preview(BaseHTTPRequestHandler):
                 return
             payload = file.read_bytes()
             kind = 'text/javascript' if file.suffix == '.js' else 'application/octet-stream'
+        elif path == '/':
+            payload = ss.render_home('preview.invalid').encode()
+            kind = 'text/html; charset=utf-8'
+        elif path in ('/logout', '/user/logout'):
+            payload = ss.render_logout_confirmation(
+                'preview.invalid', user_panel=path == '/user/logout'
+            ).encode()
+            kind = 'text/html; charset=utf-8'
+        elif path == '/user/change-password':
+            payload = ss.render_user_change_password('preview.invalid', 'demo_alex').encode()
+            kind = 'text/html; charset=utf-8'
+        elif path == '/admin/user/demo_alex':
+            payload = ss.render_user_detail_page('demo_alex', 'preview.invalid').encode()
+            kind = 'text/html; charset=utf-8'
         elif path == '/login':
             payload = ss.render_login('preview.invalid').encode()
             kind = 'text/html; charset=utf-8'
@@ -77,12 +109,25 @@ class Preview(BaseHTTPRequestHandler):
                 'usage', '历史每日明细', ss._render_daily_table_collapsed('preview.invalid')
             ).encode()
             kind = 'text/html; charset=utf-8'
-        elif path in ('/admin/usage', '/admin/settings', '/admin/config', '/admin/rules'):
+        elif path in (
+            '/admin/usage',
+            '/admin/settings',
+            '/admin/config',
+            '/admin/rules',
+            '/admin/health',
+            '/admin/incidents',
+            '/admin/landing-egresses',
+            '/admin/logs',
+        ):
             renderer = {
                 '/admin/usage': ss.render_usage_page,
                 '/admin/settings': ss.render_settings,
                 '/admin/config': ss.render_config_editor,
                 '/admin/rules': ss.render_rules,
+                '/admin/health': ss.render_health,
+                '/admin/incidents': ss.render_incidents,
+                '/admin/landing-egresses': ss.render_landing_egresses,
+                '/admin/logs': ss.render_reset_logs,
             }[path]
             payload = renderer('preview.invalid').encode()
             kind = 'text/html; charset=utf-8'
@@ -164,6 +209,50 @@ def isolated_preview(directory):
                 patch.setattr(ss, name, root / name.lower() / value.name)
         patch.setattr(ss, 'HY_API_SECRET_FILE', str(root / 'api_secret'))
         _seed_state(root, patch, users={'demo_alex': DEMO})
+        patch.setattr(ss.alerts, 'STATE_FILE', root / 'alerts.json')
+        ss.alerts.STATE_FILE.write_text(json.dumps({'quota_80': {'demo_alex': '2026-07-14'}}))
+        ss.RESET_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ss.RESET_LOG_FILE.write_text(
+            json.dumps(
+                {
+                    'time': ss.local_now().isoformat(),
+                    'actor': 'preview-admin',
+                    'ip': '192.0.2.10',
+                    'action': 'reset_user',
+                    'target': 'demo_alex',
+                    'month': '2026-07',
+                    'before': {'total': 1024**3},
+                    'after': {'total': 0},
+                }
+            )
+            + '\n'
+        )
+        update_path = root / 'update.json'
+        update_path.write_text(
+            json.dumps(
+                {
+                    'status': 'skipped',
+                    'reason': 'preview-policy-disabled',
+                    'ts': ss.local_now().isoformat(),
+                }
+            )
+        )
+        load_update_state = ss.hysteria_update.load_state
+        patch.setattr(ss.hysteria_update, 'load_state', lambda: load_update_state(update_path))
+        # Real health presentation consumes fictional results at the external probe seam.
+        for name in (
+            'probe_systemd',
+            'probe_cert',
+            'probe_panel_tls',
+            'probe_certbot_renewal',
+            'probe_disk',
+            'probe_cron_heartbeat',
+            'probe_auth_readiness',
+            'probe_xray_config_permissions',
+            'probe_hysteria_update',
+            'probe_recent_backup',
+        ):
+            patch.setattr(ss, name, lambda *args, **kwargs: {'ok': True, 'label': '预览：正常'})
         patch.setattr(ss, '_landing_registry_or_empty', lambda: {})
         yield allowed_ports
 

@@ -4332,6 +4332,14 @@ body.has-shell .cost-calibrator-title {
 }
 
 @media (max-width: 768px) {
+  body.has-shell .health-top-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  body.has-shell .incident-dual-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .home-header-inner {
     padding: 0 20px;
   }
@@ -4436,7 +4444,6 @@ body.has-shell .cost-calibrator-title {
     overflow-x: auto;
   }
 }
-
 /* =====================================================
    ADMIN SUB-PAGE COMPONENTS
    ===================================================== */

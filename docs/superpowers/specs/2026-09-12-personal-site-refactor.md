@@ -1,6 +1,6 @@
 # Personal-site modular migration
 
-Status: design for operator review; implementation and production cutover are not complete.
+Status: operator approved with “是”; implementation in progress, production cutover not complete.
 
 ## Approved intent and baseline
 

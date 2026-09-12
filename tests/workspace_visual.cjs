@@ -40,9 +40,32 @@ const baseUrl = process.env.PREVIEW_BASE_URL || 'http://127.0.0.1:18764';
     await page.locator('#sidebar-collapse').click();
     for (const width of [1920, 1024, 390]) {
       await page.setViewportSize({width, height: 1080});
-      for (const route of ['/admin', '/user/panel', '/admin/usage', '/admin/settings', '/admin/config', '/admin/rules', '/history']) {
+      for (const route of ['/', '/login', '/admin/health', '/admin/incidents', '/admin/landing-egresses', '/admin/logs', '/admin/user/demo_alex', '/user/change-password', '/logout', '/user/logout', '/admin', '/user/panel', '/admin/usage', '/admin/settings', '/admin/config', '/admin/rules', '/history']) {
         await page.goto(baseUrl + route);
-        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${route}: overflow at ${width}`);
+        if (!(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))) {
+          failures.push(`${route}: overflow at ${width}`);
+        }
+        if (['/admin/health', '/admin/incidents'].includes(route)) {
+          const cards = await page.locator('.health-top-kpis .health-kpi-card').evaluateAll(elements => elements.map(element => {
+            const bounds = element.getBoundingClientRect();
+            return {x: bounds.x, y: bounds.y, right: bounds.right, height: bounds.height};
+          }));
+          assert.equal(cards.length, 4);
+          assert(cards.every(card => card.x >= 0 && card.right <= width && card.height > 0), 'All health KPI cards must remain visible');
+          assert.equal(cards.filter(card => Math.abs(card.y - cards[0].y) < 2).length, width <= 768 ? 2 : 4, 'Health KPIs need two mobile columns and four desktop columns');
+        }
+        if (route === '/admin/incidents') {
+          const panels = await page.locator('.incident-dual-grid > .incident-panel').evaluateAll(elements => elements.map(element => {
+            const bounds = element.getBoundingClientRect();
+            return {x: bounds.x, y: bounds.y};
+          }));
+          assert.equal(panels.length, 2);
+          if (width <= 768) {
+            assert(Math.abs(panels[0].x - panels[1].x) < 2 && panels[1].y > panels[0].y, 'Incident panels must stack on mobile');
+          } else {
+            assert(Math.abs(panels[0].y - panels[1].y) < 2 && panels[1].x > panels[0].x, 'Incident panels must share a desktop row');
+          }
+        }
         if (route === '/history') {
           assert.equal(await page.locator('.daily-table-collapsed tbody th').first().evaluate(e => getComputedStyle(e).position), 'sticky');
           assert.equal(await page.locator('.daily-table-collapsed tbody td').first().evaluate(e => getComputedStyle(e).whiteSpace), 'nowrap');
@@ -87,7 +110,7 @@ const baseUrl = process.env.PREVIEW_BASE_URL || 'http://127.0.0.1:18764';
           const b = await page.locator('.plan-section').boundingBox();
           assert(Math.abs(a.y - b.y) < 2 && b.x > a.x, 'Desktop connection and plan panels should share a row');
         }
-        if (process.env.SCREENSHOT_DIR && ['/admin','/user/panel'].includes(route)) await page.screenshot({path: `${process.env.SCREENSHOT_DIR}/${route==='/admin'?'admin':'user'}-${width}.png`, fullPage: true});
+        if (process.env.SCREENSHOT_DIR) await page.screenshot({path: `${process.env.SCREENSHOT_DIR}/${route === '/' ? 'home' : route.slice(1).replaceAll('/', '-')}-${width}.png`, fullPage: true});
       }
     }
     assert.deepEqual(failures, [], 'No script errors or failed HTTP responses');

@@ -10,7 +10,7 @@ quality_python="${PYTHON:-python3}"
 adopted=(
   hysteria/web_assets.py tests/test_web_assets.py
   tests/workspace_preview_server.py tests/run_frontend_browser.py
-  tests/test_preview_isolation.py
+  tests/test_preview_isolation.py tests/test_preview_page_parity.py
   hysteria/public_views.py hysteria/auth_views.py hysteria/admin_read_routes.py
   hysteria/admin_config_routes.py
   hysteria/admin_operations_routes.py
