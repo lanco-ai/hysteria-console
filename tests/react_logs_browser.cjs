@@ -24,18 +24,28 @@ const navigation = [
   ['家宽出口', '/admin/landing-egresses'],
 ];
 
-function collectFailures(page) {
+function routeOf(url) {
+  const parsed = new URL(url);
+  return `${parsed.pathname}${parsed.search}`;
+}
+
+function collectFailures(page, scenario, { allowedResponses = [], allowedFailures = [] } = {}) {
   const failures = [];
-  page.on('pageerror', error => failures.push(`pageerror: ${error.message}`));
+  page.on('pageerror', error => failures.push(`${scenario} pageerror: ${error.message}`));
   page.on('requestfailed', request => {
-    const reason = request.failure()?.errorText || 'unknown network failure';
-    if (reason.includes('ERR_ABORTED') && ['fetch', 'xhr'].includes(request.resourceType())) return;
-    failures.push(`requestfailed: ${reason} ${request.url()}`);
+    const failure = `${request.method()} ${routeOf(request.url())} ${request.failure()?.errorText || 'unknown network failure'}`;
+    if (!allowedFailures.includes(failure)) failures.push(`${scenario} requestfailed: ${failure}`);
   });
   page.on('response', response => {
-    if (response.status() >= 400) failures.push(`response: ${response.status()} ${response.url()}`);
+    if (response.status() < 400) return;
+    const failure = `${response.request().method()} ${routeOf(response.url())} ${response.status()}`;
+    if (!allowedResponses.includes(failure)) failures.push(`${scenario} response: ${failure}`);
   });
   return failures;
+}
+
+function assertClean(failures) {
+  assert.deepEqual(failures, [], 'scenario must have no unexpected errors or failed requests');
 }
 
 async function addCookie(context, name, value) {
@@ -70,8 +80,13 @@ async function verifyAuthenticatedLogs(browser) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   await addCookie(context, 'sid', adminCookie);
   const page = await context.newPage();
-  const failures = collectFailures(page);
+  const failures = collectFailures(page, 'authenticated logs');
+  await page.route('**/api/v1/admin/logs', async route => {
+    await new Promise(resolve => setTimeout(resolve, 200));
+    await route.continue();
+  });
   await gotoReact(page);
+  await page.getByText('preview-admin', { exact: true }).waitFor();
 
   assert.equal(await page.title(), '清零日志');
   assert.equal(await page.locator('.page-title').innerText(), '清零日志');
@@ -98,6 +113,7 @@ async function verifyAuthenticatedLogs(browser) {
     await gotoReact(page);
     await page.getByText('preview-admin', { exact: true }).waitFor();
     const legacyPage = await context.newPage();
+    const legacyFailures = collectFailures(legacyPage, `legacy logs comparison ${width}`);
     await legacyPage.setViewportSize({ width, height: 1080 });
     const legacyResponse = await legacyPage.goto(`${baseUrl}/admin/logs`);
     assert.equal(legacyResponse.status(), 200);
@@ -116,28 +132,35 @@ async function verifyAuthenticatedLogs(browser) {
       await page.screenshot({ path: path.join(screenshotDir, `react-logs-${width}.png`), fullPage: true });
       await legacyPage.screenshot({ path: path.join(screenshotDir, `legacy-logs-${width}.png`), fullPage: true });
     }
+    assertClean(legacyFailures);
     await legacyPage.close();
   }
 
-  assert.deepEqual(failures, [], 'authenticated page must not have script/static failures');
+  assertClean(failures);
   await context.close();
 }
 
 async function verifyAuthenticationBoundaries(browser) {
   const anonymous = await browser.newPage({ viewport: { width: 1024, height: 768 } });
+  const anonymousFailures = collectFailures(anonymous, 'anonymous logs', {
+    allowedResponses: ['GET /api/v1/session 401'],
+  });
   await gotoReact(anonymous);
   await anonymous.getByRole('link', { name: '前往登录' }).waitFor();
   assert.equal(await anonymous.locator('text=preview-admin').count(), 0);
   assert.equal(await anonymous.locator('.data-table').count(), 0);
+  assertClean(anonymousFailures);
   await anonymous.close();
 
   const userContext = await browser.newContext({ viewport: { width: 1024, height: 768 } });
   await addCookie(userContext, 'usid', userCookie);
   const userPage = await userContext.newPage();
+  const userFailures = collectFailures(userPage, 'user-session logs');
   await gotoReact(userPage);
   await userPage.getByRole('link', { name: '管理员登录' }).waitFor();
   assert.equal(await userPage.locator('text=preview-admin').count(), 0);
   assert.equal(await userPage.locator('.data-table').count(), 0);
+  assertClean(userFailures);
   await userContext.close();
 }
 
@@ -145,6 +168,10 @@ async function verifyEmptyAndRecovery(browser) {
   const context = await browser.newContext({ viewport: { width: 1024, height: 768 } });
   await addCookie(context, 'sid', adminCookie);
   const page = await context.newPage();
+  const failures = collectFailures(page, 'logs recovery', {
+    allowedResponses: ['GET /api/v1/admin/logs 503'],
+    allowedFailures: ['GET /api/v1/admin/logs net::ERR_ABORTED'],
+  });
   let responseMode = 'empty';
   let delayedRequest;
   await page.route('**/api/v1/admin/logs', async route => {
@@ -206,6 +233,7 @@ async function verifyEmptyAndRecovery(browser) {
     }).catch(() => {});
   }
   assert.equal(await page.getByText('stale', { exact: true }).count(), 0, 'aborted stale response cannot overwrite retry');
+  assertClean(failures);
   await context.close();
 }
 
@@ -217,17 +245,20 @@ async function verifyShellKeyboardAndPreferences(browser) {
     localStorage.setItem('hy2.sidebar-motion', 'enabled');
   });
   const desktopPage = await desktop.newPage();
+  const desktopFailures = collectFailures(desktopPage, 'desktop shell keyboard');
   await gotoReact(desktopPage);
   assert(await desktopPage.locator('.app').evaluate(node => node.classList.contains('sidebar-collapsed')));
   assert(await desktopPage.locator('html').evaluate(node => node.classList.contains('sidebar-motion-enabled')));
   assert.equal(await desktopPage.locator('#sidebar-collapse').getAttribute('aria-pressed'), 'true');
   await desktopPage.locator('#sidebar-collapse').click();
   assert.equal(await desktopPage.evaluate(() => localStorage.getItem('hy2.sidebar')), 'expanded');
+  assertClean(desktopFailures);
   await desktop.close();
 
   const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   await addCookie(mobile, 'sid', adminCookie);
   const mobilePage = await mobile.newPage();
+  const mobileFailures = collectFailures(mobilePage, 'mobile shell keyboard');
   await gotoReact(mobilePage);
   const toggle = mobilePage.locator('#sidebar-toggle');
   await toggle.click();
@@ -258,6 +289,7 @@ async function verifyShellKeyboardAndPreferences(browser) {
   await mobilePage.setViewportSize({ width: 881, height: 844 });
   await mobilePage.waitForFunction(() => !document.querySelector('#sidebar').hasAttribute('inert'));
   assert.equal(await mobilePage.locator('#sidebar').getAttribute('inert'), null);
+  assertClean(mobileFailures);
   await mobile.close();
 }
 

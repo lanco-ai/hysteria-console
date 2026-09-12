@@ -14,7 +14,8 @@ def running_preview(tmp_path, monkeypatch):
     assets.mkdir(parents=True)
     (assets / 'index-testhash.js').write_text('document.body.dataset.preview = "ready";')
     (dist / 'index.html').write_text(
-        '<!doctype html><html><head><link rel="stylesheet" href="/static/style.css">'
+        '<!doctype html><html><head><title>清零日志</title>'
+        '<link rel="stylesheet" href="/static/style.css">'
         '<script type="module" src="/static/react/assets/index-testhash.js"></script>'
         '</head><body class="has-shell"><div id="root" data-public-host=""></div></body></html>'
     )
@@ -56,6 +57,8 @@ def test_react_preview_serves_built_entry_real_api_and_legacy_page(running_previ
     with urlopen(base_url + '/__react/admin/logs', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
+        assert '<title>清零日志</title>' in page
+        assert '<body class="has-shell">' in page
         assert 'data-public-host="preview.invalid"' in page
         assert 'href="/static/style.css"' in page
         assert '/static/react/assets/' in page
@@ -82,6 +85,51 @@ def test_react_preview_serves_built_entry_real_api_and_legacy_page(running_previ
 
     with urlopen(base_url + '/admin/logs', timeout=5) as response:
         assert '最近清零记录' in response.read().decode()
+
+
+def test_react_preview_serves_exact_public_entry_with_public_document_shell(running_preview):
+    _, base_url = running_preview
+    with urlopen(base_url + '/__react/', timeout=5) as response:
+        page = response.read().decode()
+        assert response.headers.get_content_type() == 'text/html'
+        assert '<title>Hysteria · 连接网络，掌控全局</title>' in page
+        assert '<body class="page-home page-site">' in page
+        assert '/static/react/assets/' in page
+
+    with urlopen(base_url + '/', timeout=5) as response:
+        assert response.status == 200
+        assert '界面示意 · 非实时数据' in response.read().decode()
+
+    _assert_head_matches_get(base_url + '/__react/')
+
+
+def test_react_preview_rejects_unknown_react_api_asset_and_retired_routes(running_preview):
+    _, base_url = running_preview
+    for route in (
+        '/__react/missing',
+        '/__react/admin/missing',
+        '/__react/admin/codex',
+        '/admin/codex',
+        '/admin/codex.json',
+        '/static/react/manifest.json',
+        '/static/react/assets/missing.js',
+        '/api/v1/missing',
+    ):
+        with pytest.raises(HTTPError) as error:
+            urlopen(base_url + route, timeout=5)
+        assert error.value.code == 404
+        with pytest.raises(HTTPError) as head_error:
+            urlopen(Request(base_url + route, method='HEAD'), timeout=5)
+        assert head_error.value.code == 404
+        assert head_error.value.read() == b''
+
+
+def test_react_preview_is_read_only_for_every_post_including_logout(running_preview):
+    _, base_url = running_preview
+    for route in ('/__react/', '/__react/admin/logs', '/logout'):
+        with pytest.raises(HTTPError) as error:
+            urlopen(Request(base_url + route, data=b'', method='POST'), timeout=5)
+        assert error.value.code == 405
 
 
 def test_react_preview_preserves_authentication_and_asset_boundaries(running_preview):

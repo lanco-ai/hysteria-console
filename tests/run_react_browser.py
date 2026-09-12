@@ -1,4 +1,4 @@
-"""Run React logs acceptance checks against a managed fictional preview."""
+"""Run React acceptance checks against a managed fictional preview."""
 
 import os
 import subprocess
@@ -9,8 +9,11 @@ from react_preview_server import preview_server
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    default_screenshots = (
+    default_logs_screenshots = (
         root / '.superpowers' / 'sdd' / '2026-09-12-react-logs-slice' / 'task-2-screenshots'
+    )
+    default_home_screenshots = (
+        root / '.superpowers' / 'sdd' / '2026-09-12-react-public-home' / 'task-1-screenshots'
     )
     with preview_server() as server:
         env = dict(
@@ -18,15 +21,21 @@ def main():
             PREVIEW_BASE_URL=f'http://127.0.0.1:{server.server_port}',
             REACT_PREVIEW_ADMIN_COOKIE=server.preview_admin_cookie,
             REACT_PREVIEW_USER_COOKIE=server.preview_user_cookie,
-            REACT_SCREENSHOT_DIR=os.environ.get('REACT_SCREENSHOT_DIR', str(default_screenshots)),
+            REACT_SCREENSHOT_DIR=os.environ.get(
+                'REACT_SCREENSHOT_DIR', str(default_logs_screenshots)
+            ),
+            REACT_HOME_SCREENSHOT_DIR=os.environ.get(
+                'REACT_HOME_SCREENSHOT_DIR', str(default_home_screenshots)
+            ),
         )
-        subprocess.run(
-            ['node', str(root / 'tests' / 'react_logs_browser.cjs')],
-            cwd=root,
-            env=env,
-            check=True,
-            timeout=180,
-        )
+        for browser_test in ('react_logs_browser.cjs', 'react_home_browser.cjs'):
+            subprocess.run(
+                ['node', str(root / 'tests' / browser_test)],
+                cwd=root,
+                env=env,
+                check=True,
+                timeout=180,
+            )
 
 
 if __name__ == '__main__':

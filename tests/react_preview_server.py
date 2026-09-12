@@ -21,7 +21,10 @@ from web_api.services import LegacyPanelServices
 from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
-REACT_ENTRY = '/__react/admin/logs'
+REACT_PAGES = {
+    '/__react/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site'),
+    '/__react/admin/logs': ('清零日志', 'has-shell'),
+}
 PUBLIC_HOST = 'preview.invalid'
 
 
@@ -89,19 +92,27 @@ def _handler(api_client, allowed_assets):
                 content_type = 'text/javascript'
             self._write(200, file.read_bytes(), content_type)
 
+        def _react_page(self, path):
+            title, body_class = REACT_PAGES[path]
+            payload = (DIST / 'index.html').read_text(encoding='utf-8')
+            replacements = (
+                ('<title>清零日志</title>', f'<title>{title}</title>'),
+                ('<body class="has-shell">', f'<body class="{body_class}">'),
+                (
+                    'data-public-host=""',
+                    f'data-public-host="{html.escape(PUBLIC_HOST, quote=True)}"',
+                ),
+            )
+            for marker, replacement in replacements:
+                if payload.count(marker) != 1:
+                    raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
+                payload = payload.replace(marker, replacement, 1)
+            self._write(200, payload.encode(), 'text/html; charset=utf-8')
+
         def do_GET(self):
             path = urlsplit(self.path).path
-            if path == REACT_ENTRY:
-                payload = (DIST / 'index.html').read_text(encoding='utf-8')
-                marker = 'data-public-host=""'
-                if payload.count(marker) != 1:
-                    raise RuntimeError('React root bootstrap marker is missing or ambiguous')
-                payload = payload.replace(
-                    marker,
-                    f'data-public-host="{html.escape(PUBLIC_HOST, quote=True)}"',
-                    1,
-                )
-                self._write(200, payload.encode(), 'text/html; charset=utf-8')
+            if path in REACT_PAGES:
+                self._react_page(path)
             elif path.startswith('/api/'):
                 self._api()
             elif path.startswith('/static/react/'):
