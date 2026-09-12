@@ -1,10 +1,13 @@
 """Adapters from the HTTP boundary to the legacy panel services."""
 
-from dataclasses import dataclass
-from types import MappingProxyType
+from dataclasses import dataclass, field
 from typing import Mapping
 
+import http_utils
+from login_service import LoginResult
 from reset_log_data import read_reset_logs
+
+from .requests import RequestHeaders
 
 
 class LoginRequired(Exception):
@@ -31,25 +34,13 @@ class LegacyRequestBridge:
 
     headers: Mapping[str, str]
     path: str
+    client_address: tuple = ('', 0)
 
 
-class _RequestHeaders(Mapping):
-    def __init__(self, headers):
-        self._headers = MappingProxyType(
-            {str(name).lower(): str(value) for name, value in headers.items()}
-        )
-
-    def __getitem__(self, name):
-        return self._headers[str(name).lower()]
-
-    def __iter__(self):
-        return iter(self._headers)
-
-    def __len__(self):
-        return len(self._headers)
-
-    def get(self, name, default=None):
-        return self._headers.get(str(name).lower(), default)
+@dataclass(frozen=True, slots=True)
+class LoginReply:
+    result: LoginResult
+    cookie: str | None = field(default=None, repr=False)
 
 
 class LegacyPanelServices:
@@ -58,27 +49,67 @@ class LegacyPanelServices:
     def __init__(self, service_module):
         self.service_module = service_module
 
-    def _bridge(self, *, headers, path):
+    def _bridge(self, *, headers, path, client_address=('', 0)):
         return LegacyRequestBridge(
-            headers=_RequestHeaders(headers),
+            headers=RequestHeaders(headers),
             path=str(path).split('?', 1)[0],
+            client_address=tuple(client_address),
         )
 
-    def _run_read(self, operation):
+    def _run_operation(self, operation, *, post_path=None):
         service = self.service_module
 
         @service.request_multiplier_snapshot
-        def snapshotted_read():
+        def snapshotted_operation():
             try:
                 return operation()
             except (service.state_store.StateStoreError, OSError) as exc:
                 try:
-                    if service._state_failure_requires_static_stop(exc):
+                    if post_path is None:
+                        requires_stop = service._state_failure_requires_static_stop(exc)
+                    else:
+                        requires_stop = service._state_failure_requires_static_stop(
+                            exc,
+                            post_path=post_path,
+                        )
+                    if requires_stop:
                         service._fail_closed_static_access(exc)
                 finally:
                     raise StateUnavailable from None
 
-        return snapshotted_read()
+        return snapshotted_operation()
+
+    def _run_read(self, operation):
+        return self._run_operation(operation)
+
+    def submit_login(self, *, headers, path, form, client_address):
+        request = self._bridge(
+            headers=headers,
+            path=path,
+            client_address=client_address,
+        )
+        service = self.service_module
+
+        def login():
+            result = service._login_service().authenticate(
+                form=form,
+                meta=service.load_meta(),
+                client_ip=http_utils.request_client_ip(request),
+            )
+            cookie = None
+            if result.outcome == 'success':
+                cookie_helper = (
+                    service.user_session_cookie
+                    if result.realm == 'user'
+                    else service.session_cookie
+                )
+                cookie = cookie_helper(
+                    result.session_id,
+                    secure=http_utils.is_secure_request(request),
+                )
+            return LoginReply(result=result, cookie=cookie)
+
+        return self._run_operation(login, post_path='/login')
 
     def read_session(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)

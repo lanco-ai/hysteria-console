@@ -5,6 +5,23 @@ from typing import Callable
 
 import web_assets
 
+_LOGIN_MESSAGES = {
+    'invalid': '用户名或密码错误',
+    'missing': '请输入用户名和密码',
+    'throttled': '登录尝试过于频繁，请 1 小时后再试',
+    'disabled': '账号已停用，请联系管理员',
+    'expired': '账号已到期，请联系管理员续费',
+}
+_NEUTRAL_USER_LOGIN_MESSAGE = '请使用管理员账号登录控制台。'
+
+
+def _visible_login_message(message, realm):
+    return message if realm == 'admin' else _NEUTRAL_USER_LOGIN_MESSAGE
+
+
+def login_feedback_message(outcome, realm='admin'):
+    return _visible_login_message(_LOGIN_MESSAGES[outcome], realm)
+
 
 def render_login(
     *,
@@ -19,7 +36,7 @@ def render_login(
 ) -> str:
     """Administrator-only entry; preserve the existing admin POST contract."""
     username_esc = html.escape(username if active_tab == 'admin' else '', quote=True)
-    message = msg if active_tab == 'admin' else '请使用管理员账号登录控制台。'
+    message = _visible_login_message(msg, active_tab)
     error = render_alert(message, msg_kind) if message else ''
     body = f'''<header class="auth-header">
   <div class="auth-header-inner">

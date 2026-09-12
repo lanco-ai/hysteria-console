@@ -2830,21 +2830,8 @@ class Handler(BaseHTTPRequestHandler):
         return http_utils.parse_form(self, max_bytes=MAX_FORM_BYTES)
 
     def _send_security_headers(self):
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('X-Frame-Options', 'DENY')
-        self.send_header('Cross-Origin-Opener-Policy', 'same-origin')
-        self.send_header(
-            'Permissions-Policy',
-            'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
-        )
-        self.send_header(
-            'Content-Security-Policy',
-            "default-src 'self'; base-uri 'none'; object-src 'none'; "
-            "frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; "
-            "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
-            "connect-src 'self'",
-        )
+        for name, value in http_utils.SECURITY_HEADERS.items():
+            self.send_header(name, value)
 
     def send_response_body(
         self, code, body, ctype='text/plain; charset=utf-8', send_body=True, extra_headers=None

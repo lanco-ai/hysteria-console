@@ -116,6 +116,13 @@ SECURITY_HEADERS = {
     'referrer-policy': 'no-referrer',
     'x-frame-options': 'DENY',
     'cross-origin-opener-policy': 'same-origin',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    'content-security-policy': (
+        "default-src 'self'; base-uri 'none'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; img-src 'self' data:; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; "
+        "connect-src 'self'"
+    ),
 }
 
 

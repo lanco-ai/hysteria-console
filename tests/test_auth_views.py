@@ -7,6 +7,29 @@ from html.parser import HTMLParser
 
 import pytest
 
+
+@pytest.mark.parametrize(
+    ('outcome', 'realm', 'expected'),
+    [
+        ('invalid', 'admin', '用户名或密码错误'),
+        ('missing', 'admin', '请输入用户名和密码'),
+        ('throttled', 'admin', '登录尝试过于频繁，请 1 小时后再试'),
+        ('disabled', 'admin', '账号已停用，请联系管理员'),
+        ('expired', 'admin', '账号已到期，请联系管理员续费'),
+        ('invalid', 'user', '请使用管理员账号登录控制台。'),
+        ('disabled', 'user', '请使用管理员账号登录控制台。'),
+    ],
+)
+def test_login_feedback_message_preserves_admin_copy_and_neutralizes_user_failures(
+    outcome,
+    realm,
+    expected,
+):
+    views = importlib.import_module('auth_views')
+
+    assert views.login_feedback_message(outcome, realm=realm) == expected
+
+
 CASES = [
     {
         'name': 'render_login',

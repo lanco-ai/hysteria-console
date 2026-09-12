@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Callable, Mapping
 from urllib.parse import urlencode
 
+import auth_views
 import http_utils
 
 
@@ -80,13 +81,6 @@ def _login(handler, ctx, form, meta):
         )
         return
 
-    messages = {
-        'invalid': '用户名或密码错误',
-        'missing': '请输入用户名和密码',
-        'throttled': '登录尝试过于频繁，请 1 小时后再试',
-        'disabled': '账号已停用，请联系管理员',
-        'expired': '账号已到期，请联系管理员续费',
-    }
     status = 429 if result.outcome == 'throttled' else 200
     extra_headers = (
         {'Retry-After': str(result.retry_after)} if result.outcome == 'throttled' else None
@@ -95,7 +89,7 @@ def _login(handler, ctx, form, meta):
         status,
         ctx.render_login(
             host,
-            msg=messages[result.outcome],
+            msg=auth_views.login_feedback_message(result.outcome),
             active_tab=result.realm,
             username=result.username,
         ),

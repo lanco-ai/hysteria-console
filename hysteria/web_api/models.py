@@ -18,6 +18,20 @@ class UserSessionResponse(PublicModel):
     username: str
 
 
+class LoginSuccessResponse(PublicModel):
+    ok: Literal[True]
+    redirect_to: Literal[
+        '/admin?msg=login+success',
+        '/user/panel',
+        '/user/change-password',
+    ]
+
+
+class LoginFailureResponse(PublicModel):
+    ok: Literal[False]
+    message: str
+
+
 class OverviewUserResponse(PublicModel):
     user: str
     tx: int
