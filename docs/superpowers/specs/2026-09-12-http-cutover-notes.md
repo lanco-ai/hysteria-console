@@ -7,6 +7,7 @@ These are outstanding cutover requirements, not completed migration claims.
 - Existing write routes already distinguish JSON responses by Accept while receiving bounded form data. React writes can retain the existing external method/path/form contracts; do not duplicate user-state/accounting rules merely to rename transport endpoints. Any FastAPI transport adapter must preserve body/field bounds, same-origin checks, revision conflicts, draft retention, actor/client-IP attribution and post-commit failure semantics.
 - Current Handler owns `_mutation_conflict`, `_mutation_user_not_found`, `_send_toggle_json`, actor lookup and audit append response orchestration. These require explicit extraction/adaptation tests, not a blind whole-Handler ASGI wrapper.
 - New query-free JSON reads do not replace existing credential-bearing subscription and dedicated-link exchange routes. Preserve exchange ordering and HEAD side-effect safety before any catch-all frontend routing.
+- The controlled React preview deliberately links bare `/static/style.css` to prove current CSS reuse. Production document generation must attach the corresponding release's style version/ETag (as legacy html_page does) or an equivalent immutable release URL, and serve matching CSS/fonts/JS on rollback. A hashed JavaScript filename alone does not make the whole UI release cache-safe.
 
 No production host, certificate, port mapping or proxy configuration has been read or changed for these notes.
 
@@ -42,3 +43,32 @@ already have committed before the response was lost. Existing reset and refresh
 operations differ deliberately: refresh banks cleared bytes in the preserved
 bucket, reset does not. Tests must verify accounting and audit records, not just
 response shape or a disabled button.
+
+## Login extraction boundary for the following slice
+
+`auth_routes._login` currently combines credential verification/session creation
+with rendered feedback and redirects. A shared internal login decision can
+separate those responsibilities before adding a JSON login transport. Preserve
+admin-first field precedence, username trimming, password length bounds,
+separate administrator/user throttle buckets, disabled/expired/must-change
+user handling, and the current session-generation binding. The public form
+remains administrator-only; compatibility user credentials are not permission
+to add a new visible user-login feature.
+
+The old HTML adapter still needs the submitted administrator username and
+message for escaped feedback; session IDs remain internal and are delivered
+only through the existing HttpOnly/SameSite cookie helpers, never in JSON.
+Client-IP selection belongs to the HTTP adapter and must use the existing
+loopback-only forwarded-header trust rule. A shared decision helper should not
+read a request socket, set cookies, redirect or render HTML itself.
+
+Before implementing this extraction, add parity tests against the actual
+legacy login route for successful login, wrong credentials, missing fields,
+429/Retry-After, user lifecycle states, cookie generation and redirects.
+The existing concurrent-verification reservation test is load-bearing.
+Inspect exception paths so a failed state read or verifier cannot leave an
+in-flight throttle reservation permanently occupied; test this explicitly
+rather than rewriting or weakening rate limiting.
+
+These are implementation preparation notes, not claims that the login API or
+React login form already exists.

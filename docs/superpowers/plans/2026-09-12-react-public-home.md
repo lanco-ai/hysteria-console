@@ -35,7 +35,7 @@ Reveal behavior observes `.site-feature` and `.site-console` with threshold `0.1
 
 **Interfaces:** `HomePage` is a no-props public React component. `ConsolePreview` owns only the three illustrative panel selection/focus states. The existing main entry chooses the home component only for the exact controlled route `/__react/`; the exact logs route remains unchanged. The preview serves the same manifest-selected built entry for these two explicit routes and sets the correct title/body classes without giving unknown paths a fallback. Client code chooses its page from the same exact path, not substring matching. No `/api/v1/session` call is needed for home. The current `applyInitialShellPreferences()` call belongs only to the logs entry; home must not inherit `has-shell` or sidebar state/classes from that initialization.
 
-- [ ] Write the browser regression before components. Use the existing isolated built preview and assert the controlled route is 200, the title/body classes match, and public content loads without a session. Run it and record the intended missing-page failure before implementation.
+- [x] Write the browser regression before components. Use the existing isolated built preview and assert the controlled route is 200, the title/body classes match, and public content loads without a session. Run it and record the intended missing-page failure before implementation.
 
 ```js
 const response = await page.goto(baseUrl + '/__react/#demo-users');
@@ -50,7 +50,7 @@ assert.equal(await page.locator('#demo-tab-health').getAttribute('aria-selected'
 assert.equal(await page.locator('#demo-tab-health').evaluate(el => el === document.activeElement), true);
 ```
 
-- [ ] Convert the existing home document into JSX components without raw HTML injection. Preserve all wording, tag order, classes, SVG geometry, example values, ARIA labels, meter attributes and link destinations. Use JSX SVG attribute spellings while preserving rendered attributes. Keep the public header/footer separate from AdminShell; no admin sidebar or private badge belongs on this page.
+- [x] Convert the existing home document into JSX components without raw HTML injection. Preserve all wording, tag order, classes, SVG geometry, example values, ARIA labels, meter attributes and link destinations. Use JSX SVG attribute spellings while preserving rendered attributes. Keep the public header/footer separate from AdminShell; no admin sidebar or private badge belongs on this page.
 
 ```tsx
 type Demo = 'traffic' | 'users' | 'health';
@@ -60,11 +60,11 @@ function initialDemo(): Demo {
 }
 ```
 
-- [ ] Implement controlled tabs and scoped reveal lifecycle in React. Do not import or execute the legacy DOM script. Verify all three initial hashes plus unknown hash, click activation, ArrowLeft/ArrowRight wrapping, Home/End, Space and focus. Confirm clicking a tab does not change the current URL hash and does not jump the page, matching the existing script. Confirm decorative topology still has its descriptive role/label and demo data still has visible example disclaimers.
+- [x] Implement controlled tabs and scoped reveal lifecycle in React. Do not import or execute the legacy DOM script. Verify all three initial hashes plus unknown hash, click activation, ArrowLeft/ArrowRight wrapping, Home/End, Space and focus. Confirm clicking a tab does not change the current URL hash and does not jump the page, matching the existing script. Confirm decorative topology still has its descriptive role/label and demo data still has visible example disclaimers.
 
-- [ ] Extend the strict preview allowlist for the exact home entry only. Test `/__react/missing`, `/__react/admin/missing`, missing built assets, `/api/v1/missing`, and retired Codex URLs remain 404; HEAD has no body. Both public entries `/` and `/__react/` must remain available for paired comparison. The existing logs authentication checks must still run.
+- [x] Extend the strict preview allowlist for the exact home entry only. Test `/__react/missing`, `/__react/admin/missing`, missing built assets, `/api/v1/missing`, and retired Codex URLs remain 404; HEAD has no body. Both public entries `/` and `/__react/` must remain available for paired comparison. The existing logs authentication checks must still run.
 
-- [ ] Compare SSR and React at widths 1920, 1024, 390 with the same fonts, browser, reduced-motion setting and selected tab. Assert headings, visible link labels/destinations, example values, main content/hero/topology/card/console bounding boxes, body background and no horizontal overflow. Capture paired full-page screenshots in each tab at desktop and the default tab at all three widths. Do not assert only that the page exists.
+- [x] Compare SSR and React at widths 1920, 1024, 390 with the same fonts, browser, reduced-motion setting and selected tab. Assert headings, visible link labels/destinations, example values, main content/hero/topology/card/console bounding boxes, body background and no horizontal overflow. Capture paired full-page screenshots in each tab at desktop and the default tab at all three widths. Do not assert only that the page exists.
 
 ```js
 assert.equal(await page.locator('.site-demo-label').innerText(), '界面示意 · 非实时数据');
@@ -72,14 +72,27 @@ assert.equal(await page.locator('.site-demo-panel:visible').count(), 1);
 assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 ```
 
-- [ ] Collect page errors, unexpected failed requests and all `/api/` requests during home tests: the latter must be empty. Confirm no legacy home/shell/ui-core script loads. Test reduced motion and absent IntersectionObserver leave content visible; test normal motion adds reveal on scroll. Re-run the existing logs browser test to catch shared-entry regressions.
+- [x] Collect page errors, unexpected failed requests and all `/api/` requests during home tests: the latter must be empty. Confirm no legacy home/shell/ui-core script loads. Test reduced motion and absent IntersectionObserver leave content visible; test normal motion adds reveal on scroll. Re-run the existing logs browser test to catch shared-entry regressions.
 
-- [ ] Close the shared-harness minor findings from the approved logs review. In `verifyAuthenticatedLogs`, explicitly wait for `preview-admin` before collecting initial column/cell contents. Attach `collectFailures` to every auth/recovery/keyboard and comparison page; intentional 401/503/aborted requests are allowlisted by exact route/status and scenario, not blanket ignored. Unexpected script errors and asset failures must fail every scenario. Run the logs browser acceptance with deliberately delayed initial logs to demonstrate the row wait is effective, while retaining the timeout/retry regression.
+- [x] Close the shared-harness minor findings from the approved logs review. In `verifyAuthenticatedLogs`, explicitly wait for `preview-admin` before collecting initial column/cell contents. Attach `collectFailures` to every auth/recovery/keyboard and comparison page; intentional 401/503/aborted requests are allowlisted by exact route/status and scenario, not blanket ignored. Unexpected script errors and asset failures must fail every scenario. Run the logs browser acceptance with deliberately delayed initial logs to demonstrate the row wait is effective, while retaining the timeout/retry regression.
 
-- [ ] Write `frontend/README.md` with exact `npm run typecheck:react`, `npm run build:react`, `npm run test:react-browser`, and Python-venv prerequisite instructions. Document both controlled entries, unchanged public routes, shared CSS/fonts, real cookie-based read API, no production cutover, and the preview's POST 405 behavior including logout. Remove only `.superpowers/sdd/2026-09-12-react-logs-slice/task-2-report.md` from the git index using `git rm --cached -- ...`; retain the local report for workflow continuity. Permanent usage docs belong in README rather than force-tracked ignored scratch storage.
+- [x] Write `frontend/README.md` with exact `npm run typecheck:react`, `npm run build:react`, `npm run test:react-browser`, and Python-venv prerequisite instructions. Document both controlled entries, unchanged public routes, shared CSS/fonts, real cookie-based read API, no production cutover, and the preview's POST 405 behavior including logout. Remove only `.superpowers/sdd/2026-09-12-react-logs-slice/task-2-report.md` from the git index using `git rm --cached -- ...`; retain the local report for workflow continuity. Permanent usage docs belong in README rather than force-tracked ignored scratch storage.
 
-- [ ] Run strict typecheck, production build, the updated frontend quality entry, focused preview isolation/public route tests, and CSS build consistency. Record commands/results and screenshot paths. Commit only owned files locally after review; no push or deployment.
+- [x] Run strict typecheck, production build, the updated frontend quality entry, focused preview isolation/public route tests, and CSS build consistency. Record commands/results and screenshot paths. Commit only owned files locally after review; no push or deployment.
 
 ## Self-review and scope remainder
 
 This slice covers the public parity-register row only. It deliberately leaves login/session mutations, user panel and administrative pages to their respective API-backed slices, without removing any old implementation. The exact-path entry and shared static release preserve coexistence. Public content has no backend state dependency, so adding a home JSON API would duplicate static presentation with no migration benefit.
+
+## Acceptance record
+
+Implemented at `7b69a77`; initial-fragment scroll/focus parity corrected in
+`177dd29` and `82406a6`, including the negative-tabindex skip-link target.
+Independent task review and both scoped fix reviews are complete with no open
+findings. Final parent `npm run check:frontend` passed on `82406a6`: CSS/JS
+gates, legacy browser cases, strict TypeScript, Vite build, React logs and home
+browser acceptance. The 18 focused Python preview/public/isolation tests passed
+on the original home commit; subsequent fixes touched TS and browser tests only.
+Known Starlette TestClient dependency deprecation remains recorded, not suppressed.
+The controlled home is `/__react/`; production `/` and all runtime configuration
+remain unchanged. Full migration is not complete.
