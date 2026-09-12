@@ -43,7 +43,7 @@ The destination is exactly `/root/hysteria/reset_log_data.py` (expressed as
 `$HY_DIR/reset_log_data.py` in deploy.sh). Keep established snapshot-before-copy
 and recovery protocols unchanged.
 
-- [ ] Add a failing source-only pytest that collects literal Python `render "$REPO_DIR/hysteria/...py"` source basenames, parses their Python AST without importing/executing modules, and follows local flat .py imports. Assert every reachable local file is installed. Walk Import and absolute ImportFrom; ignore standard-library/third-party imports with no corresponding source file. Use a visited set. Report `(importer, missing_file)` pairs so failures are actionable. Do not load source credentials or execute deployment just to inspect imports.
+- [x] Add a failing source-only pytest that collects literal Python `render "$REPO_DIR/hysteria/...py"` source basenames, parses their Python AST without importing/executing modules, and follows local flat .py imports. Assert every reachable local file is installed. Walk Import and absolute ImportFrom; ignore standard-library/third-party imports with no corresponding source file. Use a visited set. Report `(importer, missing_file)` pairs so failures are actionable. Do not load source credentials or execute deployment just to inspect imports.
 
 ```python
 tree = ast.parse((ROOT / 'hysteria' / filename).read_text(encoding='utf-8'))
@@ -63,14 +63,14 @@ for node in ast.walk(tree):
 assert not missing, sorted(missing)
 ```
 
-- [ ] Add a focused contract test for the helper's exact durable artifact,
+- [x] Add a focused contract test for the helper's exact durable artifact,
 snapshot-before-copy presence, rendered destination, chmod list and recovery
 allowlist. Reuse `_shell_function` and `_python_literal` already in the test
 module and the existing whole allowlist-equality test. Run the new tests red;
 expect the missing operations_views → reset_log_data dependency and missing
 registration, not an unrelated fixture failure.
 
-- [ ] Add the one helper at all five existing registration points. The render
+- [x] Add the one helper at all five existing registration points. The render
 line is exactly equivalent to:
 
 ```bash
@@ -81,13 +81,13 @@ The helper recovery allowlist adds exactly `/root/hysteria/reset_log_data.py`.
 Do not register or install web_api, frontend/dist, ASGI servers or dependencies;
 framework cutover remains a separate explicitly approved future task.
 
-- [ ] Run the new tests and `tests/test_deploy_durable_recovery.py`,
+- [x] Run the new tests and `tests/test_deploy_durable_recovery.py`,
 `tests/test_deploy_security_regressions.py`, `tests/test_reset_log_data.py` and
 `tests/test_panel_view_modules.py` with the existing venv. Run backend lint-only,
 `bash -n deploy.sh`, and `git diff --check`. The recovery tests use their existing
 temporary test root; never point them at live state.
 
-- [ ] Review and commit only these source/test changes locally. Record red/green
+- [x] Review and commit only these source/test changes locally. Record red/green
 commands, installed dependency-closure count and test outputs. No push or deploy.
 
 ## Scope check
@@ -95,3 +95,13 @@ commands, installed dependency-closure count and test outputs. No push or deploy
 This repairs release packaging for an already shared legacy dependency. It does
 not claim framework deployment readiness or replace the separate staging,
 immutable-asset, HTTP compatibility, cutover approval or rollback gates.
+
+## Acceptance record
+
+Committed locally as `54114f4`. Task review approved with no findings. Parent
+independently ran all 140 specified tests (passed), lint-only (passed), shell
+syntax and diff hygiene (passed). The two new regressions failed as intended
+before registration; the report records 67 installed/reachable modules and no
+missing local imports. Only source inventories and temporary test fixtures were
+used; deployment and live services were not invoked. This is packaging repair,
+not framework cutover.
