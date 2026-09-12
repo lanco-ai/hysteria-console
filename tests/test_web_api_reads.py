@@ -13,6 +13,7 @@ import httpx
 import pytest
 import subscription_service as ss
 import web_api.app as web_api_app
+import web_api.services as web_api_services
 from fastapi.testclient import TestClient
 from web_api import create_app
 from web_api.services import LegacyPanelServices
@@ -38,6 +39,7 @@ def real_state(tmp_path, monkeypatch):
         'ONLINE_FILE': tmp_path / 'online.json',
         'USAGE_LOCK_FILE': tmp_path / 'usage.lock',
         'DISPLAY_MULTIPLIER_STATE_FILE': tmp_path / 'display_multiplier.json',
+        'RESET_LOG_FILE': tmp_path / 'usage_reset.log',
     }
     for name, path in paths.items():
         monkeypatch.setattr(ss, name, path)
@@ -144,6 +146,7 @@ def test_query_credentials_do_not_authorize_reads(api_client):
     for path in (
         '/api/v1/session?token=query-token-must-not-authorize',
         '/api/v1/admin/overview?token=query-token-must-not-authorize',
+        '/api/v1/admin/logs?token=query-token-must-not-authorize',
     ):
         response = api_client.get(path)
         assert response.status_code == 401
@@ -243,6 +246,152 @@ def test_user_session_cannot_read_admin_overview(api_client):
     assert response.json() == {'error': 'login_required'}
 
 
+def test_logs_require_admin_and_reject_user_session(api_client):
+    anonymous = api_client.get('/api/v1/admin/logs')
+    user = api_client.get('/api/v1/admin/logs', headers=_user_cookie())
+
+    assert anonymous.status_code == 401
+    assert anonymous.json() == {'error': 'login_required'}
+    assert user.status_code == 401
+    assert user.json() == {'error': 'login_required'}
+
+
+def test_logs_return_latest_safe_rows_from_real_temporary_log(api_client, real_state):
+    records = [
+        {
+            'time': '2026-09-11 09:08:07',
+            'actor': 'older-admin',
+            'ip': '192.0.2.1',
+            'action': 'reset_usage_all',
+            'target': 'all',
+            'month': '2026-09',
+            'before': {'total': 1024},
+            'after': {'total': 2048},
+        },
+        ['non-object-secret', {'password': 'never-return-this'}],
+        {
+            'time': '<script>alert(1)</script>',
+            'actor': '<b>newer-admin</b>',
+            'ip': '198.51.100.7',
+            'action': 'rotate_token',
+            'target': 'demo_alex',
+            'month': '2026-10',
+            'before': {},
+            'after': {'total': 9000},
+            'password_hash': 'private-password-hash',
+            'proxy_password': 'private-proxy-password',
+        },
+    ]
+    lines = [json.dumps(records[0]), '{malformed', json.dumps(records[1]), json.dumps(records[2])]
+    real_state['paths']['RESET_LOG_FILE'].write_text('\n'.join(lines) + '\n', encoding='utf-8')
+
+    response = api_client.get('/api/v1/admin/logs', headers=_admin_cookie())
+
+    assert response.status_code == 200
+    assert response.json() == {
+        'limit': 300,
+        'rows': [
+            {
+                'time': '<script>alert(1)</script>',
+                'actor': '<b>newer-admin</b>',
+                'ip': '198.51.100.7',
+                'action': '重置订阅令牌',
+                'target': 'demo_alex',
+                'month': '2026-10',
+                'detail': '',
+            },
+            {
+                'time': '2026-09-11 09:08:07',
+                'actor': 'older-admin',
+                'ip': '192.0.2.1',
+                'action': '清空全部流量',
+                'target': 'all',
+                'month': '2026-09',
+                'detail': '1.00 KB → 2.00 KB',
+            },
+        ],
+    }
+    assert 'private-password-hash' not in response.text
+    assert 'private-proxy-password' not in response.text
+    assert 'non-object-secret' not in response.text
+
+
+def test_logs_ignore_query_limit_and_keep_the_bounded_contract(api_client, real_state):
+    real_state['paths']['RESET_LOG_FILE'].write_text(
+        json.dumps({'time': 'newest'}) + '\n',
+        encoding='utf-8',
+    )
+
+    response = api_client.get(
+        '/api/v1/admin/logs?limit=999999',
+        headers=_admin_cookie(),
+    )
+
+    assert response.status_code == 200
+    assert response.json()['limit'] == 300
+
+
+def test_logs_response_model_drops_unknown_and_secret_fields(api_client, monkeypatch):
+    monkeypatch.setattr(
+        web_api_services,
+        'read_reset_logs',
+        lambda *args, **kwargs: {
+            'limit': 300,
+            'admin_token': 'top-level-secret',
+            'rows': [
+                {
+                    'time': 'now',
+                    'actor': 'admin',
+                    'ip': '127.0.0.1',
+                    'action': 'action',
+                    'target': 'target',
+                    'month': 'month',
+                    'detail': 'detail',
+                    'before': {'password_hash': 'nested-secret'},
+                    'proxy_password': 'row-secret',
+                }
+            ],
+        },
+    )
+
+    response = api_client.get('/api/v1/admin/logs', headers=_admin_cookie())
+
+    assert response.status_code == 200
+    assert set(response.json()) == {'limit', 'rows'}
+    assert set(response.json()['rows'][0]) == {
+        'time',
+        'actor',
+        'ip',
+        'action',
+        'target',
+        'month',
+        'detail',
+    }
+    assert 'secret' not in response.text
+
+
+def test_log_io_failure_is_not_reported_as_successful_empty_data(
+    api_client,
+    real_state,
+    monkeypatch,
+):
+    original = Path.open
+    reset_log_path = real_state['paths']['RESET_LOG_FILE']
+
+    def fail_reset_log(self, *args, **kwargs):
+        if self == reset_log_path:
+            raise PermissionError('private log path')
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, 'open', fail_reset_log)
+
+    response = api_client.get('/api/v1/admin/logs', headers=_admin_cookie())
+
+    assert response.status_code == 503
+    assert response.json() == {'error': 'state_unavailable'}
+    assert 'private log path' not in response.text
+
+
 def test_overview_matches_hand_derived_values_and_legacy_builder(api_client):
     response = api_client.get(
         '/api/v1/admin/overview',
@@ -316,6 +465,7 @@ def test_overview_models_exclude_unknown_and_secret_shaped_fields(
     [
         '/api/v1/session',
         '/api/v1/admin/overview',
+        '/api/v1/admin/logs',
         '/api/v1/missing',
     ],
 )
@@ -346,7 +496,7 @@ def test_post_to_read_route_returns_json_405(api_client):
 
 @pytest.mark.parametrize(
     'path',
-    ['/api/v1/session', '/api/v1/admin/overview'],
+    ['/api/v1/session', '/api/v1/admin/overview', '/api/v1/admin/logs'],
 )
 def test_get_and_head_have_identical_status_and_headers(api_client, path):
     request_headers = _admin_cookie()

@@ -10,6 +10,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 
 from .models import (
+    AdminLogsResponse,
     AdminOverviewResponse,
     AdminSessionResponse,
     UserSessionResponse,
@@ -73,6 +74,11 @@ def _session_response(payload):
 
 def _overview_response(payload):
     model = AdminOverviewResponse.model_validate(payload)
+    return JSONResponse(model.model_dump())
+
+
+def _logs_response(payload):
+    model = AdminLogsResponse.model_validate(payload)
     return JSONResponse(model.model_dump())
 
 
@@ -173,5 +179,15 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _overview_response(payload)
+
+    @app.api_route('/api/v1/admin/logs', methods=['GET', 'HEAD'])
+    async def admin_logs(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_logs, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _logs_response(payload)
 
     return app

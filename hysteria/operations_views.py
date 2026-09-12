@@ -1,12 +1,12 @@
 """operations views with explicit presentation dependencies."""
 
 import html
-import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 import hysteria_update
+from reset_log_data import read_reset_logs
 
 
 @dataclass(frozen=True)
@@ -270,41 +270,24 @@ def render_settings(ctx: Context, host, flash=''):
 
 
 def render_reset_logs(ctx: Context, host, limit=300):
-    from collections import deque
-
-    rows = []
-    try:
-        with ctx.RESET_LOG_FILE.open('r', encoding='utf-8') as f:
-            raw_lines = list(deque(f, maxlen=limit))
-    except FileNotFoundError:
-        raw_lines = []
-    for line in reversed(raw_lines):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            entry = json.loads(line)
-        except Exception:
-            continue
-        t = html.escape(str(entry.get('time', '')))
-        actor = html.escape(str(entry.get('actor', '')))
-        ip = html.escape(str(entry.get('ip', '')))
-        action = html.escape(ctx._action_label(str(entry.get('action', ''))))
-        target = html.escape(str(entry.get('target', '')))
-        month = html.escape(str(entry.get('month', '')))
-        before = entry.get('before', {})
-        after = entry.get('after', {})
-        if isinstance(before, dict) and 'total' in before:
-            detail = (
-                f'{ctx.fmt_bytes(before.get("total", 0))} → {ctx.fmt_bytes(after.get("total", 0))}'
-            )
-        else:
-            detail = ''
-        rows.append(
-            f'<tr><td class="small">{t}</td><td>{actor}</td><td class="small">{ip}</td>'
-            f'<td>{action}</td><td>{target}</td><td class="small">{month}</td>'
-            f'<td class="small">{html.escape(detail)}</td></tr>'
-        )
+    logs = read_reset_logs(
+        ctx.RESET_LOG_FILE,
+        limit=limit,
+        action_label=ctx._action_label,
+        fmt_bytes=ctx.fmt_bytes,
+    )
+    rows = [
+        '<tr>'
+        f'<td class="small">{html.escape(row["time"])}</td>'
+        f'<td>{html.escape(row["actor"])}</td>'
+        f'<td class="small">{html.escape(row["ip"])}</td>'
+        f'<td>{html.escape(row["action"])}</td>'
+        f'<td>{html.escape(row["target"])}</td>'
+        f'<td class="small">{html.escape(row["month"])}</td>'
+        f'<td class="small">{html.escape(row["detail"])}</td>'
+        '</tr>'
+        for row in logs['rows']
+    ]
     table = ''.join(rows) if rows else '<tr><td colspan="7" class="empty">暂无日志记录</td></tr>'
     content = f"""<div class="admin-section">
   <div class="admin-section-header">

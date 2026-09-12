@@ -34,3 +34,18 @@ class AdminOverviewResponse(PublicModel):
     ts: str
     total_used: int
     users: list[OverviewUserResponse]
+
+
+class AdminLogRowResponse(PublicModel):
+    time: str
+    actor: str
+    ip: str
+    action: str
+    target: str
+    month: str
+    detail: str
+
+
+class AdminLogsResponse(PublicModel):
+    limit: int
+    rows: list[AdminLogRowResponse]

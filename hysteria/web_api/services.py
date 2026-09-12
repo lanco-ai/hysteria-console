@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Mapping
 
+from reset_log_data import read_reset_logs
+
 
 class LoginRequired(Exception):
     """No existing cookie session authorizes the requested read."""
@@ -107,5 +109,21 @@ class LegacyPanelServices:
             if not service.is_logged_in(request):
                 raise LoginRequired
             return service._build_overview_json_payload(now=service.local_now())
+
+        return self._run_read(read)
+
+    def read_admin_logs(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            return read_reset_logs(
+                service.RESET_LOG_FILE,
+                limit=300,
+                action_label=service._action_label,
+                fmt_bytes=service.fmt_bytes,
+            )
 
         return self._run_read(read)
