@@ -90,12 +90,12 @@ lifetime unchanged. Resolve service methods lazily inside endpoints so existing
 read-only test doubles still construct the app. Do not introduce a dynamic
 catch-all route or a broad handler-to-ASGI wrapper.
 
-- [ ] Write RED for both missing endpoints. Use real temporary session stores,
+- [x] Write RED for both missing endpoints. Use real temporary session stores,
   metadata and real cookie helpers via LegacyPanelServices. Seed two live admin
   sessions and two live user sessions with current credential generation/kind;
   prove successful targeted logout changes actual state, not only a mock count.
 
-- [ ] Implement the narrow service and explicit public/internal responses.
+- [x] Implement the narrow service and explicit public/internal responses.
   Test each realm, both cookies together, missing/stale/expired/repeated logout,
   an opposite-realm-only cookie, and form/query attempts to change the realm.
   Verify cookie attributes and the other devices/realm remain usable via the
@@ -103,7 +103,7 @@ catch-all route or a broad handler-to-ASGI wrapper.
   jar masking missing-cookie cases. Session IDs must never appear in response
   body, repr or public error text.
 
-- [ ] Share the form-write transport and register the two exact POST routes.
+- [x] Share the form-write transport and register the two exact POST routes.
   Exercise origin rejection before receive, duplicate Content-Length,
   Transfer-Encoding, malformed UTF-8/form, zero-claim nonempty/oversized,
   truncation and valid empty terminal input for both endpoints. These tests
@@ -111,18 +111,18 @@ catch-all route or a broad handler-to-ASGI wrapper.
   Record no service calls on rejected raw ASGI input. Verify 405/404/HEAD and
   complete shared security headers on success/rejection/state error.
 
-- [ ] Test unavailable metadata prevents deletion; deletion OSError/state-store
+- [x] Test unavailable metadata prevents deletion; deletion OSError/state-store
   failures produce 503 without Set-Cookie and classify respective legacy paths.
   Critical-state fail-closed behavior uses existing helpers with recording safe
   doubles, never actual services. Unexpected deletion error produces sanitized
   500. Verify snapshot cleanup on success/failure.
 
-- [ ] Use event-controlled worker tests to prove pending deletion owns capacity,
+- [x] Use event-controlled worker tests to prove pending deletion owns capacity,
   a cancelled caller does not free it until actual deletion finishes, unrelated
   requests remain responsive below capacity, and worker errors release capacity.
   Keep existing login/read admission tests as covering gates; no timing loops.
 
-- [ ] Run focused API/logout/login/read/parser/session/security coverage plus
+- [x] Run focused API/logout/login/read/parser/session/security coverage plus
   lint and whitespace checks. No full backend rerun is needed for this adapter
   slice unless implementation reaches beyond the listed files. Register the new
   test in the adopted lint file set, preserving every existing assertion.
@@ -133,9 +133,20 @@ PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh --lint-onl
 git diff --check
 ```
 
-- [ ] Self-review, commit only owned files locally and record exact RED/GREEN,
+- [x] Self-review, commit only owned files locally and record exact RED/GREEN,
   covering commands/output and concerns in the ignored task report. Independent
   review follows. No push, deployment or preview logout forwarding.
+
+## Acceptance evidence
+
+Implemented in `f82653e`; independent task review returned spec PASS and
+quality Approved, with no findings. Parent reran the documented covering
+command: 255 passed, 5 existing warnings in 16.35 seconds. The exact lint-only
+wrapper exposed predecessor preview import/format drift, corrected separately
+in `9bed63e` and independently approved as mechanical-only. Parent verified
+the exact wrapper (87 adopted files and composition root formatted), shell
+syntax and whitespace checks, all exit 0. No production or preview logout
+forwarding changed. Full migration remains incomplete.
 
 ## Scope remainder
 
