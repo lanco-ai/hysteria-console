@@ -110,7 +110,7 @@ Every other POST (including legacy logout) stays 405. Unknown React/API paths
 and missing assets remain 404, not SPA fallback. Do not touch base-preview POST
 policy. Add fictional second-device cookies only if required by real-state tests.
 
-- [ ] Add a focused browser RED before source changes: controlled logout page
+- [x] Add a focused browser RED before source changes: controlled logout page
   currently returns 404, or shell submits a blocked legacy POST. For example:
 
 ```js
@@ -120,7 +120,7 @@ await page.getByRole('button', {name: '确认退出', exact: true}).click();
 await page.waitForURL(`${base}/login`);
 ```
 
-- [ ] Implement the transport/lifecycle and wire both confirmation pages and
+- [x] Implement the transport/lifecycle and wire both confirmation pages and
   shell as described. A fixed mapping prevents request data selecting a realm:
 
 ```ts
@@ -130,19 +130,19 @@ const paths = { admin: '/api/v1/logout', user: '/api/v1/user/logout' } as const;
 // hasExactKeys(record, ['ok', 'redirect_to']); otherwise throw.
 ```
 
-- [ ] Test real temporary sessions in browser/preview: both cookies together,
+- [x] Test real temporary sessions in browser/preview: both cookies together,
   admin logout leaves user cookie/session usable, user logout removes only that
   user session, second devices remain usable, repeated/anonymous logout succeeds.
   Use explicit cookie headers/context isolation, not TestClient's shared jar.
   Existing service tests own detailed revocation internals; do not duplicate
   their whole matrix. Verify cancel sends zero POST and shell sends one exact
   API POST without displaying a confirmation page.
-- [ ] Browser fault tests hold responses for duplicate clicks, allow manual
+- [x] Browser fault tests hold responses for duplicate clicks, allow manual
   retry after network/503/wrong MIME/malformed JSON/extra keys/unsafe destination,
   reject any non-200 success-shaped payload, test timeout, pagehide/pageshow
   stale settlement and no unsolicited retries/navigation. Verify visible and
   focused mobile/desktop-collapsed errors plus normal subsequent drawer focus.
-- [ ] Close the ledger's real-root-unmount coverage gap with a test-only harness
+- [x] Close the ledger's real-root-unmount coverage gap with a test-only harness
   importing the actual shared hook (and LoginPage if needed). Create/unmount a
   real React root with an operation pending, then settle its promise; assert
   abort and no result/error/navigation callback. Exercise remount freshness.
@@ -151,15 +151,15 @@ const paths = { admin: '/api/v1/logout', user: '/api/v1/user/logout' } as const;
   route. No runtime debug globals, production bundle imports or new packages.
   Include the harness in root tsconfig strict checks. Test an operation that
   ignores abort and settles late, not merely the fetch mock's abort exception.
-- [ ] Capture distinct legacy/React confirmation pages at 1920, 1024 and 390
+- [x] Capture distinct legacy/React confirmation pages at 1920, 1024 and 390
   widths for both realms using fictional host/state. Save under this task's
   ignored `task-1-screenshots/`; assert bounds/semantics and compare pairs.
   Preserve all existing home/login/logs tests and screenshots.
-- [ ] Update preview Python tests for the five exact documents and three exact
+- [x] Update preview Python tests for the five exact documents and three exact
   writes, direct legacy POST rejection, cookie isolation and body-limit/drain
   invariants. Wire the new browser suite into the existing runner and document
   preview-only permissions and remaining production authentication gate.
-- [ ] Run focused tests while iterating, then the following covering gates once
+- [x] Run focused tests while iterating, then the following covering gates once
   on the final tree. Capture output and RED/GREEN evidence in task report:
 
 ```bash
@@ -169,9 +169,26 @@ PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh --lint-onl
 git diff --check
 ```
 
-- [ ] Self-review and commit only owned source/test/README/config files locally.
+- [x] Self-review and commit only owned source/test/README/config files locally.
   Record full results, screenshot paths, concerns and commit IDs in the ignored
   task report. Independent review follows; no push, deployment or legacy removal.
+
+## Acceptance evidence
+
+Implemented `63885220eafe4da431ef085936d99eca8d711092`; independent review
+returned Spec PASS / Quality Approved with no Critical or Important findings.
+Full frontend gate passed, including all legacy and React browser suites.
+Parent independently ran preview/isolation: 25 passed, 2 existing deprecation
+warnings in 13.60s; TypeScript and exact lint-only checks both exit 0. Six
+legacy/React screenshot pairs (both realms, 1920/1024/390) are byte-identical;
+parent visually inspected representative desktop/mobile pairs and verified
+distinct-page capture code. Actual React-root unmount/remount and synchronous
+abort-listener timeout tests close the previously recorded lifecycle test gap.
+
+The reviewer noted existing test-client deprecations as Minor; retain them for
+integration review, without suppressing warnings or upgrading dependencies here.
+Production document authorization/runtime preservation were explicitly outside
+the diff; original routes remain unchanged and cutover gates still apply.
 
 ## Scope remainder
 

@@ -118,7 +118,7 @@ production cache/cookie/proxy verification are still outstanding.
 See the FastAPI login plan for the POST route, bounded ASGI reader and full-header
 policy review gate. React login and production cutover are separate tasks.
 
-## Inspected logout boundary — not yet migrated
+## Inspected logout boundary — API and React accepted
 
 `public_page_routes` GET/HEAD `/logout` and `/user/logout` only render the
 appropriate confirmation when their respective session exists; otherwise they
@@ -141,5 +141,53 @@ metadata before invoking either handler. Any future adapter must decide and
 test this ordering explicitly, reuse the accepted admission/body boundary, and
 classify strict-state failures with the respective legacy POST path. Do not
 report successful logout or clear a cookie after a failed session deletion.
-This audit adds no logout API or preview mutation permission; current React
-login preview work still permits only the exact login POST.
+The API boundary is accepted in `f82653e` with 255 covering tests and an
+independent clean review. React logout is accepted in `6388522` after full
+frontend checks, 25 preview/isolation tests and independent clean review. It
+permits only the two exact additional logout APIs in guarded fixtures.
+Neither slice changes the legacy routes or production routing.
+
+## Inspected password-change boundary — next authentication seam
+
+Source inspection: `auth_routes._change_user_password`,
+`auth_routes._change_admin_password`, `identity_service._change_admin_password`,
+`session_store._replace_sessions_with_new`, `user_panel_routes._password` and
+`user_views.render_user_change_password`.
+
+Administrator changes authenticate the administrator first, then delegate
+current-password verification and new length/confirmation validation to the
+identity service under its metadata lock. That helper persists the new hash
+before the route replaces all administrator sessions with one generation-bound
+session. Failure redirects to `/admin/settings?msg=err:<code>`; success redirects
+to `/admin/settings?msg=password+changed`. The administrator rule currently does
+not reject reusing the current password. Do not invent that rule in an adapter.
+
+User changes require a password-kind user session; subscription-token sessions
+cannot use the change form. The route checks lifecycle, then new length and
+confirmation, then acquires the usage lock and rechecks the current user/lifecycle
+before validating the current password and rejecting same-password reuse. It
+persists the new hash and removes the must-change flag under that lock. Only
+afterward it replaces that user's sessions with a new password-generation-bound
+session; other users and administrator sessions remain unchanged. Preserve the
+existing access-error priority (including must-change) through the shared helper,
+not a separately interpreted frontend policy.
+
+Both flows have a credential-write/session-replacement boundary, not a single
+transaction across both files. A later session-store error cannot truthfully be
+reported as an ordinary validation failure, nor safely retried automatically:
+the password may already have changed. Preserve strict-state error classification
+and generation-based rejection of old sessions. Do not roll back an authoritative
+hash using a stale snapshot or return a success cookie after replacement fails.
+
+The user mutation orchestration still lives in the HTTP handler. Before adding
+JSON consumers, extract shared decisions/results rather than duplicating that
+validation, locking and persistence sequence. Keep cookies/redirect presentation
+at adapters and keep password hashes/session IDs out of public JSON and repr.
+
+Existing tests provide partial evidence only: the initial-user-password HTTP
+test exercises a real successful write, but the same-password test checks only
+rendered copy, and the administrator invalidation test manually reproduces an
+older clear/create sequence instead of calling the current handler. New seam
+tests must exercise actual handler/service paths, real temporary credentials
+and sessions, failure ordering and a state change between initial and locked
+user checks. Do not weaken or replace accounting/security assertions elsewhere.
