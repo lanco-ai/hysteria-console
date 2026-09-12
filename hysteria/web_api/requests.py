@@ -61,9 +61,6 @@ async def read_form(request, headers):
     """Receive and decode one exactly framed URL-encoded form."""
 
     claimed_length = http_utils.form_content_length(headers)
-    if claimed_length == 0:
-        return http_utils.decode_form_body(b'')
-
     chunks = []
     received = 0
     with anyio.move_on_after(FORM_READ_TIMEOUT) as receipt_timeout:

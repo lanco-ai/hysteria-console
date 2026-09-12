@@ -643,19 +643,40 @@ def test_multichunk_form_and_actual_peer_are_passed_to_service():
 
 def test_explicit_empty_input_is_a_missing_login_not_a_parser_failure():
     services = RecordingLoginServices()
-
-    async def forbidden_receive():
-        raise AssertionError('zero-length input needs no receive call')
-
     messages = _run_exchange(
         create_app(services, max_requests=1),
         headers=_form_headers(b''),
-        receive=forbidden_receive,
+        events=[{'type': 'http.request', 'body': b'', 'more_body': False}],
     )
 
     assert _response_status(messages) == 200
     assert _response_json(messages) == {'ok': False, 'message': '请输入用户名和密码'}
     assert services.calls[0]['form'] == {}
+
+
+@pytest.mark.parametrize(
+    ('body', 'expected_status', 'expected_error'),
+    [
+        (b'a=1', 400, 'bad_request'),
+        (b'x' * (256 * 1024 + 1), 413, 'request_too_large'),
+    ],
+    ids=['nonempty', 'oversized'],
+)
+def test_zero_claim_rejects_queued_body_without_authentication(
+    body,
+    expected_status,
+    expected_error,
+):
+    services = RecordingLoginServices()
+    messages = _run_exchange(
+        create_app(services, max_requests=1),
+        headers=_form_headers(b''),
+        events=[{'type': 'http.request', 'body': body, 'more_body': False}],
+    )
+
+    assert _response_status(messages) == expected_status
+    assert _response_json(messages) == {'error': expected_error}
+    assert services.calls == []
 
 
 def test_disconnect_during_body_receipt_is_bad_request_and_releases_capacity():
