@@ -193,6 +193,7 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/admin_views.py",
     "/root/hysteria/console_shell_views.py",
     "/root/hysteria/operations_views.py",
+    "/root/hysteria/reset_log_data.py",
     "/root/hysteria/configuration_views.py",
     "/root/hysteria/template_store.py",
     "/root/hysteria/session_store.py",

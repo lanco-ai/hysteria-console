@@ -1311,6 +1311,74 @@ def test_landing_egress_module_is_a_durable_deploy_artifact():
     assert "egress_nodes=egress_nodes" in deploy
 
 
+def test_rendered_python_sources_include_their_local_import_closure():
+    """A local module import must not be omitted from the deployed sources."""
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    installed = set(
+        re.findall(
+            r'(?m)^render "\$REPO_DIR/hysteria/([^/"]+\.py)"',
+            deploy,
+        )
+    )
+    pending = list(installed)
+    visited = set()
+    missing = set()
+
+    while pending:
+        filename = pending.pop()
+        if filename in visited:
+            continue
+        visited.add(filename)
+        tree = ast.parse(
+            (ROOT / "hysteria" / filename).read_text(encoding="utf-8")
+        )
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                modules = [alias.name.split(".")[0] for alias in node.names]
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.level == 0
+                and node.module
+            ):
+                modules = [node.module.split(".")[0]]
+            else:
+                modules = []
+            for module in modules:
+                dependency = module + ".py"
+                if (ROOT / "hysteria" / dependency).is_file():
+                    if dependency not in installed:
+                        missing.add((filename, dependency))
+                    pending.append(dependency)
+
+    assert not missing, sorted(missing)
+
+
+def test_reset_log_data_module_is_a_durable_deploy_artifact():
+    """The extracted log reader must stay in every deployment inventory."""
+    deploy = DEPLOY.read_text(encoding="utf-8")
+    destination = "/root/hysteria/reset_log_data.py"
+    rendered = (
+        'render "$REPO_DIR/hysteria/reset_log_data.py" '
+        '"$HY_DIR/reset_log_data.py"'
+    )
+    snapshot_start = deploy.index("# Snapshot mutable application state")
+    snapshot_end = deploy.index("\ndone\n", snapshot_start)
+    snapshot = deploy[snapshot_start:snapshot_end]
+    render_start = deploy.index('log "Rendering hysteria config and sources..."')
+    chmod_start = deploy.index("chmod 700 \\\n", render_start)
+    chmod_end = deploy.index("\nPYTHONPYCACHEPREFIX=", chmod_start)
+    chmod = deploy[chmod_start:chmod_end]
+
+    assert destination in set(_python_literal("EXACT_ALLOWED_PATHS"))
+    assert "reset_log_data.py" in _shell_function(
+        deploy, "build_durable_artifact_set",
+    )
+    assert '"$HY_DIR/reset_log_data.py"' in snapshot
+    assert rendered in deploy
+    assert '"$HY_DIR/reset_log_data.py"' in chmod
+    assert snapshot_end < deploy.index(rendered)
+
+
 def test_frozen_static_allowlist_exactly_matches_helper_contract(tmp_path):
     deploy = DEPLOY.read_text(encoding="utf-8")
     hy_dir = tmp_path / "hysteria"

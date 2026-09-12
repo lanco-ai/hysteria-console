@@ -242,6 +242,7 @@ build_durable_artifact_set() {
     admin_views.py \
     console_shell_views.py \
     operations_views.py \
+    reset_log_data.py \
     configuration_views.py \
     template_store.py \
     session_store.py \
@@ -1568,6 +1569,7 @@ for artifact in \
   "$HY_DIR/admin_views.py" \
   "$HY_DIR/console_shell_views.py" \
   "$HY_DIR/operations_views.py" \
+  "$HY_DIR/reset_log_data.py" \
   "$HY_DIR/configuration_views.py" \
   "$HY_DIR/template_store.py" \
   "$HY_DIR/session_store.py" \
@@ -1769,6 +1771,7 @@ render "$REPO_DIR/hysteria/user_views.py"     "$HY_DIR/user_views.py"
 render "$REPO_DIR/hysteria/admin_views.py"     "$HY_DIR/admin_views.py"
 render "$REPO_DIR/hysteria/console_shell_views.py"     "$HY_DIR/console_shell_views.py"
 render "$REPO_DIR/hysteria/operations_views.py"     "$HY_DIR/operations_views.py"
+render "$REPO_DIR/hysteria/reset_log_data.py" "$HY_DIR/reset_log_data.py"
 render "$REPO_DIR/hysteria/configuration_views.py"     "$HY_DIR/configuration_views.py"
 render "$REPO_DIR/hysteria/template_store.py"     "$HY_DIR/template_store.py"
 render "$REPO_DIR/hysteria/session_store.py"     "$HY_DIR/session_store.py"
@@ -1858,6 +1861,7 @@ chmod 700 \
   "$HY_DIR/admin_views.py" \
   "$HY_DIR/console_shell_views.py" \
   "$HY_DIR/operations_views.py" \
+  "$HY_DIR/reset_log_data.py" \
   "$HY_DIR/configuration_views.py" \
   "$HY_DIR/template_store.py" \
   "$HY_DIR/session_store.py" \
