@@ -18,6 +18,7 @@ from .models import (
     AdminSessionResponse,
     LoginFailureResponse,
     LoginSuccessResponse,
+    LogoutResponse,
     UserSessionResponse,
 )
 from .requests import FormReadTimeout, RequestHeaders, read_form
@@ -104,6 +105,11 @@ def _login_response(reply):
     return JSONResponse(status_code=status, content=model.model_dump(), headers=headers)
 
 
+def _logout_response(reply):
+    model = LogoutResponse(ok=True, redirect_to='/login')
+    return JSONResponse(model.model_dump(), headers={'Set-Cookie': reply.cookie})
+
+
 def _read_error_response(exc):
     if isinstance(exc, LoginRequired):
         return JSONResponse(status_code=401, content={'error': 'login_required'})
@@ -185,7 +191,7 @@ def create_app(services, *, max_requests=32):
         finally:
             release_capacity()
 
-    async def prepare_login(request, headers):
+    async def prepare_form_write(request, headers):
         origin_request = SimpleNamespace(headers=headers)
         if not http_utils.is_same_origin_post(origin_request):
             raise _CrossSiteRequest
@@ -196,13 +202,12 @@ def create_app(services, *, max_requests=32):
             'client_address': tuple(client_address),
         }
 
-    @app.post('/api/v1/login')
-    async def login(request: Request):
+    async def dispatch_form_write(function, request, response_builder, **fixed_arguments):
         try:
             reply = await dispatch(
-                services.submit_login,
+                partial(function, **fixed_arguments),
                 request,
-                prepare=prepare_login,
+                prepare=prepare_form_write,
             )
         except _CrossSiteRequest:
             return JSONResponse(status_code=403, content={'error': 'cross_site_request'})
@@ -216,7 +221,33 @@ def create_app(services, *, max_requests=32):
             return JSONResponse(status_code=503, content={'error': 'state_unavailable'})
         if isinstance(reply, JSONResponse):
             return reply
-        return _login_response(reply)
+        return response_builder(reply)
+
+    @app.post('/api/v1/login')
+    async def login(request: Request):
+        return await dispatch_form_write(
+            services.submit_login,
+            request,
+            _login_response,
+        )
+
+    @app.post('/api/v1/logout')
+    async def logout(request: Request):
+        return await dispatch_form_write(
+            services.submit_logout,
+            request,
+            _logout_response,
+            realm='admin',
+        )
+
+    @app.post('/api/v1/user/logout')
+    async def user_logout(request: Request):
+        return await dispatch_form_write(
+            services.submit_logout,
+            request,
+            _logout_response,
+            realm='user',
+        )
 
     @app.api_route('/api/v1/session', methods=['GET', 'HEAD'])
     async def session(request: Request):

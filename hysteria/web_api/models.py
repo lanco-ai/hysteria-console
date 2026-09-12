@@ -32,6 +32,11 @@ class LoginFailureResponse(PublicModel):
     message: str
 
 
+class LogoutResponse(PublicModel):
+    ok: Literal[True]
+    redirect_to: Literal['/login']
+
+
 class OverviewUserResponse(PublicModel):
     user: str
     tx: int

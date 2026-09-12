@@ -14,6 +14,7 @@ adopted=(
   hysteria/web_api/requests.py
   hysteria/web_api/services.py
   tests/test_web_api_login.py
+  tests/test_web_api_logout.py
   tests/test_web_api_reads.py
   hysteria/reset_log_data.py tests/test_reset_log_data.py
   hysteria/web_assets.py tests/test_web_assets.py

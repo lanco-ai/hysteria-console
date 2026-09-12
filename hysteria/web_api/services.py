@@ -1,7 +1,7 @@
 """Adapters from the HTTP boundary to the legacy panel services."""
 
 from dataclasses import dataclass, field
-from typing import Mapping
+from typing import Literal, Mapping
 
 import http_utils
 from login_service import LoginResult
@@ -43,8 +43,13 @@ class LoginReply:
     cookie: str | None = field(default=None, repr=False)
 
 
+@dataclass(frozen=True, slots=True)
+class LogoutReply:
+    cookie: str = field(repr=False)
+
+
 class LegacyPanelServices:
-    """Call authoritative synchronous services through a narrow read adapter."""
+    """Call authoritative synchronous services through narrow HTTP adapters."""
 
     def __init__(self, service_module):
         self.service_module = service_module
@@ -110,6 +115,43 @@ class LegacyPanelServices:
             return LoginReply(result=result, cookie=cookie)
 
         return self._run_operation(login, post_path='/login')
+
+    def submit_logout(
+        self,
+        *,
+        headers,
+        path,
+        form,
+        client_address,
+        realm: Literal['admin', 'user'],
+    ):
+        if realm not in ('admin', 'user'):
+            raise ValueError('invalid logout realm')
+        del form
+        request = self._bridge(
+            headers=headers,
+            path=path,
+            client_address=client_address,
+        )
+        service = self.service_module
+
+        def logout():
+            service.load_meta()
+            cookies = service.parse_cookies(request)
+            if realm == 'admin':
+                service.delete_session(cookies.get('sid', ''))
+                cookie_helper = service.clear_session_cookie
+            else:
+                service.delete_user_session(cookies.get('usid', ''))
+                cookie_helper = service.clear_user_session_cookie
+            return LogoutReply(
+                cookie=cookie_helper(
+                    secure=http_utils.is_secure_request(request),
+                )
+            )
+
+        post_path = '/logout' if realm == 'admin' else '/user/logout'
+        return self._run_operation(logout, post_path=post_path)
 
     def read_session(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
