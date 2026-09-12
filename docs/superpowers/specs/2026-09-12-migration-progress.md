@@ -11,6 +11,7 @@ This is an acceptance index, not a claim that the full migration is complete.
 | React public home | Controlled `/__react/`, content/layout/tabs/motion/initial anchors verified | `7b69a77`, `177dd29`, `82406a6`, react-public-home plan |
 | Shared-module release packaging | Reset log reader registered; source import-closure regression added | `54114f4`, shared-module-deploy-contract plan |
 | Login service | Shared decision and exception-safe reservation cleanup verified; existing HTML route remains consumer | `4734582`, login-service-boundary plan |
+| Shared strict form decoding | Header and byte helpers extracted; legacy consumer and rejection behavior verified | `e7b14b2`, shared-form-decoding plan |
 | React login and write transport | Not yet implemented | HTTP cutover notes list boundary requirements |
 | Remaining administrator pages and mutations | Legacy implementation remains authoritative | full spec parity register |
 | React user panel | Not yet implemented; legacy panel unchanged | full spec parity register |

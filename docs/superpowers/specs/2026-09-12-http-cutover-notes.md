@@ -72,3 +72,45 @@ rather than rewriting or weakening rate limiting.
 
 These are implementation preparation notes, not claims that the login API or
 React login form already exists.
+
+## Prepared seams after login extraction
+
+`login_service.LoginService.authenticate(form=..., meta=..., client_ip=...)`
+now returns an internal `LoginResult`; `subscription_service._login_service()`
+constructs it from authoritative current helpers. The legacy HTML adapter is
+the only consumer so far. Session creation happens after exactly-once throttle
+reservation release. Errors propagate without turning state failures into a
+successful empty or invalid-password response.
+
+The planned form extraction exposes `http_utils.form_content_length(headers,
+max_bytes=...)` and `decode_form_body(raw, max_bytes=...)`; its acceptance record
+must be checked before any ASGI consumer uses those names. The latter does not
+validate claimed length or own stream reading. An ASGI consumer must preserve
+duplicate raw Content-Length headers, reject header/length failures before
+receiving or loading state, cap each received chunk before appending, reject
+truncation and length mismatches, and bound body-read duration and admission.
+
+For the next login JSON slice, prefer an explicit POST-only `/api/v1/login`
+using the existing form fields. Keep legacy `/login` behavior unchanged. The
+JSON endpoint needs existing same-origin protection, typed allowlisted feedback
+and redirect destinations, matching cookie helpers, no session identifiers in
+JSON, real immediate-peer attribution and `/login` write-path strict-state
+failure classification. It must consume the shared service, not duplicate
+credential checks. Preserve neutral compatibility-user feedback on this
+administrator-facing transport. Do not automatically retry a login mutation
+after a transport error; a session may already have been committed.
+
+Keep admission held while the request body is received and until synchronous
+credential work really finishes, including disconnect/cancellation. Existing
+read admission tests must still pass after adapting the dispatcher. Add raw
+ASGI tests for duplicate headers, short/oversized/chunked bodies and cancellation,
+not only TestClient requests (which may normalize the malformed wire shapes).
+
+Before expanding to document routing, extract the existing complete security
+header policy from the legacy Handler into a shared constant/helper and use it
+from both HTTP boundaries; retain static cache and conditional-response rules
+outside that invariant security-header set. The current prototype's five
+headers are still not the complete legacy policy.
+
+These are next-slice requirements, not claims of an implemented POST route,
+bounded ASGI reader, shared full-header policy, or production readiness.

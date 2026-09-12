@@ -55,7 +55,7 @@ and `parse_qs` logic exactly. It does not own stream reading or claimed-length
 validation. Preserve dropped empty values, repeated values and plus decoding.
 No state/service calls belong in either helper.
 
-- [ ] Extend the existing parser characterization tests before extraction.
+- [x] Extend the existing parser characterization tests before extraction.
 Use `email.message.Message` for real repeated and mixed-case headers and a
 recording stream to prove invalid headers cause no read. Cover the exact size
 boundary with a smaller injected limit so tests stay cheap. Baseline cases
@@ -71,7 +71,7 @@ with pytest.raises(http_utils.BadRequest):
 assert stream.read_calls == []
 ```
 
-- [ ] Add direct helper tests and run red against the missing functions.
+- [x] Add direct helper tests and run red against the missing functions.
 Header matrix: absent, duplicate equal and unequal, negative, signed, whitespace,
 comma-joined, non-ASCII digits, oversize, explicit zero, valid leading zero;
 Transfer-Encoding rejected; existing absent/valid/invalid Content-Type cases.
@@ -89,13 +89,13 @@ with pytest.raises(http_utils.RequestTooLarge):
 assert http_utils.decode_form_body(b'a=1', max_bytes=3) == {'a': ['1']}
 ```
 
-- [ ] Extract the existing header code into `form_content_length`; extract
+- [x] Extract the existing header code into `form_content_length`; extract
 strict decode into `decode_form_body`, adding its actual-byte bound. Replace
 `parse_form` with the short composition shown above. Remove duplicated old
 checks instead of leaving two implementations. Keep unrelated URL, origin,
 cookie and client-IP helpers unchanged; do not reformat the whole module.
 
-- [ ] Re-run the focused helper suite and actual HTTP security/reliability/form
+- [x] Re-run the focused helper suite and actual HTTP security/reliability/form
 regressions to verify callers still receive the same 400/413 outcomes and no
 state changes on malformed bodies. Run backend lint-only and diff hygiene.
 This task changes no frontend, deployed file inventory or endpoint; no browser
@@ -107,7 +107,7 @@ PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh --lint-onl
 git diff --check
 ```
 
-- [ ] Self-review and commit only these two files locally. Report baseline,
+- [x] Self-review and commit only these two files locally. Report baseline,
 red/green commands and results, including no-read-on-rejection evidence. No push.
 
 ## Next consumer and scope limit
@@ -117,3 +117,12 @@ before reading, cap streamed bytes before buffering, verify the final byte count
 and call `decode_form_body`. Worker admission, cancellation, client-IP trust and
 cookie/error transport require their own endpoint integration tests. These
 helpers alone are not a safe complete write API or production readiness claim.
+
+## Acceptance record
+
+Implemented locally as `e7b14b2`. Task review approved without findings. Baseline
+characterization passed on the old parser; 31 direct helper cases failed for
+missing functions then passed after extraction. Parent independently verified
+the 146-test covering suite (eight existing naive-UTC warnings), lint-only and
+diff hygiene on the committed source. Six no-read rejection cases are recorded
+in the implementation evidence. No endpoint, deployment or push was added.

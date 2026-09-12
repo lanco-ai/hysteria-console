@@ -207,5 +207,6 @@ direct service and adapter-seam tests followed RED/GREEN. Full backend quality
 passed with 1,572 tests and 71 existing deprecation warnings. Parent separately
 verified the 248-test covering set (five existing warnings), lint-only, shell
 syntax and diff hygiene on the committed source. A minor historical-command
-selector omission in the scratch report was sent for documentation correction.
+selector omission in the scratch report is explicitly documented as unrecoverable;
+the historical output is retained, with no fabricated selector or replacement run.
 No FastAPI write route, React login page, production deployment or push occurred.
