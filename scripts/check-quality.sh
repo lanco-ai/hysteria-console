@@ -29,6 +29,7 @@ adopted=(
   hysteria/template_store.py
   hysteria/session_store.py
   hysteria/login_throttle.py
+  hysteria/login_service.py
   hysteria/billing_service.py
   hysteria/authorization_service.py
   hysteria/credential_service.py
@@ -52,6 +53,7 @@ adopted=(
   tests/test_authorization_service.py
   tests/test_billing_service.py
   tests/test_login_throttle.py
+  tests/test_login_service.py
   tests/test_session_store.py
   tests/test_template_store.py
   hysteria/public_page_routes.py

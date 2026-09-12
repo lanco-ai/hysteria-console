@@ -43,6 +43,7 @@ import configuration_views
 import template_store
 import session_store
 import login_throttle
+import login_service
 import billing_service
 import authorization_service
 import credential_service
@@ -870,6 +871,24 @@ def _login_throttle():
         _LOGIN_MAX,
         _LOGIN_WINDOW,
         _LOGIN_FAILURES_MAX_IPS,
+    )
+
+
+def _login_service():
+    return login_service.LoginService(
+        PASSWORD_MAX_LENGTH=PASSWORD_MAX_LENGTH,
+        USERS_FILE=USERS_FILE,
+        _LOGIN_WINDOW=_LOGIN_WINDOW,
+        _begin_login_attempt=_begin_login_attempt,
+        _finish_login_attempt=_finish_login_attempt,
+        _user_login_failures=_user_login_failures,
+        _credential_generation=_credential_generation,
+        create_session=create_session,
+        create_user_session=create_user_session,
+        is_valid_username=is_valid_username,
+        load_json=load_json,
+        local_now=local_now,
+        verify_secret=verify_secret,
     )
 
 
@@ -2535,25 +2554,19 @@ def _auth_routes_context():
         USERS_FILE=USERS_FILE,
         USER_SESSIONS_FILE=USER_SESSIONS_FILE,
         USER_SESSION_PANEL_PASSWORD=USER_SESSION_PANEL_PASSWORD,
-        _LOGIN_WINDOW=_LOGIN_WINDOW,
-        _begin_login_attempt=_begin_login_attempt,
         _change_admin_password=_change_admin_password,
         _credential_generation=_credential_generation,
-        _finish_login_attempt=_finish_login_attempt,
         _replace_sessions_with_new=_replace_sessions_with_new,
-        _user_login_failures=_user_login_failures,
+        authenticate_login=_login_service().authenticate,
         clear_session_cookie=clear_session_cookie,
         clear_user_session_cookie=clear_user_session_cookie,
         configured_public_host=configured_public_host,
-        create_session=create_session,
-        create_user_session=create_user_session,
         delete_session=delete_session,
         delete_user_session=delete_user_session,
         get_logged_in_user_context=get_logged_in_user_context,
         hash_secret=hash_secret,
         is_logged_in=is_logged_in,
         is_secure_request=is_secure_request,
-        is_valid_username=is_valid_username,
         load_json=load_json,
         local_now=local_now,
         parse_cookies=parse_cookies,

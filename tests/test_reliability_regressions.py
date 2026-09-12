@@ -231,6 +231,203 @@ def _clean_login_failures():
         ss._login_attempts_inflight.clear()
 
 
+def _fixture_verifier(plain, stored_hash):
+    return plain == "correct-password" and stored_hash in {
+        "admin-fixture-hash",
+        "alice-fixture-hash",
+    }
+
+
+def test_login_admin_precedence_trims_username_and_binds_secure_session(
+    tmp_path, monkeypatch
+):
+    state = _configure_state(
+        tmp_path,
+        monkeypatch,
+        users={
+            "alice": {
+                "sub_token": "alice-token",
+                "panel_pass_hash": "alice-fixture-hash",
+                "monthly_quota_bytes": 1024,
+            }
+        },
+    )
+    meta = json.loads(state["META_FILE"].read_text(encoding="utf-8"))
+    meta["admin_pass_hash"] = "admin-fixture-hash"
+    _write_json(state["META_FILE"], meta)
+    monkeypatch.setattr(ss, "verify_secret", _fixture_verifier)
+
+    with _running_server() as server:
+        response = _request(
+            server,
+            "POST",
+            "/login",
+            body=urlencode(
+                {
+                    "admin_username": " admin ",
+                    "admin_password": "correct-password",
+                    "user_username": "alice",
+                    "user_password": "correct-password",
+                }
+            ),
+            headers={"X-Forwarded-Proto": "https"},
+        )
+
+    assert response.status == 302
+    assert response.headers["location"] == "/admin?msg=login+success"
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith("sid=")
+    assert "usid=" not in cookie
+    assert "HttpOnly" in cookie
+    assert "SameSite=Lax" in cookie
+    assert "Secure" in cookie
+    assert "correct-password" not in response.body.decode()
+    sessions = ss.get_sessions()
+    assert len(sessions) == 1
+    session = next(iter(sessions.values()))
+    assert session["user"] == "admin"
+    assert session["credential_generation"] == ss._credential_generation(
+        "admin-fixture-hash"
+    )
+    assert ss.get_user_sessions() == {}
+
+
+@pytest.mark.parametrize(
+    ("form", "expected_message"),
+    [
+        (
+            {"admin_username": "admin", "admin_password": "wrong-secret"},
+            "用户名或密码错误",
+        ),
+        ({}, "请输入用户名和密码"),
+        (
+            {
+                "admin_username": "admin",
+                "admin_password": "x" * (ss.PASSWORD_MAX_LENGTH + 1),
+            },
+            "用户名或密码错误",
+        ),
+    ],
+)
+def test_login_admin_failures_preserve_feedback_without_reflecting_password(
+    tmp_path, monkeypatch, form, expected_message
+):
+    state = _configure_state(tmp_path, monkeypatch)
+    meta = json.loads(state["META_FILE"].read_text(encoding="utf-8"))
+    meta["admin_pass_hash"] = "admin-fixture-hash"
+    _write_json(state["META_FILE"], meta)
+    monkeypatch.setattr(ss, "verify_secret", _fixture_verifier)
+
+    with _running_server() as server:
+        response = _request(server, "POST", "/login", body=urlencode(form))
+
+    assert response.status == 200
+    assert expected_message.encode("utf-8") in response.body
+    assert "set-cookie" not in response.headers
+    for key, value in form.items():
+        if key.endswith("_password"):
+            assert str(value).encode() not in response.body
+    assert ss.get_sessions() == {}
+    assert ss.get_user_sessions() == {}
+
+
+@pytest.mark.parametrize(
+    ("must_change", "expected_location"),
+    [(False, "/user/panel"), (True, "/user/change-password")],
+)
+def test_login_user_compatibility_binds_secure_session_and_redirects(
+    tmp_path, monkeypatch, must_change, expected_location
+):
+    state = _configure_state(
+        tmp_path,
+        monkeypatch,
+        users={
+            "alice": {
+                "sub_token": "alice-token",
+                "panel_pass_hash": "alice-fixture-hash",
+                "panel_password_must_change": must_change,
+                "monthly_quota_bytes": 1024,
+            }
+        },
+    )
+    monkeypatch.setattr(ss, "verify_secret", _fixture_verifier)
+
+    with _running_server() as server:
+        response = _request(
+            server,
+            "POST",
+            "/login",
+            body=urlencode(
+                {
+                    "user_username": " alice ",
+                    "user_password": "correct-password",
+                }
+            ),
+            headers={"X-Forwarded-Proto": "https"},
+        )
+
+    assert response.status == 302
+    assert response.headers["location"] == expected_location
+    cookie = response.headers["set-cookie"]
+    assert cookie.startswith("usid=")
+    assert "sid=" not in cookie.removeprefix("usid=")
+    assert "HttpOnly" in cookie
+    assert "SameSite=Lax" in cookie
+    assert "Secure" in cookie
+    assert "correct-password" not in response.body.decode()
+    sessions = ss.get_user_sessions()
+    assert len(sessions) == 1
+    session = next(iter(sessions.values()))
+    assert session["user"] == "alice"
+    assert session["credential_generation"] == ss._credential_generation(
+        "alice-fixture-hash"
+    )
+    assert session["credential_kind"] == ss.USER_SESSION_PANEL_PASSWORD
+    assert ss.get_sessions() == {}
+
+
+@pytest.mark.parametrize(
+    "account_state",
+    [{"disabled": True}, {"expires_at": "2020-01-01"}],
+)
+def test_login_user_ineligible_feedback_stays_neutral_on_admin_form(
+    tmp_path, monkeypatch, account_state
+):
+    state = _configure_state(
+        tmp_path,
+        monkeypatch,
+        users={
+            "alice": {
+                "sub_token": "alice-token",
+                "panel_pass_hash": "alice-fixture-hash",
+                "monthly_quota_bytes": 1024,
+                **account_state,
+            }
+        },
+    )
+    monkeypatch.setattr(ss, "verify_secret", _fixture_verifier)
+
+    with _running_server() as server:
+        response = _request(
+            server,
+            "POST",
+            "/login",
+            body=urlencode(
+                {
+                    "user_username": "alice",
+                    "user_password": "correct-password",
+                }
+            ),
+        )
+
+    assert response.status == 200
+    assert "请使用管理员账号登录控制台。".encode("utf-8") in response.body
+    assert b'alice' not in response.body
+    assert "correct-password" not in response.body.decode()
+    assert "set-cookie" not in response.headers
+    assert ss.get_user_sessions() == {}
+
+
 @pytest.mark.parametrize(
     ("peer", "headers", "expected"),
     [

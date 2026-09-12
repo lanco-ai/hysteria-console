@@ -6,7 +6,6 @@ from typing import Callable, Mapping
 from urllib.parse import urlencode
 
 import http_utils
-import user_compat
 
 
 @dataclass(frozen=True)
@@ -17,25 +16,19 @@ class Context:
     USERS_FILE: Path
     USER_SESSIONS_FILE: Path
     USER_SESSION_PANEL_PASSWORD: str
-    _LOGIN_WINDOW: int
-    _begin_login_attempt: Callable[..., object]
     _change_admin_password: Callable[..., object]
     _credential_generation: Callable[..., object]
-    _finish_login_attempt: Callable[..., object]
     _replace_sessions_with_new: Callable[..., object]
-    _user_login_failures: dict
+    authenticate_login: Callable[..., object]
     clear_session_cookie: Callable[..., object]
     clear_user_session_cookie: Callable[..., object]
     configured_public_host: Callable[..., object]
-    create_session: Callable[..., object]
-    create_user_session: Callable[..., object]
     delete_session: Callable[..., object]
     delete_user_session: Callable[..., object]
     get_logged_in_user_context: Callable[..., object]
     hash_secret: Callable[..., object]
     is_logged_in: Callable[..., object]
     is_secure_request: Callable[..., object]
-    is_valid_username: Callable[..., object]
     load_json: Callable[..., object]
     local_now: Callable[..., object]
     parse_cookies: Callable[..., object]
@@ -75,135 +68,40 @@ def _login(handler, ctx, form, meta):
     host = ctx.configured_public_host(
         handler.headers.get('Host', '127.0.0.1'),
     )
-
-    # Determine which tab was submitted
-    admin_username = (form.get('admin_username') or [''])[0].strip()
-    admin_password = (form.get('admin_password') or [''])[0]
-    user_username = (form.get('user_username') or [''])[0].strip()
-    user_password = (form.get('user_password') or [''])[0]
-
-    if admin_username:
-        # Admin login
-        if not ctx._begin_login_attempt(ip):
-            handler.send_response_body(
-                429,
-                ctx.render_login(
-                    host,
-                    msg='登录尝试过于频繁，请 1 小时后再试',
-                    active_tab='admin',
-                    username=admin_username,
-                ),
-                'text/html; charset=utf-8',
-                True,
-                extra_headers={'Retry-After': str(ctx._LOGIN_WINDOW)},
-            )
-            return
-        stored_hash = str(meta.get('admin_pass_hash') or '')
-        ok = (
-            admin_username == meta.get('admin_user')
-            and len(admin_password) <= ctx.PASSWORD_MAX_LENGTH
-            and stored_hash
-            and ctx.verify_secret(admin_password, stored_hash)
-        )
-        ctx._finish_login_attempt(ip, ok)
-        if ok:
-            sid = ctx.create_session(
-                'admin',
-                ctx._credential_generation(stored_hash),
-            )
-            handler.redirect(
-                '/admin?msg=login+success',
-                cookie=ctx.session_cookie(sid, secure=ctx.is_secure_request(handler)),
-            )
-            return
-        handler.send_response_body(
-            200,
-            ctx.render_login(
-                host, msg='用户名或密码错误', active_tab='admin', username=admin_username
+    result = ctx.authenticate_login(form=form, meta=meta, client_ip=ip)
+    if result.outcome == 'success':
+        cookie_helper = ctx.user_session_cookie if result.realm == 'user' else ctx.session_cookie
+        handler.redirect(
+            result.redirect_to,
+            cookie=cookie_helper(
+                result.session_id,
+                secure=ctx.is_secure_request(handler),
             ),
-            'text/html; charset=utf-8',
-            True,
         )
         return
 
-    if user_username:
-        # User login
-        if not ctx._begin_login_attempt(ip, ctx._user_login_failures):
-            handler.send_response_body(
-                429,
-                ctx.render_login(
-                    host,
-                    msg='登录尝试过于频繁，请 1 小时后再试',
-                    active_tab='user',
-                    username=user_username,
-                ),
-                'text/html; charset=utf-8',
-                True,
-                extra_headers={'Retry-After': str(ctx._LOGIN_WINDOW)},
-            )
-            return
-        cfg = ctx.load_json(ctx.USERS_FILE, {}).get(user_username)
-        stored_hash = str(cfg.get('panel_pass_hash') or '') if isinstance(cfg, dict) else ''
-        ok = bool(
-            ctx.is_valid_username(user_username)
-            and len(user_password) <= ctx.PASSWORD_MAX_LENGTH
-            and stored_hash
-            and ctx.verify_secret(user_password, stored_hash)
-        )
-        if ok and cfg.get('disabled'):
-            ctx._finish_login_attempt(ip, None, ctx._user_login_failures)
-            handler.send_response_body(
-                200,
-                ctx.render_login(
-                    host, msg='账号已停用，请联系管理员', active_tab='user', username=user_username
-                ),
-                'text/html; charset=utf-8',
-                True,
-            )
-            return
-        if ok and user_compat.is_expired(cfg, today=ctx.local_now().date()):
-            ctx._finish_login_attempt(ip, None, ctx._user_login_failures)
-            handler.send_response_body(
-                200,
-                ctx.render_login(
-                    host,
-                    msg='账号已到期，请联系管理员续费',
-                    active_tab='user',
-                    username=user_username,
-                ),
-                'text/html; charset=utf-8',
-                True,
-            )
-            return
-        ctx._finish_login_attempt(ip, ok, ctx._user_login_failures)
-        if ok:
-            sid = ctx.create_user_session(
-                user_username,
-                ctx._credential_generation(stored_hash),
-            )
-            target = (
-                '/user/change-password' if cfg.get('panel_password_must_change') else '/user/panel'
-            )
-            handler.redirect(
-                target, cookie=ctx.user_session_cookie(sid, secure=ctx.is_secure_request(handler))
-            )
-            return
-        handler.send_response_body(
-            200,
-            ctx.render_login(
-                host, msg='用户名或密码错误', active_tab='user', username=user_username
-            ),
-            'text/html; charset=utf-8',
-            True,
-        )
-        return
-
-    # No credentials provided
+    messages = {
+        'invalid': '用户名或密码错误',
+        'missing': '请输入用户名和密码',
+        'throttled': '登录尝试过于频繁，请 1 小时后再试',
+        'disabled': '账号已停用，请联系管理员',
+        'expired': '账号已到期，请联系管理员续费',
+    }
+    status = 429 if result.outcome == 'throttled' else 200
+    extra_headers = (
+        {'Retry-After': str(result.retry_after)} if result.outcome == 'throttled' else None
+    )
     handler.send_response_body(
-        200,
-        ctx.render_login(host, msg='请输入用户名和密码'),
+        status,
+        ctx.render_login(
+            host,
+            msg=messages[result.outcome],
+            active_tab=result.realm,
+            username=result.username,
+        ),
         'text/html; charset=utf-8',
         True,
+        extra_headers=extra_headers,
     )
     return
 

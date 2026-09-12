@@ -198,6 +198,7 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/template_store.py",
     "/root/hysteria/session_store.py",
     "/root/hysteria/login_throttle.py",
+    "/root/hysteria/login_service.py",
     "/root/hysteria/billing_service.py",
     "/root/hysteria/authorization_service.py",
     "/root/hysteria/credential_service.py",
