@@ -24,10 +24,13 @@
 
 **Interfaces:** `read_reset_logs(path, *, limit=300, action_label, fmt_bytes)` returns `{'limit': limit, 'rows': [...]}`. Row keys: time, actor, ip, action, target, month, detail (all strings). action uses the existing translated label; detail uses existing fmt_bytes for before.total → after.total, otherwise ''. No raw before/after objects or credentials. Existing renderer consumes this unescaped data and HTML-escapes cells exactly once; React escapes text naturally.
 
-- [ ] Write tests with a temporary JSONL log: latest lines first; retain last 300 physical lines like current renderer; ignore blank/malformed/non-object records safely; absent file gives empty rows; permission/IO failures propagate, not empty success; script-shaped strings stay data. Tests assert hand-derived values and old rendered cell text.
-- [ ] Run tests red before extraction, implement shared loader, remove old parser from render_reset_logs. Preserve titles, limit description, classes and empty state.
-- [ ] Add GET/HEAD `/api/v1/admin/logs` to established FastAPI boundary using existing admin authentication/error/snapshot/admission wrappers and typed row DTO. No query-controlled unbounded limit, no user access. Test actual temporary logs, GET/HEAD and no raw secrets. Run focused domain/API/view tests and backend gates.
-- [ ] Review and commit locally; no push/deployment.
+- [x] Write tests with a temporary JSONL log: latest lines first; retain last 300 physical lines like current renderer; ignore blank/malformed/non-object records safely; absent file gives empty rows; permission/IO failures propagate, not empty success; script-shaped strings stay data. Tests assert hand-derived values and old rendered cell text.
+- [x] Run tests red before extraction, implement shared loader, remove old parser from render_reset_logs. Preserve titles, limit description, classes and empty state.
+- [x] Add GET/HEAD `/api/v1/admin/logs` to established FastAPI boundary using existing admin authentication/error/snapshot/admission wrappers and typed row DTO. No query-controlled unbounded limit, no user access. Test actual temporary logs, GET/HEAD and no raw secrets. Run focused domain/API/view tests and backend gates.
+- [x] Review and commit locally; no push/deployment.
+
+Task 1 completed at `98f77a6`: 89 focused tests passed; task review approved.
+The existing HTTPX/AnyIO dependency deprecation warnings remain recorded, not suppressed.
 
 ### Task 2: React full-page shell and logs view
 
@@ -46,7 +49,7 @@ type LogRow = {
 type LogsPayload = {limit: number; rows: LogRow[]};
 ```
 
-- [ ] Add exact dependency pins and lockfile using npm; retain existing quality commands. Configure strict TypeScript checking, Vite hashed assets/manifest under frontend/dist with base `/static/react/`. Link existing `/static/style.css`; do not copy/retheme CSS. Existing local fonts remain served by the preview. No Vite server needed for browser acceptance.
+- [x] Add exact dependency pins and lockfile using npm; retain existing quality commands. Configure strict TypeScript checking, Vite hashed assets/manifest under frontend/dist with base `/static/react/`. Link existing `/static/style.css`; do not copy/retheme CSS. Existing local fonts remain served by the preview. No Vite server needed for browser acceptance.
 
 ```html
 <!-- Existing stylesheet stays owned by the Python/static release. Verify the built URL. -->
@@ -54,13 +57,23 @@ type LogsPayload = {limit: number; rows: LogRow[]};
 ```
 
 Vite documents `vite-ignore` for externally served HTML asset references at https://vite.dev/guide/features.html#html. Verify the actual build keeps this URL and does not create a second CSS source. Existing font URLs are `/static/fonts/inter-var.woff2` and `/static/fonts/jetbrains-mono.woff2`.
-- [ ] Write failing browser tests before components: real authenticated logs show seven columns and fixture row, empty rows show 暂无日志记录, anonymous session shows login action without privileged content, usid-only cannot render logs. Match current sidebar groups/links/active item and title/badge.
-- [ ] Implement full React shell using console_shell_views.py markup and static/shell.js behavioral inventory: hy2.sidebar persistence, desktop collapse, mobile breakpoint <=880, open/close/scrim/Escape, focus return, focus trap, inert background/closed sidebar, skip link, resize handling, reduced-motion/current motion preference. Preserve logout POST form; no legacy shell.js or preferences script loads on React page.
-- [ ] Implement logs page and shared read hook with loading/error/empty states; HTTP and JSON-validation failures are errors with retry, not empty tables. Timeout aborts fetch; cleanup/retry ignores stale responses. Clear privileged data on authentication failure. No artificial polling added to a formerly non-polling logs page.
-- [ ] Build an isolated same-origin preview using existing filesystem/network/process guards, fictional logs and real FastAPI TestClient adapter. Serve only exact built entry and manifest-selected local assets; unknown API/assets stay 404. Use explicit fictional browser session cookies from temporary state, not disabled authentication. Keep existing legacy pages available for navigation/comparison. Never seed/access runtime files.
-- [ ] Run browser tests against built React with real API, plus targeted fault interception for delayed/failed JSON responses to verify retry/cancellation. Check mobile focus/keyboard and desktop saved preference. Compare legacy and React headings, cell text, visible links and key bounding boxes at 1920/1024/390; capture both screenshots for inspection. All scripts/network failures must be surfaced, not suppressed wholesale.
-- [ ] Run typecheck, bundle build, frontend quality command, focused Python preview/API tests and CSS build consistency. Review and local commit. Document controlled entry and limitations; do not call the full project migrated.
+- [x] Write failing browser tests before components: real authenticated logs show seven columns and fixture row, empty rows show 暂无日志记录, anonymous session shows login action without privileged content, usid-only cannot render logs. Match current sidebar groups/links/active item and title/badge.
+- [x] Implement full React shell using console_shell_views.py markup and static/shell.js behavioral inventory: hy2.sidebar persistence, desktop collapse, mobile breakpoint <=880, open/close/scrim/Escape, focus return, focus trap, inert background/closed sidebar, skip link, resize handling, reduced-motion/current motion preference. Preserve logout POST form; no legacy shell.js or preferences script loads on React page.
+- [x] Implement logs page and shared read hook with loading/error/empty states; HTTP and JSON-validation failures are errors with retry, not empty tables. Timeout aborts fetch; cleanup/retry ignores stale responses. Clear privileged data on authentication failure. No artificial polling added to a formerly non-polling logs page.
+- [x] Build an isolated same-origin preview using existing filesystem/network/process guards, fictional logs and real FastAPI TestClient adapter. Serve only exact built entry and manifest-selected local assets; unknown API/assets stay 404. Use explicit fictional browser session cookies from temporary state, not disabled authentication. Keep existing legacy pages available for navigation/comparison. Never seed/access runtime files.
+- [x] Run browser tests against built React with real API, plus targeted fault interception for delayed/failed JSON responses to verify retry/cancellation. Check mobile focus/keyboard and desktop saved preference. Compare legacy and React headings, cell text, visible links and key bounding boxes at 1920/1024/390; capture both screenshots for inspection. All scripts/network failures must be surfaced, not suppressed wholesale.
+- [x] Run typecheck, bundle build, frontend quality command, focused Python preview/API tests and CSS build consistency. Review and local commit. Document controlled entry and limitations; do not call the full project migrated.
 
 ## Remaining full-goal scope
+
+Task 2 completed at `27be0c3` with independent review approval. Parent reran the
+complete frontend quality entry successfully and inspected paired screenshots;
+1920/390 PNG pairs are byte-identical, 1024 key geometry/content matches.
+Combined backend verification passed 1534 tests before the final extra
+bootstrap-escaping test was added; all 3 final preview tests then passed
+separately. Existing 71 combined-suite deprecation warnings remain recorded.
+Minor review follow-ups are explicit row waits, consistent browser-error
+collection, and discoverable preview documentation; the next public-home slice
+includes those shared-harness/documentation improvements.
 
 Logs are the first complete read-only slice, not a replacement for overview/user/traffic/configuration functionality. Migrate remaining pages and writes with authorization/CSRF/revision/refresh parity, then paired release/staging validation, explicitly approved cutover and old-render removal. This plan does not authorize deployment.
