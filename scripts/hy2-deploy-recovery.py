@@ -201,6 +201,7 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/login_throttle.py",
     "/root/hysteria/login_service.py",
     "/root/hysteria/password_change_service.py",
+    "/root/hysteria/account_mutation_service.py",
     "/root/hysteria/billing_service.py",
     "/root/hysteria/authorization_service.py",
     "/root/hysteria/credential_service.py",

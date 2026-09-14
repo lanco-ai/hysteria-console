@@ -250,6 +250,7 @@ build_durable_artifact_set() {
     login_throttle.py \
     login_service.py \
     password_change_service.py \
+    account_mutation_service.py \
     billing_service.py \
     authorization_service.py \
     credential_service.py \
@@ -1580,6 +1581,7 @@ for artifact in \
   "$HY_DIR/login_throttle.py" \
   "$HY_DIR/login_service.py" \
   "$HY_DIR/password_change_service.py" \
+  "$HY_DIR/account_mutation_service.py" \
   "$HY_DIR/billing_service.py" \
   "$HY_DIR/authorization_service.py" \
   "$HY_DIR/credential_service.py" \
@@ -1785,6 +1787,7 @@ render "$REPO_DIR/hysteria/session_store.py"     "$HY_DIR/session_store.py"
 render "$REPO_DIR/hysteria/login_throttle.py"     "$HY_DIR/login_throttle.py"
 render "$REPO_DIR/hysteria/login_service.py"     "$HY_DIR/login_service.py"
 render "$REPO_DIR/hysteria/password_change_service.py" "$HY_DIR/password_change_service.py"
+render "$REPO_DIR/hysteria/account_mutation_service.py" "$HY_DIR/account_mutation_service.py"
 render "$REPO_DIR/hysteria/billing_service.py"     "$HY_DIR/billing_service.py"
 render "$REPO_DIR/hysteria/authorization_service.py"     "$HY_DIR/authorization_service.py"
 render "$REPO_DIR/hysteria/credential_service.py"     "$HY_DIR/credential_service.py"
@@ -1878,6 +1881,7 @@ chmod 700 \
   "$HY_DIR/login_throttle.py" \
   "$HY_DIR/login_service.py" \
   "$HY_DIR/password_change_service.py" \
+  "$HY_DIR/account_mutation_service.py" \
   "$HY_DIR/billing_service.py" \
   "$HY_DIR/authorization_service.py" \
   "$HY_DIR/credential_service.py" \

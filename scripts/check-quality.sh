@@ -15,6 +15,7 @@ adopted=(
   hysteria/web_api/requests.py
   hysteria/web_api/services.py
   hysteria/password_change_service.py tests/test_password_change_service.py
+  hysteria/account_mutation_service.py tests/test_account_mutation_service.py
   tests/test_web_api_login.py
   tests/test_web_api_logout.py
   tests/test_web_api_password_changes.py

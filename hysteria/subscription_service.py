@@ -45,6 +45,7 @@ import session_store
 import login_throttle
 import login_service
 import password_change_service
+import account_mutation_service
 import billing_service
 import authorization_service
 import credential_service
@@ -911,6 +912,26 @@ def _password_change_service():
         usage_lock=usage_lock,
         user_panel_access_error=user_panel_access_error,
         verify_secret=verify_secret,
+    )
+
+
+def _account_mutation_service():
+    return account_mutation_service.AccountMutationService(
+        PASSWORD_MAX_LENGTH=PASSWORD_MAX_LENGTH,
+        USERS_FILE=USERS_FILE,
+        _ensure_landing_vless_uuid=_ensure_landing_vless_uuid,
+        _landing_registry_or_empty=_landing_registry_or_empty,
+        _sync_static_access_from_users=_sync_static_access_from_users,
+        delete_user_sessions_for=delete_user_sessions_for,
+        hash_secret=hash_secret,
+        is_valid_username=is_valid_username,
+        load_json=load_json,
+        parse_bounded_int_field=parse_bounded_int_field,
+        parse_date_field=parse_date_field,
+        parse_note_field=parse_note_field,
+        revision_matches=revision_matches,
+        save_json=save_json,
+        usage_lock=usage_lock,
     )
 
 
@@ -2407,25 +2428,11 @@ def _build_health_read_snapshot():
 
 def _admin_account_routes_context():
     return admin_account_routes.Context(
-        PASSWORD_MAX_LENGTH=PASSWORD_MAX_LENGTH,
-        USERS_FILE=USERS_FILE,
-        _ensure_landing_vless_uuid=_ensure_landing_vless_uuid,
-        _landing_registry_or_empty=_landing_registry_or_empty,
-        _sync_static_access_from_users=_sync_static_access_from_users,
+        account_mutation_service=_account_mutation_service,
         configured_public_host=configured_public_host,
-        delete_user_sessions_for=delete_user_sessions_for,
-        hash_secret=hash_secret,
         is_logged_in=is_logged_in,
-        is_valid_username=is_valid_username,
-        load_json=load_json,
-        parse_bounded_int_field=parse_bounded_int_field,
-        parse_date_field=parse_date_field,
-        parse_note_field=parse_note_field,
         render_admin=render_admin,
-        revision_matches=revision_matches,
         safe_base_url=safe_base_url,
-        save_json=save_json,
-        usage_lock=usage_lock,
     )
 
 
