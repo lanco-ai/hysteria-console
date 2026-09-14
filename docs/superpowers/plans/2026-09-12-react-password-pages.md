@@ -122,7 +122,7 @@ shared draining server. Change browser runner to a fresh preview_server context
 per suite so real password mutations cannot poison another suite's fixture.
 Never introduce a test-only mutation/reset endpoint.
 
-- [ ] Add RED for the missing minimal read endpoints and controlled documents;
+- [x] Add RED for the missing minimal read endpoints and controlled documents;
   record expected404 before source changes. Test real-session read authorization
   including must-change user allowed and token-kind forbidden from password page:
 
@@ -132,27 +132,27 @@ assert response.status_code == 200
 assert set(response.json()) == {'username', 'password_min_length', 'password_max_length'}
 ```
 
-- [ ] Implement the narrow reads, models, code-aware reader and the two pages.
+- [x] Implement the narrow reads, models, code-aware reader and the two pages.
   Browser tests assert exact native form actions/field attributes, copy, return
   links, local preference toggle/on/off/reload/storage-denied behavior and focus.
-- [ ] Wire password requests and shared mutation hook. Real browser flows must
+- [x] Wire password requests and shared mutation hook. Real browser flows must
   change an administrator and user password, prove old credentials/session(s)
   invalid, new credentials accepted and other users/realm unaffected. Use the
   isolated real API; do not satisfy success tests solely with route interception.
   Test required initial password change remains reachable and succeeds.
-- [ ] Hold requests to verify one POST for double-submit, current draft safety,
+- [x] Hold requests to verify one POST for double-submit, current draft safety,
   validation mapping, network/503/malformed/unsafe/extra-key rejection, timeout,
   stale page transitions and manual retry only. Test access expiry after initial
   page read. Verify no passwords appear in storage or outbound request URLs.
-- [ ] Compare distinct legacy/React pages at1920/1024/390 with fictional data;
+- [x] Compare distinct legacy/React pages at1920/1024/390 with fictional data;
   save six paired screenshots under this task's task-1-screenshots. Assert content,
   element bounds and no mobile overflow. Preserve existing home/login/logout/
   logs suites, not weakened assertions or screenshots of the same page twice.
-- [ ] Test minimal reads' state failure/headers/HEAD/unknown paths and forbidden
+- [x] Test minimal reads' state failure/headers/HEAD/unknown paths and forbidden
   cookie. Preview tests verify exact five-write allowlist, wrong methods, receipt
   bounds, fixture restoration and no cross-suite session contamination. Register
   the new Python test in the adopted quality list and new browser in runner.
-- [ ] Run focused tests while iterating, then final covering commands:
+- [x] Run focused tests while iterating, then final covering commands:
 
 ```bash
 PATH=/tmp/hy2-quality-venv/bin:$PATH npm run check:frontend
@@ -161,7 +161,7 @@ PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh --lint-onl
 git diff --check
 ```
 
-- [ ] Self-review, locally commit owned files, and record exact RED/GREEN,
+- [x] Self-review, locally commit owned files, and record exact RED/GREEN,
   covering output, screenshots and concerns. Independent review before acceptance;
   do not deploy, push or remove legacy UI.
 
@@ -170,3 +170,21 @@ git diff --check
 Overview, usage, health, incidents, templates, rules, egress and user panel remain
 parity tasks. Production document guards, asset packaging, staging and separately
 approved cutover/rollback are not proved by these preview pages.
+
+## Local acceptance — 2026-09-14
+
+Implementation `d17b483` and focused review fix `1f57051` are accepted for
+controlled preview only. Independent task review identified an inherited-key
+query-feedback crash; the fix uses Map lookup and adds both-page regressions
+for `__proto__`, `constructor`, and `toString`. Scoped re-review found all
+findings addressed with no new breakage.
+
+Verification: full frontend gate passed; Python covering set102passed with two
+existing dependency deprecation warnings; lint/format and diff checks passed.
+Parent independently reran typecheck/build and the complete password-page
+browser suite, including real temporary credential mutations, and inspected
+desktop/mobile screenshots. Settings screenshots match at all three widths;
+user-password content and geometry parity passes without overflow.
+
+No push, production deployment, CSS change, or runtime/configuration change.
+Remaining migration and separately authorized production cutover stay pending.
