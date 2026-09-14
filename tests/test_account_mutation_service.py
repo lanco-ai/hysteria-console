@@ -195,6 +195,80 @@ def test_create_success_generates_credentials_authorizes_landing_and_revokes_ses
     assert session_id not in ss.get_user_sessions()
 
 
+def test_create_side_effect_order_is_locked_write_then_sessions_then_reloads(
+    account_state,
+    good_form,
+    monkeypatch,
+):
+    calls = []
+    held = False
+    real_save_json = ss.save_json
+
+    @contextmanager
+    def tracked_lock():
+        nonlocal held
+        held = True
+        calls.append('lock-enter')
+        try:
+            yield
+        finally:
+            held = False
+            calls.append('lock-exit')
+
+    def save_json(path, users):
+        assert held
+        calls.append('save')
+        real_save_json(path, users)
+
+    def sync(_users):
+        assert held
+        calls.append('sync')
+        return True, True
+
+    def delete(_username):
+        assert not held
+        calls.append('sessions')
+
+    monkeypatch.setattr(ss, 'usage_lock', tracked_lock)
+    monkeypatch.setattr(ss, 'save_json', save_json)
+    monkeypatch.setattr(ss, '_sync_static_access_from_users', sync)
+    monkeypatch.setattr(ss, 'delete_user_sessions_for', delete)
+    monkeypatch.setattr(ss.xray_config, 'reload_async', lambda: calls.append('xray'))
+    monkeypatch.setattr(ss.tuic_config, 'reload_async', lambda: calls.append('tuic'))
+
+    result = account_state['make_service']().create(form=good_form)
+
+    assert result.outcome == 'created'
+    assert calls == [
+        'lock-enter',
+        'save',
+        'sync',
+        'lock-exit',
+        'sessions',
+        'xray',
+        'tuic',
+    ]
+
+
+def test_create_session_invalidation_failure_propagates_after_commit(
+    account_state,
+    good_form,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        ss,
+        'delete_user_sessions_for',
+        lambda _username: (_ for _ in ()).throw(OSError('create session boom')),
+    )
+
+    with pytest.raises(OSError, match='create session boom'):
+        account_state['make_service']().create(form=good_form)
+
+    saved = json.loads(account_state['USERS_FILE'].read_text())['fixture_new']
+    assert saved['monthly_quota_bytes'] == 10 * 1024**3
+    assert ss.verify_secret('fixture-panel-password', saved['panel_pass_hash'])
+
+
 def test_create_without_passwords_omits_optional_hash_fields(account_state, good_form):
     form = {**good_form, 'panel_password': [''], 'password': ['']}
 
@@ -214,25 +288,45 @@ def test_create_rejects_existing_user_inside_lock_without_sync(
 ):
     existing = {'fixture_new': {'sub_token': 'keep', 'disabled': True}}
     _write_json(account_state['USERS_FILE'], existing)
+    form = {**good_form, 'token': ['posted-sensitive-token']}
     monkeypatch.setattr(
         ss,
         '_sync_static_access_from_users',
         lambda _users, **_kwargs: pytest.fail('duplicate create must not sync'),
     )
 
-    result = account_state['make_service']().create(form=good_form)
+    result = account_state['make_service']().create(form=form)
 
-    assert (result.outcome, result.code, result.field_id) == (
-        'invalid',
-        'user_exists_use_reset_token',
-        'create-user',
+    assert result == account_mutation_service.AccountMutationResult(
+        outcome='invalid',
+        code='user_exists_use_reset_token',
+        field_id='create-user',
+        draft={
+            'user': 'fixture_new',
+            'quota_gb': '10',
+            'quota_extra_gb': '2',
+            'expires_at': '2027-04-05',
+            'note': 'fixture note',
+            'landing_initial_egress_id': '',
+            'guest': True,
+            'tuic_enabled': True,
+        },
     )
-    assert result.draft['user'] == 'fixture_new'
+    for secret in (
+        'fixture-panel-password',
+        ' fixture-connection-password ',
+        'posted-sensitive-token',
+    ):
+        assert secret not in repr(result)
     assert json.loads(account_state['USERS_FILE'].read_text()) == existing
 
 
 def test_create_rechecks_selected_egress_inside_lock(account_state, good_form, monkeypatch):
-    form = {**good_form, 'landing_initial_egress_id': ['vanished']}
+    form = {
+        **good_form,
+        'landing_initial_egress_id': ['vanished'],
+        'token': ['posted-sensitive-token'],
+    }
     monkeypatch.setattr(
         ss,
         '_landing_registry_or_empty',
@@ -242,11 +336,27 @@ def test_create_rechecks_selected_egress_inside_lock(account_state, good_form, m
 
     result = account_state['make_service']().create(form=form)
 
-    assert (result.outcome, result.code, result.field_id) == (
-        'invalid',
-        '家宽出口已不可用，请重新选择',
-        'create-landing-initial-egress',
+    assert result == account_mutation_service.AccountMutationResult(
+        outcome='invalid',
+        code='家宽出口已不可用，请重新选择',
+        field_id='create-landing-initial-egress',
+        draft={
+            'user': 'fixture_new',
+            'quota_gb': '10',
+            'quota_extra_gb': '2',
+            'expires_at': '2027-04-05',
+            'note': 'fixture note',
+            'landing_initial_egress_id': 'vanished',
+            'guest': True,
+            'tuic_enabled': True,
+        },
     )
+    for secret in (
+        'fixture-panel-password',
+        ' fixture-connection-password ',
+        'posted-sensitive-token',
+    ):
+        assert secret not in repr(result)
     assert json.loads(account_state['USERS_FILE'].read_text()) == {}
 
 
@@ -547,3 +657,64 @@ def test_update_session_invalidation_failure_propagates_after_commit(
 
     saved = json.loads(account_state['USERS_FILE'].read_text())['alice']
     assert ss.verify_secret('new-panel-password', saved['panel_pass_hash'])
+
+
+def test_update_sync_failure_propagates_without_rolling_back_commit(
+    account_state,
+    monkeypatch,
+):
+    cfg = _existing_user()
+    _write_json(account_state['USERS_FILE'], {'alice': cfg})
+    form, revision = _update_form(
+        cfg,
+        quota_gb=['11'],
+        panel_password=['new-panel-password'],
+    )
+    calls = []
+    monkeypatch.setattr(
+        ss,
+        '_sync_static_access_from_users',
+        lambda _users: (_ for _ in ()).throw(RuntimeError('update sync boom')),
+    )
+    monkeypatch.setattr(ss, 'delete_user_sessions_for', lambda _username: calls.append('sessions'))
+    monkeypatch.setattr(ss.xray_config, 'reload_async', lambda: calls.append('xray'))
+    monkeypatch.setattr(ss.tuic_config, 'reload_async', lambda: calls.append('tuic'))
+
+    with pytest.raises(RuntimeError, match='update sync boom'):
+        account_state['make_service']().update(form=form, expected_revision=revision)
+
+    saved = json.loads(account_state['USERS_FILE'].read_text())['alice']
+    assert saved['monthly_quota_bytes'] == 11 * 1024**3
+    assert ss.verify_secret('new-panel-password', saved['panel_pass_hash'])
+    assert calls == []
+
+
+def test_update_reload_failure_propagates_after_commit_and_session_invalidation(
+    account_state,
+    monkeypatch,
+):
+    cfg = _existing_user()
+    _write_json(account_state['USERS_FILE'], {'alice': cfg})
+    form, revision = _update_form(
+        cfg,
+        quota_extra_gb=['6'],
+        panel_password=['new-panel-password'],
+    )
+    calls = []
+    monkeypatch.setattr(ss, '_sync_static_access_from_users', lambda _users: (True, True))
+    monkeypatch.setattr(ss, 'delete_user_sessions_for', lambda _username: calls.append('sessions'))
+
+    def fail_xray_reload():
+        calls.append('xray')
+        raise RuntimeError('update reload boom')
+
+    monkeypatch.setattr(ss.xray_config, 'reload_async', fail_xray_reload)
+    monkeypatch.setattr(ss.tuic_config, 'reload_async', lambda: calls.append('tuic'))
+
+    with pytest.raises(RuntimeError, match='update reload boom'):
+        account_state['make_service']().update(form=form, expected_revision=revision)
+
+    saved = json.loads(account_state['USERS_FILE'].read_text())['alice']
+    assert saved['quota_extra_bytes'] == 6 * 1024**3
+    assert ss.verify_secret('new-panel-password', saved['panel_pass_hash'])
+    assert calls == ['sessions', 'xray']
