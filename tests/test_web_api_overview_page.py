@@ -316,6 +316,31 @@ def test_malformed_overview_state_is_sanitized_as_unavailable(
     assert str(real_state['USERS_FILE']) not in response.text
 
 
+def test_known_stale_critical_overview_state_is_sanitized_as_unavailable(
+    authenticated_client,
+    real_state,
+    monkeypatch,
+):
+    """A repository-level stale core read must not become a generic 500 or leak."""
+    original = ss.state_store.load_json_strict
+
+    def stale_core_read(path, default, *, required=False):
+        if Path(path) == real_state['USERS_FILE']:
+            raise ss.state_store.CriticalStateUnavailable(
+                'stale core state contains fictional-protected-value'
+            )
+        return original(path, default, required=required)
+
+    monkeypatch.setattr(ss.state_store, 'load_json_strict', stale_core_read)
+    client, headers = authenticated_client
+    response = client.get('/api/v1/admin/overview-page', headers=headers)
+
+    assert response.status_code == 503
+    assert response.json() == {'error': 'state_unavailable'}
+    assert 'stale core state' not in response.text
+    assert 'fictional-protected-value' not in response.text
+
+
 def test_overview_page_read_does_not_write_state_and_polling_shape_stays_small(
     authenticated_client,
     real_state,
