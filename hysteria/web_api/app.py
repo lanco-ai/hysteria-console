@@ -27,6 +27,7 @@ from .models import (
     UserPasswordChangeValidationResponse,
     UserSessionResponse,
 )
+from .operation_routes import register_operation_routes
 from .overview_models import AdminOverviewPageResponse
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
@@ -278,6 +279,7 @@ def create_app(services, *, max_requests=32):
         return response_builder(reply)
 
     register_account_routes(app, services, dispatch_form_write)
+    register_operation_routes(app, services, dispatch_form_write, dispatch)
 
     @app.post('/api/v1/login')
     async def login(request: Request):

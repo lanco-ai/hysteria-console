@@ -244,6 +244,83 @@ class LegacyPanelServices:
         post_path = '/admin/add' if action == 'create' else '/admin/update'
         return self._run_operation(mutate_account, post_path=post_path)
 
+    def submit_overview_operation(
+        self,
+        *,
+        headers,
+        path,
+        form,
+        client_address,
+        action: Literal[
+            'cycle',
+            'reset-usage',
+            'refresh-usage',
+            'reset-usage-all',
+            'pause-user',
+            'toggle-user',
+        ],
+    ):
+        post_paths = {
+            'cycle': '/admin/cycle-config',
+            'reset-usage': '/admin/reset-usage',
+            'refresh-usage': '/admin/refresh-usage',
+            'reset-usage-all': '/admin/reset-usage-all',
+            'pause-user': '/admin/pause-user',
+            'toggle-user': '/admin/toggle-user',
+        }
+        if action not in post_paths:
+            raise ValueError('invalid overview operation action')
+        request = self._bridge(
+            headers=headers,
+            path=path,
+            client_address=client_address,
+        )
+        service = self.service_module
+
+        def audit(log_action, target, before, after):
+            actor = service._admin_actor(request)
+            service._write_reset_log(
+                request,
+                actor,
+                log_action,
+                target,
+                before,
+                after,
+            )
+
+        def mutate():
+            service.load_meta()
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            expected_revision = (form.get('user_revision') or [''])[0]
+            if action == 'cycle':
+                return service._traffic_mutation_service(audit).configure_cycle(form=form)
+            if action == 'reset-usage':
+                return service._traffic_mutation_service(audit).reset_user(
+                    form=form,
+                    expected_revision=expected_revision,
+                )
+            if action == 'refresh-usage':
+                return service._traffic_mutation_service(audit).refresh_user(
+                    form=form,
+                    expected_revision=expected_revision,
+                )
+            if action == 'reset-usage-all':
+                return service._traffic_mutation_service(audit).reset_all()
+            if action == 'pause-user':
+                return service._user_status_service(audit).pause(
+                    form=form,
+                    expected_revision=expected_revision,
+                )
+            desired = (form.get('desired') or [''])[0]
+            return service._user_status_service(audit).toggle(
+                form=form,
+                desired=desired,
+                expected_revision=expected_revision,
+            )
+
+        return self._run_operation(mutate, post_path=post_paths[action])
+
     def read_session(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module
@@ -350,5 +427,16 @@ class LegacyPanelServices:
                 action_label=service._action_label,
                 fmt_bytes=service.fmt_bytes,
             )
+
+        return self._run_read(read)
+
+    def read_admin_reload_status(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            return service._static_reload_status()
 
         return self._run_read(read)

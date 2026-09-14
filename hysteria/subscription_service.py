@@ -46,6 +46,8 @@ import login_throttle
 import login_service
 import password_change_service
 import account_mutation_service
+import traffic_mutation_service
+import user_status_service
 import billing_service
 import authorization_service
 import credential_service
@@ -935,6 +937,48 @@ def _account_mutation_service():
     )
 
 
+def _traffic_mutation_service(audit):
+    return traffic_mutation_service.TrafficMutationService(
+        CYCLE_LENGTH_MAX=CYCLE_LENGTH_MAX,
+        CYCLE_LENGTH_MIN=CYCLE_LENGTH_MIN,
+        USAGE_FILE=USAGE_FILE,
+        USERS_FILE=USERS_FILE,
+        _clear_alert_dedup_for_users=_clear_alert_dedup_for_users,
+        _sync_static_access_from_users=_sync_static_access_from_users,
+        _update_cycle_meta=_update_cycle_meta,
+        _zero_cycle_daily_hourly_for=_zero_cycle_daily_hourly_for,
+        add_preserved_for_user=add_preserved_for_user,
+        audit=audit,
+        load_json=load_json,
+        local_now=local_now,
+        month_key=month_key,
+        revision_matches=revision_matches,
+        save_json=save_json,
+        tuic_reload_async=tuic_config.reload_async,
+        usage_for_user=usage_for_user,
+        usage_lock=usage_lock,
+        xray_reload_async=xray_config.reload_async,
+    )
+
+
+def _user_status_service(audit):
+    return user_status_service.UserStatusService(
+        USERS_FILE=USERS_FILE,
+        _sync_static_access_from_users=_sync_static_access_from_users,
+        audit=audit,
+        delete_user_sessions_for=delete_user_sessions_for,
+        hy_kick=hy_kick,
+        load_json=load_json,
+        local_now=local_now,
+        parse_int_field=parse_int_field,
+        revision_matches=revision_matches,
+        save_json=save_json,
+        tuic_reload_async=tuic_config.reload_async,
+        usage_lock=usage_lock,
+        xray_reload_async=xray_config.reload_async,
+    )
+
+
 def _prune_failures_locked(ip, failures, now):
     return _login_throttle()._prune_failures_locked(ip=ip, failures=failures, now=now)
 
@@ -1767,6 +1811,33 @@ def _static_reload_status():
     }
 
 
+def _admin_actor(request):
+    query = parse_query_params(request.path)
+    token = (query.get('token') or [''])[0]
+    meta = load_meta()
+    admin_token = str(meta.get('admin_token') or '')
+    if _safe_secret_equal(token, admin_token):
+        return 'token-admin'
+    sid = parse_cookies(request).get('sid', '')
+    sessions = get_sessions()
+    if sid in sessions:
+        return sessions[sid].get('user', 'admin')
+    return 'unknown'
+
+
+def _write_reset_log(request, actor, action, target, before, after):
+    audit_log.append_reset_log(
+        RESET_LOG_FILE,
+        actor,
+        action,
+        target,
+        before,
+        after,
+        client_ip=http_utils.request_client_ip(request),
+        month=month_key,
+    )
+
+
 def _build_analytics_json_payload(*, now, include_charts=True):
     return usage_dashboard.build_analytics_json_payload(
         _usage_context(),
@@ -2438,21 +2509,13 @@ def _admin_account_routes_context():
 
 def _admin_user_status_routes_context():
     return admin_user_status_routes.Context(
-        USERS_FILE=USERS_FILE,
         _build_overview_user=_build_overview_user,
         _json_request=_json_request,
         _static_reload_status=_static_reload_status,
-        _sync_static_access_from_users=_sync_static_access_from_users,
-        delete_user_sessions_for=delete_user_sessions_for,
-        hy_kick=hy_kick,
         is_logged_in=is_logged_in,
-        load_json=load_json,
         local_now=local_now,
-        parse_int_field=parse_int_field,
-        revision_matches=revision_matches,
         safe_admin_next=safe_admin_next,
-        save_json=save_json,
-        usage_lock=usage_lock,
+        user_status_service=_user_status_service,
         with_flash=with_flash,
     )
 
@@ -2479,27 +2542,13 @@ def _admin_user_delete_routes_context():
 
 def _admin_traffic_context():
     return admin_traffic_routes.Context(
-        CYCLE_LENGTH_MAX=CYCLE_LENGTH_MAX,
-        CYCLE_LENGTH_MIN=CYCLE_LENGTH_MIN,
-        USAGE_FILE=USAGE_FILE,
-        USERS_FILE=USERS_FILE,
         _build_overview_json_payload=_build_overview_json_payload,
         _build_overview_user=_build_overview_user,
-        _clear_alert_dedup_for_users=_clear_alert_dedup_for_users,
         _json_request=_json_request,
         _static_reload_status=_static_reload_status,
-        _sync_static_access_from_users=_sync_static_access_from_users,
-        _update_cycle_meta=_update_cycle_meta,
-        _zero_cycle_daily_hourly_for=_zero_cycle_daily_hourly_for,
-        add_preserved_for_user=add_preserved_for_user,
         is_logged_in=is_logged_in,
-        load_json=load_json,
         local_now=local_now,
-        month_key=month_key,
-        revision_matches=revision_matches,
-        save_json=save_json,
-        usage_for_user=usage_for_user,
-        usage_lock=usage_lock,
+        traffic_mutation_service=_traffic_mutation_service,
     )
 
 
@@ -2986,29 +3035,10 @@ class Handler(BaseHTTPRequestHandler):
                 self.redirect(with_flash(next_to, f'error {status}'))
 
     def get_admin_actor(self):
-        q = parse_query_params(self.path)
-        token = (q.get('token') or [''])[0]
-        meta = load_meta()
-        admin_token = str(meta.get('admin_token') or '')
-        if _safe_secret_equal(token, admin_token):
-            return 'token-admin'
-        sid = parse_cookies(self).get('sid', '')
-        sessions = get_sessions()
-        if sid in sessions:
-            return sessions[sid].get('user', 'admin')
-        return 'unknown'
+        return _admin_actor(self)
 
     def write_reset_log(self, actor, action, target, before, after):
-        audit_log.append_reset_log(
-            RESET_LOG_FILE,
-            actor,
-            action,
-            target,
-            before,
-            after,
-            client_ip=http_utils.request_client_ip(self),
-            month=month_key,
-        )
+        return _write_reset_log(self, actor, action, target, before, after)
 
     def handle_get(self, send_payload=True):
         parsed = urlparse(self.path)
