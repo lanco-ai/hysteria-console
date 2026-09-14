@@ -210,6 +210,40 @@ class LegacyPanelServices:
         post_path = '/admin/change-password' if realm == 'admin' else '/user/change-password'
         return self._run_operation(change_password, post_path=post_path)
 
+    def submit_account_mutation(
+        self,
+        *,
+        headers,
+        path,
+        form,
+        client_address,
+        action: Literal['create', 'update'],
+    ):
+        if action not in ('create', 'update'):
+            raise ValueError('invalid account mutation action')
+        request = self._bridge(
+            headers=headers,
+            path=path,
+            client_address=client_address,
+        )
+        service = self.service_module
+
+        def mutate_account():
+            service.load_meta()
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            account_service = service._account_mutation_service()
+            if action == 'create':
+                return account_service.create(form=form)
+            expected_revision = (form.get('user_revision') or [''])[0]
+            return account_service.update(
+                form=form,
+                expected_revision=expected_revision,
+            )
+
+        post_path = '/admin/add' if action == 'create' else '/admin/update'
+        return self._run_operation(mutate_account, post_path=post_path)
+
     def read_session(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module

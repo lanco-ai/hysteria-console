@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 
+from .account_routes import register_account_routes
 from .models import (
     AdminLogsResponse,
     AdminOverviewResponse,
@@ -275,6 +276,8 @@ def create_app(services, *, max_requests=32):
         if isinstance(reply, JSONResponse):
             return reply
         return response_builder(reply)
+
+    register_account_routes(app, services, dispatch_form_write)
 
     @app.post('/api/v1/login')
     async def login(request: Request):
