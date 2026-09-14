@@ -5,17 +5,17 @@ import { validatePasswordPage, type PasswordPageData } from './passwordPageTypes
 import { usePasswordChange } from './usePasswordChange';
 
 const fragmentTargets = new Set(['main-content']);
-const initialMessages: Record<string, string> = {
-  'current password wrong': '当前密码不正确',
-  'new password short': '新密码至少需要 8 位',
-  'new password mismatch': '两次输入的新密码不一致',
-  'new password same': '新密码不能与当前密码相同',
-};
+const initialMessages = new Map<string, string>([
+  ['current password wrong', '当前密码不正确'],
+  ['new password short', '新密码至少需要 8 位'],
+  ['new password mismatch', '两次输入的新密码不一致'],
+  ['new password same', '新密码不能与当前密码相同'],
+]);
 
 function initialFeedback(max: number) {
   const value = new URLSearchParams(window.location.search).get('msg') || '';
   if (!value) return '';
-  return value === 'new password long' ? `新密码不能超过 ${max} 位` : (initialMessages[value] || value);
+  return value === 'new password long' ? `新密码不能超过 ${max} 位` : (initialMessages.get(value) ?? value);
 }
 
 function ShieldIcon() {

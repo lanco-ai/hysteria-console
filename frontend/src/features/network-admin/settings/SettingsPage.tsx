@@ -6,12 +6,12 @@ import { useReadResource } from '../../../shared/readResource';
 import { useInitialFragmentNavigation } from '../../../shared/useInitialFragmentNavigation';
 
 const fragmentTargets = new Set(['main-content']);
-const initialMessages: Record<string, string> = {
-  'password changed': '管理员密码已更新',
-  password_wrong: '当前密码不正确',
-  password_mismatch: '两次输入的新密码不一致',
-  password_short: '新密码至少 8 位',
-};
+const initialMessages = new Map<string, string>([
+  ['password changed', '管理员密码已更新'],
+  ['password_wrong', '当前密码不正确'],
+  ['password_mismatch', '两次输入的新密码不一致'],
+  ['password_short', '新密码至少 8 位'],
+]);
 
 function initialFeedback(passwordMaxLength: number) {
   const raw = new URLSearchParams(window.location.search).get('msg') || '';
@@ -20,7 +20,7 @@ function initialFeedback(passwordMaxLength: number) {
   const key = raw.replace(/^err:/, '');
   const message = key === 'password_long'
     ? `密码不能超过 ${passwordMaxLength} 位`
-    : (initialMessages[key] || key);
+    : (initialMessages.get(key) ?? key);
   return { message, kind: error ? 'err' as const : 'flash' as const };
 }
 

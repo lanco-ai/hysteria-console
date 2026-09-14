@@ -66,6 +66,30 @@ async function formShape(page, selector) {
   }));
 }
 
+async function verifyPrototypeNamedInitialMessages(browser) {
+  for (const value of ['__proto__', 'constructor', 'toString']) {
+    for (const [realm, pagePath, apiPath, cookieName, cookieValue, formAction, expectedClass] of [
+      ['admin', '/__react/admin/settings', '/api/v1/admin/settings', 'sid', adminCookie, '/admin/change-password', 'err'],
+      ['user', '/__react/user/change-password', '/api/v1/user/password', 'usid', passwordUserCookie, '/user/change-password', 'err'],
+    ]) {
+      const context = await browser.newContext({ viewport: { width: 1024, height: 900 } });
+      await addCookie(context, cookieName, cookieValue);
+      const page = await context.newPage();
+      const failures = collectFailures(page, `${realm} prototype query ${value}`);
+      const queryValue = realm === 'admin' ? `err:${value}` : value;
+      const response = page.waitForResponse(`**${apiPath}`);
+      await goto(page, `${pagePath}?msg=${encodeURIComponent(queryValue)}`);
+      await response;
+      await page.waitForTimeout(50);
+      assert.equal(await page.locator(`form[action="${formAction}"]`).count(), 1, `${realm} ${value} keeps the form usable`);
+      const feedback = page.locator(`.${expectedClass}`).first();
+      assert.equal(await feedback.innerText(), value, `${realm} ${value} renders literally`);
+      assertClean(failures);
+      await context.close();
+    }
+  }
+}
+
 async function verifyDocumentsAndPreferences(browser) {
   const context = await browser.newContext({ viewport: { width: 1024, height: 900 } });
   await addCookie(context, 'sid', adminCookie);
@@ -463,6 +487,7 @@ async function verifyVisualParity(browser) {
 (async () => {
   const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   try {
+    await verifyPrototypeNamedInitialMessages(browser);
     await verifyDocumentsAndPreferences(browser);
     await verifyHeldMutationAndResponseValidation(browser);
     await verifyReadFailuresAndAccessNavigation(browser);
