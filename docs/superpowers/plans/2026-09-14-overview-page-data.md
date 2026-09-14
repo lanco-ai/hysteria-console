@@ -14,6 +14,14 @@ This is a prerequisite for the complete React overview, not acceptance of that p
 
 **Spec:** docs/superpowers/specs/2026-09-12-personal-site-refactor.md
 
+**Acceptance (2026-09-14):** Shared data and bootstrap API accepted at `b5155d2`
+(implementation `8a692db`, review coverage fix `b5155d2`). Independent spec/quality
+review and scoped re-review are clear. Focused coverage18 tests, legacy subset174,
+covering run383 passed plus the corrected full deployment contract102 passed;
+full frontend, lint and shell gates passed. Existing dependency/datetime warnings
+remain separate maintenance. No production deployment or complete React overview
+acceptance is implied.
+
 ## Global Constraints
 
 - Keep existing URLs, subscription formats, dedicated-user link exchanges,
@@ -41,6 +49,8 @@ This is a prerequisite for the complete React overview, not acceptance of that p
 - Create `hysteria/admin_overview_data.py`, `hysteria/web_api/overview_models.py`.
 - Modify `hysteria/admin_views.py`, `hysteria/web_api/services.py`,
   `hysteria/web_api/app.py`, `scripts/check-quality.sh`, `deploy.sh`.
+- Modify `scripts/hy2-deploy-recovery.py` only to register the two missing exact
+  deployed source paths: admin_overview_data.py and password_change_service.py.
 - Create `tests/test_admin_overview_data.py`, `tests/test_web_api_overview_page.py`.
 
 **Interfaces:**
@@ -140,7 +150,9 @@ original polling shape unchanged and never includes bootstrap secrets/metadata.
 reuse existing request snapshot, test preserved total and cycle boundaries.
 Check empty users and enabled/disabled landing choices and safe URL helpers.
 - [ ] Add new imported module to existing deploy source registration and quality
-adoption, without executing deployment or editing nginx/runtime files.
+  adoption, without executing deployment or editing nginx/runtime files.
+  Keep the recovery helper exact allowlist synchronized, including the existing
+  password_change_service omission found by the full regression gate.
 - [ ] Run focused tests while iterating, then covering gates:
 
 ```bash

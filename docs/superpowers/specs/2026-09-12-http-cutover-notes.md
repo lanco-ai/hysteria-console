@@ -277,3 +277,39 @@ must not become blind last-write-wins updates in new forms.
 This audit does not authorize real proxy reloads or credential rotations.
 Future mutation tests must use isolated state and safe service doubles for
 external effects while verifying the actual state transactions and decisions.
+
+### Overview interaction audit for React parity
+
+The existing overview refresh cadence is30seconds (not the outdated five-second
+comment), request timeout10seconds, failure backoff capped240seconds with bounded
+jitter. It suspends hidden-page polling, supports manual retry and explicit login
+or reload states. If membership or config revisions change outside this page,
+it stops patching and asks to refresh instead of discarding a live edit draft.
+An epoch advances at both mutation start and finish so earlier poll responses
+cannot overwrite a mutation or produce a false revision-change warning.
+
+Search is case-insensitive username substring; online is count>0 and the existing
+over-limit chip threshold is90percent. The one shared edit dialog copies only
+allowed plan fields/revision, keeps passwords blank, and returns focus to its
+trigger on close. Native actions/IDs and browser confirmation text stay intact.
+The per-user mutation gate is global because writes affect a shared access plan.
+Client confirmations must precede every destructive POST, not merely its UI state.
+
+Account creation and editing are currently HTML/redirect-only presenters around
+domain writes. Extract their service before API adaptation; do not parse rendered
+HTML to recover errors. Creation rechecks chosen egress under lock and rolls back
+the exact old users text if initial static sync fails. Update has no equivalent
+rollback. Preserve this distinction rather than invent a generic transaction.
+
+Traffic reset differs from refresh: refresh banks old bytes into preserved totals,
+reset deducts them. Global reset, pause/enable, rotation and deletion return
+action-specific JSON including reload markers. Rotation/deletion distinguish
+committed state with pending durable cleanup; the React client must not equate
+that with a failed mutation or offer an automatic second destructive request.
+Static reload watcher only reports progress and must never trigger reload itself.
+
+The admin token-rotation flow snapshots the audit actor before the write so a
+later session read cannot turn a committed rotation into a false503. Preserve
+this ordering separately from reset/pause/delete current audit behavior. User
+rotation has additional idempotency receipt/session recovery and is not a
+drop-in reuse of the administrator route when migrating the full user panel.
