@@ -186,6 +186,46 @@ def test_cycle_updates_locked_metadata_merge_then_syncs_users_and_reloads(
 
 
 @pytest.mark.parametrize(
+    'form',
+    [
+        {'day': ['12']},
+        {'day': ['12'], 'length': ['   ']},
+    ],
+    ids=['omitted-length', 'blank-length'],
+)
+def test_cycle_blank_or_omitted_length_preserves_locked_existing_length_and_merge(
+    operation_state,
+    monkeypatch,
+    form,
+):
+    state = operation_state
+    real_load_meta = ss.load_meta
+    first_read = True
+
+    def concurrent_load_meta():
+        nonlocal first_read
+        meta = real_load_meta()
+        if first_read:
+            first_read = False
+            meta['admin_pass_hash'] = 'concurrent-hash'
+            _write_json(state.paths['META_FILE'], meta)
+        return real_load_meta()
+
+    monkeypatch.setattr(ss, 'load_meta', concurrent_load_meta)
+
+    result = ss._traffic_mutation_service(state.audit).configure_cycle(form=form)
+
+    assert result == OverviewMutationResult(outcome='success', day=12)
+    meta = _read(state.paths['META_FILE'])
+    assert meta['admin_pass_hash'] == 'concurrent-hash'
+    assert meta['settlement_day'] == 12
+    assert meta['cycle_length_days'] == 30
+    assert meta['cycle_anchor_date'] == '2026-09-12'
+    assert state.effects == [('sync', state.users), 'xray', 'tuic']
+    assert state.audits == []
+
+
+@pytest.mark.parametrize(
     ('method_name', 'preserved_total'), [('reset_user', 0), ('refresh_user', 40)]
 )
 def test_reset_and_refresh_share_accounting_but_only_refresh_banks_raw_bytes(
@@ -277,6 +317,48 @@ def test_rejected_per_user_traffic_operations_do_not_write_or_emit_effects(
     )
 
     assert result == OverviewMutationResult(outcome=outcome, username=username)
+    assert _snapshot_existing(state.paths) == before
+    assert state.effects == [] and state.audits == []
+
+
+@pytest.mark.parametrize(
+    ('operation', 'outcome'),
+    [
+        ('reset_user', 'conflict'),
+        ('refresh_user', 'conflict'),
+        ('pause', 'not_found'),
+        ('toggle', 'not_found'),
+    ],
+)
+def test_non_dict_targets_preserve_rejected_outcomes_without_protected_writes(
+    operation_state,
+    operation,
+    outcome,
+):
+    state = operation_state
+    users = _read(state.paths['USERS_FILE'])
+    users['alice'] = []
+    _write_json(state.paths['USERS_FILE'], users)
+    before = _snapshot_existing(state.paths)
+
+    if operation in ('reset_user', 'refresh_user'):
+        result = getattr(ss._traffic_mutation_service(state.audit), operation)(
+            form={'user': ['alice']},
+            expected_revision='',
+        )
+    elif operation == 'pause':
+        result = ss._user_status_service(state.audit).pause(
+            form={'user': ['alice']},
+            expected_revision='',
+        )
+    else:
+        result = ss._user_status_service(state.audit).toggle(
+            form={'user': ['alice']},
+            desired='disabled',
+            expected_revision='',
+        )
+
+    assert result == OverviewMutationResult(outcome=outcome, username='alice')
     assert _snapshot_existing(state.paths) == before
     assert state.effects == [] and state.audits == []
 
