@@ -11,6 +11,12 @@ the domain service. React consumes explicit minimal outcomes then refetches.
 **Tech Stack:** Existing Python dataclasses, FastAPI/Pydantic, pytest fixtures.
 **Spec:** docs/superpowers/specs/2026-09-12-personal-site-refactor.md
 
+**Acceptance (2026-09-14):** Implementation `5011a4a` and focused test follow-up
+`771d7cc` accepted after independent spec/quality review and scoped re-review.
+Corrected covering gate409passed with49 inherited deprecations; amended service
+suite37passed with no warnings; lint, shell, import and diff gates passed.
+This accepts shared services/API only, not the React overview or deployment.
+
 ## Global Constraints
 
 - Keep existing URLs, subscription formats, dedicated-user link exchanges,

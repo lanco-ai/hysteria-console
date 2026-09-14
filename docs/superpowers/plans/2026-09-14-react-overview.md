@@ -52,6 +52,14 @@ and redirected module state needed by these operations. Retain production-path,
 network and process guards unchanged. Exercise real account/usage/WAL writes in
 the temporary directory; never disable guards to make a browser scenario pass.
 Use the existing action-result contracts (not a truthy arbitrary dictionary).
+Seed deterministic nonzero fictional usage in the React overview fixture so
+browser reset-versus-refresh assertions demonstrate real accounting changes,
+not two indistinguishable zero values. Keep existing page fixtures compatible
+and use the same seed for paired legacy/React captures. CSV acceptance combines
+the exact download link in the browser with the existing authenticated legacy
+CSV HTTP contract tests; do not invent a new CSV API merely for preview support.
+Reuse `useInitialFragmentNavigation` for initial hash/skip-link focus once the
+content exists, retaining keyboard navigation behavior of the accepted pages.
 
 Data contracts:
 - Bootstrap `/api/v1/admin/overview-page`: exact cycle/users/landing_options from
@@ -144,6 +152,10 @@ Refresh/mutation lifecycle:
   at same fixed state; compare bounding boxes/computed styles and actually inspect
   paired images (not screenshot creation alone). Cover empty/unlimited/disabled/
   expired rows and create/edit dialog. No pageerrors or unexpected failed resources.
+  Parent legacy reference images/metrics are available at
+  `.superpowers/sdd/2026-09-14-react-overview/baseline/` (single-user legacy fixture).
+  Final paired acceptance must use identical fixture data on both implementations,
+  not compare that single-user image to a differently seeded React fixture.
 - [ ] Real API create/edit/cycle/reset/refresh/toggle/rotate/delete from browser,
   temporary fixture state only; assert refreshed text/row/links, changed revision,
   unchanged server total for refresh vs reset, dialog/draft/focus, clipboard andCSV.

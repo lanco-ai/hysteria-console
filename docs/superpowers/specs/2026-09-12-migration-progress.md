@@ -19,6 +19,11 @@ This is an acceptance index, not a claim that the full migration is complete.
 | Preview quality adoption | Shared helper included in the adopted import/format gate; exact repository lint wrapper green | `9bed63e`, react-login acceptance |
 | React logout | Both controlled confirmations and shell direct logout; fixed realms, real sessions, faults, root lifecycle and six visual pairs verified; preview allows only login and two logout APIs | `6388522`, react-logout plan |
 | Password-change backend | Shared legacy/new API decisions for both realms; actual credentials, sessions, failure ordering and426 covering tests verified; no preview permission or production mount | `b8d4a71`, password-change-boundary plan |
+| React administrator settings and user password | Controlled preview accepted; real fixture credential changes, error recovery and desktop/mobile parity verified | `d17b483`, `1f57051`, react-password-pages plan |
+| Overview bootstrap data | Shared full page builder and typed API accepted; counters-only endpoint remains separate | `8a692db`, `b5155d2`, overview-page-data plan |
+| Overview account operations | Shared create/update service and bounded API accepted; strict outcome validation and real state tests verified | `84725cd`, `f378bc3`, `a4b78da`, `c2e276d`, overview-account-boundary/API plans |
+| Overview traffic/status operations | Shared services and six bounded APIs plus read-only reload status accepted; independent review and coverage follow-up complete | `5011a4a`, `771d7cc`, overview-basic-operations plan |
+| React overview and real-time refresh | Not yet accepted; operation APIs are prerequisites, not completed UI | react-overview plan |
 | Remaining administrator pages and mutations | Legacy implementation remains authoritative | full spec parity register |
 | React user panel | Not yet implemented; legacy panel unchanged | full spec parity register |
 | Staging, production switch, cleanup | Not started; explicit deployment checkpoint required | full spec cutover and completion gates |
