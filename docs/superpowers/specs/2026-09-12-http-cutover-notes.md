@@ -327,3 +327,22 @@ daily history and CSV need explicit parity beyond the chart summary payload.
 only. Full user-panel bootstrap still needs authorized subscription/control data,
 expiry/disabled/credential-generation checks and the cycle-reset presentation.
 Do not label a counter-only JSON adapter a complete user-panel migration.
+
+Continuation inspection2026-09-14 (not migration acceptance):
+
+- Daily history `usage_dashboard.render_daily_table_collapsed` builds a retention
+  window in chronological order, scales each entry through `scale_daily_entry`,
+  renders zero as an em dash and marks today's column. Extract structured data
+  for React without copying multiplier policy or passing HTML through JSON.
+  Preserve the keyboard-focusable horizontal scroll container and fixed user
+  column, including when hourly details expand beside the ranking panel.
+- `usage.js` keeps history loading separate from summary/chart polling, remembers
+  a refresh requested during a history load, and reloads expanded history after
+  the current request settles. Preserve those ordering semantics with React
+  request ownership, cancellation and stale-response protection.
+- `static/user-panel.js` switches the selected subscription profile's visible
+  URL, copy/open target and QR target together. QR is loaded only when expanded,
+  cleared when hidden, and has loading/failure feedback. Full user-panel
+  acceptance must test these together, not just counters or a static QR image.
+- User subscription rotation keeps its own confirmation and receipt/session
+  recovery flow. Administrator rotation extraction does not replace that flow.

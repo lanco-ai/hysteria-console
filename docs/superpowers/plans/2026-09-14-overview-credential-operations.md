@@ -14,6 +14,11 @@ do not copy `_save_users_for_rotation` or receipt logic into the new service.
 **Spec:** docs/superpowers/specs/2026-09-12-personal-site-refactor.md
 **Prerequisite:** overview-basic-operations independently accepted first.
 
+**Acceptance (2026-09-14):** `a8a63e7` independently accepted for shared services
+and operation APIs. Covering493passed with66 inherited deprecations; lint,
+format, shell and diff gates passed. User-panel rotation retained. React
+refetch/replay handling and full page acceptance remain separate work.
+
 ## Global Constraints
 
 - Administrator access and user-panel access stay separate. A user session

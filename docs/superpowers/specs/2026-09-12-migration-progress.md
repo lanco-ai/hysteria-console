@@ -23,6 +23,7 @@ This is an acceptance index, not a claim that the full migration is complete.
 | Overview bootstrap data | Shared full page builder and typed API accepted; counters-only endpoint remains separate | `8a692db`, `b5155d2`, overview-page-data plan |
 | Overview account operations | Shared create/update service and bounded API accepted; strict outcome validation and real state tests verified | `84725cd`, `f378bc3`, `a4b78da`, `c2e276d`, overview-account-boundary/API plans |
 | Overview traffic/status operations | Shared services and six bounded APIs plus read-only reload status accepted; independent review and coverage follow-up complete | `5011a4a`, `771d7cc`, overview-basic-operations plan |
+| Overview credential operations | Shared administrator rotation/deletion and strict APIs accepted; durable recovery and user-panel legacy flow preserved | `a8a63e7`, overview-credential-operations plan |
 | React overview and real-time refresh | Not yet accepted; operation APIs are prerequisites, not completed UI | react-overview plan |
 | Remaining administrator pages and mutations | Legacy implementation remains authoritative | full spec parity register |
 | React user panel | Not yet implemented; legacy panel unchanged | full spec parity register |
