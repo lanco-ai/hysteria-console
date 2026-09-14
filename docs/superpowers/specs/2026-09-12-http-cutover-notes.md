@@ -242,3 +242,38 @@ fresh guarded preview state (or an equally explicit isolated fixture lifetime)
 rather than rely on a lucky suite order or bypass revocation. Preserve the shared
 draining server lifetime and explicit anonymous Cookie forwarding during that
 test-fixture change. No production state is a permissible fixture source.
+
+## Overview migration boundary audit
+
+The accepted `/api/v1/admin/overview` payload is deliberately a small frequent
+refresh contract (`usage_dashboard.build_overview_json_payload`): timestamp,
+total usage and per-user usage/online/revision/disabled fields only. It is not
+the complete page bootstrap. Do not inflate each frequent poll with account
+metadata, chart arrays, subscription secrets or the full users file. A later
+page bootstrap must explicitly supply the missing display/form configuration
+while retaining the small refresh contract and shared multiplier snapshot.
+
+`admin_views.render_admin` also owns billing range/anchor controls, five-column
+user layout, create-form non-sensitive draft recovery, field-specific errors
+and optional enabled egress choices. Its cycle save carries an explicit
+re-anchor confirmation. A React migration that drops any of those to render
+only existing summary fields is not page parity.
+
+Mutations currently span account add/update, traffic cycle/reset/refresh,
+pause/toggle/delete and credential rotation modules. Their responses mix302
+redirects,422 validation HTML and existing JSON row patches. Shared business
+decisions must preserve revision checks under the usage lock, audit actor
+snapshots, usage preservation/reset rules, static-access sync/reload markers
+and credential revocation. Do not copy handler code into a second API policy
+implementation or silently flatten pending/durable-error outcomes into success.
+
+In particular, `_configure_cycle` rereads under the metadata lock so a cycle
+update cannot restore an older administrator password hash. Preserve that helper
+and the subsequent locked static-access sync. Reset-user reads before/after
+usage, zeroes cycle/daily/hourly state, clears quota-only alert dedup, then logs
+the action and can return a fresh row/reload status. User revision conflicts
+must not become blind last-write-wins updates in new forms.
+
+This audit does not authorize real proxy reloads or credential rotations.
+Future mutation tests must use isolated state and safe service doubles for
+external effects while verifying the actual state transactions and decisions.
