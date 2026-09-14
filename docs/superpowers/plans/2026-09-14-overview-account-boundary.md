@@ -13,6 +13,13 @@ presenters. The API consumer follows after this seam is independently accepted.
 
 **Spec:** docs/superpowers/specs/2026-09-12-personal-site-refactor.md
 
+**Acceptance (2026-09-14):** Shared account service and legacy adapters accepted
+at `f378bc3` (implementation `84725cd`, test coverage fix `f378bc3`). Independent
+spec/quality review and scoped re-review are clear. The covering306 tests passed;
+the test-only follow-up's focused38 tests passed. Lint, formatting, shell syntax
+and diff checks are clean;42 inherited datetime warnings remain maintenance.
+New account API and React overview are not yet implemented by this task.
+
 ## Global Constraints
 
 - Keep existing URLs, subscription formats, dedicated-user link exchanges,
@@ -117,7 +124,7 @@ import of subscription_service and no Handler-shaped callback object. Preserve
 exception propagation and reload order, including committed-but-error behavior.
 No exception swallowing beyond the existing best-effort rollback resync.
 
-- [ ] Add tests for missing service, run to expected RED before source extraction:
+- [x] Add tests for missing service, run to expected RED before source extraction:
 
 ```python
 def test_create_does_not_return_password_or_token_fields(account_service, good_form):
@@ -133,21 +140,21 @@ references. Fixture construction redirects every touched state file and
 monkeypatches external sync/reload with recording safe doubles. Use real temporary
 hashing/config writes and real session invalidation for accepted success cases.
 
-- [ ] Extract service and wire legacy routes. Add service table tests for every
+- [x] Extract service and wire legacy routes. Add service table tests for every
 validation/first-value/boolean branch and matching safe draft/field id. Assert
 no protected writes on invalid/conflict, quota and unrelated state preservation,
 generated credential fields never returned, absence/presence of optional hashes,
 and legacy route responses still exact. Trace lock-sensitive side effects to
 assert locked checks/writes and outside-lock session removal/reload ordering.
-- [ ] Test real add/update, existing-user rejection, stale revision, change between
+- [x] Test real add/update, existing-user rejection, stale revision, change between
 initial and locked reads, initial egress disappears under lock, raw users text
 rollback+resync after sync failure, best-effort resync failure rethrows original,
 save failure propagates, session invalidation errors do not silently turn success.
 Do not add retry or compensate a committed update beyond existing behavior.
-- [ ] Register source module in deploy source list and adopted quality checks.
+- [x] Register source module in deploy source list and adopted quality checks.
   Register its exact deployed source path in the durable recovery helper too;
   keep the dynamic frozen-artifact equality test unchanged.
-- [ ] Run focused tests while iterating; final covering gates:
+- [x] Run focused tests while iterating; final covering gates:
 
 ```bash
 /tmp/hy2-quality-venv/bin/python -m pytest -q tests/test_account_mutation_service.py tests/test_admin_user_routes.py tests/test_form_recovery.py tests/test_operator_concurrency_regressions.py tests/test_landing_user_flow.py tests/test_new_features.py tests/test_reliability_regressions.py tests/test_deploy_durable_recovery.py
@@ -156,7 +163,7 @@ bash -n deploy.sh
 git diff --check
 ```
 
-- [ ] Self-review and local owned commit; report exact RED/GREEN and gate output.
+- [x] Self-review and local owned commit; report exact RED/GREEN and gate output.
 Independent review required before exposing this service through a new API.
 
 ## Follow-on contract

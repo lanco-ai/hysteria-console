@@ -121,7 +121,7 @@ The old `/api/v1/admin/overview` response, existing JSON summary and its builder
 stay unchanged. New HEAD bodyless, no-store/securityheaders, POST405 and trailing404
 use the existing route boundary. No new write endpoint or preview write permission.
 
-- [ ] Write missing-builder/route tests and run to record expected RED:
+- [x] Write missing-builder/route tests and run to record expected RED:
 
 ```python
 def test_overview_page_route_exists(authenticated_client):
@@ -134,26 +134,26 @@ Use local fixtures patterned on test_web_api_reads.real_state; redirect ALL touc
 paths, including landing registry and multiplier files, to tmp_path. Never read
 runtime /root/hysteria or /etc/hysteria. Guard any external sync/reload to fail.
 
-- [ ] Implement data extraction and API/model, retaining old row_form/render_admin
+- [x] Implement data extraction and API/model, retaining old row_form/render_admin
 signatures and HTML. Capture representative legacy output before extraction and
 compare afterward in tests with fictional clock/data: metered/normal, TUIC off,
 disabled/expired, unlimited devices/quota, notes/HTML escaping, optional trend,
 base+extra quota, landing compatibility, create error drafts without passwords.
 Do not freeze a huge duplicated HTML fixture; assert a byte hash plus focused
 content or normalized parsed output captured from pre-change baseline.
-- [ ] Test complete field allowlists at every level, token URLs only in authenticated
+- [x] Test complete field allowlists at every level, token URLs only in authenticated
 bootstrap, no private metadata/hash/token fields; anonymous/wrong realm/querytoken401;
 auth before page reads; strict invalid models500; known stale/malformed state503;
 GET/HEAD/header/path/method contract; no state writes on successful reads. Verify
 original polling shape unchanged and never includes bootstrap secrets/metadata.
-- [ ] Test multiplier changes during one call cannot mix row/period/spark scaling;
+- [x] Test multiplier changes during one call cannot mix row/period/spark scaling;
 reuse existing request snapshot, test preserved total and cycle boundaries.
 Check empty users and enabled/disabled landing choices and safe URL helpers.
-- [ ] Add new imported module to existing deploy source registration and quality
+- [x] Add new imported module to existing deploy source registration and quality
   adoption, without executing deployment or editing nginx/runtime files.
   Keep the recovery helper exact allowlist synchronized, including the existing
   password_change_service omission found by the full regression gate.
-- [ ] Run focused tests while iterating, then covering gates:
+- [x] Run focused tests while iterating, then covering gates:
 
 ```bash
 /tmp/hy2-quality-venv/bin/python -m pytest -q tests/test_admin_overview_data.py tests/test_web_api_overview_page.py tests/test_web_api_reads.py tests/test_form_recovery.py tests/test_sparkline.py tests/test_share_panel_and_landing.py tests/test_operator_concurrency_regressions.py tests/test_product_ux_regressions.py tests/test_new_features.py tests/test_usage_page.py tests/test_landing_user_flow.py tests/test_preview_isolation.py tests/test_deploy_durable_recovery.py
@@ -163,7 +163,7 @@ bash -n deploy.sh
 git diff --check
 ```
 
-- [ ] Self-review, commit owned files locally, report exact RED/GREEN and covering
+- [x] Self-review, commit owned files locally, report exact RED/GREEN and covering
 results plus concerns. Independent review before acceptance. Do not call the
 React overview complete: mutation transport and React interactions follow.
 

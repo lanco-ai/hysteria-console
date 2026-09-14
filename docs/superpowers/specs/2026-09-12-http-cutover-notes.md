@@ -313,3 +313,17 @@ later session read cannot turn a committed rotation into a false503. Preserve
 this ordering separately from reset/pause/delete current audit behavior. User
 rotation has additional idempotency receipt/session recovery and is not a
 drop-in reuse of the administrator route when migrating the full user panel.
+
+### Remaining read-data seams (inspection, not acceptance)
+
+`usage_dashboard.build_analytics_json_payload` already separates summary polls
+from larger chart arrays (`include_charts`). Reuse these authoritative builders
+when migrating usage, and keep chart refresh less frequent than summary refresh.
+The compatibility all-in-one `build_usage_json_payload` still includes
+`spark_html`; it is not a suitable unfiltered React API schema. Hourly expansion,
+daily history and CSV need explicit parity beyond the chart summary payload.
+
+`user_panel_data._build_panel_json_payload` contains live quota/device counters
+only. Full user-panel bootstrap still needs authorized subscription/control data,
+expiry/disabled/credential-generation checks and the cycle-reset presentation.
+Do not label a counter-only JSON adapter a complete user-panel migration.
