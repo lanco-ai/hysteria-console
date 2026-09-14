@@ -22,6 +22,7 @@ from .models import (
     LogoutResponse,
     PasswordChangeAccessErrorResponse,
     PasswordChangeSuccessResponse,
+    PasswordPageResponse,
     UserPasswordChangeValidationResponse,
     UserSessionResponse,
 )
@@ -94,6 +95,11 @@ def _logs_response(payload):
     return JSONResponse(model.model_dump())
 
 
+def _password_page_response(payload):
+    model = PasswordPageResponse.model_validate(payload)
+    return JSONResponse(model.model_dump())
+
+
 def _login_response(reply):
     result = reply.result
     if result.outcome == 'success':
@@ -154,7 +160,8 @@ def _read_error_response(exc):
     if isinstance(exc, LoginRequired):
         return JSONResponse(status_code=401, content={'error': 'login_required'})
     if isinstance(exc, UserAccessDenied):
-        return JSONResponse(status_code=403, content={'error': exc.code})
+        headers = {'Set-Cookie': exc.cookie} if exc.cookie is not None else None
+        return JSONResponse(status_code=403, content={'error': exc.code}, headers=headers)
     if isinstance(exc, StateUnavailable):
         return JSONResponse(status_code=503, content={'error': 'state_unavailable'})
     raise exc
@@ -326,6 +333,26 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _overview_response(payload)
+
+    @app.api_route('/api/v1/admin/settings', methods=['GET', 'HEAD'])
+    async def admin_settings(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_settings, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _password_page_response(payload)
+
+    @app.api_route('/api/v1/user/password', methods=['GET', 'HEAD'])
+    async def user_password(request: Request):
+        try:
+            payload = await dispatch(services.read_user_password, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _password_page_response(payload)
 
     @app.api_route('/api/v1/admin/logs', methods=['GET', 'HEAD'])
     async def admin_logs(request: Request):

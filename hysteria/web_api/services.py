@@ -24,8 +24,9 @@ class UserAccessDenied(Exception):
 
     _PUBLIC_CODES = frozenset(('disabled', 'expired', 'forbidden', 'password_change_required'))
 
-    def __init__(self, code):
+    def __init__(self, code, *, cookie=None):
         self.code = code if code in self._PUBLIC_CODES else 'forbidden'
+        self.cookie = cookie
         super().__init__()
 
 
@@ -226,6 +227,50 @@ class LegacyPanelServices:
             if error:
                 raise UserAccessDenied(error)
             return {'role': 'user', 'username': username}
+
+        return self._run_read(read)
+
+    def read_admin_settings(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            meta = service.load_meta()
+            return {
+                'username': str(meta.get('admin_user', 'admin')),
+                'password_min_length': service.PASSWORD_MIN_LENGTH,
+                'password_max_length': service.PASSWORD_MAX_LENGTH,
+            }
+
+        return self._run_read(read)
+
+    def read_user_password(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            username, credential_kind = service.get_logged_in_user_context(request)
+            if not username or credential_kind != service.USER_SESSION_PANEL_PASSWORD:
+                raise LoginRequired
+            users = service.load_json(service.USERS_FILE, {})
+            config = users.get(username)
+            if not isinstance(config, dict):
+                raise UserAccessDenied(
+                    'forbidden',
+                    cookie=service.clear_user_session_cookie(
+                        secure=http_utils.is_secure_request(request),
+                    ),
+                )
+            error = service.user_panel_access_error(config, credential_kind)
+            if error and error != 'password_change_required':
+                raise UserAccessDenied(error)
+            return {
+                'username': username,
+                'password_min_length': service.PASSWORD_MIN_LENGTH,
+                'password_max_length': service.PASSWORD_MAX_LENGTH,
+            }
 
         return self._run_read(read)
 

@@ -2,13 +2,38 @@ import { useCallback, useEffect, useState } from 'react';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+export type ResourceAccessCode = 'login_required' | 'forbidden' | 'disabled' | 'expired' | 'password_change_required';
+
+const ACCESS_CODES = new Set<ResourceAccessCode>([
+  'login_required',
+  'forbidden',
+  'disabled',
+  'expired',
+  'password_change_required',
+]);
+
 export class ResourceError extends Error {
   readonly status: number | undefined;
+  readonly code: ResourceAccessCode | undefined;
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, code?: ResourceAccessCode) {
     super(message);
     this.name = 'ResourceError';
     this.status = status;
+    this.code = code;
+  }
+}
+
+async function readAccessCode(response: Response): Promise<ResourceAccessCode | undefined> {
+  try {
+    const value: unknown = await response.json();
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const code = (value as Record<string, unknown>).error;
+    return typeof code === 'string' && ACCESS_CODES.has(code as ResourceAccessCode)
+      ? code as ResourceAccessCode
+      : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -56,7 +81,13 @@ export function useReadResource<T>(url: string, { enabled = true, validate }: Re
           headers: { Accept: 'application/json' },
           signal: controller.signal,
         });
-        if (!response.ok) throw new ResourceError(`HTTP ${response.status}`, response.status);
+        if (!response.ok) {
+          throw new ResourceError(
+            `HTTP ${response.status}`,
+            response.status,
+            await readAccessCode(response),
+          );
+        }
         let raw: unknown;
         try {
           raw = await response.json();

@@ -1,7 +1,9 @@
 import { createRoot } from 'react-dom/client';
 import { LoginPage } from './features/auth/LoginPage';
 import { LogoutPage } from './features/auth/LogoutPage';
+import { UserPasswordPage } from './features/auth/UserPasswordPage';
 import { LogsPage } from './features/network-admin/logs/LogsPage';
+import { SettingsPage } from './features/network-admin/settings/SettingsPage';
 import { HomePage } from './features/public/HomePage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
 
@@ -20,6 +22,17 @@ if (window.location.pathname === '/__react/') {
   applyInitialShellPreferences();
   const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
   reactRoot.render(<LogsPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/admin/settings') {
+  document.title = '设置';
+  document.body.className = 'has-shell';
+  applyInitialShellPreferences();
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  reactRoot.render(<SettingsPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/user/change-password') {
+  document.title = '修改面板密码';
+  document.body.className = 'page-auth';
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  reactRoot.render(<UserPasswordPage publicHost={publicHost}/>);
 } else if (window.location.pathname === '/__react/login') {
   document.title = '管理员登录 · Hysteria';
   document.body.className = 'page-auth page-admin-login';

@@ -27,12 +27,16 @@ DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
     '/__react/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site'),
     '/__react/admin/logs': ('清零日志', 'has-shell'),
+    '/__react/admin/settings': ('设置', 'has-shell'),
     '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),
+    '/__react/user/change-password': ('修改面板密码', 'page-auth'),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'
+PREVIEW_USER_PASSWORD = 'preview-user-password'
+PREVIEW_MUST_CHANGE_PASSWORD = 'preview-change-required-password'
 RECEIPT_TIMEOUT = 10
 
 
@@ -192,6 +196,8 @@ def _handler(api_client, allowed_assets):
                 '/api/v1/login',
                 '/api/v1/logout',
                 '/api/v1/user/logout',
+                '/api/v1/admin/change-password',
+                '/api/v1/user/change-password',
             }:
                 self._form_api()
                 return
@@ -215,6 +221,19 @@ def preview_server(port=0):
         admin_hash = service.hash_secret(PREVIEW_LOGIN_PASSWORD)
         meta['admin_pass_hash'] = admin_hash
         service.save_json(service.META_FILE, meta)
+        users = service.load_json(service.USERS_FILE, {})
+        demo_hash = service.hash_secret(PREVIEW_USER_PASSWORD)
+        must_change_hash = service.hash_secret(PREVIEW_MUST_CHANGE_PASSWORD)
+        users['demo_alex']['panel_pass_hash'] = demo_hash
+        users['must_change'] = {
+            'sub_token': 'must-change-token',
+            'panel_pass_hash': must_change_hash,
+            'panel_password_must_change': True,
+            'monthly_quota_bytes': 10 * 1024**3,
+            'max_devices': 1,
+            'disabled': False,
+        }
+        service.save_json(service.USERS_FILE, users)
         with service._login_failures_lock:
             login_trackers = (
                 service._login_failures,
@@ -241,6 +260,21 @@ def preview_server(port=0):
                 service._credential_generation(legacy_preview.DEMO['sub_token']),
                 service.USER_SESSION_SUBSCRIPTION_TOKEN,
             )
+            password_user_cookie = service.create_user_session(
+                'demo_alex',
+                service._credential_generation(demo_hash),
+                service.USER_SESSION_PANEL_PASSWORD,
+            )
+            password_user_other_cookie = service.create_user_session(
+                'demo_alex',
+                service._credential_generation(demo_hash),
+                service.USER_SESSION_PANEL_PASSWORD,
+            )
+            must_change_cookie = service.create_user_session(
+                'must_change',
+                service._credential_generation(must_change_hash),
+                service.USER_SESSION_PANEL_PASSWORD,
+            )
             app = create_app(LegacyPanelServices(service), max_requests=4)
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
                 handler = _handler(api_client, allowed_assets)
@@ -249,7 +283,12 @@ def preview_server(port=0):
                     server.preview_admin_other_cookie = admin_other_cookie
                     server.preview_user_cookie = user_cookie
                     server.preview_user_other_cookie = user_other_cookie
+                    server.preview_password_user_cookie = password_user_cookie
+                    server.preview_password_user_other_cookie = password_user_other_cookie
+                    server.preview_must_change_cookie = must_change_cookie
                     server.preview_login_password = PREVIEW_LOGIN_PASSWORD
+                    server.preview_user_password = PREVIEW_USER_PASSWORD
+                    server.preview_must_change_password = PREVIEW_MUST_CHANGE_PASSWORD
                     allowed_ports.add(server.server_port)
                     yield server
         finally:

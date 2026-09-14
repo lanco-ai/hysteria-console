@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictInt, StrictStr, model_validator
 
 
 class PublicModel(BaseModel):
@@ -68,6 +68,18 @@ class UserPasswordChangeValidationResponse(PublicModel):
 
 class PasswordChangeAccessErrorResponse(PublicModel):
     error: Literal['login_required', 'forbidden', 'disabled', 'expired']
+
+
+class PasswordPageResponse(PublicModel):
+    username: StrictStr
+    password_min_length: StrictInt
+    password_max_length: StrictInt
+
+    @model_validator(mode='after')
+    def validate_password_lengths(self):
+        if self.password_min_length <= 0 or self.password_max_length < self.password_min_length:
+            raise ValueError('invalid password length bounds')
+        return self
 
 
 class OverviewUserResponse(PublicModel):

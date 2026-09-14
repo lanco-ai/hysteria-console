@@ -138,6 +138,30 @@ def test_react_preview_serves_exact_login_entry_with_password_limit(running_prev
     _assert_head_matches_get(base_url + '/__react/login')
 
 
+@pytest.mark.parametrize(
+    ('path', 'title', 'body_class'),
+    [
+        ('/__react/admin/settings', '设置', 'has-shell'),
+        ('/__react/user/change-password', '修改面板密码', 'page-auth'),
+    ],
+)
+def test_react_preview_serves_exact_password_page_entries(
+    running_preview,
+    path,
+    title,
+    body_class,
+):
+    _, base_url = running_preview
+    with urlopen(base_url + path, timeout=5) as response:
+        page = response.read().decode()
+        assert response.headers.get_content_type() == 'text/html'
+        assert f'<title>{title}</title>' in page
+        assert f'<body class="{body_class}">' in page
+        assert 'data-public-host="preview.invalid"' in page
+        assert '/static/react/assets/' in page
+    _assert_head_matches_get(base_url + path)
+
+
 @pytest.mark.parametrize('path', ['/__react/logout', '/__react/user/logout'])
 def test_react_preview_serves_exact_logout_entries_without_private_reads(
     running_preview,
@@ -243,9 +267,13 @@ def test_react_preview_allows_exact_form_posts_and_preserves_cookie_isolation(ru
         '/__react/logout',
         '/__react/user/logout',
         '/__react/admin/logs',
+        '/__react/admin/settings',
+        '/__react/user/change-password',
         '/login',
         '/logout',
         '/user/logout',
+        '/admin/change-password',
+        '/user/change-password',
         '/admin/reset-usage',
         '/api/v1/missing',
     ):
@@ -256,7 +284,13 @@ def test_react_preview_allows_exact_form_posts_and_preserves_cookie_isolation(ru
 
 @pytest.mark.parametrize(
     'path',
-    ['/api/v1/login', '/api/v1/logout', '/api/v1/user/logout'],
+    [
+        '/api/v1/login',
+        '/api/v1/logout',
+        '/api/v1/user/logout',
+        '/api/v1/admin/change-password',
+        '/api/v1/user/change-password',
+    ],
 )
 def test_react_preview_rejects_bad_form_framing_before_service_dispatch(
     running_preview,
@@ -273,6 +307,11 @@ def test_react_preview_rejects_bad_form_framing_before_service_dispatch(
     monkeypatch.setattr(
         preview.LegacyPanelServices,
         'submit_logout',
+        lambda *args, **kwargs: calls.append((args, kwargs)),
+    )
+    monkeypatch.setattr(
+        preview.LegacyPanelServices,
+        'submit_password_change',
         lambda *args, **kwargs: calls.append((args, kwargs)),
     )
     parsed = urlsplit(base_url)
@@ -293,7 +332,13 @@ def test_react_preview_rejects_bad_form_framing_before_service_dispatch(
 
 @pytest.mark.parametrize(
     'path',
-    ['/api/v1/login', '/api/v1/logout', '/api/v1/user/logout'],
+    [
+        '/api/v1/login',
+        '/api/v1/logout',
+        '/api/v1/user/logout',
+        '/api/v1/admin/change-password',
+        '/api/v1/user/change-password',
+    ],
 )
 def test_react_preview_rejects_oversized_allowed_form_before_reading_body(
     running_preview,
@@ -311,6 +356,64 @@ def test_react_preview_rejects_oversized_allowed_form_before_reading_body(
     assert response.getheader('Content-Type').startswith('application/json')
     assert json.loads(response.read()) == {'error': 'request_too_large'}
     connection.close()
+
+
+def test_react_preview_forwards_both_password_posts_to_real_isolated_services(running_preview):
+    server, base_url = running_preview
+    admin_status, admin_headers, admin_result = _post_form(
+        base_url + '/api/v1/admin/change-password',
+        {'current': 'wrong', 'new': 'new-password', 'confirm': 'new-password'},
+        cookie=f'sid={server.preview_admin_cookie}',
+    )
+    user_status, user_headers, user_result = _post_form(
+        base_url + '/api/v1/user/change-password',
+        {'current': 'wrong', 'new': 'short', 'confirm': 'different'},
+        cookie=f'usid={server.preview_password_user_cookie}',
+    )
+
+    assert (admin_status, admin_result) == (200, {'ok': False, 'code': 'password_wrong'})
+    assert (user_status, user_result) == (200, {'ok': False, 'code': 'new password short'})
+    assert admin_headers.get('Set-Cookie') is None
+    assert user_headers.get('Set-Cookie') is None
+
+
+def test_each_preview_context_restores_credentials_and_sessions(tmp_path, monkeypatch):
+    monkeypatch.setattr(preview, 'DIST', running_preview_dist(tmp_path))
+    with preview.preview_server() as first:
+        first_base = f'http://127.0.0.1:{first.server_port}'
+        status, _, result = _post_form(
+            first_base + '/api/v1/admin/change-password',
+            {
+                'current': first.preview_login_password,
+                'new': 'changed-only-in-first-context',
+                'confirm': 'changed-only-in-first-context',
+            },
+            cookie=f'sid={first.preview_admin_cookie}',
+        )
+        assert (status, result) == (
+            200,
+            {'ok': True, 'redirect_to': '/admin/settings?msg=password+changed'},
+        )
+
+    with preview.preview_server() as second:
+        second_base = f'http://127.0.0.1:{second.server_port}'
+        status, _, result = _post_form(
+            second_base + '/api/v1/login',
+            {'admin_username': 'admin', 'admin_password': second.preview_login_password},
+        )
+        assert status == 200
+        assert result == {'ok': True, 'redirect_to': '/admin?msg=login+success'}
+        assert _json(
+            second_base + '/api/v1/user/password',
+            cookie=f'usid={second.preview_must_change_cookie}',
+        ) == (
+            200,
+            {
+                'username': 'must_change',
+                'password_min_length': preview.legacy_preview.ss.PASSWORD_MIN_LENGTH,
+                'password_max_length': preview.legacy_preview.ss.PASSWORD_MAX_LENGTH,
+            },
+        )
 
 
 def test_react_preview_teardown_closes_partial_header_connections(tmp_path, monkeypatch):
