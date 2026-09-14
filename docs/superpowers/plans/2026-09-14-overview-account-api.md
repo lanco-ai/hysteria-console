@@ -6,7 +6,10 @@
 through bounded authenticated form endpoints, without repeating domain policy.
 **Prerequisite:** Account mutation boundary independently accepted first.
 **Spec:** docs/superpowers/specs/2026-09-12-personal-site-refactor.md
-**Status:** Prepared, not dispatched. React overview is still a follow-on.
+**Status:** Accepted locally at `c2e276d` (implementation `a4b78da`, strict-result
+fix `c2e276d`). Independent review and scoped re-review passed; covering294 tests
+passed, amended focused52 tests passed, lint/diff clean. Two inherited dependency
+warnings remain maintenance. React overview is still a follow-on; no deployment.
 
 ## Global Constraints
 
@@ -72,25 +75,25 @@ proof of rollback: retain the draft and ask the operator to refresh/check before
 retrying. The shared form hook aborts its client request but cannot undo a
 server-side commit; its consumer must supply appropriate feedback.
 
-- [ ] TDD missing exact route/service then focused implementation.
-- [ ] Real temporary-state successful create/update, session invalidation,
+- [x] TDD missing exact route/service then focused implementation.
+- [x] Real temporary-state successful create/update, session invalidation,
   password/hash changes, usage/unrelated state preservation and credential
   non-disclosure; external reload/sync intercepted safely.
-- [ ] Auth tests anonymous/user cookie/query token before mutation; CSRF,
+- [x] Auth tests anonymous/user cookie/query token before mutation; CSRF,
   duplicate form values, malformed form, size/time bounds, exact paths/methods,
   security headers and no-store. Include bounded admission reuse evidence.
-- [ ] Real stale revision, missing user, invalid values and duplicate creation;
+- [x] Real stale revision, missing user, invalid values and duplicate creation;
   status/code matching; secret fields never returned in any response.
-- [ ] Critical/malformed state ->sanitized503; unexpected error ->sanitized500;
+- [x] Critical/malformed state ->sanitized503; unexpected error ->sanitized500;
   prove no post-success state read and no duplicate invocation/retry.
-- [ ] Invalid internal result/output tests for success/action mismatch,
+- [x] Invalid internal result/output tests for success/action mismatch,
   extra credential data, unexpected validation code/field and unknown outcome.
   Explicit allowlist strips unrecognized fields, invalid required values fail.
-- [ ] Adopt new files in quality list; existing web_api directory packaging
+- [x] Adopt new files in quality list; existing web_api directory packaging
   should already include them, verify without deploying.
-- [ ] Run new API tests plus `test_account_mutation_service.py`,
+- [x] Run new API tests plus `test_account_mutation_service.py`,
   `test_web_api_login.py`, `test_web_api_logout.py`,
   `test_web_api_password_changes.py`, `test_web_api_reads.py`;
   lint-only and `git diff --check`.
-- [ ] Self-review and owned local commit; full report with RED/GREEN and exact
+- [x] Self-review and owned local commit; full report with RED/GREEN and exact
   covering results. Independent review before React consumption.
