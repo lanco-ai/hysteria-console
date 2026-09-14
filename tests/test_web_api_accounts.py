@@ -745,7 +745,11 @@ def test_account_service_adapter_does_not_construct_service_when_login_is_requir
         ('create', AccountMutationResult(outcome='created')),
         ('create', AccountMutationResult(outcome='created', username=123)),
         ('create', AccountMutationResult(outcome='created', username='alice', code='secret')),
+        ('create', AccountMutationResult(outcome='created', username='alice', code=None)),
+        ('create', AccountMutationResult(outcome='created', username='alice', code=0)),
         ('create', AccountMutationResult(outcome='created', username='alice', field_id='secret')),
+        ('create', AccountMutationResult(outcome='created', username='alice', field_id=None)),
+        ('create', AccountMutationResult(outcome='created', username='alice', field_id=0)),
         ('create', AccountMutationResult(outcome='created', username='alice', draft={})),
         ('create', AccountMutationResult(outcome='invalid', code='unexpected', field_id='')),
         (

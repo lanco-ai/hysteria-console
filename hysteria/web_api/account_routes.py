@@ -29,8 +29,10 @@ def _account_mutation_response(
         if (
             result.outcome != expected_success
             or not result.username
-            or result.code
-            or result.field_id
+            or not isinstance(result.code, str)
+            or result.code != ''
+            or not isinstance(result.field_id, str)
+            or result.field_id != ''
             or result.draft is not None
         ):
             raise ValueError('invalid account mutation success result')
