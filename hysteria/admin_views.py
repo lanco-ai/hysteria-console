@@ -2,11 +2,10 @@
 
 import html
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 from typing import Callable
 
-import user_compat
+import admin_overview_data
 
 
 @dataclass(frozen=True)
@@ -48,44 +47,52 @@ class Context:
 def row_form(
     ctx: Context, user, cfg, online, host, base_url, usage_month=None, daily=None, now=None
 ):
-    tx, rx, used = ctx.scaled_usage_for_user(user, daily=daily, now=now)
+    data = admin_overview_data.build_user(
+        ctx,
+        user,
+        cfg,
+        online,
+        base_url,
+        daily=daily,
+        now=now,
+    )
+    return _render_user_row(ctx, data)
+
+
+def _render_user_row(ctx: Context, data):
+    user = data['user']
+    tx = data['tx']
+    rx = data['rx']
+    used = data['used']
     spark_cell = ''
     # Sparklines are initial-render only. The five-second overview payload
     # intentionally excludes SVG so polling does not rebuild this cell.
-    if daily is not None:
-        spark_cell = f'<td class="spark-cell" headers="users-col-trend" data-label="30 天趋势" data-role="spark">{ctx.sparkline_svg(ctx.daily_window_for_user(user, daily, days=30))}</td>'
-    total = ctx.user_total_quota(cfg)
+    if data['spark'] is not None:
+        spark_cell = f'<td class="spark-cell" headers="users-col-trend" data-label="30 天趋势" data-role="spark">{ctx.sparkline_svg(data["spark"])}</td>'
+    total = data['total']
     quota_label = '不限' if total <= 0 else ctx.fmt_bytes(total)
-    max_devices = ctx.configured_max_devices(cfg)
-    user_revision = ctx.user_config_revision(cfg)
+    max_devices = data['max_devices']
+    user_revision = data['revision']
     revision_query = f'revision={user_revision}'
     device_limit_summary = '不限设备' if max_devices == 0 else f'{max_devices} 设备'
     online_device_summary = (
-        f'在线 <span data-role="online">{int(online.get(user, 0) or 0)}</span> · 设备不限'
+        f'在线 <span data-role="online">{data["online"]}</span> · 设备不限'
         if max_devices == 0
-        else (
-            f'在线 <span data-role="online">{int(online.get(user, 0) or 0)}</span>'
-            f' / {max_devices} 设备'
-        )
+        else (f'在线 <span data-role="online">{data["online"]}</span> / {max_devices} 设备')
     )
-    base_gb = (
-        int(round(ctx.base_quota_bytes(cfg) / 1024 / 1024 / 1024))
-        if ctx.base_quota_bytes(cfg) > 0
-        else 0
-    )
-    extra_gb = ctx.quota_extra_gb(cfg)
-    panel = f'{base_url}/panel/{user}?token={cfg.get("sub_token", "")}'
-    sub_http = f'{base_url}/sub/{user}?token={cfg.get("sub_token", "")}'
-    metered = user_compat.is_metered(cfg)
-    tuic_allowed = user_compat.tuic_enabled(cfg)
-    expiry = ctx.user_expiry_state(cfg, today=(now or ctx.local_now()).date())
-    expires_at = expiry['expires_at']
-    expired_badge = '<span class="badge badge-danger">已过期</span>' if expiry['expired'] else ''
-    expires_preview = f' · {expiry["label"]}' if expires_at else ''
+    base_gb = data['base_quota_gb']
+    extra_gb = data['quota_extra_gb']
+    panel = data['panel_url']
+    sub_http = data['subscription_url']
+    metered = data['metered']
+    tuic_allowed = data['tuic_enabled']
+    expires_at = data['expires_at']
+    expired_badge = '<span class="badge badge-danger">已过期</span>' if data['expired'] else ''
+    expires_preview = f' · {data["expiry_label"]}' if expires_at else ''
     extra_preview = f' · 加量 {extra_gb} GB' if extra_gb else ''
-    note = str(cfg.get('note') or '')
+    note = data['note']
     note_preview = f'<div class="small faint">{html.escape(note)}</div>' if note else ''
-    percent = ctx.pct(used, total)
+    percent = data['percent']
     bar_cls = 'unlimited' if total <= 0 else ('danger' if percent >= 90 else '')
     bar_w = '0.0' if total <= 0 else f'{percent:.1f}'
     user_esc = html.escape(user)
@@ -95,7 +102,7 @@ def row_form(
         if tuic_allowed
         else '<span class="badge badge-danger">TUIC 关闭</span>'
     )
-    disabled = bool(cfg.get('disabled'))
+    disabled = data['disabled']
     disabled_badge = (
         '<span class="badge badge-danger" data-role="disabled-badge">已停用</span>'
         if disabled
@@ -123,7 +130,7 @@ def row_form(
             'data-action="disable-user" '
             'title="临时停用：拒绝新连接并断开现有会话，不删除用户">暂停</button>'
         )
-    online_n = int(online.get(user, 0) or 0)
+    online_n = data['online']
     return f'''<tr data-user="{user_esc}" data-online="{online_n}" data-percent="{percent:.1f}" data-revision="{user_revision}">
 <td headers="users-col-user" data-label="用户">
   <div class="row gap-sm user-identity">
@@ -152,10 +159,10 @@ def row_form(
           data-edit-user="{user_esc}" data-user-revision="{user_revision}" data-max-devices="{max_devices}"
           data-quota-gb="{base_gb}" data-quota-extra-gb="{extra_gb}"
           data-expires-at="{expires_attr}" data-note="{note_attr}"
-          data-landing-isp="{html.escape(user_compat.landing_field(cfg, 'landing_isp'), quote=True)}"
-          data-landing-region="{html.escape(user_compat.landing_field(cfg, 'landing_region'), quote=True)}"
-          data-landing-note="{html.escape(user_compat.landing_field(cfg, 'landing_note'), quote=True)}"
-          data-landing-ip="{html.escape(user_compat.landing_field(cfg, 'landing_ip'), quote=True)}"
+          data-landing-isp="{html.escape(data['landing_isp'], quote=True)}"
+          data-landing-region="{html.escape(data['landing_region'], quote=True)}"
+          data-landing-note="{html.escape(data['landing_note'], quote=True)}"
+          data-landing-ip="{html.escape(data['landing_ip'], quote=True)}"
           data-metered="{'1' if metered else '0'}" data-tuic-enabled="{'1' if tuic_allowed else '0'}">编辑套餐</button>
   {summary_preview}
 </div>
@@ -195,20 +202,14 @@ def row_form(
 def render_admin(
     ctx: Context, host, base_url, flash='', *, create_draft=None, create_error_field=''
 ):
-    users = ctx.load_json(ctx.USERS_FILE, {})
-    landing_registry = ctx._landing_registry_or_empty()
-    online = ctx.load_json(ctx.ONLINE_FILE, {})
-    now = ctx.local_now()
-    mk = ctx.month_key(now)
-    daily = ctx.load_json(ctx.USAGE_DAILY_FILE, {})
-    total_used = sum(ctx.scaled_usage_for_user(u, daily=daily, now=now)[2] for u in users)
-    total_used += int(ctx.preserved_raw_for_cycle(now=now) * ctx.current_display_multiplier())
-    settlement_day = ctx.get_settlement_day()
-    cycle_length = ctx.get_cycle_length_days()
-    cycle_start = ctx.cycle_start_for(now)
-    cycle_end = cycle_start + timedelta(days=cycle_length - 1)
-    cycle_day = (now.date() - cycle_start.date()).days + 1
-    cycle_range = f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")} · 第 {cycle_day}/{cycle_length} 天'
+    page = admin_overview_data.build_page(ctx, base_url)
+    cycle = page['cycle']
+    total_used = cycle['total_used']
+    settlement_day = cycle['settlement_day']
+    cycle_length = cycle['length_days']
+    cycle_range = cycle['range']
+    mk = cycle['key']
+    user_count = len(page['users'])
     settle_form = (
         f'<form method="post" action="/admin/cycle-config" class="inline-form-row cycle-config-form" '
         f'data-confirm="更改结算日或周期会重新锚定计费日历，确认保存？">'
@@ -256,7 +257,7 @@ def render_admin(
     create_note = draft_value('note')
     create_landing_initial = str(draft.get('landing_initial_egress_id') or '')
     landing_options = ['<option value="">暂不分配</option>']
-    for public_node in ctx._enabled_landing_public_nodes(landing_registry):
+    for public_node in page['landing_options']:
         node_id = str(public_node['id'])
         selected = ' selected' if node_id == create_landing_initial else ''
         landing_options.append(
@@ -285,10 +286,7 @@ def render_admin(
         ' checked' if (bool(draft.get('guest')) if recovering_create else True) else ''
     )
     create_tuic_checked = ' checked' if bool(draft.get('tuic_enabled')) else ''
-    rows = ''.join(
-        ctx.row_form(u, cfg, online, host, base_url, daily=daily, now=now)
-        for u, cfg in users.items()
-    )
+    rows = ''.join(_render_user_row(ctx, user) for user in page['users'])
     if rows:
         rows += '<tr id="filter-empty" hidden><td colspan="5" class="empty">没有符合当前筛选条件的用户</td></tr>'
     else:
@@ -380,12 +378,12 @@ def render_admin(
         <button type="button" class="chip" data-filter="online" aria-pressed="false">在线</button>
         <button type="button" class="chip" data-filter="over" aria-pressed="false">超限</button>
       </div>
-      <span class="filter-count" id="filter-count" role="status" aria-live="polite">{len(users)} 用户</span>
+      <span class="filter-count" id="filter-count" role="status" aria-live="polite">{user_count} 用户</span>
     </div>
   </div>
   <div class="small faint mt-sm">“复制专属面板”会复制每位用户各自的安全入口；打开后地址栏会安全归一为 <code>/user/panel</code>。</div>
   <div class="users-table-wrap">
-    <table class="users-table" data-user-count="{len(users)}"><caption class="sr-only">用户、套餐用量、管理操作与订阅链接</caption><thead><tr><th>用户</th><th>趋势</th><th>用量</th><th>操作</th><th>链接</th></tr></thead><tbody>{rows}</tbody></table>
+    <table class="users-table" data-user-count="{user_count}"><caption class="sr-only">用户、套餐用量、管理操作与订阅链接</caption><thead><tr><th>用户</th><th>趋势</th><th>用量</th><th>操作</th><th>链接</th></tr></thead><tbody>{rows}</tbody></table>
   </div>
 </div>
 <details class="create-section"{create_open}>
@@ -422,7 +420,7 @@ def render_admin(
         'dashboard',
         '总览',
         content,
-        badge=f'{len(users)} 个用户',
+        badge=f'{user_count} 个用户',
         subtitle=f'{host} · 计费周期 {mk}',
         topbar_extra=settle_form + poll_status,
     )

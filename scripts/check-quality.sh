@@ -11,6 +11,7 @@ adopted=(
   hysteria/web_api/__init__.py
   hysteria/web_api/app.py
   hysteria/web_api/models.py
+  hysteria/web_api/overview_models.py
   hysteria/web_api/requests.py
   hysteria/web_api/services.py
   hysteria/password_change_service.py tests/test_password_change_service.py
@@ -19,6 +20,7 @@ adopted=(
   tests/test_web_api_password_changes.py
   tests/test_web_api_password_page_reads.py
   tests/test_web_api_reads.py
+  tests/test_web_api_overview_page.py
   hysteria/reset_log_data.py tests/test_reset_log_data.py
   hysteria/web_assets.py tests/test_web_assets.py
   tests/preview_http_server.py
@@ -30,6 +32,7 @@ adopted=(
   hysteria/admin_operations_routes.py
   hysteria/user_views.py
   hysteria/admin_views.py
+  hysteria/admin_overview_data.py tests/test_admin_overview_data.py
   hysteria/console_shell_views.py
   hysteria/operations_views.py
   hysteria/configuration_views.py

@@ -240,6 +240,7 @@ build_durable_artifact_set() {
     admin_operations_routes.py \
     user_views.py \
     admin_views.py \
+    admin_overview_data.py \
     console_shell_views.py \
     operations_views.py \
     reset_log_data.py \
@@ -1569,6 +1570,7 @@ for artifact in \
   "$HY_DIR/admin_operations_routes.py" \
   "$HY_DIR/user_views.py" \
   "$HY_DIR/admin_views.py" \
+  "$HY_DIR/admin_overview_data.py" \
   "$HY_DIR/console_shell_views.py" \
   "$HY_DIR/operations_views.py" \
   "$HY_DIR/reset_log_data.py" \
@@ -1773,6 +1775,7 @@ render "$REPO_DIR/hysteria/admin_config_routes.py"     "$HY_DIR/admin_config_rou
 render "$REPO_DIR/hysteria/admin_operations_routes.py"     "$HY_DIR/admin_operations_routes.py"
 render "$REPO_DIR/hysteria/user_views.py"     "$HY_DIR/user_views.py"
 render "$REPO_DIR/hysteria/admin_views.py"     "$HY_DIR/admin_views.py"
+render "$REPO_DIR/hysteria/admin_overview_data.py"     "$HY_DIR/admin_overview_data.py"
 render "$REPO_DIR/hysteria/console_shell_views.py"     "$HY_DIR/console_shell_views.py"
 render "$REPO_DIR/hysteria/operations_views.py"     "$HY_DIR/operations_views.py"
 render "$REPO_DIR/hysteria/reset_log_data.py" "$HY_DIR/reset_log_data.py"
@@ -1865,6 +1868,7 @@ chmod 700 \
   "$HY_DIR/admin_operations_routes.py" \
   "$HY_DIR/user_views.py" \
   "$HY_DIR/admin_views.py" \
+  "$HY_DIR/admin_overview_data.py" \
   "$HY_DIR/console_shell_views.py" \
   "$HY_DIR/operations_views.py" \
   "$HY_DIR/reset_log_data.py" \

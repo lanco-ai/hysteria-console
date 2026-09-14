@@ -26,6 +26,7 @@ from .models import (
     UserPasswordChangeValidationResponse,
     UserSessionResponse,
 )
+from .overview_models import AdminOverviewPageResponse
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 
@@ -87,6 +88,11 @@ def _session_response(payload):
 
 def _overview_response(payload):
     model = AdminOverviewResponse.model_validate(payload)
+    return JSONResponse(model.model_dump())
+
+
+def _overview_page_response(payload):
+    model = AdminOverviewPageResponse.model_validate(payload)
     return JSONResponse(model.model_dump())
 
 
@@ -333,6 +339,16 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _overview_response(payload)
+
+    @app.api_route('/api/v1/admin/overview-page', methods=['GET', 'HEAD'])
+    async def admin_overview_page(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_overview_page, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _overview_page_response(payload)
 
     @app.api_route('/api/v1/admin/settings', methods=['GET', 'HEAD'])
     async def admin_settings(request: Request):

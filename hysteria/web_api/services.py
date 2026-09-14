@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Literal, Mapping
 
+import admin_overview_data
 import http_utils
 from login_service import LoginResult
 from password_change_service import PasswordChangeResult
@@ -282,6 +283,23 @@ class LegacyPanelServices:
             if not service.is_logged_in(request):
                 raise LoginRequired
             return service._build_overview_json_payload(now=service.local_now())
+
+        return self._run_read(read)
+
+    def read_admin_overview_page(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            host = service.configured_public_host(request.headers.get('Host', '127.0.0.1'))
+            base_url = service.safe_base_url(
+                host,
+                request.headers.get('X-Forwarded-Proto', 'http'),
+                request.headers.get('X-Forwarded-Port', ''),
+            )
+            return admin_overview_data.build_page(service._admin_views_context(), base_url)
 
         return self._run_read(read)
 
