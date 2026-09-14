@@ -690,7 +690,7 @@ def test_reload_status_adapter_authenticates_inside_read_boundary_before_helper(
     assert events == [('auth', '/api/v1/admin/reload-status'), 'status']
 
 
-@pytest.mark.parametrize('action', ['delete', '', 'reset_usage'])
+@pytest.mark.parametrize('action', ['delete-unknown', '', 'reset_usage'])
 def test_operation_adapter_rejects_unknown_actions_before_dependency_access(action):
     class UntouchedModule:
         def __getattribute__(self, name):

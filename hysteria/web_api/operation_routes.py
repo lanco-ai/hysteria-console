@@ -2,12 +2,14 @@
 
 from functools import partial
 
+from admin_credential_service import CredentialMutationResult
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from overview_mutation_result import OverviewMutationResult
 
 from .operation_models import (
     AdminReloadStatusResponse,
+    CredentialOperationSuccessResponse,
     OverviewOperationConflictResponse,
     OverviewOperationNotFoundResponse,
     OverviewOperationSuccessResponse,
@@ -21,6 +23,43 @@ _VALIDATION_CODES = {
     'cycle': frozenset(('err:settlement_invalid', 'err:cycle_length_invalid')),
     'toggle-user': frozenset(('invalid_desired',)),
 }
+_CREDENTIAL_CODES = {
+    'rotate-token': frozenset(
+        (
+            'rotated',
+            'err:rotated_retry',
+            'err:rotated_pending',
+            'err:rotated_static_pending',
+        )
+    ),
+    'delete': frozenset(('deleted', 'err:deleted_retry')),
+}
+
+
+def _credential_operation_response(result, *, action):
+    if not isinstance(result, CredentialMutationResult):
+        raise ValueError('invalid credential operation result type')
+    if not isinstance(result.username, str) or not isinstance(result.code, str):
+        raise ValueError('invalid credential operation metadata')
+    if result.outcome == 'success':
+        if not result.username or result.code not in _CREDENTIAL_CODES[action]:
+            raise ValueError('invalid credential operation success')
+        model = CredentialOperationSuccessResponse(
+            ok=True,
+            action=action,
+            user=result.username,
+            code=result.code,
+        )
+        return JSONResponse(model.model_dump())
+    if result.code != '':
+        raise ValueError('invalid rejected credential operation code')
+    if result.outcome == 'conflict' and result.username:
+        model = OverviewOperationConflictResponse(ok=False, error='revision_conflict')
+        return JSONResponse(status_code=409, content=model.model_dump())
+    if result.outcome == 'not_found':
+        model = OverviewOperationNotFoundResponse(ok=False, error='user_not_found')
+        return JSONResponse(status_code=404, content=model.model_dump())
+    raise ValueError('invalid credential operation result')
 
 
 def _empty_success_metadata(result):
@@ -34,6 +73,8 @@ def _empty_success_metadata(result):
 
 
 def _overview_operation_response(result: OverviewMutationResult, *, action: str):
+    if action in _CREDENTIAL_CODES:
+        return _credential_operation_response(result, action=action)
     if action not in _ACTIONS or not isinstance(result, OverviewMutationResult):
         raise ValueError('invalid overview operation result type')
 
@@ -152,6 +193,14 @@ def register_operation_routes(app, services, dispatch_form_write, dispatch):
     @router.post('/api/v1/admin/operations/toggle-user')
     async def toggle_user(request: Request):
         return await dispatch_operation(request, action='toggle-user')
+
+    @router.post('/api/v1/admin/operations/rotate-token')
+    async def rotate_token(request: Request):
+        return await dispatch_operation(request, action='rotate-token')
+
+    @router.post('/api/v1/admin/operations/delete')
+    async def delete_user(request: Request):
+        return await dispatch_operation(request, action='delete')
 
     @router.api_route('/api/v1/admin/reload-status', methods=['GET', 'HEAD'])
     async def reload_status(request: Request):

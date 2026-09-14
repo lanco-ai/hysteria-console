@@ -30,6 +30,20 @@ class OverviewOperationSuccessResponse(PublicModel):
     disabled_until: StrictStr
 
 
+class CredentialOperationSuccessResponse(PublicModel):
+    ok: Literal[True]
+    action: Literal['rotate-token', 'delete']
+    user: StrictStr
+    code: Literal[
+        'rotated',
+        'err:rotated_retry',
+        'err:rotated_pending',
+        'err:rotated_static_pending',
+        'deleted',
+        'err:deleted_retry',
+    ]
+
+
 class OverviewOperationValidationResponse(PublicModel):
     ok: Literal[False]
     error: Literal['validation_error']

@@ -54,6 +54,8 @@ adopted=(
   hysteria/billing_service.py
   hysteria/authorization_service.py
   hysteria/credential_service.py
+  hysteria/admin_credential_service.py
+  hysteria/user_deletion_service.py
   hysteria/revocation_service.py
   hysteria/identity_service.py
   hysteria/landing_views.py
@@ -71,6 +73,8 @@ adopted=(
   tests/test_identity_service.py
   tests/test_revocation_service.py
   tests/test_credential_service.py
+  tests/test_admin_credential_services.py
+  tests/test_web_api_credential_operations.py
   tests/test_authorization_service.py
   tests/test_billing_service.py
   tests/test_login_throttle.py

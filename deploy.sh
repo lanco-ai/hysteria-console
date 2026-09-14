@@ -257,6 +257,8 @@ build_durable_artifact_set() {
     billing_service.py \
     authorization_service.py \
     credential_service.py \
+    admin_credential_service.py \
+    user_deletion_service.py \
     revocation_service.py \
     identity_service.py \
     landing_views.py \
@@ -1591,6 +1593,8 @@ for artifact in \
   "$HY_DIR/billing_service.py" \
   "$HY_DIR/authorization_service.py" \
   "$HY_DIR/credential_service.py" \
+  "$HY_DIR/admin_credential_service.py" \
+  "$HY_DIR/user_deletion_service.py" \
   "$HY_DIR/revocation_service.py" \
   "$HY_DIR/identity_service.py" \
   "$HY_DIR/landing_views.py" \
@@ -1800,6 +1804,8 @@ render "$REPO_DIR/hysteria/user_status_service.py" "$HY_DIR/user_status_service.
 render "$REPO_DIR/hysteria/billing_service.py"     "$HY_DIR/billing_service.py"
 render "$REPO_DIR/hysteria/authorization_service.py"     "$HY_DIR/authorization_service.py"
 render "$REPO_DIR/hysteria/credential_service.py"     "$HY_DIR/credential_service.py"
+render "$REPO_DIR/hysteria/admin_credential_service.py"     "$HY_DIR/admin_credential_service.py"
+render "$REPO_DIR/hysteria/user_deletion_service.py"     "$HY_DIR/user_deletion_service.py"
 render "$REPO_DIR/hysteria/revocation_service.py"     "$HY_DIR/revocation_service.py"
 render "$REPO_DIR/hysteria/identity_service.py"     "$HY_DIR/identity_service.py"
 render "$REPO_DIR/hysteria/landing_views.py"     "$HY_DIR/landing_views.py"
@@ -1897,6 +1903,8 @@ chmod 700 \
   "$HY_DIR/billing_service.py" \
   "$HY_DIR/authorization_service.py" \
   "$HY_DIR/credential_service.py" \
+  "$HY_DIR/admin_credential_service.py" \
+  "$HY_DIR/user_deletion_service.py" \
   "$HY_DIR/revocation_service.py" \
   "$HY_DIR/identity_service.py" \
   "$HY_DIR/landing_views.py" \

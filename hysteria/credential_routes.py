@@ -1,13 +1,10 @@
 """Credential rotation HTTP flows; durable recovery and revocation remain explicit."""
 
 import hmac
-import secrets
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Mapping
 
-import revocation_queue
 import rotation_recovery
 import state_store
 import static_access
@@ -15,6 +12,7 @@ import static_access
 
 @dataclass(frozen=True)
 class Context:
+    admin_credential_service: Callable[..., object]
     CredentialRotationCommitted: type[Exception]
     USERS_FILE: Path
     USER_SESSION_SUBSCRIPTION_TOKEN: str
@@ -283,136 +281,25 @@ def _rotate_admin(handler, ctx, path, form, query, request_user_revision):
     # Snapshot the actor before any mutation. A later session-lock
     # timeout must never turn a committed rotation into a false 503.
     actor = handler.get_admin_actor()
-    username = (form.get('user') or [''])[0].strip()
     next_to = ctx.safe_admin_next((form.get('next') or [''])[0])
-    sync_pending = False
-    sync_error = None
-    task_id = ''
-    with ctx.usage_lock():
-        users = ctx.load_json(ctx.USERS_FILE, {})
-        if username not in users:
-            handler._mutation_user_not_found(username, next_to)
-            return
-        if not isinstance(users.get(username), dict):
-            handler._mutation_user_not_found(username, next_to)
-            return
-        if not ctx.revision_matches(
-            users.get(username),
-            request_user_revision,
-        ):
-            handler._mutation_conflict(username, next_to)
-            return
-        previous_generation = ctx._credential_generation(
-            users[username].get('sub_token'),
-        )
-        new_token = secrets.token_urlsafe(18)
-        new_uuid = str(uuid.uuid4())
-        new_generation = ctx._credential_generation(new_token)
-        task_id = revocation_queue.task_id_for(
-            username,
-            secrets.token_urlsafe(24),
-        )
-        revocation_queue.prepare(
-            ctx._revocation_queue_path(),
-            task_id=task_id,
-            user=username,
-            previous_generation=previous_generation,
-            target_generation=new_generation,
-            static_services=static_access.SERVICES,
-        )
-        users[username]['sub_token'] = new_token
-        users[username]['vless_uuid'] = new_uuid
-        durability_uncertain = ctx._save_users_for_rotation(
-            users,
-            user=username,
-            new_token=new_token,
-            new_uuid=new_uuid,
-        )
-        if durability_uncertain:
-            sync_pending = True
-            sync_error = ctx.CredentialRotationCommitted(
-                username,
-                new_token,
-                users[username],
-                durability_uncertain=True,
-            )
-            xray_changed = False
-            tuic_changed = False
-        else:
-            try:
-                xray_changed, tuic_changed = ctx._sync_static_access_from_users(users)
-            except state_store.CriticalStateUnavailable as exc:
-                sync_pending = True
-                sync_error = exc
-                xray_changed = False
-                tuic_changed = False
-
-    revocation_uncertain = False
-    static_outcomes = {}
-    completed_static_services = []
-    if sync_pending:
-        static_outcomes = ctx._fail_closed_static_access(sync_error)
-        completed_static_services.extend(
-            service for service, outcome in static_outcomes.items() if outcome.ok
-        )
-    else:
-        for service, changed in (
-            (static_access.XRAY_SERVICE, xray_changed),
-            (static_access.TUIC_SERVICE, tuic_changed),
-        ):
-            reload_result = ctx._schedule_static_reload(
-                service,
-                changed=changed,
-            )
-            if reload_result.ok:
-                completed_static_services.append(service)
-            else:
-                raw = static_access.stop_fail_closed(
-                    service,
-                    reason=RuntimeError(
-                        'credential reload scheduling failed',
-                    ),
-                    live=ctx._using_live_core_state(),
-                )
-                static_outcomes[service] = ctx._normalize_service_action(service, raw)
-                if static_outcomes[service].ok:
-                    completed_static_services.append(service)
-    retry_services = [service for service, outcome in static_outcomes.items() if not outcome.ok]
-    if retry_services and not ctx._record_static_retry(
-        task_id,
-        retry_services,
-    ):
-        revocation_uncertain = True
-    kick_result = ctx.hy_kick([username])
-    kick_recorded = ctx._record_kick_attempt(
-        task_id,
-        kick_result,
-        completed_static_services=completed_static_services,
+    service = ctx.admin_credential_service(
+        lambda action, target, before, after: handler.write_reset_log(
+            actor,
+            action,
+            target,
+            before,
+            after,
+        ),
     )
-    if not ctx._action_succeeded(kick_result) or not kick_recorded:
-        revocation_uncertain = True
-    handler.write_reset_log(
-        actor,
-        'rotate_token',
-        username,
-        {},
-        {},
-    )
-    confirmed_static_pause = (
-        sync_pending
-        and len(static_outcomes) == len(static_access.SERVICES)
-        and all(outcome.effect_confirmed for outcome in static_outcomes.values())
-    )
-    if revocation_uncertain or any(
-        not outcome.effect_confirmed for outcome in static_outcomes.values()
-    ):
-        flash = 'err:rotated_retry ' + username
-    elif sync_pending and confirmed_static_pause:
-        flash = 'err:rotated_pending ' + username
-    elif static_outcomes:
-        flash = 'err:rotated_static_pending ' + username
-    else:
-        flash = 'rotated ' + username
+    result = service.rotate(form=form, expected_revision=request_user_revision)
+    username = result.username
+    if result.outcome == 'not_found':
+        handler._mutation_user_not_found(username, next_to)
+        return
+    if result.outcome == 'conflict':
+        handler._mutation_conflict(username, next_to)
+        return
+    flash = result.code + ' ' + username
     if ctx._json_request(handler):
         # The token changed, so the row's subscription/panel links
         # must be refreshed client-side along with the row itself.
@@ -424,7 +311,7 @@ def _rotate_admin(handler, ctx, path, form, query, request_user_revision):
             handler.headers.get('X-Forwarded-Proto', 'http'),
             handler.headers.get('X-Forwarded-Port', ''),
         )
-        new_token = users.get(username, {}).get('sub_token', '')
+        new_token = result.subscription_token
         handler._send_mutation_json(
             200,
             {

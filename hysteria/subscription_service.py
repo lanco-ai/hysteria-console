@@ -27,6 +27,8 @@ import admin_config_routes
 import admin_operations_routes
 import auth_routes
 import credential_routes
+import admin_credential_service
+import user_deletion_service
 import landing_write_routes
 import rule_pack_routes
 import admin_traffic_routes
@@ -1001,6 +1003,45 @@ def _finish_login_attempt(ip, succeeded, failures=None):
 
 def check_user_token(user, token):
     return _identity_service().check_user_token(user=user, token=token)
+
+
+def _admin_credential_service(audit):
+    return admin_credential_service.AdminCredentialService(
+        CredentialRotationCommitted=CredentialRotationCommitted,
+        USERS_FILE=USERS_FILE,
+        _action_succeeded=_action_succeeded,
+        _credential_generation=_credential_generation,
+        _fail_closed_static_access=_fail_closed_static_access,
+        _normalize_service_action=_normalize_service_action,
+        _record_kick_attempt=_record_kick_attempt,
+        _record_static_retry=_record_static_retry,
+        _revocation_queue_path=_revocation_queue_path,
+        _save_users_for_rotation=_save_users_for_rotation,
+        _schedule_static_reload=_schedule_static_reload,
+        _sync_static_access_from_users=_sync_static_access_from_users,
+        _using_live_core_state=_using_live_core_state,
+        audit=audit,
+        hy_kick=hy_kick,
+        load_json=load_json,
+        revision_matches=revision_matches,
+        usage_lock=usage_lock,
+    )
+
+
+def _user_deletion_service():
+    return user_deletion_service.UserDeletionService(
+        USERS_FILE=USERS_FILE,
+        _DELETE_TARGET_GENERATION=_DELETE_TARGET_GENERATION,
+        _attempt_revocation_side_effects=_attempt_revocation_side_effects,
+        _delete_previous_generation=_delete_previous_generation,
+        _purge_user_history_locked=_purge_user_history_locked,
+        _revocation_queue_path=_revocation_queue_path,
+        _sync_static_access_from_users=_sync_static_access_from_users,
+        load_json=load_json,
+        revision_matches=revision_matches,
+        save_json=save_json,
+        usage_lock=usage_lock,
+    )
 
 
 def _credential_service():
@@ -2522,20 +2563,10 @@ def _admin_user_status_routes_context():
 
 def _admin_user_delete_routes_context():
     return admin_user_delete_routes.Context(
-        USERS_FILE=USERS_FILE,
-        _DELETE_TARGET_GENERATION=_DELETE_TARGET_GENERATION,
-        _attempt_revocation_side_effects=_attempt_revocation_side_effects,
-        _delete_previous_generation=_delete_previous_generation,
+        user_deletion_service=_user_deletion_service,
         _json_request=_json_request,
-        _purge_user_history_locked=_purge_user_history_locked,
-        _revocation_queue_path=_revocation_queue_path,
         _static_reload_status=_static_reload_status,
-        _sync_static_access_from_users=_sync_static_access_from_users,
         is_logged_in=is_logged_in,
-        load_json=load_json,
-        revision_matches=revision_matches,
-        save_json=save_json,
-        usage_lock=usage_lock,
         with_flash=with_flash,
     )
 
@@ -2586,6 +2617,7 @@ def _rule_pack_routes_context():
 
 def _credential_routes_context():
     return credential_routes.Context(
+        admin_credential_service=_admin_credential_service,
         CredentialRotationCommitted=CredentialRotationCommitted,
         USERS_FILE=USERS_FILE,
         USER_SESSION_SUBSCRIPTION_TOKEN=USER_SESSION_SUBSCRIPTION_TOKEN,

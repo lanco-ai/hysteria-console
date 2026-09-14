@@ -258,6 +258,8 @@ class LegacyPanelServices:
             'reset-usage-all',
             'pause-user',
             'toggle-user',
+            'rotate-token',
+            'delete',
         ],
     ):
         post_paths = {
@@ -267,6 +269,8 @@ class LegacyPanelServices:
             'reset-usage-all': '/admin/reset-usage-all',
             'pause-user': '/admin/pause-user',
             'toggle-user': '/admin/toggle-user',
+            'rotate-token': '/admin/rotate-token',
+            'delete': '/admin/delete',
         }
         if action not in post_paths:
             raise ValueError('invalid overview operation action')
@@ -293,6 +297,30 @@ class LegacyPanelServices:
             if not service.is_logged_in(request):
                 raise LoginRequired
             expected_revision = (form.get('user_revision') or [''])[0]
+            if action == 'rotate-token':
+                # Capture before committing credentials: an actor lookup failure
+                # afterward must not misclassify the already completed rotation.
+                actor = service._admin_actor(request)
+
+                def rotation_audit(log_action, target, before, after):
+                    service._write_reset_log(
+                        request,
+                        actor,
+                        log_action,
+                        target,
+                        before,
+                        after,
+                    )
+
+                return service._admin_credential_service(rotation_audit).rotate(
+                    form=form,
+                    expected_revision=expected_revision,
+                )
+            if action == 'delete':
+                return service._user_deletion_service().delete(
+                    form=form,
+                    expected_revision=expected_revision,
+                )
             if action == 'cycle':
                 return service._traffic_mutation_service(audit).configure_cycle(form=form)
             if action == 'reset-usage':
