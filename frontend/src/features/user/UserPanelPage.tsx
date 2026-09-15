@@ -1,0 +1,33 @@
+import { useEffect, useState } from 'react';
+import { USER_PANEL_ENDPOINT, parseUserPanel } from './requests';
+import { useReadResource } from '../../shared/readResource';
+import { fmtBytes } from '../network-admin/overview/presentation';
+
+function ErrorState({ status, retry }: { status: number | undefined; retry: () => void }) {
+  if (status === 401) return <main className="auth-scene"><div className="card"><div className="err" role="alert">用户登录已失效。</div><a className="btn btn-primary" href="/login">前往登录</a></div></main>;
+  return <main className="auth-scene"><div className="card"><div className="err" role="alert">用户面板加载失败，请稍后重试。</div><button className="btn secondary" type="button" onClick={retry}>重试</button></div></main>;
+}
+
+export function UserPanelPage({ publicHost }: { publicHost: string }) {
+  const resource = useReadResource(USER_PANEL_ENDPOINT, { validate: parseUserPanel });
+  const [selectedProfile, setSelectedProfile] = useState('');
+  const [copied, setCopied] = useState(false);
+  useEffect(() => { if (resource.status === 'success' && !selectedProfile) setSelectedProfile(resource.data.subscription_profiles[0]?.key || ''); }, [resource.status, resource.data, selectedProfile]);
+  useEffect(() => { if (resource.status !== 'success' || resource.data.disabled || resource.data.expired) return; const timer = window.setInterval(resource.retry, 30_000); return () => window.clearInterval(timer); }, [resource.status, resource.data, resource.retry]);
+  if (resource.status === 'error') return <ErrorState status={resource.error.status} retry={resource.retry}/>;
+  if (resource.status !== 'success') return <main className="auth-scene"><div className="card" role="status">正在加载用户面板…</div></main>;
+  const data = resource.data;
+  const current = data.subscription_profiles.find(profile => profile.key === selectedProfile) || data.subscription_profiles[0];
+  const quotaUnlimited = data.total_bytes === 0;
+  const percent = quotaUnlimited ? 0 : Math.min(100, data.percent);
+  const copy = async () => { if (!current) return; try { await navigator.clipboard.writeText(current.url); setCopied(true); window.setTimeout(() => setCopied(false), 1600); } catch { setCopied(false); } };
+  return <div className="wrap user-panel">
+    <header className="user-panel-header"><div className="user-panel-brand"><div><div className="small faint">Hysteria · {publicHost}</div><h1 className="user-panel-title">个人控制台</h1><div className="user-panel-subtitle faint">订阅、用量与设备</div></div></div><div className="user-panel-account"><div className="user-panel-name mono">{data.username}</div><span className={`badge ${data.disabled || data.expired ? 'is-error' : 'is-live'}`}>{data.disabled ? '停用' : data.expired ? '已到期' : '正常'}</span><div className="user-panel-actions"><form method="post" action="/user/logout"><button className="btn ghost btn-sm" type="submit">退出登录</button></form></div></div></header>
+    {(data.disabled || data.expired) ? <div className="err" role="alert">{data.disabled ? '账号已停用，请联系管理员。' : '账号已到期，请联系管理员续费。'}</div> : null}
+    <section className="usage-section" aria-label="本周期用量"><header className="section-head"><h2 className="section-title">本周期用量</h2><div className="poll-status small">自动更新 · 30 s</div></header><div className="usage-kpis"><div className="usage-kpi"><div className="k">已用流量</div><div className="v">{fmtBytes(data.used_bytes)}</div><div className="sub">{quotaUnlimited ? '不限额' : `${data.percent.toFixed(1)}%`}</div></div><div className="usage-kpi"><div className="k">剩余额度</div><div className="v">{quotaUnlimited ? '不限' : fmtBytes(data.remain_bytes)}</div><div className="sub">在线 {data.online} / {data.max_devices || '不限'} 台</div></div><div className="usage-kpi"><div className="k">计费周期</div><div className="v usage-date">{data.cycle_reset_date}</div><div className="sub">还剩 {data.cycle_days_left} 天 · 周期 {data.cycle_length_days} 天</div></div></div><div className="usage-progress"><div className="usage-progress-head"><span className="k">本周期</span><span className="bold numeric">{quotaUnlimited ? '不限' : `${data.percent.toFixed(2)}%`}</span></div><div className="bar"><div className="fill" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} style={{ width: `${percent}%` }}/></div><div className="small mt-sm">上传 {fmtBytes(data.tx_bytes)} · 下载 {fmtBytes(data.rx_bytes)}</div></div></section>
+    <section className="connection-section" aria-label="订阅链接"><header className="section-head"><h2 className="section-title">订阅链接</h2></header>{current ? <div className="connection-panel"><div className="profile-tabs" role="group" aria-label="选择订阅模式">{data.subscription_profiles.map(profile => <button className={`profile-tab${profile.key === current.key ? ' is-active' : ''}`} type="button" key={profile.key} onClick={() => setSelectedProfile(profile.key)}>{profile.label}</button>)}</div><div className="connection-url"><code className="mono url-text">{current.url}</code><button className="btn primary btn-sm" type="button" onClick={() => void copy()}>{copied ? '已复制' : '复制链接'}</button></div><div className="small faint mt-sm">{current.description}</div></div> : <div className="small faint">当前账号暂无可用订阅。</div>}</section>
+    <aside className="plan-section" aria-label="套餐与设备"><header className="section-head"><h2 className="section-title">套餐与设备</h2></header><dl className="user-kv"><div><dt>用户名</dt><dd className="mono">{data.username}</dd></div><div><dt>有效期</dt><dd>{data.expiry_label}</dd></div><div><dt>上传 / 下载</dt><dd>{fmtBytes(data.tx_bytes)} / {fmtBytes(data.rx_bytes)}</dd></div></dl></aside>
+    {data.landing_nodes.length ? <section className="plan-section" aria-label="家宽出口"><header className="section-head"><h2 className="section-title">家宽出口</h2></header><div className="user-kv">{data.landing_nodes.map(node => <div key={node.id}><dt>{node.name}</dt><dd><code>{node.exit_ip}</code> · {node.region || node.isp || '未标注'} {node.selected ? <span className="badge is-live">当前</span> : null}{data.can_select_egress ? <form method="post" action="/user/landing-egress/select" className="inline-form-row"><input type="hidden" name="egress_id" value={node.id}/><input type="hidden" name="user_revision" value={data.revision}/><button className="btn ghost btn-sm" type="submit" disabled={node.selected}>切换</button></form> : null}</dd></div>)}</div></section> : null}
+    <section className="account-section" aria-label="账户与安全"><header className="section-head"><h2 className="section-title">账户与安全</h2></header>{data.can_change_password ? <a className="btn ghost btn-sm" href="/user/change-password">修改面板密码</a> : <span className="small faint">当前登录方式不支持修改密码。</span>}</section>
+  </div>;
+}

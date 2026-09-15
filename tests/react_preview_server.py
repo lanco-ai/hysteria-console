@@ -39,6 +39,7 @@ REACT_PAGES = {
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),
     '/__react/user/change-password': ('修改面板密码', 'page-auth'),
+    '/__react/user/panel': ('用户面板 · Hysteria', ''),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'

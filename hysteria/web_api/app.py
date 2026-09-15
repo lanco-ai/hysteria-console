@@ -40,6 +40,7 @@ from .usage_models import (
 from .incident_models import AdminIncidentResponse
 from .config_models import AdminRulesResponse, AdminTemplateResponse, TemplateMutationResponse
 from .landing_models import AdminLandingResponse
+from .user_models import UserPanelResponse
 
 _API_SECURITY_HEADERS = {
     'Cache-Control': 'no-store',
@@ -149,6 +150,11 @@ def _rules_response(payload):
 def _landing_response(payload):
     model = AdminLandingResponse.model_validate(payload)
     return JSONResponse(model.model_dump(exclude_none=True))
+
+
+def _user_panel_response(payload):
+    model = UserPanelResponse.model_validate(payload)
+    return JSONResponse(model.model_dump())
 
 
 def _template_mutation_response(payload):
@@ -475,6 +481,16 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _template_response(payload)
+
+    @app.api_route('/api/v1/user/panel', methods=['GET', 'HEAD'])
+    async def user_panel(request: Request):
+        try:
+            payload = await dispatch(services.read_user_panel, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _user_panel_response(payload)
 
     @app.api_route('/api/v1/admin/rules', methods=['GET', 'HEAD'])
     async def admin_rules(request: Request):

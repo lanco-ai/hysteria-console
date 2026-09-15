@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { LoginPage } from './features/auth/LoginPage';
 import { LogoutPage } from './features/auth/LogoutPage';
 import { UserPasswordPage } from './features/auth/UserPasswordPage';
+import { UserPanelPage } from './features/user/UserPanelPage';
 import { LogsPage } from './features/network-admin/logs/LogsPage';
 import { SettingsPage } from './features/network-admin/settings/SettingsPage';
 import { UsagePage } from './features/network-admin/usage/UsagePage';
@@ -81,6 +82,11 @@ if (window.location.pathname === '/__react/') {
   document.body.className = 'page-auth';
   const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
   reactRoot.render(<UserPasswordPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/user/panel') {
+  document.title = '用户面板 · Hysteria';
+  document.body.className = '';
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  reactRoot.render(<UserPanelPage publicHost={publicHost}/>);
 } else if (window.location.pathname === '/__react/login') {
   document.title = '管理员登录 · Hysteria';
   document.body.className = 'page-auth page-admin-login';

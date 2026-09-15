@@ -528,6 +528,81 @@ class LegacyPanelServices:
 
         return self._run_read(read)
 
+    def read_user_panel(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            username, session_kind = service.get_logged_in_user_context(request)
+            if not username:
+                raise LoginRequired
+            users = service.load_json(service.USERS_FILE, {})
+            cfg = users.get(username)
+            if not isinstance(cfg, dict):
+                raise UserAccessDenied(
+                    'forbidden',
+                    cookie=service.clear_user_session_cookie(
+                        secure=service.is_secure_request(request),
+                    ),
+                )
+            access_error = service.user_panel_access_error(
+                cfg,
+                session_kind,
+                today=service.local_now().date(),
+            )
+            if access_error not in ('', None, 'disabled', 'expired', 'password_change_required'):
+                raise UserAccessDenied(access_error)
+            now = service.local_now()
+            stats = service._build_panel_json_payload(username, cfg, now=now)
+            reset_date, days_left, cycle_len = service._cycle_reset_info(now)
+            expiry = service.user_expiry_state(cfg, today=now.date())
+            inactive = bool(cfg.get('disabled')) or bool(expiry.get('expired'))
+            profiles = []
+            if not inactive:
+                token = str(cfg.get('sub_token') or '')
+                host = service.configured_public_host(request.headers.get('Host', '127.0.0.1'))
+                base_url = service.safe_base_url(
+                    host,
+                    request.headers.get('X-Forwarded-Proto', 'http'),
+                    request.headers.get('X-Forwarded-Port', ''),
+                )
+                for key in service.SUBSCRIPTION_PROFILE_ORDER:
+                    meta = service.SUBSCRIPTION_PROFILES[key]
+                    profiles.append({
+                        'key': key,
+                        'label': str(meta.get('label', key)),
+                        'description': str(meta.get('desc', '')),
+                        'url': service.subscription_profile_url(base_url, username, token, key),
+                        'qr_path': service.subscription_profile_qr_path(username, token, key),
+                    })
+            landing_nodes = []
+            selected = str(cfg.get('landing_selected_egress_id') or '')
+            for node in service._authorized_landing_nodes(cfg):
+                public = service.landing_egress.public_node(node)
+                health = public.get('health') or {}
+                landing_nodes.append({
+                    **public,
+                    'selected': public['id'] == selected,
+                    'health_status': str(health.get('status') or '未探测'),
+                })
+            return {
+                **stats,
+                'username': str(username),
+                'revision': service.user_config_revision(cfg),
+                'cycle_reset_date': reset_date,
+                'cycle_days_left': days_left,
+                'cycle_length_days': cycle_len,
+                'disabled': bool(cfg.get('disabled')),
+                'expired': bool(expiry.get('expired')),
+                'expiry_label': str(expiry.get('label') or ''),
+                'can_change_password': session_kind == service.USER_SESSION_PANEL_PASSWORD and not inactive,
+                'can_select_egress': session_kind == service.USER_SESSION_PANEL_PASSWORD and not inactive and bool(landing_nodes),
+                'subscription_profiles': profiles,
+                'landing_nodes': landing_nodes,
+            }
+
+        return self._run_read(read)
+
     def read_admin_config(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module
