@@ -81,3 +81,8 @@ def test_usage_hourly_bars_expose_interactive_unit_tooltip():
     assert 'data-role="hourly-tooltip"' in page
     assert 'onMouseEnter' in page
     assert 'onFocus' in page
+
+
+def test_usage_hourly_tooltip_separates_time_and_bytes():
+    page = (ROOT / 'frontend/src/features/network-admin/usage/UsagePage.tsx').read_text()
+    assert "</span>{' · '}<strong>{fmtBytes(activePoint.bytes)}</strong>" in page

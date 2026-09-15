@@ -38,7 +38,7 @@ function HourlyChart({ points }: { points: Usage['hourly_totals'] }) {
       })}
     </div>
     {activePoint ? <div className="usage-hourly-tooltip" data-role="hourly-tooltip" role="status" aria-live="polite">
-      <span>{formatHour(activePoint.hour)}</span><strong>{fmtBytes(activePoint.bytes)}</strong>
+      <span>{formatHour(activePoint.hour)}</span>{' · '}<strong>{fmtBytes(activePoint.bytes)}</strong>
     </div> : null}
   </div>;
 }
