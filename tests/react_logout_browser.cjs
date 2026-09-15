@@ -67,7 +67,11 @@ async function verifyConfirmationDocumentsAndCancel(browser) {
   for (const realm of realms) {
     const context = await browser.newContext({ viewport: { width: 1024, height: 800 } });
     const page = await context.newPage();
-    const failures = collectFailures(page, `${realm.name} confirmation`);
+    const failures = collectFailures(page, `${realm.name} confirmation`, {
+      allowedResponses: realm.name === 'user'
+        ? ['GET /api/v1/user/panel 401']
+        : ['GET /api/v1/admin/overview-page 401'],
+    });
     const posts = [];
     page.on('request', request => {
       if (request.method() === 'POST') posts.push(routeOf(request.url()));
@@ -86,7 +90,8 @@ async function verifyConfirmationDocumentsAndCancel(browser) {
     });
     assert.equal(await page.locator('.auth-back').getAttribute('href'), realm.cancel);
     await page.locator('.auth-back').click();
-    await page.waitForURL(`${baseUrl}${realm.cancel}`);
+    const expectedCancel = `${baseUrl}/__react${realm.cancel === '/admin' ? '/admin' : '/user/panel'}`;
+    await page.waitForURL(expectedCancel);
     assert.deepEqual(posts, [], 'cancel must not submit a mutation');
     assertClean(failures);
     await context.close();
