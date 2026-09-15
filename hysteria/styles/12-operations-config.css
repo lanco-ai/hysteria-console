@@ -68,7 +68,7 @@ body.has-shell .radar-summary {
 
 body.has-shell .radar-summary-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px max-content;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, 1fr) max-content;
   column-gap: 16px;
   align-items: center;
   font-size: var(--text-ui);
@@ -82,7 +82,7 @@ body.has-shell .radar-summary-row > span:first-child {
 }
 
 body.has-shell .radar-summary-row > .mono {
-  width: 72px;
+  width: auto;
   justify-self: stretch;
   text-align: center;
   font-variant-numeric: tabular-nums;
