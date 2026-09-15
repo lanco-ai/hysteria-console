@@ -30,6 +30,8 @@ def test_cutover_is_scoped_to_panel_vhosts_and_preserves_443():
     assert 'listen 443' not in script
     assert '443.before' in script
     assert '443.after' in script
+    assert '9444.before' in script
+    assert '9444.after' in script
     assert 'cmp -s' in script
 
 

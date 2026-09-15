@@ -25,7 +25,8 @@
 - 已增加 `scripts/hy2-react-cutover.sh`：默认仅报告状态，`apply`/`rollback`
   必须显式设置 `HY_REACT_CUTOVER_APPROVED=1`；它只替换面板 80/9444 vhost，
   先检查 8083 loopback，再以备份和 `nginx -t` 保护切换，并比较前后 443
-  `listen` 指令确保无关入口不漂移。
+  `listen` 指令以及 9444 的监听、`server_name`、证书路径，确保无关入口和
+  TLS 身份不漂移。
 - 旧 Codex 额度入口、接口和静态资源保持不可用；未改动代理配置、证书、
   域名或现有 443/9444 nginx 监听。
 

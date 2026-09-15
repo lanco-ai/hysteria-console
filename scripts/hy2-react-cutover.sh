@@ -163,6 +163,17 @@ snapshot_443() {
     >"$destination"
 }
 
+snapshot_panel_tls() {
+  local destination="$1"
+  # The 9444 route may change its upstreams, but its listener, domain and
+  # certificate identity must remain exactly the same.
+  awk '
+    ($1 == "listen" && ($2 == "9444" || $2 == "[::]:9444")) ||
+    $1 == "server_name" || $1 == "ssl_certificate" ||
+    $1 == "ssl_certificate_key" { print }
+  ' "$https_target" >"$destination"
+}
+
 atomic_install() {
   local source="$1" target="$2" temporary
   temporary="$target.react-cutover.$$"
@@ -185,6 +196,7 @@ make_backup() {
   cp -a --no-target-directory "$http_target" "$directory/hysteria-panel.conf"
   cp -a --no-target-directory "$https_target" "$directory/hysteria-panel-https.conf"
   snapshot_443 "$directory/443.before"
+  snapshot_panel_tls "$directory/9444.before"
   printf '%s\n' "$directory" >"$directory/README"
   chmod 0600 "$directory/README"
   printf '%s\n' "$directory"
@@ -251,7 +263,7 @@ cleanup_on_failure() {
 }
 
 apply_cutover() {
-  local after_443
+  local after_443 after_9444
   require_approval
   validate_templates
   validate_targets
@@ -267,6 +279,10 @@ apply_cutover() {
   snapshot_443 "$after_443"
   cmp -s "$backup_dir/443.before" "$after_443" ||
     die '443 listen directives changed during React cutover.'
+  after_9444="$(mktemp "$backup_dir/9444.after.XXXXXX")"
+  snapshot_panel_tls "$after_9444"
+  cmp -s "$backup_dir/9444.before" "$after_9444" ||
+    die '9444 listener, domain or certificate identity changed during React cutover.'
   verify_public_panel
   write_current_pointer "$backup_dir"
   cutover_started=0
@@ -277,7 +293,7 @@ apply_cutover() {
 }
 
 rollback_cutover() {
-  local directory after_443
+  local directory after_443 after_9444
   require_approval
   validate_targets
   [[ -d "$backup_root" && ! -L "$backup_root" ]] ||
@@ -295,6 +311,10 @@ rollback_cutover() {
   snapshot_443 "$after_443"
   cmp -s "$backup_dir/443.before" "$after_443" ||
     die '443 listen directives changed during React rollback.'
+  after_9444="$(mktemp "$backup_dir/9444.after.XXXXXX")"
+  snapshot_panel_tls "$after_9444"
+  cmp -s "$backup_dir/9444.before" "$after_9444" ||
+    die '9444 listener, domain or certificate identity changed during React rollback.'
   rm -f -- "$after_443"
   rm -f -- "$current_pointer"
   cutover_started=0
