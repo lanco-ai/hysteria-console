@@ -1,0 +1,39 @@
+[Unit]
+Description=Hysteria React/FastAPI Panel (staged)
+Wants=network-online.target
+After=network-online.target hysteria-subscription.service
+Requires=hysteria-subscription.service
+
+[Service]
+Type=simple
+ExecStart=/root/hysteria/.venv-web/bin/uvicorn react_server:app --host 127.0.0.1 --port 8083 --workers 1
+WorkingDirectory=/root/hysteria
+User=root
+Group=hy2-xray
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/root/hysteria /usr/local/etc/xray
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+TasksMax=32
+MemoryHigh=384M
+MemoryMax=512M
+
+# This unit is staged only.  It is deliberately not installed or enabled by
+# deploy.sh until the React route cutover receives explicit approval.
+[Install]
+WantedBy=multi-user.target
