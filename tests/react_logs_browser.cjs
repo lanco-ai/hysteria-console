@@ -104,7 +104,9 @@ async function verifyAuthenticatedLogs(browser) {
     '2026-07',
     '1.00 GB → 0.00 B',
   ]);
-  assert.equal(await page.locator('link[rel="stylesheet"]').getAttribute('href'), '/static/style.css');
+  const stylesheet = await page.locator('link[rel="stylesheet"]').getAttribute('href');
+  assert.match(stylesheet, /^\/static\/react\/assets\/[^/]+\.css$/);
+  assert(!stylesheet.includes('style.css'), 'React must not load the legacy stylesheet');
   assert.equal(await page.locator('script[src*="shell.js"], script[src*="shell-preferences.js"]').count(), 0);
   assert.equal(await page.locator('form[action="/logout"][method="post"]').count(), 1);
 

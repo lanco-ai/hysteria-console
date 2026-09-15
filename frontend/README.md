@@ -1,29 +1,54 @@
-# React frontend preview
+# React frontend
 
-This directory contains the built React preview used during the incremental frontend migration. It does not cut production traffic over to React.
+This directory contains the production React/Vite frontend for the public home,
+authentication, administrator console, and authenticated user panel. The
+document routes are served by the FastAPI adapter on port 8083 and use the
+immutable assets under `/static/react/assets/`.
 
-The preview has controlled entries for the public home, authentication, all
-administrator pages, and the authenticated user panel:
+## Document routes
 
-- `/__react/` renders the public home using illustrative static data and makes no API requests.
-- `/__react/login` renders the administrator login and submits to the real JSON login adapter using fictional, temporary preview credentials.
-- `/__react/logout` and `/__react/user/logout` render fictional administrator and user logout confirmations without making a private-data request. They submit to fixed-realm JSON logout adapters.
-- `/__react/admin/logs` renders the administrator reset log and reads the real cookie-authenticated `/api/v1/session` and `/api/v1/admin/logs` endpoints.
-- `/__react/admin/settings` renders administrator settings from the minimal cookie-authenticated `/api/v1/admin/settings` read and submits password changes to `/api/v1/admin/change-password`.
-- `/__react/user/change-password` renders the user password form from its dedicated password-kind `/api/v1/user/password` read and submits to `/api/v1/user/change-password`, including required-initial-change sessions.
-- `/__react/admin`, `/__react/admin/usage`, `/__react/admin/health`,
-  `/__react/admin/incidents`, `/__react/admin/config`, `/__react/admin/rules`,
-  and `/__react/admin/landing-egresses` render the migrated administrator
-  overview, analytics, operations, template/rule, and residential-egress
-  surfaces through the FastAPI adapters.
-- `/__react/user/panel` renders the authenticated user panel, subscription
-  links/QR controls, egress selection, lifecycle errors, and 30-second refresh.
+The explicit React document allow-list covers:
 
-The existing public routes, including `/`, `/logout`, `/user/logout`, `/admin/logs`, `/admin/settings`, and `/user/change-password`, remain unchanged for side-by-side comparison. All seven React entries reuse `/static/style.css` and its local fonts; they do not load the legacy home, shell, or UI scripts.
+- `/`, `/login`, `/logout`, `/user/logout`
+- `/user/panel`, `/user/change-password`
+- `/admin`, `/admin/logs`, `/admin/settings`, `/admin/usage`, `/admin/health`
+- `/admin/incidents`, `/admin/config`, `/admin/rules`,
+  `/admin/landing-egresses`, and `/admin/user/<uid>`
+
+The document shell injects the request host and the appropriate session guard;
+unknown paths are not treated as SPA fallbacks. Page data and mutations use the
+cookie-authenticated `/api/v1/*` adapters.
+
+## Asset ownership
+
+`frontend/src/styles/index.css` imports the ordered sections listed in
+`hysteria/styles/manifest.json`. Vite emits a hashed CSS file alongside the
+hashed JavaScript entry in `frontend/dist/assets`. React documents do not load
+`/static/style.css`, `/static/shell.js`, `/static/ui-core.js`, or any other
+legacy page script.
+
+The legacy bundle (`hysteria/admin.css` and its scripts) remains deployed only
+for compatibility pages while those endpoints are retired separately. It is
+not part of the React document runtime.
+
+## Compatibility boundary
+
+The following interfaces remain on the legacy subscription service (8081) and
+must not be removed during the React migration:
+
+- `/sub/<user>` subscription downloads and profile variants
+- `/panel/<user>` token exchange, `/panel/<user>.json`, and QR endpoints
+- `/admin/usage.csv`, `/admin/incidents/evidence.json`, and registered legacy
+  JSON/download routes
+
+Nginx keeps these locations separate from `/static/react/assets/` and the
+`/api/v1/*` FastAPI routes. The existing certificates, domain, 443/9444
+listeners, proxy configuration, and backend domain services are unchanged.
 
 ## Checks
 
-Use a Python virtual environment containing the repository's test dependencies. For the maintained quality environment in this checkout:
+Use a Python virtual environment containing the repository test dependencies.
+For the maintained quality environment in this checkout:
 
 ```sh
 PATH=/tmp/hy2-quality-venv/bin:$PATH npm run typecheck:react
@@ -31,11 +56,15 @@ PATH=/tmp/hy2-quality-venv/bin:$PATH npm run build:react
 PATH=/tmp/hy2-quality-venv/bin:$PATH npm run test:react-browser
 ```
 
-`npm run test:react-browser` serves the real Vite production artifact through a guarded, loopback-only preview with fictional backend state. Each browser suite receives fresh state because successful password changes revoke prior sessions. Only POST `/api/v1/login`, `/api/v1/logout`, `/api/v1/user/logout`, `/api/v1/admin/change-password`, and `/api/v1/user/change-password` may mutate temporary preview credentials or sessions. Every other POST, including the legacy `/login`, `/logout`, `/user/logout`, `/admin/change-password`, and `/user/change-password` actions, remains blocked with 405; no production state is accessed or mutated.
+Before a release, run `npm run check:frontend` and the backend route suites.
+Validate the immutable release with:
 
-The React entries are controlled preview fixtures. The legacy production GET/HEAD
-authorization redirects remain authoritative until a separately reviewed
-production cutover wires equivalent document guards; a successful preview status
-is not evidence of production authorization parity.
+```sh
+python3 scripts/hy2_panel_release.py validate frontend/dist
+```
 
-These commands validate preview-only migration work. They do not publish assets, change nginx routing, or deploy to the runtime host.
+The deployment flow stages the complete `frontend/dist` tree, atomically
+updates `/root/hysteria/panel/current`, and keeps the previous release for
+rollback. A green local build is not, by itself, evidence that production has
+been deployed; production smoke checks must verify the document and
+compatibility boundaries above.

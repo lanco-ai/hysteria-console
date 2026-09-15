@@ -20,9 +20,10 @@ def running_preview_dist(tmp_path):
     assets = dist / 'assets'
     assets.mkdir(parents=True)
     (assets / 'index-testhash.js').write_text('document.body.dataset.preview = "ready";')
+    (assets / 'index-testhash.css').write_text('body { color: black; }')
     (dist / 'index.html').write_text(
         '<!doctype html><html><head><title>清零日志</title>'
-        '<link rel="stylesheet" href="/static/style.css">'
+        '<link rel="stylesheet" href="/static/react/assets/index-testhash.css">'
         '<script type="module" src="/static/react/assets/index-testhash.js"></script>'
         '</head><body class="has-shell"><div id="root" data-public-host=""></div></body></html>'
     )
@@ -31,6 +32,7 @@ def running_preview_dist(tmp_path):
             {
                 'index.html': {
                     'file': 'assets/index-testhash.js',
+                    'css': ['assets/index-testhash.css'],
                     'isEntry': True,
                     'src': 'index.html',
                 }
@@ -87,7 +89,7 @@ def test_react_preview_serves_built_entry_real_api_and_legacy_page(running_previ
         assert '<title>清零日志</title>' in page
         assert '<body class="has-shell">' in page
         assert 'data-public-host="preview.invalid"' in page
-        assert 'href="/static/style.css"' in page
+        assert 'href="/static/react/assets/index-testhash.css"' in page
         assert '/static/react/assets/' in page
         assert '/static/shell.js' not in page
 
