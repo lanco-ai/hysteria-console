@@ -6,10 +6,11 @@ import type { Action, Mutate, MutationResult, Overview } from './types';
 
 const UNKNOWN = '操作结果尚未确认，请刷新核对后再操作';
 const RELOAD = '用户列表或配置已更改，请刷新加载；未保存草稿保留原版本，保存时可能冲突';
+let cachedOverview: Overview | undefined;
 
 export function useOverview() {
-  const [data, setData] = useState<Overview>();
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<Overview | undefined>(() => cachedOverview);
+  const [loading, setLoading] = useState(() => !cachedOverview);
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [auth, setAuth] = useState(false);
@@ -17,7 +18,7 @@ export function useOverview() {
   const [readError, setReadError] = useState('');
   const [pollStatus, setPollStatus] = useState('自动更新 · 30 s');
   const [reloadStatus, setReloadStatus] = useState('');
-  const state = useRef({ active: false, suspended: false, epoch: 0, pending: false, blocked: false, data: undefined as Overview | undefined, failures: 0, pollTimer: 0, watcherTimer: 0, read: undefined as AbortController | undefined, readKind: undefined as 'bootstrap' | 'poll' | undefined, post: undefined as AbortController | undefined, watcher: undefined as AbortController | undefined });
+  const state = useRef({ active: false, suspended: false, epoch: 0, pending: false, blocked: false, data: cachedOverview, failures: 0, pollTimer: 0, watcherTimer: 0, read: undefined as AbortController | undefined, readKind: undefined as 'bootstrap' | 'poll' | undefined, post: undefined as AbortController | undefined, watcher: undefined as AbortController | undefined });
   const pollRef = useRef<() => Promise<void>>(async () => {});
 
   const usable = useCallback((epoch: number) => state.current.active && !state.current.suspended && state.current.epoch === epoch, []);
@@ -31,6 +32,7 @@ export function useOverview() {
   }, []);
   const lock = useCallback((value: boolean) => { state.current.blocked = value; setBlocked(value); }, []);
   const loseAuth = useCallback(() => {
+    cachedOverview = undefined;
     state.current.data = undefined;
     setData(undefined); setAuth(true); lock(true);
     setReadError('登录已失效，请重新登录管理员账号');
@@ -49,11 +51,13 @@ export function useOverview() {
     s.read?.abort();
     const controller = new AbortController(), epoch = s.epoch;
     s.read = controller; s.readKind = 'bootstrap';
-    setLoading(true); setReadError('');
+    if (!s.data) setLoading(true);
+    setReadError('');
     const timeout = window.setTimeout(() => controller.abort(), 10_000);
     try {
       const next = await readJson('/api/v1/admin/overview-page', controller.signal, parseOverview);
       if (!usable(epoch) || s.read !== controller) return false;
+      cachedOverview = next;
       s.data = next; s.failures = 0;
       setData(next); setAuth(false); lock(false); setPollStatus('自动更新 · 30 s');
       return true;

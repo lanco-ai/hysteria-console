@@ -2,6 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 
 const REQUEST_TIMEOUT_MS = 10_000;
 
+// Keep successful reads in the current document so returning to a page is
+// immediate. Every mount still revalidates in the background, so this is a
+// stale-while-revalidate cache rather than a replacement for server reads.
+const RESOURCE_CACHE = new Map<string, unknown>();
+
 export type ResourceAccessCode = 'login_required' | 'forbidden' | 'disabled' | 'expired' | 'password_change_required';
 
 const ACCESS_CODES = new Set<ResourceAccessCode>([
@@ -54,7 +59,12 @@ type ReadResourceResult<T> =
 
 export function useReadResource<T>(url: string, { enabled = true, validate }: ReadResourceOptions<T>): ReadResourceResult<T> {
   const [version, setVersion] = useState(0);
-  const [state, setState] = useState<ResourceState<T>>({ status: enabled ? 'loading' : 'idle' });
+  const [state, setState] = useState<ResourceState<T>>(() => {
+    if (!enabled) return { status: 'idle' };
+    return RESOURCE_CACHE.has(url)
+      ? { status: 'success', data: RESOURCE_CACHE.get(url) as T }
+      : { status: 'loading' };
+  });
 
   const retry = useCallback(() => setVersion(value => value + 1), []);
 
@@ -71,7 +81,12 @@ export function useReadResource<T>(url: string, { enabled = true, validate }: Re
       timedOut = true;
       controller.abort();
     }, REQUEST_TIMEOUT_MS);
-    setState({ status: 'loading' });
+    const hasCachedData = RESOURCE_CACHE.has(url);
+    if (hasCachedData) {
+      setState({ status: 'success', data: RESOURCE_CACHE.get(url) as T });
+    } else {
+      setState({ status: 'loading' });
+    }
 
     void (async () => {
       try {
@@ -100,9 +115,15 @@ export function useReadResource<T>(url: string, { enabled = true, validate }: Re
         } catch {
           throw new ResourceError('响应数据格式无效');
         }
-        if (active) setState({ status: 'success', data });
+        if (active) {
+          RESOURCE_CACHE.set(url, data);
+          setState({ status: 'success', data });
+        }
       } catch (error) {
         if (!active) return;
+        // Keep stale data visible if a background revalidation fails. A page
+        // that has never loaded still receives the normal error state.
+        if (hasCachedData) return;
         if (timedOut) {
           setState({ status: 'error', error: new ResourceError('请求超时，请重试') });
         } else if (error instanceof ResourceError) {
