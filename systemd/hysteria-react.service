@@ -1,5 +1,5 @@
 [Unit]
-Description=Hysteria React/FastAPI Panel (staged)
+Description=Hysteria React/FastAPI Panel (opt-in)
 Wants=network-online.target
 After=network-online.target hysteria-subscription.service
 Requires=hysteria-subscription.service
@@ -33,7 +33,8 @@ TasksMax=32
 MemoryHigh=384M
 MemoryMax=512M
 
-# This unit is staged only.  It is deliberately not installed or enabled by
-# deploy.sh until the React route cutover receives explicit approval.
+# deploy.sh installs and enables this unit only when HY_ENABLE_REACT_PANEL=1.
+# The flag stages the runtime and keeps nginx on the legacy route; switching
+# public documents remains a separate, explicitly approved operation.
 [Install]
 WantedBy=multi-user.target

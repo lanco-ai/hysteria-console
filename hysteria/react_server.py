@@ -2,8 +2,9 @@
 
 This module is intentionally separate from the legacy ``subscription_service``
 listener.  A release may run it on loopback for pre-production verification;
-the existing deploy script does not install or enable it until the cutover
-checklist is approved.
+``deploy.sh`` installs and enables it only with the explicit
+``HY_ENABLE_REACT_PANEL=1`` flag, while the public nginx route remains legacy
+until a separately approved cutover.
 """
 
 import os

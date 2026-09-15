@@ -104,6 +104,7 @@ sudo ./deploy.sh
 | `HY_HYSTERIA_VERSION` | `v2.9.3` | `deploy.sh` 安装并校验摘要的 Hysteria 固定版本。 |
 | `HY_XRAY_VERSION` | `v26.6.27` | 从仓库固定校验值归档安装的 Xray 精确版本。 |
 | `HY_ENABLE_HTTPS` | `1` | 仅在明确采用私网 HTTP 部署时设为 `0`。 |
+| `HY_ENABLE_REACT_PANEL` | `0` | 可选安装已校验的 React/FastAPI 运行时到回环地址 `127.0.0.1:8083`；不会自动切换 nginx 路由。 |
 | `HY_CERTBOT_EMAIL` | 空 | 可选的 Let's Encrypt 账户邮箱。 |
 | `HY_HTTPS_PORT` | `9444` | nginx TLS 端口，不得与 Xray/TUIC 冲突。 |
 

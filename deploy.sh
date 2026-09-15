@@ -42,6 +42,10 @@ HYSTERIA_INSTALL_REQUIRED=0
 TUIC_CANDIDATE=""
 TUIC_DOWNLOAD=""
 TUIC_INSTALL_REQUIRED=0
+REACT_RELEASE_ID=""
+REACT_RELEASE_CREATED=0
+REACT_RELEASE_ACTIVE=0
+REACT_VENV_CREATED=0
 CERT_CANDIDATE=""
 KEY_CANDIDATE=""
 OUTER_RECOVERY_HELPER="$REPO_DIR/scripts/hy2-deploy-recovery.py"
@@ -81,6 +85,7 @@ declare -a DEPLOY_MANAGED_UNITS=(
   hysteria-auth.service
   hysteria-server.service
   hysteria-subscription.service
+  hysteria-react.service
   hysteria-traffic-limiter.timer
   hysteria-traffic-limiter.service
   hy2-backup.timer
@@ -112,6 +117,31 @@ declare -a CRITICAL_UNITS=(
   hysteria-server.service
   xray.service
   tuic-server.service
+)
+declare -a REACT_WEB_API_MODULES=(
+  __init__.py
+  account_models.py
+  account_routes.py
+  app.py
+  compat_routes.py
+  config_models.py
+  document_routes.py
+  health_models.py
+  health_routes.py
+  incident_models.py
+  landing_models.py
+  landing_routes.py
+  models.py
+  operation_models.py
+  operation_routes.py
+  overview_models.py
+  requests.py
+  rules_routes.py
+  services.py
+  usage_models.py
+  user_detail_models.py
+  user_detail_routes.py
+  user_models.py
 )
 declare -a PREVIOUSLY_ACTIVE_UNITS=()
 declare -A PREVIOUS_ENABLE_STATE=()
@@ -305,6 +335,7 @@ build_durable_artifact_set() {
     hysteria_update.py \
     display.py \
     timeutil.py \
+    react_server.py \
     admin.css \
     admin_poll.js \
     usage.js \
@@ -321,6 +352,30 @@ build_durable_artifact_set() {
     static/fonts/jetbrains-mono.woff2; do
     add_durable_artifact "$HY_DIR/$name"
   done
+  add_durable_artifact "$HY_DIR/web_api/__init__.py"
+  add_durable_artifact "$HY_DIR/web_api/account_models.py"
+  add_durable_artifact "$HY_DIR/web_api/account_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/app.py"
+  add_durable_artifact "$HY_DIR/web_api/compat_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/config_models.py"
+  add_durable_artifact "$HY_DIR/web_api/document_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/health_models.py"
+  add_durable_artifact "$HY_DIR/web_api/health_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/incident_models.py"
+  add_durable_artifact "$HY_DIR/web_api/landing_models.py"
+  add_durable_artifact "$HY_DIR/web_api/landing_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/models.py"
+  add_durable_artifact "$HY_DIR/web_api/operation_models.py"
+  add_durable_artifact "$HY_DIR/web_api/operation_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/overview_models.py"
+  add_durable_artifact "$HY_DIR/web_api/requests.py"
+  add_durable_artifact "$HY_DIR/web_api/rules_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/services.py"
+  add_durable_artifact "$HY_DIR/web_api/usage_models.py"
+  add_durable_artifact "$HY_DIR/web_api/user_detail_models.py"
+  add_durable_artifact "$HY_DIR/web_api/user_detail_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/user_models.py"
+  add_durable_artifact "$HY_DIR/panel/current"
   add_durable_artifact "$HY_DIR/state/https_required"
   if [[ ! -f "$HY_DIR/template.yaml" ]]; then
     add_durable_artifact "$HY_DIR/template.yaml"
@@ -345,6 +400,8 @@ build_durable_artifact_set() {
     /usr/local/share/hy2/hysteria-panel-log.conf \
     /usr/local/share/hy2/hysteria-panel-https.conf \
     /usr/local/share/hy2/hysteria-panel-redirect.conf \
+    /usr/local/share/hy2/hysteria-panel-react.conf \
+    /usr/local/share/hy2/hysteria-panel-react-https.conf \
     /usr/local/share/hy2/hy2-cert-renew-hook.sh \
     /etc/logrotate.d/xray \
     /etc/sysctl.d/99-hysteria-udp.conf \
@@ -362,6 +419,7 @@ build_durable_artifact_set() {
     "$SYSTEMD_DIR/hysteria-server.service" \
     "$SYSTEMD_DIR/hysteria-auth.service" \
     "$SYSTEMD_DIR/hysteria-subscription.service" \
+    "$SYSTEMD_DIR/hysteria-react.service" \
     "$SYSTEMD_DIR/hysteria-traffic-limiter.service" \
     "$SYSTEMD_DIR/hysteria-traffic-limiter.timer" \
     "$SYSTEMD_DIR/hy2-backup.service" \
@@ -726,6 +784,8 @@ restore_services_on_failure() {
     if ! outer_recovery recover; then
       rollback_failed=1
       warn "Durable recovery failed closed; the root-only journal remains at /var/lib/hysteria/deploy-recovery/pending"
+    else
+      cleanup_staged_react_release
     fi
   elif [[ "$DEPLOY_SUCCEEDED" != "1" && "$ROLLBACK_ACTIVE" == "1" ]]; then
     warn "Deployment failed; restoring the previous runtime artifacts and service state."
@@ -760,6 +820,7 @@ restore_services_on_failure() {
         fi
       done
     fi
+    cleanup_staged_react_release
   fi
   if [[ "$rollback_failed" == "1" ]]; then
     if [[ "${DURABLE_RECOVERY_PREPARED:-0}" == "1" ]]; then
@@ -855,6 +916,13 @@ HY_HYSTERIA_VERSION="${HY_HYSTERIA_VERSION:-$HYSTERIA_PINNED_VERSION}"
 HY_XRAY_VERSION="${HY_XRAY_VERSION:-$XRAY_PINNED_VERSION}"
 HY_ENABLE_HTTPS="${HY_ENABLE_HTTPS:-1}"
 HY_HTTPS_PORT="${HY_HTTPS_PORT:-9444}"
+HY_ENABLE_REACT_PANEL="${HY_ENABLE_REACT_PANEL:-0}"
+
+case "$HY_ENABLE_REACT_PANEL" in
+  0) ;;
+  1) CRITICAL_UNITS+=(hysteria-react.service) ;;
+  *) die "HY_ENABLE_REACT_PANEL must be 0 or 1" ;;
+esac
 
 validate_template_value() {
   local name="$1" value="${!1-}"
@@ -874,6 +942,7 @@ for v in \
   export "$v"
 done
 export HY_HYSTERIA_VERSION HY_XRAY_VERSION HY_ENABLE_HTTPS HY_HTTPS_PORT
+export HY_ENABLE_REACT_PANEL
 export HYSTERIA_PINNED_VERSION
 export XRAY_PINNED_VERSION
 
@@ -1130,7 +1199,14 @@ ROLLBACK_ACTIVE=1
 log "Installing OS packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y >/dev/null
-apt-get install -y curl openssl iptables nftables ca-certificates python3 python3-yaml nginx qrencode logrotate fail2ban >/dev/null
+declare -a DEPLOY_PACKAGES=(
+  curl openssl iptables nftables ca-certificates python3 python3-yaml
+  nginx qrencode logrotate fail2ban
+)
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  DEPLOY_PACKAGES+=(python3-venv)
+fi
+apt-get install -y "${DEPLOY_PACKAGES[@]}" >/dev/null
 
 # ---------- 3. Install/upgrade hysteria binary ----------
 installed_hysteria_sha256=""
@@ -1393,6 +1469,84 @@ symlink_atomic() {
   fi
 }
 
+stage_react_release() {
+  [[ "$HY_ENABLE_REACT_PANEL" == "1" ]] || return 0
+  local dist="$REPO_DIR/frontend/dist"
+  local panel_root="$HY_DIR/panel"
+  local release_target result release_existed=0
+  [[ -d "$dist" && ! -L "$dist" ]] ||
+    die "React build directory is missing or unsafe: $dist"
+  install -d -o root -g root -m 755 "$panel_root"
+  if [[ -e "$panel_root/current" || -L "$panel_root/current" ]]; then
+    [[ -L "$panel_root/current" ]] ||
+      die "React current release pointer is not a symlink"
+  fi
+  result="$(
+    /usr/bin/python3 -I "$REPO_DIR/scripts/hy2_panel_release.py" \
+      validate "$dist"
+  )" || die "Could not validate the React asset release"
+  REACT_RELEASE_ID="$(
+    printf '%s' "$result" |
+      /usr/bin/python3 -I -c 'import json,sys; print(json.load(sys.stdin)["release_id"])'
+  )" || die "React release output was invalid"
+  [[ "$REACT_RELEASE_ID" =~ ^[0-9a-f]{24}$ ]] ||
+    die "React release id was invalid"
+  release_target="$panel_root/releases/$REACT_RELEASE_ID"
+  if [[ -e "$release_target" || -L "$release_target" ]]; then
+    release_existed=1
+  else
+    # Mark before installation so a partially created release is removed if
+    # the helper exits non-zero before the durable snapshot starts.
+    REACT_RELEASE_CREATED=1
+  fi
+  /usr/bin/python3 -I "$REPO_DIR/scripts/hy2_panel_release.py" \
+    install "$dist" "$panel_root" >/dev/null ||
+    die "Could not install the verified React asset release"
+  [[ -d "$release_target" && ! -L "$release_target" ]] ||
+    die "React release was not installed as a regular directory"
+  # The release helper is content-addressed and may have reused an existing
+  # release. Only remove a release that did not exist before this call.
+  log "Verified React asset release $REACT_RELEASE_ID (route remains legacy until cutover)."
+}
+
+cleanup_staged_react_release() {
+  local release_target venv="$HY_DIR/.venv-web"
+  if [[ "$REACT_RELEASE_CREATED" == "1" &&
+        "$REACT_RELEASE_ID" =~ ^[0-9a-f]{24}$ ]]; then
+    release_target="$HY_DIR/panel/releases/$REACT_RELEASE_ID"
+    if [[ -d "$release_target" && ! -L "$release_target" ]]; then
+      rm -rf -- "$release_target" 2>/dev/null ||
+        warn "Could not remove the newly staged React release: $release_target"
+    fi
+    REACT_RELEASE_CREATED=0
+  fi
+  if [[ "$REACT_VENV_CREATED" == "1" && -d "$venv" && ! -L "$venv" ]]; then
+    rm -rf -- "$venv" 2>/dev/null ||
+      warn "Could not remove the newly created React web virtualenv: $venv"
+    REACT_VENV_CREATED=0
+  fi
+}
+
+install_react_runtime() {
+  [[ "$HY_ENABLE_REACT_PANEL" == "1" ]] || return 0
+  local venv="$HY_DIR/.venv-web"
+  # A previous opt-in deployment may already have the ASGI unit running;
+  # quiesce it before pip mutates the shared virtualenv.
+  systemctl stop hysteria-react.service 2>/dev/null || true
+  require_unit_quiescent hysteria-react.service
+  [[ -f "$REPO_DIR/requirements-web.txt" &&
+     ! -L "$REPO_DIR/requirements-web.txt" ]] ||
+    die "React web requirements file is missing or unsafe"
+  if [[ ! -x "$venv/bin/python" ]]; then
+    python3 -m venv "$venv" || die "Could not create the React web virtualenv"
+    REACT_VENV_CREATED=1
+  fi
+  "$venv/bin/python" -m pip install \
+    --disable-pip-version-check --no-input --no-cache-dir \
+    -r "$REPO_DIR/requirements-web.txt" >/dev/null ||
+    die "Could not install the pinned React web runtime dependencies"
+}
+
 wait_for_stable_readiness() {
   # wait_for_stable_readiness [required_streak] [max_attempts] [delay_seconds]
   # A full observation includes every required unit, auth's deep dependency
@@ -1422,6 +1576,11 @@ wait_for_stable_readiness() {
     if (( all_ready )) &&
       ! curl -fsS --noproxy '*' --max-time 3 \
         http://127.0.0.1:8081/healthz >/dev/null; then
+      all_ready=0
+    fi
+    if (( all_ready )) && [[ "${HY_ENABLE_REACT_PANEL:-0}" == "1" ]] &&
+      ! curl -fsS --noproxy '*' --max-time 3 \
+        http://127.0.0.1:8083/ >/dev/null; then
       all_ready=0
     fi
 
@@ -1484,6 +1643,11 @@ require_unit_active() {
     die "Required service is not authoritatively active: $unit (systemctl rc: $SYSTEMCTL_ACTIVE_RC, state: ${SYSTEMCTL_ACTIVE_STATE:-<empty>})"
   fi
 }
+
+# Stage the immutable React release before quiescing shared services. The
+# content-addressed release is not active until the durable pointer swap below.
+stage_react_release
+install_react_runtime
 
 # Quiesce every critical reader/writer only after package and binary
 # installation has succeeded. Block every scheduled activation first, then
@@ -1719,6 +1883,11 @@ for artifact in \
   /etc/systemd/journald.conf.d/60-hy2-limits.conf; do
   capture_artifact_snapshot "$artifact"
 done
+capture_artifact_snapshot "$HY_DIR/react_server.py"
+for module in "${REACT_WEB_API_MODULES[@]}"; do
+  capture_artifact_snapshot "$HY_DIR/web_api/$module"
+done
+capture_artifact_snapshot "$HY_DIR/panel/current"
 
 install -d -m 755 "$HY_DIR" "$HY_DIR/state"
 if ! getent group hy2-xray >/dev/null; then
@@ -1852,6 +2021,33 @@ render "$REPO_DIR/hysteria/user_compat.py"           "$HY_DIR/user_compat.py"
 render "$REPO_DIR/hysteria/hysteria_update.py"       "$HY_DIR/hysteria_update.py"
 render "$REPO_DIR/hysteria/display.py"               "$HY_DIR/display.py"
 render "$REPO_DIR/hysteria/timeutil.py"              "$HY_DIR/timeutil.py"
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  render "$REPO_DIR/hysteria/react_server.py" "$HY_DIR/react_server.py"
+  install -d -o root -g root -m 755 "$HY_DIR/web_api"
+  render "$REPO_DIR/hysteria/web_api/__init__.py" "$HY_DIR/web_api/__init__.py"
+  render "$REPO_DIR/hysteria/web_api/account_models.py" "$HY_DIR/web_api/account_models.py"
+  render "$REPO_DIR/hysteria/web_api/account_routes.py" "$HY_DIR/web_api/account_routes.py"
+  render "$REPO_DIR/hysteria/web_api/app.py" "$HY_DIR/web_api/app.py"
+  render "$REPO_DIR/hysteria/web_api/compat_routes.py" "$HY_DIR/web_api/compat_routes.py"
+  render "$REPO_DIR/hysteria/web_api/config_models.py" "$HY_DIR/web_api/config_models.py"
+  render "$REPO_DIR/hysteria/web_api/document_routes.py" "$HY_DIR/web_api/document_routes.py"
+  render "$REPO_DIR/hysteria/web_api/health_models.py" "$HY_DIR/web_api/health_models.py"
+  render "$REPO_DIR/hysteria/web_api/health_routes.py" "$HY_DIR/web_api/health_routes.py"
+  render "$REPO_DIR/hysteria/web_api/incident_models.py" "$HY_DIR/web_api/incident_models.py"
+  render "$REPO_DIR/hysteria/web_api/landing_models.py" "$HY_DIR/web_api/landing_models.py"
+  render "$REPO_DIR/hysteria/web_api/landing_routes.py" "$HY_DIR/web_api/landing_routes.py"
+  render "$REPO_DIR/hysteria/web_api/models.py" "$HY_DIR/web_api/models.py"
+  render "$REPO_DIR/hysteria/web_api/operation_models.py" "$HY_DIR/web_api/operation_models.py"
+  render "$REPO_DIR/hysteria/web_api/operation_routes.py" "$HY_DIR/web_api/operation_routes.py"
+  render "$REPO_DIR/hysteria/web_api/overview_models.py" "$HY_DIR/web_api/overview_models.py"
+  render "$REPO_DIR/hysteria/web_api/requests.py" "$HY_DIR/web_api/requests.py"
+  render "$REPO_DIR/hysteria/web_api/rules_routes.py" "$HY_DIR/web_api/rules_routes.py"
+  render "$REPO_DIR/hysteria/web_api/services.py" "$HY_DIR/web_api/services.py"
+  render "$REPO_DIR/hysteria/web_api/usage_models.py" "$HY_DIR/web_api/usage_models.py"
+  render "$REPO_DIR/hysteria/web_api/user_detail_models.py" "$HY_DIR/web_api/user_detail_models.py"
+  render "$REPO_DIR/hysteria/web_api/user_detail_routes.py" "$HY_DIR/web_api/user_detail_routes.py"
+  render "$REPO_DIR/hysteria/web_api/user_models.py" "$HY_DIR/web_api/user_models.py"
+fi
 install_atomic 644 "$REPO_DIR/hysteria/admin.css"      "$HY_DIR/admin.css"
 install_atomic 644 "$REPO_DIR/hysteria/admin_poll.js"  "$HY_DIR/admin_poll.js"
 install_atomic 644 "$REPO_DIR/hysteria/usage.js"       "$HY_DIR/usage.js"
@@ -1950,6 +2146,12 @@ chmod 700 \
   "$HY_DIR/user_compat.py" \
   "$HY_DIR/display.py" \
   "$HY_DIR/timeutil.py"
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  chmod 700 "$HY_DIR/react_server.py"
+  for module in "${REACT_WEB_API_MODULES[@]}"; do
+    chmod 700 "$HY_DIR/web_api/$module"
+  done
+fi
 PYTHONPYCACHEPREFIX="$(mktemp -d "$HY_DIR/state/.deploy-pycache.XXXXXX")"
 export PYTHONPYCACHEPREFIX
 if ! python3 -m py_compile \
@@ -2123,6 +2325,14 @@ install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-log.conf" /usr/local/share/hy
 install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-https.conf" /usr/local/share/hy2/hysteria-panel-https.conf
 install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-redirect.conf" /usr/local/share/hy2/hysteria-panel-redirect.conf
 install_atomic 644 "$REPO_DIR/scripts/hy2-cert-renew-hook.sh" /usr/local/share/hy2/hy2-cert-renew-hook.sh
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  # Keep the dual-backend templates available for a separately approved route
+  # switch; this deployment intentionally leaves the active nginx vhost legacy.
+  install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-react.conf" \
+    /usr/local/share/hy2/hysteria-panel-react.conf
+  install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-react-https.conf" \
+    /usr/local/share/hy2/hysteria-panel-react-https.conf
+fi
 
 # ---------- 8b. Network tuning ----------
 log "Installing network tuning..."
@@ -2190,6 +2400,10 @@ install_atomic 644 "$REPO_DIR/systemd/hysteria-auth.service" \
   "$SYSTEMD_DIR/hysteria-auth.service"
 install_atomic 644 "$REPO_DIR/systemd/hysteria-subscription.service" \
   "$SYSTEMD_DIR/hysteria-subscription.service"
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  install_atomic 644 "$REPO_DIR/systemd/hysteria-react.service" \
+    "$SYSTEMD_DIR/hysteria-react.service"
+fi
 install_atomic 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.service" \
   "$SYSTEMD_DIR/hysteria-traffic-limiter.service"
 install_atomic 644 "$REPO_DIR/systemd/hysteria-traffic-limiter.timer" \
@@ -2236,6 +2450,13 @@ fail2ban-client -t >/dev/null
 systemctl restart systemd-journald.service
 systemctl restart fail2ban.service
 
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  [[ "$REACT_RELEASE_ID" =~ ^[0-9a-f]{24}$ ]] ||
+    die "React release was not staged before activation"
+  symlink_atomic "releases/$REACT_RELEASE_ID" "$HY_DIR/panel/current"
+  REACT_RELEASE_ACTIVE=1
+fi
+
 # ---------- 11. Enable + start ----------
 log "Enabling and starting services..."
 systemctl enable --now hysteria-porthop.service
@@ -2254,6 +2475,9 @@ done
   die "Hysteria authentication service failed its shallow liveness check"
 systemctl enable --now hysteria-server.service
 systemctl enable --now hysteria-subscription.service
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  systemctl enable --now hysteria-react.service
+fi
 systemctl enable --now hysteria-traffic-limiter.timer
 systemctl enable --now hy2-backup.timer
 systemctl enable --now hy2-health-check.timer
@@ -2286,6 +2510,9 @@ required_active_units=(
   xray.service
   tuic-server.service
 )
+if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+  required_active_units+=(hysteria-react.service)
+fi
 wait_for_stable_readiness 3 15 1 ||
   die "Deployment did not sustain three consecutive healthy observations"
 

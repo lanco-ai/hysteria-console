@@ -11,15 +11,17 @@
   大小/并发边界，以及隔离预览和浏览器合同测试。
 - 预发布 ASGI 入口 `hysteria/react_server.py`、单 worker loopback systemd
   模板和 `requirements-web.txt` 的 Uvicorn 版本已固定；入口会优先读取受控的
-  `panel/current` 发布指针，并在无指针时回退到源码 dist。这些文件尚未由部署
-  脚本安装或启用。
+  `panel/current` 发布指针，并在无指针时回退到源码 dist。`deploy.sh` 在显式
+  设置 `HY_ENABLE_REACT_PANEL=1` 时会安装 web runtime、入口、`web_api` 模块、
+  已校验的 dist 发布和 systemd 单元；默认值 `0` 不改变 legacy 运行路径。
 - 已准备未启用的双后端 Nginx 模板 `nginx/hysteria-panel-react.conf` 与
   `nginx/hysteria-panel-react-https.conf`：React 文档/API/构建资源指向 8083，
   订阅、二维码、legacy 下载/表单和未知路径保留 8081；路由清单合同测试会检查
   两个入口及 legacy 读取边界的一致性。
 - 已增加 `scripts/hy2_panel_release.py`，可在临时根目录校验、安装并原子切换
   React `dist` 发布指针；它会拒绝符号链接、源码映射、越界路径和缺失的
-  manifest 资源。该工具尚未接入生产部署事务。
+  manifest 资源。`deploy.sh` 的显式 React 部署路径会调用它，并在失败恢复时
+  清理本次新建的发布目录。
 - 旧 Codex 额度入口、接口和静态资源保持不可用；未改动代理配置、证书、
   域名或现有 443/9444 nginx 监听。
 
@@ -28,15 +30,13 @@
 以下事项完成前不得把 `/admin` 或 `/user/panel` 指向 React：
 
 1. 生产运行时仍由 `systemd/hysteria-subscription.service` 启动
-   `hysteria/subscription_service.py`（127.0.0.1:8081）。ASGI 入口和单元目前
-   只作为预发布模板存在，`deploy.sh` 尚未安装 web 运行环境、入口或单元，
-   也没有启用 8083 loopback 服务。
-2. `deploy.sh` 尚未安装 `hysteria/web_api/`、`frontend/dist` 或配套静态
-   资源，也未调用 React 发布指针工具，因此直接执行部署不会带上新面板。
-3. 需要在临时副本验证所有 legacy/React 方法、深链接、下载、订阅/二维码、
+   `hysteria/subscription_service.py`（127.0.0.1:8081）。即使启用
+   `HY_ENABLE_REACT_PANEL=1`，部署脚本也只会启动 8083 loopback ASGI 服务并保留
+   active nginx vhost 为 legacy；公开路由切换仍需单独批准。
+2. 需要在临时副本验证所有 legacy/React 方法、深链接、下载、订阅/二维码、
    证据、CSV、改密、登出及四种用户生命周期，并保存同一版本的资产与服务
    单元，才能形成可回滚发布包。
-4. 需要取得明确的生产切换批准；本清单不执行 nginx、证书、systemd 或线上
+3. 需要取得明确的生产切换批准；本清单不执行 nginx、证书、systemd 或线上
    数据修改。
 
 ## 预发布验证
@@ -47,8 +47,8 @@
 PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh
 npm run check:frontend
 PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/pytest -q \
-  tests/test_react_route_parity.py tests/test_react_cutover_config.py \
-  tests/test_react_release.py
+  tests/test_react_deploy_wiring.py tests/test_react_route_parity.py \
+  tests/test_react_cutover_config.py tests/test_react_release.py
 PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/python tests/run_react_browser.py
 bash -n deploy.sh
 ```
@@ -77,7 +77,8 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
 - 后端完整套件：`2235 passed, 80 warnings`。
 - React 浏览器矩阵：公共首页、登录/退出、改密、总览、流量分析、健康状态、
   事故处理、模板配置、路由规则、家宽出口和完整用户面板均通过。
-- 路由/发布工具合同：15 项通过；`scripts/check-quality.sh --lint-only`、
+- 路由/发布工具合同：15 项通过；部署 wiring、恢复白名单和供应链合同：125 项
+  通过；`scripts/check-quality.sh --lint-only`、
   `bash -n deploy.sh` 和 `git diff --check` 通过。
 - 上述证据来自隔离预览和临时发布根目录；未验证线上 Nginx、域名证书、443/9444
   监听或真实回滚，因此不构成生产切换完成证明。
