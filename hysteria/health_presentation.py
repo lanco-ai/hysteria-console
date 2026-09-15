@@ -47,6 +47,47 @@ class HealthPresentation:
             results = dict(ex.map(run, probes))
         return results
 
+    def _health_probe_specs(self):
+        return (
+            ('CRON 心跳', self.probe_cron_heartbeat),
+            ('鉴权服务', lambda: self.probe_systemd('hysteria-auth.service')),
+            ('鉴权依赖', self.probe_auth_readiness),
+            ('Hysteria', lambda: self.probe_systemd('hysteria-server.service')),
+            ('Xray', lambda: self.probe_systemd('xray.service')),
+            ('TUIC', lambda: self.probe_systemd('tuic-server.service')),
+            ('限流 Timer', lambda: self.probe_systemd('hysteria-traffic-limiter.timer')),
+            ('TLS 证书', self.probe_cert),
+            ('面板 HTTPS', self.probe_panel_tls),
+            ('证书自动续期', self.probe_certbot_renewal),
+            ('在线用户', self.probe_online),
+            ('Xray 配置权限', self.probe_xray_config_permissions),
+            ('Hysteria 更新', self.probe_hysteria_update),
+            ('最近备份', self.probe_recent_backup),
+            ('磁盘', self.probe_disk),
+        )
+
+    def _probe_rows(self):
+        """Run independent probes and return stable structured rows."""
+        def run_probe(item):
+            title, probe = item
+            try:
+                result = probe()
+                if not isinstance(result, dict):
+                    raise ValueError('invalid health probe result')
+                return {
+                    'title': title,
+                    'ok': bool(result.get('ok')),
+                    'label': str(result.get('label', '未知')),
+                }
+            except Exception:
+                return {'title': title, 'ok': False, 'label': '探测失败'}
+
+        with ThreadPoolExecutor(
+            max_workers=min(8, len(self._health_probe_specs())),
+            thread_name_prefix='health-probe',
+        ) as executor:
+            return list(executor.map(run_probe, self._health_probe_specs()))
+
     def _probe_overall_status(self):
         """Healthy if all core services are up and no certs are expiring."""
         checks = [
@@ -111,36 +152,7 @@ class HealthPresentation:
 
     def _render_health_cards(self):
         """Run independent probes concurrently while preserving card order."""
-        probes = (
-            ('CRON 心跳', self.probe_cron_heartbeat),
-            ('鉴权服务', lambda: self.probe_systemd('hysteria-auth.service')),
-            ('鉴权依赖', self.probe_auth_readiness),
-            ('Hysteria', lambda: self.probe_systemd('hysteria-server.service')),
-            ('Xray', lambda: self.probe_systemd('xray.service')),
-            ('TUIC', lambda: self.probe_systemd('tuic-server.service')),
-            ('限流 Timer', lambda: self.probe_systemd('hysteria-traffic-limiter.timer')),
-            ('TLS 证书', self.probe_cert),
-            ('面板 HTTPS', self.probe_panel_tls),
-            ('证书自动续期', self.probe_certbot_renewal),
-            ('在线用户', self.probe_online),
-            ('Xray 配置权限', self.probe_xray_config_permissions),
-            ('Hysteria 更新', self.probe_hysteria_update),
-            ('最近备份', self.probe_recent_backup),
-            ('磁盘', self.probe_disk),
+        return ''.join(
+            self._health_card(row['title'], row)
+            for row in self._probe_rows()
         )
-
-        def run_probe(item):
-            title, probe = item
-            try:
-                result = probe()
-                if not isinstance(result, dict):
-                    raise ValueError('invalid health probe result')
-            except Exception:
-                result = {'ok': False, 'label': '探测失败'}
-            return self._health_card(title, result)
-
-        with ThreadPoolExecutor(
-            max_workers=min(8, len(probes)),
-            thread_name_prefix='health-probe',
-        ) as executor:
-            return ''.join(executor.map(run_probe, probes))

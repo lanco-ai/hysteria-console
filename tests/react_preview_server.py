@@ -30,6 +30,7 @@ REACT_PAGES = {
     '/__react/admin/logs': ('清零日志', 'has-shell'),
     '/__react/admin/settings': ('设置', 'has-shell'),
     '/__react/admin/usage': ('流量分析', 'has-shell'),
+    '/__react/admin/health': ('健康状态', 'has-shell'),
     '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),

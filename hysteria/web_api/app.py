@@ -32,6 +32,7 @@ from .overview_models import AdminOverviewPageResponse
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .usage_models import (
+    AdminHealthResponse,
     AdminUsageHistoryResponse,
     AdminUsageResponse,
     AdminUsageSummaryResponse,
@@ -116,6 +117,11 @@ def _usage_response(payload, *, include_charts):
 
 def _usage_history_response(payload):
     model = AdminUsageHistoryResponse.model_validate(payload)
+    return JSONResponse(model.model_dump())
+
+
+def _health_response(payload):
+    model = AdminHealthResponse.model_validate(payload)
     return JSONResponse(model.model_dump())
 
 
@@ -395,6 +401,16 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _usage_history_response(payload)
+
+    @app.api_route('/api/v1/admin/health', methods=['GET', 'HEAD'])
+    async def admin_health(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_health, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _health_response(payload)
 
     @app.api_route('/api/v1/admin/settings', methods=['GET', 'HEAD'])
     async def admin_settings(request: Request):

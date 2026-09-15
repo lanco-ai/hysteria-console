@@ -2078,6 +2078,24 @@ def _render_health_cards():
     return _health_presentation()._render_health_cards()
 
 
+def _build_health_json_payload(*, now=None):
+    now = now or local_now()
+    presenter = _health_presentation()
+    kpis = presenter._render_health_top_kpis()
+    return {
+        'ts': now.isoformat(timespec='seconds'),
+        'kpis': [
+            {
+                'title': title,
+                'ok': bool(result.get('ok')),
+                'label': str(result.get('label', '未知')),
+            }
+            for title, result in kpis.items()
+        ],
+        'services': presenter._probe_rows(),
+    }
+
+
 def _health_widget_context():
     return health_widgets.HealthWidgetContext(
         display_multiplier=current_display_multiplier(),

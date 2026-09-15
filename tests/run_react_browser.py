@@ -33,6 +33,7 @@ def main():
         'react_password_pages_browser.cjs',
         'react_overview_browser.cjs',
         'react_usage_browser.cjs',
+        'react_health_browser.cjs',
     )
     selected = os.environ.get('REACT_BROWSER_TEST')
     if selected is not None and selected not in browser_tests:
@@ -45,6 +46,7 @@ def main():
             overview_fixture=browser_test in {
                 'react_overview_browser.cjs',
                 'react_usage_browser.cjs',
+                'react_health_browser.cjs',
             }
         ) as server:
             env = dict(

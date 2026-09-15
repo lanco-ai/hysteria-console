@@ -1,6 +1,6 @@
 """Explicit public response models for the administrator usage page."""
 
-from pydantic import StrictInt, StrictStr, field_validator, model_validator
+from pydantic import StrictBool, StrictInt, StrictStr, field_validator, model_validator
 
 from .models import PublicModel
 
@@ -125,3 +125,15 @@ class AdminUsageHistoryResponse(PublicModel):
             if len(row.values) != self.retention_days:
                 raise ValueError('history user arrays must match retention_days')
         return self
+
+
+class HealthStatusResponse(PublicModel):
+    title: StrictStr
+    ok: StrictBool
+    label: StrictStr
+
+
+class AdminHealthResponse(PublicModel):
+    ts: StrictStr
+    kpis: list[HealthStatusResponse]
+    services: list[HealthStatusResponse]

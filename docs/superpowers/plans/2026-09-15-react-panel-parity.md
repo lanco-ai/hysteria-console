@@ -54,8 +54,10 @@
 - `GET /api/v1/admin/incidents` exposes the incident list and supported actions; mutations use existing operation services and CSRF/form rules.
 
 - [ ] Capture failing contracts for health status, update-check actions, incident rendering, and unauthorized access.
-- [ ] Add adapters/models and React pages with accessible status, loading, retry, and mutation feedback.
-- [ ] Verify health probes and incident tests plus browser navigation from the sidebar.
+- [x] Capture failing health status contract and verify the missing route.
+- [x] Add a structured health adapter/model and React page with accessible status, loading, retry, and refresh feedback.
+- [x] Verify health probe regressions and browser navigation from the sidebar.
+- [ ] Add the incident read/write page and its operation contracts.
 
 ### Task 3: Network configuration pages
 
