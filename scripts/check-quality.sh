@@ -37,6 +37,7 @@ adopted=(
   tests/preview_http_server.py
   tests/workspace_preview_server.py tests/run_frontend_browser.py
   tests/test_preview_isolation.py tests/test_preview_page_parity.py
+  # Includes isolated React overview/account/operation fixture contracts.
   tests/react_preview_server.py tests/run_react_browser.py tests/test_react_preview.py
   hysteria/public_views.py hysteria/auth_views.py hysteria/admin_read_routes.py
   hysteria/admin_config_routes.py

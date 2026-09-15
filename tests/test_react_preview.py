@@ -1,6 +1,9 @@
 import http.client
 import json
+import os
 import socket
+import subprocess
+import sys
 import threading
 from contextlib import contextmanager
 from urllib.error import HTTPError
@@ -641,3 +644,86 @@ def test_react_preview_escapes_the_public_host_bootstrap(running_preview, monkey
         page = response.read().decode()
     assert 'data-public-host="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"' in page
     assert '<script>alert(1)</script>' not in page
+
+
+def test_react_overview_entry_and_scoped_account_operations(running_preview):
+    server, base_url = running_preview
+    cookie = f'sid={server.preview_admin_cookie}'
+    with urlopen(base_url + '/__react/admin', timeout=5) as response:
+        page = response.read().decode()
+    assert '<title>总览</title>' in page and 'admin-poll.js' not in page
+    assert _json(base_url + '/api/v1/admin/reload-status', cookie=cookie) == (
+        200,
+        {'pending': False, 'xray': False, 'tuic': False},
+    )
+    status, _, result = _post_form(
+        base_url + '/api/v1/admin/users/create',
+        {'user': 'overview_new', 'quota_gb': '150', 'quota_extra_gb': '0', 'guest': 'on'},
+        cookie=cookie,
+    )
+    assert (status, result) == (200, {'ok': True, 'outcome': 'created', 'user': 'overview_new'})
+    _, data = _json(base_url + '/api/v1/admin/overview-page', cookie=cookie)
+    row = next(row for row in data['users'] if row['user'] == 'overview_new')
+    status, _, result = _post_form(
+        base_url + '/api/v1/admin/operations/rotate-token',
+        {'user': 'overview_new', 'user_revision': row['revision']},
+        cookie=cookie,
+    )
+    assert (status, result) == (
+        200,
+        {
+            'ok': True,
+            'action': 'rotate-token',
+            'user': 'overview_new',
+            'code': 'rotated',
+        },
+    )
+    service = preview.legacy_preview.ss
+    queue_path = service._revocation_queue_path()
+    queue = service.load_json(queue_path, {})
+    assert len(queue) == 1
+    assert next(iter(queue.values()))['user'] == 'overview_new'
+    assert str(queue_path).startswith('/tmp/hy2-react-fixture-')
+    for url in ('/api/v1/admin/users/other', '/api/v1/admin/operations/other', '/admin/delete'):
+        request = Request(base_url + url, data=b'user=overview_new', method='POST')
+        with pytest.raises(HTTPError) as error:
+            urlopen(request, timeout=5)
+        assert error.value.code == 405
+
+
+def test_react_overview_fixture_nonzero_accounting_and_guards(tmp_path, monkeypatch):
+    monkeypatch.setattr(preview, 'DIST', running_preview_dist(tmp_path))
+    with preview.preview_server(overview_fixture=True) as server:
+        base_url = f'http://127.0.0.1:{server.server_port}'
+        cookie = f'sid={server.preview_admin_cookie}'
+        _, before = _json(base_url + '/api/v1/admin/overview-page', cookie=cookie)
+        row = next(row for row in before['users'] if row['user'] == 'demo_alex')
+        assert row['used'] > 0 and before['cycle']['total_used'] > row['used']
+        status, _, result = _post_form(
+            base_url + '/api/v1/admin/operations/refresh-usage',
+            {'user': row['user'], 'user_revision': row['revision']},
+            cookie=cookie,
+        )
+        assert status == 200 and result['action'] == 'refresh-usage'
+        _, after = _json(base_url + '/api/v1/admin/overview-page', cookie=cookie)
+        assert after['cycle']['total_used'] == before['cycle']['total_used']
+        assert next(row for row in after['users'] if row['user'] == 'demo_alex')['used'] == 0
+        with pytest.raises(PermissionError, match='production path'):
+            open('/root/hysteria/state/users.json')
+        with pytest.raises(PermissionError, match='external connection'):
+            socket.create_connection(('192.0.2.1', 443), timeout=0.1)
+        with pytest.raises(PermissionError, match='service command'):
+            subprocess.run(['systemctl', 'reload', 'hysteria'], check=True)
+
+
+def test_react_browser_selector_rejects_unknown_file():
+    result = subprocess.run(
+        [sys.executable, str(preview.ROOT / 'tests' / 'run_react_browser.py')],
+        cwd=preview.ROOT,
+        env={**os.environ, 'REACT_BROWSER_TEST': 'missing-browser-test.cjs'},
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    assert result.returncode != 0
+    assert 'unknown REACT_BROWSER_TEST' in result.stderr

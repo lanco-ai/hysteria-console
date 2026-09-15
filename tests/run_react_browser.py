@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 from react_preview_server import preview_server
@@ -24,14 +25,24 @@ def main():
     default_password_screenshots = (
         root / '.superpowers' / 'sdd' / '2026-09-12-react-password-pages' / 'task-1-screenshots'
     )
-    for browser_test in (
+    browser_tests = (
         'react_logs_browser.cjs',
         'react_home_browser.cjs',
         'react_login_browser.cjs',
         'react_logout_browser.cjs',
         'react_password_pages_browser.cjs',
-    ):
-        with preview_server() as server:
+        'react_overview_browser.cjs',
+    )
+    selected = os.environ.get('REACT_BROWSER_TEST')
+    if selected is not None and selected not in browser_tests:
+        print(f'unknown REACT_BROWSER_TEST: {selected}', file=sys.stderr)
+        raise SystemExit(64)
+    for browser_test in browser_tests:
+        if selected not in (None, browser_test):
+            continue
+        with preview_server(
+            overview_fixture=browser_test == 'react_overview_browser.cjs'
+        ) as server:
             env = dict(
                 os.environ,
                 PREVIEW_BASE_URL=f'http://127.0.0.1:{server.server_port}',

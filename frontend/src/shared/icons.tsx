@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-export type IconName = 'dashboard' | 'traffic' | 'pulse' | 'logs' | 'lock' | 'config' | 'rules' | 'logout';
+export type IconName = 'dashboard' | 'traffic' | 'pulse' | 'logs' | 'lock' | 'config' | 'rules' | 'logout' | 'copy' | 'open';
 
 const shared = {
   viewBox: '0 0 24 24',
@@ -14,6 +14,8 @@ const shared = {
 };
 
 export function Icon({ name }: { name: IconName }): ReactElement {
+  if (name === 'copy') return <svg {...shared}><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>;
+  if (name === 'open') return <svg {...shared}><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>;
   if (name === 'dashboard') {
     return <svg {...shared}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>;
   }

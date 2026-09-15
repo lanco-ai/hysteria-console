@@ -25,6 +25,7 @@ from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
+    '/__react/admin': ('总览', 'has-shell'),
     '/__react/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site'),
     '/__react/admin/logs': ('清零日志', 'has-shell'),
     '/__react/admin/settings': ('设置', 'has-shell'),
@@ -193,6 +194,16 @@ def _handler(api_client, allowed_assets):
 
         def do_POST(self):
             if urlsplit(self.path).path in {
+                '/api/v1/admin/users/create',
+                '/api/v1/admin/users/update',
+                '/api/v1/admin/operations/cycle',
+                '/api/v1/admin/operations/reset-usage',
+                '/api/v1/admin/operations/refresh-usage',
+                '/api/v1/admin/operations/reset-usage-all',
+                '/api/v1/admin/operations/pause-user',
+                '/api/v1/admin/operations/toggle-user',
+                '/api/v1/admin/operations/rotate-token',
+                '/api/v1/admin/operations/delete',
                 '/api/v1/login',
                 '/api/v1/logout',
                 '/api/v1/user/logout',
@@ -207,7 +218,7 @@ def _handler(api_client, allowed_assets):
 
 
 @contextmanager
-def preview_server(port=0):
+def preview_server(port=0, *, overview_fixture=False):
     """Serve built React, legacy pages, and fictional authenticated API state."""
     if not (DIST / 'index.html').is_file() or not (DIST / 'manifest.json').is_file():
         raise RuntimeError('Build the React frontend before starting its preview')
@@ -215,8 +226,32 @@ def preview_server(port=0):
     with (
         tempfile.TemporaryDirectory(prefix='hy2-react-fixture-') as directory,
         legacy_preview.isolated_preview(directory) as allowed_ports,
+        legacy_preview.pytest.MonkeyPatch.context() as patch,
     ):
         service = legacy_preview.ss
+        # Only the controlled React preview doubles external effects. Accounting,
+        # account state, session invalidation and revocation WAL still use real
+        # services in the temporary directory under the unchanged outer guards.
+        for module in (service.xray_config, service.tuic_config):
+            for name, value in vars(module).copy().items():
+                if isinstance(value, Path) and name.isupper():
+                    patch.setattr(module, name, Path(directory) / module.__name__ / value.name)
+            patch.setattr(module, 'reload_async', lambda: True)
+        patch.setattr(
+            service, '_sync_static_access_from_users', lambda *args, **kwargs: (True, True)
+        )
+        patch.setattr(
+            service,
+            'hy_kick',
+            lambda users: service.CredentialActionResult(
+                action='kick',
+                target=','.join(users),
+                attempted=False,
+                ok=True,
+                code='preview-confirmed',
+                retryable=False,
+            ),
+        )
         meta = service.load_meta()
         admin_hash = service.hash_secret(PREVIEW_LOGIN_PASSWORD)
         meta['admin_pass_hash'] = admin_hash
@@ -233,6 +268,29 @@ def preview_server(port=0):
             'max_devices': 1,
             'disabled': False,
         }
+        if overview_fixture:
+            users['demo_alex'].update(note='预览套餐 · 主账户', metered=True, tuic_enabled=True)
+            users['unlimited'] = {
+                'sub_token': 'fictional-unlimited-token',
+                'monthly_quota_bytes': 0,
+                'max_devices': 0,
+                'disabled': True,
+                'expires_at': '2026-07-01',
+                'note': '预览 · 已停用且过期',
+            }
+            daily = {
+                '2026-07-17': {
+                    'demo_alex': {'tx': 2 * 1024**3, 'rx': 3 * 1024**3, 'total': 5 * 1024**3},
+                    'must_change': {'tx': 4 * 1024**3, 'rx': 5 * 1024**3, 'total': 9 * 1024**3},
+                },
+                '2026-07-18': {
+                    'demo_alex': {'tx': 1024**3, 'rx': 1024**3, 'total': 2 * 1024**3},
+                },
+            }
+            service.save_json(service.USAGE_DAILY_FILE, daily)
+            service.save_json(service.USAGE_FILE, {'2026-07': daily['2026-07-17']})
+            service.save_json(service.USAGE_HOURLY_FILE, {'2026-07-18T12': daily['2026-07-18']})
+            service.save_json(service.ONLINE_FILE, {'demo_alex': 2})
         service.save_json(service.USERS_FILE, users)
         with service._login_failures_lock:
             login_trackers = (

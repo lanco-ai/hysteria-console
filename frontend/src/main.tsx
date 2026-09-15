@@ -5,6 +5,7 @@ import { UserPasswordPage } from './features/auth/UserPasswordPage';
 import { LogsPage } from './features/network-admin/logs/LogsPage';
 import { SettingsPage } from './features/network-admin/settings/SettingsPage';
 import { HomePage } from './features/public/HomePage';
+import { OverviewPage } from './features/network-admin/overview/OverviewPage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
 
 const root = document.getElementById('root');
@@ -16,6 +17,11 @@ if (window.location.pathname === '/__react/') {
   document.title = 'Hysteria · 连接网络，掌控全局';
   document.body.className = 'page-home page-site';
   reactRoot.render(<HomePage/>);
+} else if (window.location.pathname === '/__react/admin') {
+  document.title = '总览';
+  document.body.className = 'has-shell';
+  applyInitialShellPreferences();
+  reactRoot.render(<OverviewPage publicHost={root.dataset.publicHost?.trim() || window.location.hostname}/>);
 } else if (window.location.pathname === '/__react/admin/logs') {
   document.title = '清零日志';
   document.body.className = 'has-shell';

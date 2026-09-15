@@ -8,6 +8,8 @@ type AdminShellProps = {
   badge: string;
   pageTitle: string;
   children: ReactNode;
+  subtitle?: ReactNode;
+  topbarExtra?: ReactNode;
 };
 
 const MOBILE_BREAKPOINT = 880;
@@ -29,7 +31,7 @@ export function applyInitialShellPreferences(): void {
   }
 }
 
-export function AdminShell({ active, badge, pageTitle, children }: AdminShellProps) {
+export function AdminShell({ active, badge, pageTitle, children, subtitle, topbarExtra }: AdminShellProps) {
   const [mobile, setMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => storedPreference('hy2.sidebar', 'collapsed'));
@@ -196,9 +198,9 @@ export function AdminShell({ active, badge, pageTitle, children }: AdminShellPro
               <button ref={toggleRef} className="sidebar-toggle" id="sidebar-toggle" type="button" aria-label="切换侧边栏" aria-expanded={mobile && open} onClick={() => open ? closeSidebar(true) : openSidebar()}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
               </button>
-              <h1 className="page-title">{pageTitle}</h1>
+              <h1 className="page-title">{pageTitle}{subtitle === undefined ? null : <small>{subtitle}</small>}</h1>
             </div>
-            <div className="topbar-right">{badge ? <span className="badge">{badge}</span> : null}</div>
+            <div className="topbar-right">{topbarExtra}{badge ? <span className="badge">{badge}</span> : null}</div>
           </div>
         </header>
         <main className="content" id="main-content" tabIndex={-1}>
