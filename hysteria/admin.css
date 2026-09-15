@@ -3904,7 +3904,7 @@ body.has-shell .radar-summary {
 
 body.has-shell .radar-summary-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr) 160px minmax(0, 1fr);
   column-gap: 16px;
   align-items: center;
   font-size: var(--text-ui);
