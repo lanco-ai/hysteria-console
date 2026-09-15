@@ -107,13 +107,16 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
 
 - 已在明确生产授权下启用 `hysteria-react.service`，服务为 enabled/active，
   loopback `127.0.0.1:8083` 根页返回 `200`；legacy `127.0.0.1:8081` 保持 active。
-- React 构建发布指针为 `cf963e74769aa7b7dba8adf6`；部署事务和恢复日志由
+- React 构建发布指针为 `613cf123e82eda38a857d25b`；部署事务和恢复日志由
   `/var/lib/hysteria/deploy-recovery` 保留，未复制凭证或持久化用户数据到仓库。
-- 受保护切换于 `20260915T124931Z` 完成，备份目录为
-  `/var/lib/hysteria/react-cutover/20260915T124931Z`，当前标记指向该备份。
-- 线上 smoke test：`https://lancoai.site:9444/` 返回 `200`；`/admin` 和
-  `/user/panel` 未登录返回 `303 Location: /login`；`/api/v1/admin/overview`
-  返回 `401`；React 静态资产返回 `200`；`/sub/` 仍由 legacy 处理。
+- 受保护切换于 `20260915T164952Z` 完成，备份目录为
+  `/var/lib/hysteria/react-cutover/20260915T164952Z`，当前标记指向该备份。
+- 线上 smoke test：`https://lancoai.site/` 与
+  `https://lancoai.site:9444/` 均返回 `200`，两端的 `/login` 均返回 `200`
+  并只加载 `/static/react/assets/` 下的哈希 CSS/JS；两端 `/admin` 和
+  `/user/panel` 未登录均返回 `303 Location: /login`；React 静态资产返回
+  `200`；匿名访问 `/sub/`、`/panel/` 由 legacy 返回 `403`，CSV/evidence
+  路径返回 `302`，未被 SPA 接管。
 - Nginx 语法检查通过；443 监听指令未改变，9444 仍监听原端口和域名；公开证书
   `CN=lancoai.site`，有效期至 `2026-12-14`，指纹为
   `84:61:EC:CA:15:54:77:27:8D:81:99:C2:5F:2D:3F:F1:B1:96:86:7C:24:5B:B0:BF:D3:26:AF:69:6A:62:6B:95`。
@@ -135,5 +138,6 @@ vhost、legacy 静态目录和 `hysteria-subscription.service` 单元，执行
 
 - 生产切换批准人：用户（本次会话明确授权）
 - 计划窗口：2026-09-15（UTC）
-- 发布 revision：`3246fb3` 基线 + 本次 React Nginx 渲染 wiring 修复（待提交）
+- 发布 revision：`f5347cd`（已推送 `main` 与
+  `refactor/personal-site-foundation`）
 - 回滚验证记录：隔离环境 apply→rollback 已通过；生产备份已创建并由当前标记引用，未执行线上回滚
