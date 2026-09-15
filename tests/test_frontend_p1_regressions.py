@@ -50,7 +50,8 @@ def test_health_quality_sections_keep_copy_and_percentages_aligned():
     assert "grid-template-columns: minmax(0, 1fr) 72px max-content;" in incident_styles
     assert 'className="mono"' in incidents_source
     assert "body.has-shell .radar-summary-row > .mono {" in incident_styles
-    assert "text-align: right;" in incident_styles
+    assert "justify-self: stretch;" in incident_styles
+    assert "text-align: center;" in incident_styles
 
 
 def _relative_luminance(hex_color):

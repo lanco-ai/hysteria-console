@@ -83,8 +83,8 @@ body.has-shell .radar-summary-row > span:first-child {
 
 body.has-shell .radar-summary-row > .mono {
   width: 72px;
-  justify-self: end;
-  text-align: right;
+  justify-self: stretch;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
