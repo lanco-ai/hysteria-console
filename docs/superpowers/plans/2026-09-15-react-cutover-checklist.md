@@ -12,6 +12,10 @@
 - 预发布 ASGI 入口 `hysteria/react_server.py`、单 worker loopback systemd
   模板和 `requirements-web.txt` 的 Uvicorn 版本已固定；这些文件尚未由部署
   脚本安装或启用。
+- 已准备未启用的双后端 Nginx 模板 `nginx/hysteria-panel-react.conf` 与
+  `nginx/hysteria-panel-react-https.conf`：React 文档/API/构建资源指向 8083，
+  订阅、二维码、legacy 下载/表单和未知路径保留 8081；路由清单合同测试会检查
+  两个入口及 legacy 读取边界的一致性。
 - 旧 Codex 额度入口、接口和静态资源保持不可用；未改动代理配置、证书、
   域名或现有 443/9444 nginx 监听。
 
@@ -38,7 +42,8 @@
 ```bash
 PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh
 npm run check:frontend
-PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/pytest -q tests/test_react_route_parity.py
+PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/pytest -q \
+  tests/test_react_route_parity.py tests/test_react_cutover_config.py
 PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/python tests/run_react_browser.py
 bash -n deploy.sh
 ```

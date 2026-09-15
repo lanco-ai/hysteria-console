@@ -57,6 +57,7 @@ adopted=(
   tests/test_web_api_documents.py
   tests/test_web_api_user_detail.py
   tests/test_react_server_entrypoint.py
+  tests/test_react_cutover_config.py
   tests/test_rules_react_contract.py
   tests/test_user_panel_react_contract.py
   tests/test_user_detail_react_contract.py
