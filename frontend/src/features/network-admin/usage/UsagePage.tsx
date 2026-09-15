@@ -96,9 +96,10 @@ export function UsagePage({ publicHost }: { publicHost: string }) {
   const refresh = () => { setPolling('正在更新…'); usage.retry(); };
 
   return <AdminShell active="usage" pageTitle="流量分析" badge={usage.status === 'success' ? `${usage.data.stats.online} 个在线` : ''} subtitle={`${publicHost} · 实时数据`} topbarExtra={<><button className="btn ghost btn-sm" type="button" onClick={refresh} disabled={usage.status === 'loading'}>立即刷新</button><span className="badge poll-status" data-role="usage-poll-status">{polling}</span><span className="sr-only" role="status" aria-live="polite">{polling}</span></>}>
-    {usage.status === 'error' ? <ErrorState error={usage.error} retry={usage.retry}/> : null}
-    {usage.status === 'loading' ? <LoadingState label="正在加载流量分析…"/> : null}
-    {usage.status === 'success' ? <>
+    <div className="admin-page usage-page">
+      {usage.status === 'error' ? <ErrorState error={usage.error} retry={usage.retry}/> : null}
+      {usage.status === 'loading' ? <LoadingState label="正在加载流量分析…"/> : null}
+      {usage.status === 'success' ? <>
       <div className="metric-grid">
         <div className="metric-card"><div className="metric-k">当小时</div><div className="metric-v big">{fmtBytes(usage.data.stats.current_hour_bytes)}</div><div className="metric-sub">{usage.data.stats.online} 在线</div></div>
         <div className="metric-card"><div className="metric-k">今日</div><div className="metric-v">{fmtBytes(usage.data.stats.today_bytes)}</div><div className="metric-sub">昨日 {fmtBytes(usage.data.stats.yesterday_bytes)}</div></div>
@@ -108,6 +109,7 @@ export function UsagePage({ publicHost }: { publicHost: string }) {
       <section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">过去 7 天 · 每小时</h2><div className="chart-panel-desc">基于滚动小时桶聚合。</div></div></div><HourlyChart points={usage.data.hourly_totals}/></section>
       <div className="grid grid-2 analytics-grid"><section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">7 天 × 24 小时 热图</h2><div className="chart-panel-desc">颜色越深代表流量越高。</div></div></div><Heatmap rows={usage.data.heatmap} ts={usage.data.ts}/></section><section className="admin-section"><div className="admin-section-header"><h2 className="admin-section-title">Top 5 · 近 24 小时</h2><div className="small">活跃用户</div></div><TopUsers usage={usage.data}/></section></div>
       <LazyHistory/>
-    </> : null}
+      </> : null}
+    </div>
   </AdminShell>;
 }

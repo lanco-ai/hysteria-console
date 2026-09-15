@@ -65,3 +65,12 @@ def test_react_nginx_routes_legacy_usage_bookmarks_to_react_service():
             marker = f'location = {route}'
             start = source.index(marker)
             assert 'proxy_pass http://127.0.0.1:8083;' in source[start:source.index('}', start)]
+
+
+def test_usage_chart_has_a_definite_height_and_page_spacing():
+    page = (ROOT / 'frontend/src/features/network-admin/usage/UsagePage.tsx').read_text()
+    styles = (ROOT / 'hysteria/styles/17-motion-workspace.css').read_text()
+    sections = (ROOT / 'hysteria/styles/14-admin-sections.css').read_text()
+    assert 'className="admin-page usage-page"' in page
+    assert 'height: 180px' in styles
+    assert '.admin-page.usage-page' in sections

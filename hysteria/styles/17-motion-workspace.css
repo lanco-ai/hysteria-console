@@ -257,7 +257,9 @@ body.has-shell .usage-hourly {
   display: flex;
   align-items: end;
   gap: 3px;
+  height: 180px;
   min-height: 180px;
+  box-sizing: border-box;
   padding: 12px 4px 4px;
   border-bottom: 1px solid var(--hairline);
 }
@@ -277,6 +279,6 @@ body.has-shell .usage-heatmap-cell:hover { outline: 2px solid var(--text-primary
 body.has-shell #usage-history > summary { padding: 16px 20px; cursor: pointer; color: var(--text-secondary); font-weight: 500; }
 body.has-shell #usage-history .admin-section-body { padding-top: 0; }
 @media (max-width: 600px) {
-  body.has-shell .usage-hourly { min-height: 140px; gap: 2px; }
+  body.has-shell .usage-hourly { height: 140px; min-height: 140px; gap: 2px; }
   body.has-shell .usage-heatmap-row { grid-template-columns: 36px repeat(24, minmax(4px, 1fr)); gap: 2px; }
 }

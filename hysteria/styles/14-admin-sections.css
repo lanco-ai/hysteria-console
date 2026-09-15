@@ -9,6 +9,10 @@ body.has-shell .admin-page {
   gap: 24px;
 }
 
+body.has-shell .admin-page.usage-page {
+  gap: 10px;
+}
+
 /* Admin section */
 body.has-shell .admin-section {
   background: var(--bg-surface);
