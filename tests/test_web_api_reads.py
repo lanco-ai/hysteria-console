@@ -203,6 +203,31 @@ def test_user_lifecycle_failures_retain_existing_error_codes(
     assert response.json() == {'error': expected_error}
 
 
+@pytest.mark.parametrize(
+    ('account_change', 'expected_error'),
+    [
+        ({'disabled': True}, 'disabled'),
+        ({'expires_at': '2026-09-11'}, 'expired'),
+        ({'panel_password_must_change': True}, 'password_change_required'),
+    ],
+)
+def test_user_panel_rejects_non_active_lifecycle_states(
+    api_client,
+    real_state,
+    account_change,
+    expected_error,
+):
+    headers = _user_cookie()
+    users = json.loads(real_state['paths']['USERS_FILE'].read_text(encoding='utf-8'))
+    users['demo_alex'].update(account_change)
+    _write_json(real_state['paths']['USERS_FILE'], users)
+
+    response = api_client.get('/api/v1/user/panel', headers=headers)
+
+    assert response.status_code == 403
+    assert response.json() == {'error': expected_error}
+
+
 def test_expired_session_is_not_accepted(api_client, real_state):
     _write_json(
         real_state['paths']['SESSIONS_FILE'],

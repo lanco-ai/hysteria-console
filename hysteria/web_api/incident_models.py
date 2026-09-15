@@ -97,4 +97,3 @@ class AdminIncidentResponse(PublicModel):
     line_radar: IncidentRadarResponse
     cost_calibration: dict[str, object]
     alerts: list[IncidentAlertResponse]
-

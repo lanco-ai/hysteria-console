@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -12,6 +11,14 @@ def test_user_panel_react_page_has_usage_subscription_and_egress_sections():
     assert '订阅链接' in page
     assert '显示二维码' in page
     assert '家宽出口' in page
+
+
+def test_user_panel_parser_only_allows_unlimited_sentinel_for_remaining_bytes():
+    requests = (ROOT / 'frontend/src/features/user/requests.ts').read_text()
+    assert 'function nonNegative(value: unknown): number' in requests
+    assert 'if (result < 0) return invalid();' in requests
+    assert 'function unlimited(value: unknown): number' in requests
+    assert 'remain_bytes: unlimited(item.remain_bytes)' in requests
 
 
 def test_user_panel_react_route_is_registered():

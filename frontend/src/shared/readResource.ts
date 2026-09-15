@@ -24,7 +24,7 @@ export class ResourceError extends Error {
   }
 }
 
-async function readAccessCode(response: Response): Promise<ResourceAccessCode | undefined> {
+export async function readAccessCode(response: Response): Promise<ResourceAccessCode | undefined> {
   try {
     const value: unknown = await response.json();
     if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;

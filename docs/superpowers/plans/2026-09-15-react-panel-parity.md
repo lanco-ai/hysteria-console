@@ -87,7 +87,7 @@
 - `GET /api/v1/user/panel` returns the structured user payload used by `user_views` without credentials.
 - Password, logout, subscription/token/QR links continue to use the established user-session and same-origin write boundary.
 
-- [ ] Test lifecycle states (active, disabled, expired, password-change-required) and private-field stripping.
+- [x] Test lifecycle states (active, disabled, expired, password-change-required) and private-field stripping.
 - [x] Implement the responsive user panel and password flow; subscription links render from the authenticated payload.
 
 ### Task 5: Cutover, parity, and rollback evidence
@@ -96,9 +96,9 @@
 - Modify: route/preview/deployment wiring identified by `rg -n "__react|REACT_PAGES|/admin" tests hysteria nginx systemd`
 - Create: `tests/test_react_route_parity.py`, `docs/superpowers/plans/2026-09-15-react-cutover-checklist.md`
 
-- [ ] Run the complete backend suite, frontend checks/build, and all browser journeys under resource guards.
+- [x] Run the complete backend suite, frontend checks/build, and all browser journeys under resource guards.
 - [ ] Compare every route in the feature-parity register against React preview and legacy behavior.
-- [ ] Verify legacy quota endpoints remain unavailable and no browser request references retired Codex quota assets.
-- [ ] Inventory Nginx 443/9444/domain/certificate configuration without modifying it.
+- [x] Verify legacy quota endpoints remain unavailable and no browser request references retired Codex quota assets.
+- [x] Inventory Nginx 443/9444/domain/certificate configuration without modifying it.
 - [ ] Prepare a reversible route switch and explicit rollback command; obtain approval before production deployment.
 - [ ] After approval, deploy only built assets and route wiring, smoke-test both domains/ports, and record rollback evidence.

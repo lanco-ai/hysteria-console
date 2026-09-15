@@ -16,6 +16,8 @@ adopted=(
   hysteria/web_api/app.py
   hysteria/web_api/models.py
   hysteria/web_api/overview_models.py
+  hysteria/web_api/usage_models.py
+  hysteria/web_api/incident_models.py
   hysteria/web_api/config_models.py
   hysteria/web_api/landing_models.py
   hysteria/web_api/user_models.py
@@ -36,8 +38,13 @@ adopted=(
   tests/test_web_api_reads.py
   tests/test_web_api_overview_page.py
   tests/test_web_api_config.py
+  tests/test_web_api_usage.py
+  tests/test_web_api_health.py
+  tests/test_web_api_incidents.py
   tests/test_web_api_landing.py
   tests/test_web_api_user_panel.py
+  tests/test_user_panel_react_contract.py
+  tests/test_react_route_parity.py
   hysteria/reset_log_data.py tests/test_reset_log_data.py
   hysteria/web_assets.py tests/test_web_assets.py
   tests/preview_http_server.py

@@ -552,7 +552,7 @@ class LegacyPanelServices:
                 session_kind,
                 today=service.local_now().date(),
             )
-            if access_error not in ('', None, 'disabled', 'expired', 'password_change_required'):
+            if access_error:
                 raise UserAccessDenied(access_error)
             now = service.local_now()
             stats = service._build_panel_json_payload(username, cfg, now=now)

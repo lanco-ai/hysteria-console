@@ -1,10 +1,17 @@
 import { useEffect, useState } from 'react';
 import { USER_PANEL_ENDPOINT, parseUserPanel } from './requests';
-import { useReadResource } from '../../shared/readResource';
+import { ResourceError, useReadResource } from '../../shared/readResource';
 import { fmtBytes } from '../network-admin/overview/presentation';
 
-function ErrorState({ status, retry }: { status: number | undefined; retry: () => void }) {
-  if (status === 401) return <main className="auth-scene"><div className="card"><div className="err" role="alert">用户登录已失效。</div><a className="btn btn-primary" href="/login">前往登录</a></div></main>;
+function ErrorState({ error, retry }: { error: ResourceError; retry: () => void }) {
+  useEffect(() => {
+    if (error.status === 403 && error.code === 'password_change_required') {
+      window.location.assign('/user/change-password');
+    }
+  }, [error]);
+  if (error.status === 401) return <main className="auth-scene"><div className="card"><div className="err" role="alert">用户登录已失效。</div><a className="btn btn-primary" href="/login">前往登录</a></div></main>;
+  if (error.status === 403 && error.code === 'disabled') return <main className="auth-scene"><div className="card"><div className="err" role="alert">账号已停用，请联系管理员。</div></div></main>;
+  if (error.status === 403 && error.code === 'expired') return <main className="auth-scene"><div className="card"><div className="err" role="alert">账号已到期，请联系管理员续费。</div></div></main>;
   return <main className="auth-scene"><div className="card"><div className="err" role="alert">用户面板加载失败，请稍后重试。</div><button className="btn secondary" type="button" onClick={retry}>重试</button></div></main>;
 }
 
@@ -15,7 +22,7 @@ export function UserPanelPage({ publicHost }: { publicHost: string }) {
   const [showQr, setShowQr] = useState(false);
   useEffect(() => { if (resource.status === 'success' && !selectedProfile) setSelectedProfile(resource.data.subscription_profiles[0]?.key || ''); }, [resource.status, resource.data, selectedProfile]);
   useEffect(() => { if (resource.status !== 'success' || resource.data.disabled || resource.data.expired) return; const timer = window.setInterval(resource.retry, 30_000); return () => window.clearInterval(timer); }, [resource.status, resource.data, resource.retry]);
-  if (resource.status === 'error') return <ErrorState status={resource.error.status} retry={resource.retry}/>;
+  if (resource.status === 'error') return <ErrorState error={resource.error} retry={resource.retry}/>;
   if (resource.status !== 'success') return <main className="auth-scene"><div className="card" role="status">正在加载用户面板…</div></main>;
   const data = resource.data;
   const current = data.subscription_profiles.find(profile => profile.key === selectedProfile) || data.subscription_profiles[0];

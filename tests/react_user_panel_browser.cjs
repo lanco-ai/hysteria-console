@@ -21,6 +21,13 @@ async function main() {
   assert(requests.includes('/api/v1/user/panel'));
   assert(!requests.includes('/user/panel.json'));
   await context.close();
+
+  const lifecycleContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  await lifecycleContext.addCookies([{ name: 'usid', value: process.env.REACT_PREVIEW_MUST_CHANGE_COOKIE, url: baseUrl }]);
+  const lifecyclePage = await lifecycleContext.newPage();
+  await lifecyclePage.goto(`${baseUrl}/__react/user/panel`);
+  await expect(lifecyclePage).toHaveURL(/\/user\/change-password$/);
+  await lifecycleContext.close();
   await browser.close();
   console.log('React user panel browser acceptance passed');
 }

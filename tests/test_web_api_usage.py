@@ -4,9 +4,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
-
 from web_api import create_app
-
 
 NOW = datetime(2026, 9, 15, 10, 30, tzinfo=ZoneInfo('Asia/Shanghai'))
 
@@ -27,11 +25,13 @@ def _payload(*, charts=True):
         'private': 'must be removed',
     }
     if charts:
-        payload.update({
-            'hourly_totals': [{'hour': '2026-09-15T10', 'bytes': 9}],
-            'heatmap': [{'date': '2026-09-15', 'hours': [0] * 24}],
-            'top_n': [{'uid': 'alice', 'last_24h_bytes': 9, 'spark': [0, 9]}],
-        })
+        payload.update(
+            {
+                'hourly_totals': [{'hour': '2026-09-15T10', 'bytes': 9}],
+                'heatmap': [{'date': '2026-09-15', 'hours': [0] * 24}],
+                'top_n': [{'uid': 'alice', 'last_24h_bytes': 9, 'spark': [0, 9]}],
+            }
+        )
     return payload
 
 

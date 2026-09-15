@@ -1,7 +1,6 @@
 """Structured administrator incident-console API contracts."""
 
 from fastapi.testclient import TestClient
-
 from web_api import create_app
 
 
@@ -49,6 +48,12 @@ def test_incidents_route_returns_structured_payload_and_strips_private_fields():
 
     assert response.status_code == 200
     assert set(response.json()) == {
-        'ts', 'stats', 'peak_hour', 'users', 'line_radar', 'cost_calibration', 'alerts'
+        'ts',
+        'stats',
+        'peak_hour',
+        'users',
+        'line_radar',
+        'cost_calibration',
+        'alerts',
     }
     assert 'must be removed' not in response.text
