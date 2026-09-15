@@ -66,11 +66,13 @@ def build_page(ctx, base_url):
     settlement_day = ctx.get_settlement_day()
     cycle_length = ctx.get_cycle_length_days()
     cycle_start = ctx.cycle_start_for(now)
-    cycle_end = cycle_start + timedelta(days=cycle_length - 1)
+    next_cycle_start = ctx.next_cycle_start_for(now)
+    cycle_end = next_cycle_start - timedelta(days=1)
     cycle_day = (now.date() - cycle_start.date()).days + 1
+    cycle_period_days = (next_cycle_start.date() - cycle_start.date()).days
     cycle_range = (
         f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")}'
-        f' · 第 {cycle_day}/{cycle_length} 天'
+        f' · 第 {cycle_day}/{cycle_period_days} 天'
     )
     landing_options = [
         {'id': str(node['id']), 'name': node['name']}

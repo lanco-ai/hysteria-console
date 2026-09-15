@@ -269,6 +269,27 @@ def test_build_page_keeps_a_complete_cycle_when_there_are_no_users(
     assert page['cycle']['range'] == '09/01 → 09/30 · 第 12/30 天'
 
 
+def test_build_page_uses_calendar_settlement_range_for_30_day_cycle(overview_state, monkeypatch):
+    """A stale 30-day anchor must not make the displayed range drift."""
+    _write_json(
+        overview_state['paths']['META_FILE'],
+        {
+            'settlement_day': 15,
+            'cycle_length_days': 30,
+            'cycle_anchor_date': '2026-07-15',
+        },
+    )
+    now = datetime(2026, 9, 17, 10, 30, 45, tzinfo=ZoneInfo('Asia/Shanghai'))
+    monkeypatch.setattr(ss, 'local_now', lambda: now)
+
+    page = admin_overview_data.build_page(
+        ss._admin_views_context(),
+        'https://panel.invalid',
+    )
+
+    assert page['cycle']['range'] == '09/15 → 10/14 · 第 3/30 天'
+
+
 def test_render_admin_characterization_preserves_html_and_sensitive_draft_filtering(
     overview_state,
     monkeypatch,

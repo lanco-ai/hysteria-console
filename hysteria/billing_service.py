@@ -30,8 +30,9 @@ class BillingService:
 
     def get_cycle_length_days(self):
         """Length of one billing cycle, in days. Editable via /admin/cycle-config.
-        Cycles roll exactly every N days from `cycle_anchor_date` (or, if absent,
-        from the most recent settlement_day on/before today)."""
+        A 30-day cycle follows the calendar settlement day; other lengths roll
+        exactly every N days from `cycle_anchor_date` (or, if absent, from the
+        most recent settlement_day on/before today)."""
         return cycle_util.cycle_length_from_meta(self.load_meta())
 
     def _settlement_anchor_date(self, now, settlement_day):
@@ -55,12 +56,10 @@ class BillingService:
             return meta
 
     def get_cycle_anchor_date(self, now=None):
-        """The anchor date (a settlement day in the past or today) that all N-day
-        cycle blocks count from. Read from META_FILE if persisted, else derive
-        from the current settlement_day. Storing the anchor keeps cycle boundaries
-        stable across the inevitable jump that would otherwise happen each month
-        when settlement_day recurs (e.g. with cycle_length=15, the most-recent-
-        settlement-day-of-month anchor would skip cycles)."""
+        """Return the persisted fixed-cycle anchor, or derive one if absent.
+
+        Fixed-length cycles use this value. The 30-day calendar cycle instead
+        derives each boundary from the configured settlement day."""
         if now is None:
             now = self.local_now()
         meta = self.load_meta()
@@ -69,12 +68,22 @@ class BillingService:
     def cycle_start_for(self, now, day=None, length=None, anchor=None):
         """Datetime at 00:00 local of the current cycle's start.
 
-        For cycle_length_days==30 (default) the result matches the pre-existing
-        calendar-month behaviour as long as the anchor is the most recent
-        settlement_day. For shorter/longer N, cycles roll exactly every N days
-        from the anchor — they intentionally do not re-align to calendar months."""
+        The default 30-day cycle follows the current calendar settlement day.
+        For shorter/longer N, cycles roll exactly every N days from the anchor
+        — they intentionally do not re-align to calendar months."""
         meta = self.load_meta()
         return cycle_util.cycle_start_for(now, day=day, length=length, anchor=anchor, meta=meta)
+
+    def next_cycle_start_for(self, now, day=None, length=None, anchor=None):
+        """Datetime at 00:00 local of the next billing cycle boundary."""
+        meta = self.load_meta()
+        return cycle_util.next_cycle_start_for(
+            now,
+            day=day,
+            length=length,
+            anchor=anchor,
+            meta=meta,
+        )
 
     def month_key(self, now=None):
         """Legacy cycle key (YYYY-MM) used as a dict key in usage.json. Cycle reads

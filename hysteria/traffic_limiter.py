@@ -454,9 +454,10 @@ def billing_month_key(now, day=None):
 def cycle_days(now, day=None, length=None, anchor=None, *, meta=None):
     """List of YYYY-MM-DD date keys in the current cycle, oldest first.
 
-    Uses fixed-N-day rolling blocks anchored at `anchor` (defaults to the
-    persisted `cycle_anchor_date`, or to the most recent settlement_day on/
-    before now if not set)."""
+    The default 30-day cycle follows the calendar settlement day. Other
+    lengths use fixed-N-day rolling blocks anchored at `anchor` (defaults to
+    the persisted `cycle_anchor_date`, or to the most recent settlement_day
+    on/before now if not set)."""
     if meta is None:
         meta = load_json(META_FILE, {}, required=True)
         _validate_meta(meta, path=META_FILE)

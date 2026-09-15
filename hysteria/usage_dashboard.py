@@ -30,6 +30,7 @@ class UsageDashboardContext:
     load_json: object
     local_now: object
     cycle_days: object
+    next_cycle_start_for: object
     cycle_start_for: object
     get_cycle_length_days: object
     preserved_raw_for_cycle: object
@@ -177,8 +178,9 @@ def aggregate_stats(ctx, *, now, online, hourly=None, daily=None):
     cycle_raw += ctx.preserved_raw_for_cycle(now=now)
 
     cycle_start = ctx.cycle_start_for(now)
+    next_cycle_start = ctx.next_cycle_start_for(now)
     cycle_day = (now.date() - cycle_start.date()).days + 1
-    cycle_total_days = ctx.get_cycle_length_days()
+    cycle_total_days = (next_cycle_start.date() - cycle_start.date()).days
 
     return {
         "current_hour_bytes": int(current_hour_raw * ctx.display_multiplier),

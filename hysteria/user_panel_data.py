@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 from typing import Callable
 
@@ -12,6 +11,7 @@ from typing import Callable
 class Context:
     local_now: Callable[..., object]
     get_cycle_length_days: Callable[..., int]
+    next_cycle_start_for: Callable[..., object]
     cycle_start_for: Callable[..., object]
     load_json: Callable[..., object]
     scaled_usage_for_user: Callable[..., object]
@@ -29,7 +29,7 @@ def _cycle_reset_info(ctx: Context, now=None):
     if now is None:
         now = ctx.local_now()
     cycle_len = ctx.get_cycle_length_days()
-    next_reset = (ctx.cycle_start_for(now) + timedelta(days=cycle_len)).date()
+    next_reset = ctx.next_cycle_start_for(now).date()
     days_left = max((next_reset - now.date()).days, 0)
     return next_reset.strftime('%Y-%m-%d'), days_left, cycle_len
 

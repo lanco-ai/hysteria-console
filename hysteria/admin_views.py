@@ -21,6 +21,7 @@ class Context:
     base_quota_bytes: Callable[..., object]
     configured_max_devices: Callable[..., object]
     current_display_multiplier: Callable[..., object]
+    next_cycle_start_for: Callable[..., object]
     cycle_start_for: Callable[..., object]
     daily_window_for_user: Callable[..., object]
     flash_text: Callable[..., object]

@@ -645,6 +645,15 @@ def cycle_start_for(now, day=None, length=None, anchor=None):
     return _billing_service().cycle_start_for(now=now, day=day, length=length, anchor=anchor)
 
 
+def next_cycle_start_for(now, day=None, length=None, anchor=None):
+    return _billing_service().next_cycle_start_for(
+        now=now,
+        day=day,
+        length=length,
+        anchor=anchor,
+    )
+
+
 def month_key(now=None):
     return _billing_service().month_key(now=now)
 
@@ -1674,6 +1683,7 @@ def _user_panel_data_context():
     return user_panel_data.Context(
         local_now=local_now,
         get_cycle_length_days=get_cycle_length_days,
+        next_cycle_start_for=next_cycle_start_for,
         cycle_start_for=cycle_start_for,
         load_json=load_json,
         scaled_usage_for_user=scaled_usage_for_user,
@@ -1765,6 +1775,7 @@ def _usage_context():
         load_json=load_json,
         local_now=local_now,
         cycle_days=_cycle_days,
+        next_cycle_start_for=next_cycle_start_for,
         cycle_start_for=cycle_start_for,
         get_cycle_length_days=get_cycle_length_days,
         preserved_raw_for_cycle=preserved_raw_for_cycle,
@@ -2865,6 +2876,7 @@ def _admin_views_context():
         base_quota_bytes=base_quota_bytes,
         configured_max_devices=configured_max_devices,
         current_display_multiplier=current_display_multiplier,
+        next_cycle_start_for=next_cycle_start_for,
         cycle_start_for=cycle_start_for,
         daily_window_for_user=daily_window_for_user,
         flash_text=flash_text,

@@ -320,7 +320,7 @@ def test_fixed_15_day_cycle_rolls_independently_of_calendar(tmp_path, monkeypatc
 def test_default_30_day_cycle_unchanged_when_meta_empty(tmp_path, monkeypatch):
     """No META override: default cycle_length=30, anchor derived from
     settlement_day=12 (most recent). Today 2026-05-14 -> anchor 2026-05-12,
-    cycle 2026-05-12 .. 2026-06-10."""
+    calendar cycle 2026-05-12 .. 2026-06-11."""
     _seed_meta(tmp_path, monkeypatch)  # empty meta
     now = datetime(2026, 5, 14, 10, tzinfo=SH)
     assert ss.cycle_start_for(now).date().isoformat() == "2026-05-12"
@@ -329,6 +329,32 @@ def test_default_30_day_cycle_unchanged_when_meta_empty(tmp_path, monkeypatch):
     assert days[-1] == "2026-05-14"  # capped at today
     assert ss.get_cycle_length_days() == 30
 
+
+def test_30_day_cycle_uses_calendar_settlement_window_when_anchor_is_stale(
+    tmp_path, monkeypatch
+):
+    """A 30-day setting follows the configured settlement day each month.
+
+    Persisted anchors are still used for fixed-length cycles, but must not make
+    the default 30-day calendar cycle drift to 09/13 -> 10/12 after a 07/15
+    anchor.
+    """
+    _seed_meta(
+        tmp_path,
+        monkeypatch,
+        settlement_day=15,
+        cycle_length_days=30,
+        cycle_anchor_date="2026-07-15",
+    )
+    now = datetime(2026, 9, 17, 10, tzinfo=SH)
+
+    assert ss.cycle_start_for(now).date().isoformat() == "2026-09-15"
+    assert ss._cycle_days(now) == [
+        "2026-09-15",
+        "2026-09-16",
+        "2026-09-17",
+    ]
+    assert ss.next_cycle_start_for(now).date().isoformat() == "2026-10-15"
 
 def test_cycle_length_clamped_to_supported_range(tmp_path, monkeypatch):
     _seed_meta(tmp_path, monkeypatch, cycle_length_days=999)

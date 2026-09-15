@@ -546,15 +546,15 @@ _CYCLE_META = {'settlement_day': 12, 'cycle_length_days': 30,
 
 
 def test_user_panel_shows_quota_reset_countdown(tmp_path, monkeypatch):
-    """Cycle 2026-05-12 .. 06-10 resets on 06-11; viewed 05-14 -> 28 days left."""
+    """Calendar cycle 2026-05-12 .. 06-11 resets on 06-12; viewed 05-14 -> 29 days left."""
     now = datetime(2026, 5, 14, 10, tzinfo=SH)
     _seed_panel(tmp_path, monkeypatch, meta=_CYCLE_META)
     monkeypatch.setattr(ss, 'local_now', lambda: now)
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '<dt>周期</dt><dd>30 天</dd>' in page
-    assert '2026-06-11' in page
-    assert '剩 28 天' in page
+    assert '2026-06-12' in page
+    assert '剩 29 天' in page
 
 
 def test_user_panel_shows_30day_usage_trend(tmp_path, monkeypatch):

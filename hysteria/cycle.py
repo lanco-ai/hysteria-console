@@ -59,14 +59,29 @@ def cycle_anchor_date(now, meta=None, settlement_day=None):
 
 
 def cycle_start_for(now, day=None, length=None, anchor=None, meta=None):
-    """Datetime at 00:00 local of the current fixed-length billing cycle."""
+    """Datetime at 00:00 local of the current billing cycle.
+
+    The default 30-day setting follows the configured calendar settlement day
+    instead of repeatedly adding 30 days to a persisted anchor. Shorter and
+    longer cycles retain their fixed-N-day behaviour. An explicit ``anchor``
+    opts into fixed-N calculation even for a 30-day cycle for compatibility
+    with callers that intentionally provide one.
+    """
     m = meta or {}
+    cycle_len = clamp_cycle_length(length, cycle_length_from_meta(m))
+    if cycle_len == CYCLE_LENGTH_DAYS_DEFAULT and anchor is None:
+        settlement_day = (
+            clamp_settlement_day(day)
+            if day is not None
+            else settlement_day_from_meta(m)
+        )
+        start_date = settlement_anchor_date(now, settlement_day)
+        return datetime.combine(start_date, datetime.min.time(), tzinfo=now.tzinfo)
     if anchor is None:
         anchor = (
             cycle_anchor_date(now, m)
             if day is None else settlement_anchor_date(now, day)
         )
-    cycle_len = clamp_cycle_length(length, cycle_length_from_meta(m))
     today = now.date()
     if today < anchor:
         start_date = anchor
@@ -76,11 +91,39 @@ def cycle_start_for(now, day=None, length=None, anchor=None, meta=None):
     return datetime.combine(start_date, datetime.min.time(), tzinfo=now.tzinfo)
 
 
+def next_cycle_start_for(now, day=None, length=None, anchor=None, meta=None):
+    """Datetime at 00:00 local when the current billing cycle ends.
+
+    A 30-day cycle rolls on the same settlement day in the following month;
+    all other cycle lengths advance by their configured number of days.
+    """
+    m = meta or {}
+    cycle_len = clamp_cycle_length(length, cycle_length_from_meta(m))
+    start = cycle_start_for(now, day=day, length=cycle_len, anchor=anchor, meta=m)
+    if cycle_len != CYCLE_LENGTH_DAYS_DEFAULT or anchor is not None:
+        return start + timedelta(days=cycle_len)
+    settlement_day = (
+        clamp_settlement_day(day)
+        if day is not None
+        else settlement_day_from_meta(m)
+    )
+    next_month = (start.date().replace(day=1) + timedelta(days=32)).replace(day=1)
+    next_date = next_month.replace(day=settlement_day)
+    return datetime.combine(next_date, datetime.min.time(), tzinfo=now.tzinfo)
+
+
 def cycle_days(now, day=None, length=None, anchor=None, meta=None):
     """List of YYYY-MM-DD date keys in the current cycle, oldest first."""
     cycle_len = clamp_cycle_length(length, cycle_length_from_meta(meta or {}))
     start = cycle_start_for(now, day=day, length=cycle_len, anchor=anchor, meta=meta).date()
-    end = min(start + timedelta(days=cycle_len - 1), now.date())
+    next_start = next_cycle_start_for(
+        now,
+        day=day,
+        length=cycle_len,
+        anchor=anchor,
+        meta=meta,
+    ).date()
+    end = min(next_start - timedelta(days=1), now.date())
     out = []
     cur = start
     while cur <= end:
