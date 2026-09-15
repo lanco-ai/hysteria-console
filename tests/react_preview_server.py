@@ -35,6 +35,7 @@ REACT_PAGES = {
     '/__react/admin/config': ('模板配置', 'has-shell'),
     '/__react/admin/rules': ('路由规则', 'has-shell'),
     '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
+    '/__react/admin/user/demo_alex': ('demo_alex · 用量画像', 'has-shell'),
     '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),
@@ -160,7 +161,14 @@ def _handler(api_client, allowed_assets):
             self._write(200, file.read_bytes(), content_type)
 
         def _react_page(self, path):
-            title, body_class = REACT_PAGES[path]
+            if path in REACT_PAGES:
+                title, body_class = REACT_PAGES[path]
+            elif path.startswith('/__react/admin/user/') and path.count('/') == 4:
+                uid = path.rsplit('/', 1)[-1]
+                title, body_class = f'{uid} · 用量画像', 'has-shell'
+            else:
+                self.send_error(404)
+                return
             payload = (DIST / 'index.html').read_text(encoding='utf-8')
             escaped_public_host = html.escape(PUBLIC_HOST, quote=True)
             replacements = (
@@ -187,7 +195,9 @@ def _handler(api_client, allowed_assets):
 
         def do_GET(self):
             path = urlsplit(self.path).path
-            if path in REACT_PAGES:
+            if path in REACT_PAGES or (
+                path.startswith('/__react/admin/user/') and path.count('/') == 4
+            ):
                 self._react_page(path)
             elif path.startswith('/api/'):
                 self._api()
@@ -213,6 +223,11 @@ def _handler(api_client, allowed_assets):
                 '/api/v1/admin/operations/delete',
                 '/api/v1/admin/config/save',
                 '/api/v1/admin/rules/save',
+                '/api/v1/admin/health/update-check',
+                '/api/v1/admin/health/update-apply',
+                '/api/v1/admin/health/test-alert',
+                '/api/v1/admin/health/multiplier-apply',
+                '/api/v1/admin/health/multiplier-auto',
                 '/api/v1/login',
                 '/api/v1/logout',
                 '/api/v1/user/logout',

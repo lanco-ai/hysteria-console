@@ -6,15 +6,20 @@ export function hasExactKeys(record: Record<string, unknown>, keys: readonly str
 
 export async function postFormJson(
   path: string,
-  fields: Record<string, string>,
+  fields: Record<string, string | readonly string[]>,
   signal: AbortSignal,
 ): Promise<{ value: unknown; status: number }> {
+  const body = new URLSearchParams();
+  for (const [key, value] of Object.entries(fields)) {
+    if (typeof value === 'string') body.set(key, value);
+    else value.forEach(item => body.append(key, item));
+  }
   const response = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
     cache: 'no-store',
     headers: { Accept: 'application/json' },
-    body: new URLSearchParams(fields),
+    body,
     signal,
   });
   const contentType = response.headers.get('content-type') || '';

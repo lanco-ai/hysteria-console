@@ -66,3 +66,16 @@ class AdminReloadStatusResponse(PublicModel):
     pending: StrictBool
     xray: StrictBool
     tuic: StrictBool
+
+
+class HealthOperationResponse(PublicModel):
+    """Secret-free result for health-page maintenance actions."""
+
+    ok: StrictBool
+    status: StrictStr
+    reason: StrictStr = ''
+    ts: StrictStr = ''
+    pending: StrictBool = False
+    current: StrictStr = ''
+    latest: StrictStr = ''
+    update_available: StrictBool = False

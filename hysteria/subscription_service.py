@@ -2082,6 +2082,30 @@ def _build_health_json_payload(*, now=None):
     now = now or local_now()
     presenter = _health_presentation()
     kpis = presenter._render_health_top_kpis()
+    radar = build_line_radar(now=now)
+    calibration = summarize_cost_calibration(now=now)
+    calibration['windows'] = cost_calibrator.summarize_windows(
+        COST_CALIBRATION_FILE,
+        current_multiplier=current_display_multiplier(),
+        now=now,
+    )
+    policy = cost_calibrator.load_auto_policy(MULTIPLIER_AUTO_POLICY_FILE)
+    calibration['policy'] = {
+        'enabled': bool(policy.get('enabled')),
+        'mode': str(policy.get('mode') or 'total'),
+        'min_confidence': str(policy.get('min_confidence') or 'medium'),
+        'max_delta_percent': float(policy.get('max_delta_percent', 25.0)),
+        'min_delta_percent': float(policy.get('min_delta_percent', 3.0)),
+        'cooldown_hours': float(policy.get('cooldown_hours', 24.0)),
+    }
+    update_state = hysteria_update.load_state()
+    update = hysteria_update.public_status(update_state)
+    update.update(
+        {
+            'version': str(update_state.get('version') or ''),
+            'previous_version': str(update_state.get('previous_version') or ''),
+        }
+    )
     return {
         'ts': now.isoformat(timespec='seconds'),
         'kpis': [
@@ -2093,6 +2117,9 @@ def _build_health_json_payload(*, now=None):
             for title, result in kpis.items()
         ],
         'services': presenter._probe_rows(),
+        'line_radar': radar,
+        'calibration': calibration,
+        'update': update,
     }
 
 

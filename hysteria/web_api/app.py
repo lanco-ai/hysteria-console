@@ -13,9 +13,18 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 
 from .account_routes import register_account_routes
-from .config_models import AdminRulesResponse, AdminTemplateResponse, TemplateMutationResponse
+from .compat_routes import register_compatibility_routes
+from .config_models import (
+    AdminRulesResponse,
+    AdminTemplateResponse,
+    TemplateMutationResponse,
+)
+from .document_routes import register_react_document_routes
+from .health_models import AdminHealthResponse
+from .health_routes import register_health_routes
 from .incident_models import AdminIncidentResponse
 from .landing_models import AdminLandingResponse
+from .landing_routes import register_landing_routes
 from .models import (
     AdminLogsResponse,
     AdminOverviewResponse,
@@ -33,13 +42,14 @@ from .models import (
 from .operation_routes import register_operation_routes
 from .overview_models import AdminOverviewPageResponse
 from .requests import FormReadTimeout, RequestHeaders, read_form
+from .rules_routes import register_rules_routes
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .usage_models import (
-    AdminHealthResponse,
     AdminUsageHistoryResponse,
     AdminUsageResponse,
     AdminUsageSummaryResponse,
 )
+from .user_detail_routes import register_user_detail_routes
 from .user_models import UserPanelResponse
 
 _API_SECURITY_HEADERS = {
@@ -144,7 +154,7 @@ def _template_response(payload):
 
 def _rules_response(payload):
     model = AdminRulesResponse.model_validate(payload)
-    return JSONResponse(model.model_dump())
+    return JSONResponse(model.model_dump(exclude_none=True))
 
 
 def _landing_response(payload):
@@ -237,7 +247,7 @@ def _read_error_response(exc):
     raise exc
 
 
-def create_app(services, *, max_requests=32):
+def create_app(services, *, max_requests=32, react_dist=None):
     if isinstance(max_requests, bool) or not isinstance(max_requests, int) or max_requests <= 0:
         raise ValueError('max_requests must be a positive integer')
 
@@ -341,7 +351,14 @@ def create_app(services, *, max_requests=32):
         return response_builder(reply)
 
     register_account_routes(app, services, dispatch_form_write)
+    register_compatibility_routes(app, services, dispatch)
+    register_user_detail_routes(app, services, dispatch)
     register_operation_routes(app, services, dispatch_form_write, dispatch)
+    register_health_routes(app, services, dispatch_form_write)
+    register_rules_routes(app, services, dispatch_form_write)
+    register_landing_routes(app, services, dispatch_form_write)
+    if react_dist is not None:
+        register_react_document_routes(app, services, dispatch, react_dist)
 
     @app.post('/api/v1/login')
     async def login(request: Request):

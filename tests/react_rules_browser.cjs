@@ -14,6 +14,7 @@ async function main() {
   await page.goto(`${baseUrl}/__react/admin/rules`);
   await expect(page).toHaveTitle('路由规则');
   await expect(page.getByRole('heading', { name: '当前规则列表' })).toBeVisible();
+  await page.getByText('直接编辑全部规则', { exact: true }).click();
   await expect(page.locator('#rules-raw')).toBeVisible();
   await expect(page.getByRole('button', { name: '覆盖全部规则' })).toBeDisabled();
   assert(requests.includes('/api/v1/admin/rules'));

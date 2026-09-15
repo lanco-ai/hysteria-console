@@ -22,8 +22,10 @@ function HourlyChart({ points }: { points: Usage['hourly_totals'] }) {
   </div>;
 }
 
-function Heatmap({ rows }: { rows: Usage['heatmap'] }) {
+function Heatmap({ rows, ts }: { rows: Usage['heatmap']; ts: string }) {
   const max = Math.max(1, ...rows.flatMap(row => row.hours));
+  const currentDate = ts.slice(0, 10);
+  const currentHour = Number(ts.slice(11, 13));
   return <div className="usage-heatmap" role="grid" aria-label="7 天 24 小时流量热图">
     {rows.map(row => <div className="usage-heatmap-row" role="row" key={row.date}>
       <span className="usage-heatmap-label">{row.date.slice(5)}</span>
@@ -35,6 +37,16 @@ function Heatmap({ rows }: { rows: Usage['heatmap'] }) {
         style={{ opacity: bytes ? 0.16 + bytes / max * 0.84 : 0.08 }}
       />)}
     </div>)}
+    <details className="heatmap-data-details mt-sm">
+      <summary>查看每小时数据表</summary>
+      <div className="scroll-x heatmap-data-scroll" tabIndex={0} aria-label="7 天每小时流量数据，可横向滚动">
+        <table className="table heatmap-data-table">
+          <caption className="sr-only">7 天每小时流量；列标题为 00 至 23 时</caption>
+          <thead><tr><th scope="col">日期</th>{Array.from({ length: 24 }, (_, hour) => <th scope="col" key={hour}>{String(hour).padStart(2, '0')}</th>)}</tr></thead>
+          <tbody>{rows.map(row => <tr key={`table-${row.date}`}><th scope="row">{row.date}</th>{row.hours.map((bytes, hour) => <td key={`${row.date}-${hour}`}>{row.date === currentDate && Number.isInteger(currentHour) && hour > currentHour ? '—' : bytes ? fmtBytes(bytes) : '—'}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    </details>
   </div>;
 }
 
@@ -93,7 +105,7 @@ export function UsagePage({ publicHost }: { publicHost: string }) {
         <div className="metric-card"><div className="metric-k">本周期</div><div className="metric-v">{fmtBytes(usage.data.stats.cycle_bytes)}</div><div className="metric-sub">第 {usage.data.stats.cycle_day} / {usage.data.stats.cycle_total_days} 天</div></div>
       </div>
       <section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">过去 7 天 · 每小时</h2><div className="chart-panel-desc">基于滚动小时桶聚合。</div></div></div><HourlyChart points={usage.data.hourly_totals}/></section>
-      <div className="grid grid-2 analytics-grid"><section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">7 天 × 24 小时 热图</h2><div className="chart-panel-desc">颜色越深代表流量越高。</div></div></div><Heatmap rows={usage.data.heatmap}/></section><section className="admin-section"><div className="admin-section-header"><h2 className="admin-section-title">Top 5 · 近 24 小时</h2><div className="small">活跃用户</div></div><TopUsers usage={usage.data}/></section></div>
+      <div className="grid grid-2 analytics-grid"><section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">7 天 × 24 小时 热图</h2><div className="chart-panel-desc">颜色越深代表流量越高。</div></div></div><Heatmap rows={usage.data.heatmap} ts={usage.data.ts}/></section><section className="admin-section"><div className="admin-section-header"><h2 className="admin-section-title">Top 5 · 近 24 小时</h2><div className="small">活跃用户</div></div><TopUsers usage={usage.data}/></section></div>
       <LazyHistory/>
     </> : null}
   </AdminShell>;

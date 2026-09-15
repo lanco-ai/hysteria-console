@@ -17,7 +17,9 @@ async function main() {
   await page.goto(`${baseUrl}/__react/admin/health`);
   await expect(page).toHaveTitle('健康状态');
   await expect(page.locator('.health-kpi-card')).toHaveCount(4);
-  await expect(page.locator('.data-table tbody tr')).toHaveCount(15);
+  await expect(page.locator('.health-service-table tbody tr')).toHaveCount(15);
+  await expect(page.locator('.health-radar-section tbody tr')).toHaveCount(3);
+  await expect(page.locator('.health-calibrator-section tbody tr')).toHaveCount(3);
   await page.getByRole('button', { name: '立即刷新' }).click();
   await expect(page.locator('.health-kpi-card')).toHaveCount(4);
   assert(requests.includes('/api/v1/admin/health'));
@@ -28,4 +30,3 @@ async function main() {
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
-

@@ -26,10 +26,16 @@ async function main() {
   assert(requests.includes('/api/v1/admin/usage-history'));
   assert(!requests.includes('/admin/analytics.json'));
   assert(!requests.includes('/admin/usage-history'));
+  await page.goto(`${baseUrl}/__react/admin/user/demo_alex`);
+  await expect(page).toHaveTitle('demo_alex · 用量画像');
+  await expect(page.locator('.metric-card')).toHaveCount(4);
+  await expect(page.locator('#hourly-bars-host .usage-hourly-bar')).toHaveCount(168);
+  await expect(page.locator('.user-detail-page .usage-heatmap-row')).toHaveCount(7);
+  assert(requests.includes('/api/v1/admin/user/demo_alex'));
+  assert(!requests.includes('/admin/user/demo_alex.json'));
   await context.close();
   await browser.close();
   console.log('React usage browser acceptance passed');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
-

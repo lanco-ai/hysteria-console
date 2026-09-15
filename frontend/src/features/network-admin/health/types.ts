@@ -1,3 +1,9 @@
 export type HealthStatus = { title: string; ok: boolean; label: string };
-export type Health = { ts: string; kpis: HealthStatus[]; services: HealthStatus[] };
-
+export type HealthLineRadarRow = { key: string; label: string; status: string; ok: boolean; bytes: number; share: number; active_users: number; online: number | null; profile: string; note: string };
+export type HealthLineRadar = { window_hours: number; total_bytes: number; recommendation: string; reason: string; rows: HealthLineRadarRow[] };
+export type HealthCalibrationWindow = { window_hours: number; suggested_multiplier: number | null; egress_multiplier: number | null; app_raw_bytes: number; included_sample_count: number; sample_count: number; confidence: string };
+export type HealthCalibrationPolicy = { enabled: boolean; mode: string; min_confidence: string; max_delta_percent: number; min_delta_percent: number; cooldown_hours: number };
+export type HealthCalibration = { window_hours: number; sample_count: number; included_sample_count: number; app_raw_bytes: number; net_total_bytes: number; net_tx_bytes: number; current_multiplier: number; suggested_multiplier: number | null; egress_multiplier: number | null; delta_percent: number | null; confidence: string; ifaces: string[]; last_ts: string; method: string; egress_sample_count: number; windows: HealthCalibrationWindow[]; policy: HealthCalibrationPolicy };
+export type HealthUpdate = { status: string; reason: string; ts: string; pending: boolean; version: string; previous_version: string };
+export type Health = { ts: string; kpis: HealthStatus[]; services: HealthStatus[]; line_radar: HealthLineRadar; calibration: HealthCalibration; update: HealthUpdate };
+export type HealthOperation = { ok: boolean; status: string; reason: string; ts: string; pending: boolean; current: string; latest: string; update_available: boolean };

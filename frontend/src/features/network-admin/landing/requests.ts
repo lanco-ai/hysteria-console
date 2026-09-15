@@ -1,5 +1,6 @@
 import { ResourceError } from '../../../shared/readResource';
-import type { AdminLanding, LandingHealth } from './types';
+import { postFormJson } from '../../../shared/postForm';
+import type { AdminLanding, LandingHealth, LandingOperation, LandingOperationAction } from './types';
 
 export const LANDING_ENDPOINT = '/api/v1/admin/landing-egresses';
 function invalid(): never { throw new Error('响应数据格式无效'); }
@@ -36,4 +37,33 @@ export async function readLanding(signal: AbortSignal): Promise<AdminLanding> {
   const response = await fetch(LANDING_ENDPOINT, { credentials: 'same-origin', cache: 'no-store', signal });
   if (!response.ok) throw new ResourceError(`HTTP ${response.status}`, response.status);
   return parseLanding(await response.json());
+}
+
+export function parseLandingOperation(value: unknown, action: LandingOperationAction): LandingOperation {
+  const root = record(value);
+  if (root.ok === true) {
+    if (root.action !== action || (root.revision !== undefined && typeof root.revision !== 'string')) return invalid();
+    return { ok: true, action, ...(root.revision === undefined ? {} : { revision: revision(root.revision) }) };
+  }
+  if (root.ok === false && root.action === action && typeof root.error === 'string') {
+    if (root.retry_after !== undefined && (!Number.isInteger(root.retry_after) || (root.retry_after as number) <= 0)) return invalid();
+    return { ok: false, action, error: root.error, ...(typeof root.code === 'string' ? { code: root.code } : {}), ...(root.retry_after === undefined ? {} : { retry_after: root.retry_after as number }) };
+  }
+  return invalid();
+}
+
+export type LandingFormFields = Record<string, string | readonly string[]>;
+
+export async function mutateLanding(action: LandingOperationAction, fields: LandingFormFields, signal: AbortSignal): Promise<LandingOperation> {
+  const paths: Record<LandingOperationAction, string> = {
+    save: '/api/v1/admin/landing-egresses/save',
+    delete: '/api/v1/admin/landing-egresses/delete',
+    check: '/api/v1/admin/landing-egresses/check',
+    access: '/api/v1/admin/landing-egresses/access',
+    select: '/api/v1/user/landing-egress/select',
+  };
+  const { value, status } = await postFormJson(paths[action], fields, signal);
+  if (status !== 200 && status !== 401 && status !== 403 && status !== 404 && status !== 409 && status !== 422 && status !== 429) throw new ResourceError(`HTTP ${status}`, status);
+  if (status === 401) throw new ResourceError('管理员或用户登录已失效', status);
+  return parseLandingOperation(value, action);
 }

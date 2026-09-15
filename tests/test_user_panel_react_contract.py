@@ -11,6 +11,11 @@ def test_user_panel_react_page_has_usage_subscription_and_egress_sections():
     assert '订阅链接' in page
     assert '显示二维码' in page
     assert '家宽出口' in page
+    assert "mutateLanding('select'" in page
+    assert (
+        "'/api/v1/user/landing-egress/select'"
+        in (ROOT / 'frontend/src/features/network-admin/landing/requests.ts').read_text()
+    )
 
 
 def test_user_panel_parser_only_allows_unlimited_sentinel_for_remaining_bytes():

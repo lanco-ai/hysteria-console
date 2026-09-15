@@ -19,6 +19,7 @@ MIGRATED_REACT_PATHS = (
     '/__react/admin/config',
     '/__react/admin/rules',
     '/__react/admin/landing-egresses',
+    '/__react/admin/user/demo_alex',
 )
 
 

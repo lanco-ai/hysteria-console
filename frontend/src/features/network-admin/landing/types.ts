@@ -17,3 +17,7 @@ export type LandingNode = {
 
 export type LandingAccess = { user: string; revision: string; allowed_ids: string[] };
 export type AdminLanding = { ts: string; revision: string; nodes: LandingNode[]; users: LandingAccess[] };
+export type LandingOperationAction = 'save' | 'delete' | 'check' | 'access' | 'select';
+export type LandingOperation =
+  | { ok: true; action: LandingOperationAction; revision?: string }
+  | { ok: false; action: LandingOperationAction; error: string; code?: string; retry_after?: number };

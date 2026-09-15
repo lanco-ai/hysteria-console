@@ -41,6 +41,36 @@ class LegacyRequestBridge:
     client_address: tuple = ('', 0)
 
 
+@dataclass(slots=True)
+class _CapturedLegacyHandler:
+    """Capture a legacy write result without sending an HTML response."""
+
+    headers: Mapping[str, str]
+    path: str
+    redirect_to: str | None = None
+    redirect_status: int | None = None
+    response_status: int | None = None
+    response_headers: dict[str, str] = field(default_factory=dict)
+
+    def redirect(self, to, *, status=302):
+        self.redirect_to = str(to)
+        self.redirect_status = int(status)
+
+    def send_response_body(
+        self,
+        code,
+        _body='',
+        _ctype='text/plain; charset=utf-8',
+        *,
+        extra_headers=None,
+    ):
+        self.response_status = int(code)
+        if isinstance(extra_headers, Mapping):
+            self.response_headers.update(
+                {str(name).lower(): str(value) for name, value in extra_headers.items()}
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class LoginReply:
     result: LoginResult
@@ -371,6 +401,23 @@ class LegacyPanelServices:
 
         return self._run_read(read)
 
+    def read_user_identity(self, *, headers, path):
+        """Return only the authenticated user identity for document guards."""
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            username, credential_kind = service.get_logged_in_user_context(request)
+            if not username:
+                raise LoginRequired
+            return {
+                'role': 'user',
+                'username': str(username),
+                'credential_kind': str(credential_kind),
+            }
+
+        return self._run_read(read)
+
     def read_admin_settings(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module
@@ -457,6 +504,23 @@ class LegacyPanelServices:
 
         return self._run_read(read)
 
+    def read_admin_usage_csv(self, *, headers, path, window):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            if window not in ('cycle', '30d'):
+                raise ValueError('invalid usage export window')
+            now = service.local_now()
+            return {
+                'body': service._build_usage_csv(now=now, window=window),
+                'filename': f'usage-{window}-{now.strftime("%Y%m%d")}.csv',
+            }
+
+        return self._run_read(read)
+
     def read_admin_usage_history(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module
@@ -465,6 +529,23 @@ class LegacyPanelServices:
             if not service.is_logged_in(request):
                 raise LoginRequired
             return service._build_daily_history_json_payload(now=service.local_now())
+
+        return self._run_read(read)
+
+    def read_admin_user_detail(self, *, headers, path, uid):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+        if not isinstance(uid, str) or not uid or '/' in uid:
+            raise ValueError('invalid user id')
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            return service._build_user_json_payload(
+                uid,
+                now=service.local_now(),
+                include_charts=True,
+            )
 
         return self._run_read(read)
 
@@ -489,6 +570,82 @@ class LegacyPanelServices:
             return service.build_incident_payload(now=service.local_now())
 
         return self._run_read(read)
+
+    def submit_health_operation(
+        self,
+        *,
+        headers,
+        path,
+        form,
+        client_address,
+        action: Literal[
+            'update-check',
+            'update-apply',
+            'test-alert',
+            'multiplier-apply',
+            'multiplier-auto',
+        ],
+    ):
+        del client_address
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+        valid_actions = {
+            'update-check',
+            'update-apply',
+            'test-alert',
+            'multiplier-apply',
+            'multiplier-auto',
+        }
+        if action not in valid_actions:
+            raise ValueError('invalid health operation action')
+
+        def mutate():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            if action == 'update-check':
+                try:
+                    info = service.hysteria_update.check_and_record()
+                except service.state_store.LockTimeout:
+                    return {'ok': False, 'reason': 'update_busy'}
+                except Exception:
+                    return {'ok': False, 'reason': 'update_check_failed'}
+                return {
+                    'ok': True,
+                    'status': 'checked',
+                    'current': str(info.get('current') or ''),
+                    'latest': str(info.get('latest') or ''),
+                    'update_available': bool(info.get('update_available')),
+                    'pending': False,
+                }
+            if action == 'update-apply':
+                try:
+                    state = service.hysteria_update.schedule_apply_async()
+                except service.state_store.LockTimeout:
+                    return {'ok': False, 'reason': 'update_busy'}
+                except Exception:
+                    return {'ok': False, 'reason': 'update_schedule_failed'}
+                return service.hysteria_update.public_status(state)
+            if action == 'test-alert':
+                config = service.alerts.load_config()
+                if not isinstance(config, dict) or not (
+                    config.get('telegram') or config.get('webhook')
+                ):
+                    return {'ok': False, 'reason': 'alert_no_channels'}
+                service._fire_test_alert(config, service._admin_actor(request))
+                return {'ok': True, 'status': 'alert_dispatched'}
+            if action == 'multiplier-apply':
+                code = service.apply_suggested_display_multiplier(
+                    actor=service._admin_actor(request),
+                )
+                return {
+                    'ok': code == 'multiplier_applied',
+                    'status': code,
+                    'reason': '' if code == 'multiplier_applied' else code,
+                }
+            service.save_multiplier_auto_policy_from_form(form)
+            return {'ok': True, 'status': 'multiplier_auto_saved'}
+
+        return self._run_operation(mutate, post_path='/admin/health')
 
     def read_admin_landing(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
@@ -529,6 +686,84 @@ class LegacyPanelServices:
             }
 
         return self._run_read(read)
+
+    def submit_landing_operation(
+        self,
+        *,
+        headers,
+        path,
+        form,
+        client_address,
+        action: Literal['save', 'delete', 'check', 'access', 'select'],
+        request_user_revision='',
+    ):
+        if action not in ('save', 'delete', 'check', 'access', 'select'):
+            raise ValueError('invalid landing operation action')
+        del client_address
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+        post_paths = {
+            'save': '/admin/landing-egress/save',
+            'delete': '/admin/landing-egress/delete',
+            'check': '/admin/landing-egress/check',
+            'access': '/admin/user-landing-access',
+            'select': '/user/landing-egress/select',
+        }
+
+        def value(name, default=''):
+            values = form.get(name) or [default]
+            return str(values[0] if values else default)
+
+        def execute():
+            handler = _CapturedLegacyHandler(headers=request.headers, path=request.path)
+            user_revision = str(request_user_revision or value('user_revision'))
+            handled = service.landing_write_routes.handle_write(
+                handler,
+                service._landing_write_routes_context(),
+                path=post_paths[action],
+                form=form,
+                query={},
+                request_user_revision=user_revision,
+            )
+            if not handled:
+                raise ValueError('landing operation route is not registered')
+            if handler.redirect_to == '/login':
+                raise LoginRequired
+            if handler.response_status is not None:
+                status = handler.response_status
+                if status == 403:
+                    error = 'forbidden'
+                elif status == 404:
+                    error = 'not_found'
+                elif status == 409:
+                    error = 'revision_conflict'
+                elif status == 429:
+                    error = 'rate_limited'
+                else:
+                    error = 'validation_error'
+                retry_after = None
+                raw_retry_after = handler.response_headers.get('retry-after')
+                if raw_retry_after:
+                    try:
+                        retry_after = int(raw_retry_after)
+                    except (TypeError, ValueError):
+                        retry_after = None
+                result = {'ok': False, 'action': action, 'error': error}
+                if retry_after and retry_after > 0:
+                    result['retry_after'] = retry_after
+                return result
+            if not handler.redirect_to:
+                return {
+                    'ok': False,
+                    'action': action,
+                    'error': 'validation_error',
+                    'code': 'missing_result',
+                }
+            registry = service._landing_registry_or_empty()
+            revision = service.content_revision(registry)
+            return {'ok': True, 'action': action, 'revision': revision}
+
+        return self._run_operation(execute, post_path=post_paths[action])
 
     def read_user_panel(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
@@ -638,9 +873,157 @@ class LegacyPanelServices:
                 rules, revision = service.load_template_rules_snapshot()
             except (service.TemplateConfigError, OSError, UnicodeError) as exc:
                 raise StateUnavailable from exc
-            return {'rules': rules, 'revision': revision}
+            packs = []
+            pack_map = getattr(service, 'RULE_PACKS', {})
+            pack_order = getattr(service, 'RULE_PACK_ORDER', tuple(pack_map))
+            if isinstance(pack_map, Mapping):
+                for key in pack_order:
+                    pack = pack_map.get(key)
+                    if not isinstance(pack, Mapping):
+                        continue
+                    label = str(pack.get('label') or '').strip()
+                    description = str(pack.get('desc') or '').strip()
+                    if label and description:
+                        packs.append(
+                            {
+                                'key': str(key),
+                                'label': label,
+                                'description': description,
+                            }
+                        )
+            users_data = service.load_json(getattr(service, 'USERS_FILE', ''), {})
+            users = sorted(
+                str(username)
+                for username, config in (
+                    users_data.items() if isinstance(users_data, Mapping) else ()
+                )
+                if isinstance(config, Mapping) and str(username).strip()
+            )
+            return {'rules': rules, 'revision': revision, 'packs': packs, 'users': users}
 
         return self._run_read(read)
+
+    def submit_rules_operation(
+        self,
+        *,
+        headers,
+        path,
+        form,
+        client_address,
+        action: Literal['add', 'delete', 'pack'],
+    ):
+        if action not in ('add', 'delete', 'pack'):
+            raise ValueError('invalid rules operation action')
+        del client_address
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def value(name, default=''):
+            values = form.get(name) or [default]
+            return str(values[0] if values else default)
+
+        def snapshot_revision():
+            try:
+                _rules, revision = service.load_template_rules_snapshot()
+            except (service.TemplateConfigError, OSError, UnicodeError) as exc:
+                raise StateUnavailable from exc
+            return revision
+
+        def validation(code):
+            return {'ok': False, 'action': action, 'error': 'validation_error', 'code': code}
+
+        def conflict():
+            return {'ok': False, 'action': action, 'error': 'revision_conflict'}
+
+        def mutate():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+
+            if action == 'add':
+                rule_type = value('rule_type', 'DOMAIN-SUFFIX')
+                pattern = value('pattern').strip()
+                rule_action = value('action', 'DIRECT')
+                extra = value('extra')
+                if not pattern:
+                    return validation('pattern_empty')
+                if rule_type not in ('DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'DOMAIN', 'IP-CIDR'):
+                    return validation('invalid_rule_type')
+                if ',' in pattern or any(ord(char) < 32 for char in pattern) or len(pattern) > 512:
+                    return validation('invalid_pattern')
+                if rule_action not in ('DIRECT', 'REJECT', '🚀 节点选择'):
+                    return validation('invalid_action')
+                if extra not in ('', 'no-resolve'):
+                    return validation('invalid_extra')
+                rule = f'{rule_type},{pattern},{rule_action}'
+                if extra:
+                    rule += f',{extra}'
+                if not service.validate_clash_rule(rule):
+                    return validation('invalid_rule_schema')
+                try:
+                    service.add_template_rule(
+                        rule,
+                        expected_revision=value('template_revision'),
+                    )
+                except service.TemplateConflictError:
+                    return conflict()
+                except service.TemplateConfigError:
+                    return validation('load_failed')
+                return {'ok': True, 'action': action, 'revision': snapshot_revision()}
+
+            if action == 'delete':
+                try:
+                    index = int(value('index'))
+                except (TypeError, ValueError):
+                    return validation('invalid_index')
+                try:
+                    deleted = service.delete_template_rule(
+                        index,
+                        expected_revision=value('template_revision'),
+                        expected_rule=value('expected_rule'),
+                    )
+                except service.TemplateConflictError:
+                    return conflict()
+                except service.TemplateConfigError:
+                    return validation('load_failed')
+                if not deleted:
+                    return validation('index_out_of_range')
+                return {'ok': True, 'action': action, 'revision': snapshot_revision()}
+
+            pack = value('pack')
+            scope = value('scope', 'global')
+            pack_map = getattr(service, 'RULE_PACKS', {})
+            if not isinstance(pack_map, Mapping) or pack not in pack_map:
+                return validation('invalid_rule_pack')
+            if scope == 'global':
+                try:
+                    applied = service.apply_rule_pack_to_template(
+                        pack,
+                        expected_revision=value('template_revision'),
+                    )
+                except service.TemplateConflictError:
+                    return conflict()
+                except service.TemplateConfigError:
+                    return validation('load_failed')
+                if not applied:
+                    return validation('invalid_rule_pack')
+                return {'ok': True, 'action': action, 'revision': snapshot_revision()}
+            if scope == 'user':
+                username = value('user').strip()
+                if not username or not service.apply_rule_pack_to_user(username, pack):
+                    return {
+                        'ok': False,
+                        'action': action,
+                        'error': 'user_not_found',
+                    }
+                return {'ok': True, 'action': action, 'user': username}
+            return validation('invalid_rule_pack_scope')
+
+        post_paths = {
+            'add': '/admin/rules/add',
+            'delete': '/admin/rules/delete',
+            'pack': '/admin/rule-pack/apply',
+        }
+        return self._run_operation(mutate, post_path=post_paths[action])
 
     def submit_template_config(self, *, headers, path, form):
         request = self._bridge(headers=headers, path=path)

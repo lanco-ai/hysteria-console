@@ -13,16 +13,24 @@ adopted=(
   hysteria/web_api/account_routes.py
   hysteria/web_api/operation_models.py
   hysteria/web_api/operation_routes.py
+  hysteria/web_api/health_routes.py
+  hysteria/web_api/health_models.py
   hysteria/web_api/app.py
   hysteria/web_api/models.py
   hysteria/web_api/overview_models.py
   hysteria/web_api/usage_models.py
   hysteria/web_api/incident_models.py
   hysteria/web_api/config_models.py
+  hysteria/web_api/rules_routes.py
   hysteria/web_api/landing_models.py
+  hysteria/web_api/landing_routes.py
   hysteria/web_api/user_models.py
   hysteria/web_api/requests.py
   hysteria/web_api/services.py
+  hysteria/web_api/compat_routes.py
+  hysteria/web_api/document_routes.py
+  hysteria/web_api/user_detail_models.py
+  hysteria/web_api/user_detail_routes.py
   hysteria/password_change_service.py tests/test_password_change_service.py
   hysteria/account_mutation_service.py tests/test_account_mutation_service.py
   hysteria/overview_mutation_result.py
@@ -38,12 +46,18 @@ adopted=(
   tests/test_web_api_reads.py
   tests/test_web_api_overview_page.py
   tests/test_web_api_config.py
+  tests/test_web_api_rules.py
   tests/test_web_api_usage.py
   tests/test_web_api_health.py
   tests/test_web_api_incidents.py
   tests/test_web_api_landing.py
+  tests/test_web_api_landing_egresses.py
   tests/test_web_api_user_panel.py
+  tests/test_web_api_documents.py
+  tests/test_web_api_user_detail.py
+  tests/test_rules_react_contract.py
   tests/test_user_panel_react_contract.py
+  tests/test_user_detail_react_contract.py
   tests/test_react_route_parity.py
   hysteria/reset_log_data.py tests/test_reset_log_data.py
   hysteria/web_assets.py tests/test_web_assets.py

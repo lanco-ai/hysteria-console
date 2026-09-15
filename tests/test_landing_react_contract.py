@@ -11,6 +11,9 @@ def test_landing_react_page_has_public_node_table_and_management_actions():
     assert '家宽出口节点' in page
     assert '保存节点' in page
     assert '用户授权' in page
+    assert "mutateLanding(action" in page
+    assert "'/api/v1/admin/landing-egresses/save'" in requests
+    assert "'/api/v1/admin/landing-egresses/access'" in requests
 
 
 def test_landing_react_route_is_registered():
