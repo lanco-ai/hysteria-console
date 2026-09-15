@@ -28,6 +28,25 @@ def test_calibrator_policy_fields_use_grouped_label_control_layout():
     assert "gap: 6px;" in styles
     assert "body.has-shell .calibrator-auto-grid > label > select," in styles
     assert "body.has-shell .calibrator-auto-grid > label > input {" in styles
+    assert "calibrator-auto-field-primary" in source
+    assert "calibrator-auto-field-numeric" in source
+    assert "body.has-shell .calibrator-auto-grid > .calibrator-auto-field-primary {" in styles
+    assert "body.has-shell .calibrator-auto-grid > .calibrator-auto-field-numeric {" in styles
+
+
+def test_health_quality_sections_keep_copy_and_percentages_aligned():
+    health_source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "health" / "HealthPage.tsx").read_text(encoding="utf-8")
+    incidents_source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "incidents" / "IncidentsPage.tsx").read_text(encoding="utf-8")
+    styles = (ROOT / "hysteria" / "styles" / "11-health-calibration.css").read_text(encoding="utf-8")
+    incident_styles = (ROOT / "hysteria" / "styles" / "12-operations-config.css").read_text(encoding="utf-8")
+
+    assert 'className="small faint mt-sm line-radar-reason"' in health_source
+    assert "body.has-shell .health-radar-section .line-radar-reason {" in styles
+    assert "padding: 12px 24px 16px;" in styles
+    assert "grid-template-columns: minmax(0, 1fr) 72px max-content;" in incident_styles
+    assert 'className="mono"' in incidents_source
+    assert "body.has-shell .radar-summary-row > .mono {" in incident_styles
+    assert "text-align: right;" in incident_styles
 
 
 def _relative_luminance(hex_color):

@@ -114,6 +114,16 @@ body.has-shell .health-calibrator-section .admin-section-body.no-pad {
   padding: 0;
 }
 
+body.has-shell .health-radar-section .line-radar-reason {
+  display: block;
+  box-sizing: border-box;
+  margin: 0 !important;
+  padding: 12px 24px 16px;
+  border-top: 1px solid var(--hairline);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 /* =====================================================
    HEALTH PAGE — Cost calibrator form area
    ===================================================== */
@@ -150,7 +160,7 @@ body.has-shell .grid.grid-3 label:not(.switch) {
 /* Keep the five automatic-policy fields readable instead of letting labels
    and controls run together in the generic three-column grid. */
 body.has-shell .calibrator-auto-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   column-gap: 20px;
   row-gap: 14px;
 }
@@ -163,13 +173,34 @@ body.has-shell .calibrator-auto-grid > label {
   margin: 0;
 }
 
+body.has-shell .calibrator-auto-grid > .calibrator-auto-field-primary {
+  grid-column: span 3;
+}
+
+body.has-shell .calibrator-auto-grid > .calibrator-auto-field-numeric {
+  grid-column: span 2;
+}
+
 body.has-shell .calibrator-auto-grid > label > select,
 body.has-shell .calibrator-auto-grid > label > input {
   width: 100%;
   min-width: 0;
   height: 36px;
   padding: 0 10px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   font-size: var(--text-ui);
+  outline: none;
+}
+
+body.has-shell .calibrator-auto-grid > label > select:focus-visible,
+body.has-shell .calibrator-auto-grid > label > input:focus-visible {
+  border-color: var(--data);
+  box-shadow: 0 0 0 3px var(--data-soft);
 }
 
 /* =====================================================
