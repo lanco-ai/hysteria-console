@@ -1425,6 +1425,51 @@ render() {
   python3 "$REPO_DIR/scripts/hy2-render-template.py" "$src" "$dst"
 }
 
+render_react_nginx_template() {
+  # React nginx templates include the HTTPS-only placeholders that the
+  # credential-safe renderer deliberately does not accept as dotenv inputs.
+  # Resolve those deployment-owned paths first, then let the normal renderer
+  # substitute the host and reject any remaining unknown placeholders.
+  local src="$1" dst="$2" preprocessed certificate key
+  certificate="/etc/letsencrypt/live/$HY_SERVER_HOST/fullchain.pem"
+  key="/etc/letsencrypt/live/$HY_SERVER_HOST/privkey.pem"
+  preprocessed="$(mktemp "$HY_DIR/state/.react-nginx-template.XXXXXX")"
+  if ! python3 -I - "$src" "$preprocessed" "$HY_HTTPS_PORT" "$certificate" "$key" <<'PY'
+import os
+import re
+import stat
+import sys
+
+source, destination, port, certificate, key = sys.argv[1:]
+metadata = os.lstat(source)
+if not stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+    raise SystemExit("React nginx template must be a regular file")
+for value in (port, certificate, key):
+    if any(char in value for char in "\x00\n\r"):
+        raise SystemExit("React nginx template value contains a control character")
+with open(source, "r", encoding="utf-8", newline="") as handle:
+    template = handle.read()
+mapping = {
+    "__HY_HTTPS_PORT__": port,
+    "__HY_TLS_CERT__": certificate,
+    "__HY_TLS_KEY__": key,
+}
+placeholder = re.compile(r"__[A-Z][A-Z0-9_]*__")
+rendered = placeholder.sub(lambda match: mapping.get(match.group(0), match.group(0)), template)
+with open(destination, "w", encoding="utf-8", newline="") as handle:
+    handle.write(rendered)
+PY
+  then
+    rm -f -- "$preprocessed"
+    return 1
+  fi
+  if ! render "$preprocessed" "$dst"; then
+    rm -f -- "$preprocessed"
+    return 1
+  fi
+  rm -f -- "$preprocessed"
+}
+
 install_atomic() {
   # install_atomic <mode> <source> <destination>
   local mode="$1" src="$2" dst="$3" parent staged
@@ -2336,9 +2381,9 @@ install_atomic 644 "$REPO_DIR/scripts/hy2-cert-renew-hook.sh" /usr/local/share/h
 if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   # Keep the dual-backend templates available for a separately approved route
   # switch; this deployment intentionally leaves the active nginx vhost legacy.
-  install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-react.conf" \
+  render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react.conf" \
     /usr/local/share/hy2/hysteria-panel-react.conf
-  install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-react-https.conf" \
+  render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react-https.conf" \
     /usr/local/share/hy2/hysteria-panel-react-https.conf
 fi
 

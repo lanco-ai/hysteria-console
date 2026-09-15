@@ -94,6 +94,14 @@ def test_react_flag_does_not_replace_legacy_nginx_by_default():
     legacy_render = 'render "$REPO_DIR/nginx/hysteria-panel.conf" /etc/nginx/sites-available/hysteria-panel.conf'
     assert legacy_render in deploy
     assert (
+        'render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react.conf" \\\n'
+        '    /usr/local/share/hy2/hysteria-panel-react.conf'
+    ) in deploy
+    assert (
+        'render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react-https.conf" \\\n'
+        '    /usr/local/share/hy2/hysteria-panel-react-https.conf'
+    ) in deploy
+    assert (
         'hysteria-panel-react-https.conf'
         not in deploy.split(
             '# ---------- 9. nginx reverse proxy for the admin panel ----------', 1

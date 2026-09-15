@@ -1,6 +1,6 @@
 # React panel cutover and rollback checklist
 
-状态：迁移页面和隔离预览已完成；生产路由仍保持 legacy，尚未执行切换。
+状态：迁移页面、隔离预览和生产 React 路由切换已完成；订阅及兼容路径继续由 legacy 服务提供。
 
 ## 当前已具备
 
@@ -68,7 +68,7 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
 - 管理员 cookie 不能读取用户数据，用户 cookie 不能读取管理员 API；
 - 443 与 9444 的现有监听、证书和域名没有漂移。
 
-## 可逆发布步骤（待批准）
+## 可逆发布步骤（已执行）
 
 1. 备份精确的 nginx vhost、systemd 单元、旧静态目录和服务版本，生成带
    时间戳的发布目录；不复制凭证或持久化用户数据到仓库。
@@ -103,6 +103,23 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
 - 当前监听为 Nginx `443`、Nginx `9444`、legacy `127.0.0.1:8081`；未发现
   React `127.0.0.1:8083`。该基线只读采集，不包含私钥或凭证。
 
+## 生产部署与切换证据（2026-09-15）
+
+- 已在明确生产授权下启用 `hysteria-react.service`，服务为 enabled/active，
+  loopback `127.0.0.1:8083` 根页返回 `200`；legacy `127.0.0.1:8081` 保持 active。
+- React 构建发布指针为 `cf963e74769aa7b7dba8adf6`；部署事务和恢复日志由
+  `/var/lib/hysteria/deploy-recovery` 保留，未复制凭证或持久化用户数据到仓库。
+- 受保护切换于 `20260915T124931Z` 完成，备份目录为
+  `/var/lib/hysteria/react-cutover/20260915T124931Z`，当前标记指向该备份。
+- 线上 smoke test：`https://lancoai.site:9444/` 返回 `200`；`/admin` 和
+  `/user/panel` 未登录返回 `303 Location: /login`；`/api/v1/admin/overview`
+  返回 `401`；React 静态资产返回 `200`；`/sub/` 仍由 legacy 处理。
+- Nginx 语法检查通过；443 监听指令未改变，9444 仍监听原端口和域名；公开证书
+  `CN=lancoai.site`，有效期至 `2026-12-14`，指纹为
+  `84:61:EC:CA:15:54:77:27:8D:81:99:C2:5F:2D:3F:F1:B1:96:86:7C:24:5B:B0:BF:D3:26:AF:69:6A:62:6B:95`。
+- 已验证回滚所需的 root-only Nginx 备份、切换标记和 `rollback` 路径；本次生产
+  未执行破坏性回滚，未验证在真实公网流量下的回滚时延。
+
 ## 回滚
 
 如果任一 smoke test 失败：停止新 ASGI 单元，恢复同一备份中的 nginx
@@ -113,7 +130,7 @@ vhost、legacy 静态目录和 `hysteria-subscription.service` 单元，执行
 
 ## 批准记录
 
-- 生产切换批准人：待确认
-- 计划窗口：待确认
-- 发布 revision：待填写
-- 回滚验证记录：待填写
+- 生产切换批准人：用户（本次会话明确授权）
+- 计划窗口：2026-09-15（UTC）
+- 发布 revision：`3246fb3` 基线 + 本次 React Nginx 渲染 wiring 修复（待提交）
+- 回滚验证记录：隔离环境 apply→rollback 已通过；生产备份已创建并由当前标记引用，未执行线上回滚
