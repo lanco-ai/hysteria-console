@@ -297,6 +297,37 @@ def build_analytics_json_payload(ctx, *, now, include_charts=True):
     return payload
 
 
+def build_daily_history_payload(ctx, *, now):
+    """Return the retention-window daily totals for the lazy history panel."""
+    retention_days = max(1, int(ctx.daily_retention_days))
+    users = ctx.load_json(ctx.users_file, {})
+    daily = ctx.load_json(ctx.usage_daily_file, {})
+    dates = [
+        (now.date() - timedelta(days=offset)).strftime('%Y-%m-%d')
+        for offset in reversed(range(retention_days))
+    ]
+    rows = []
+    totals = [0] * len(dates)
+    for uid in users:
+        values = []
+        for index, date_key in enumerate(dates):
+            total = scale_daily_entry(
+                ctx,
+                (daily.get(date_key) or {}).get(uid),
+            )[2]
+            values.append(total)
+            totals[index] += total
+        rows.append({'uid': uid, 'values': values})
+    rows.sort(key=lambda row: sum(row['values']), reverse=True)
+    return {
+        'ts': now.isoformat(timespec='seconds'),
+        'retention_days': retention_days,
+        'dates': dates,
+        'users': rows,
+        'totals': totals,
+    }
+
+
 def build_usage_json_payload(ctx, *, now):
     """Legacy all-in-one payload kept for API compatibility."""
     users = ctx.load_json(ctx.users_file, {})

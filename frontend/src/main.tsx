@@ -4,6 +4,7 @@ import { LogoutPage } from './features/auth/LogoutPage';
 import { UserPasswordPage } from './features/auth/UserPasswordPage';
 import { LogsPage } from './features/network-admin/logs/LogsPage';
 import { SettingsPage } from './features/network-admin/settings/SettingsPage';
+import { UsagePage } from './features/network-admin/usage/UsagePage';
 import { HomePage } from './features/public/HomePage';
 import { OverviewPage } from './features/network-admin/overview/OverviewPage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
@@ -34,6 +35,12 @@ if (window.location.pathname === '/__react/') {
   applyInitialShellPreferences();
   const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
   reactRoot.render(<SettingsPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/admin/usage') {
+  document.title = '流量分析';
+  document.body.className = 'has-shell';
+  applyInitialShellPreferences();
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  reactRoot.render(<UsagePage publicHost={publicHost}/>);
 } else if (window.location.pathname === '/__react/user/change-password') {
   document.title = '修改面板密码';
   document.body.className = 'page-auth';

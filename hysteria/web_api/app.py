@@ -31,6 +31,11 @@ from .operation_routes import register_operation_routes
 from .overview_models import AdminOverviewPageResponse
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
+from .usage_models import (
+    AdminUsageHistoryResponse,
+    AdminUsageResponse,
+    AdminUsageSummaryResponse,
+)
 
 _API_SECURITY_HEADERS = {
     'Cache-Control': 'no-store',
@@ -100,6 +105,17 @@ def _overview_page_response(payload):
 
 def _logs_response(payload):
     model = AdminLogsResponse.model_validate(payload)
+    return JSONResponse(model.model_dump())
+
+
+def _usage_response(payload, *, include_charts):
+    model_class = AdminUsageResponse if include_charts else AdminUsageSummaryResponse
+    model = model_class.model_validate(payload)
+    return JSONResponse(model.model_dump())
+
+
+def _usage_history_response(payload):
+    model = AdminUsageHistoryResponse.model_validate(payload)
     return JSONResponse(model.model_dump())
 
 
@@ -354,6 +370,31 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _overview_page_response(payload)
+
+    @app.api_route('/api/v1/admin/usage', methods=['GET', 'HEAD'])
+    async def admin_usage(request: Request):
+        summary = request.query_params.get('summary', '').strip().lower()
+        include_charts = summary not in {'1', 'true', 'yes'}
+        try:
+            payload = await dispatch(
+                partial(services.read_admin_usage, include_charts=include_charts),
+                request,
+            )
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _usage_response(payload, include_charts=include_charts)
+
+    @app.api_route('/api/v1/admin/usage-history', methods=['GET', 'HEAD'])
+    async def admin_usage_history(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_usage_history, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _usage_history_response(payload)
 
     @app.api_route('/api/v1/admin/settings', methods=['GET', 'HEAD'])
     async def admin_settings(request: Request):

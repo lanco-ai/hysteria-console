@@ -1887,6 +1887,10 @@ def _build_analytics_json_payload(*, now, include_charts=True):
     )
 
 
+def _build_daily_history_json_payload(*, now):
+    return usage_dashboard.build_daily_history_payload(_usage_context(), now=now)
+
+
 def _build_user_json_payload(uid, *, now, include_charts=True):
     return usage_dashboard.build_user_json_payload(
         _usage_context(),

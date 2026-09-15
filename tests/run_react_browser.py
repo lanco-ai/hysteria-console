@@ -32,6 +32,7 @@ def main():
         'react_logout_browser.cjs',
         'react_password_pages_browser.cjs',
         'react_overview_browser.cjs',
+        'react_usage_browser.cjs',
     )
     selected = os.environ.get('REACT_BROWSER_TEST')
     if selected is not None and selected not in browser_tests:
@@ -41,7 +42,10 @@ def main():
         if selected not in (None, browser_test):
             continue
         with preview_server(
-            overview_fixture=browser_test == 'react_overview_browser.cjs'
+            overview_fixture=browser_test in {
+                'react_overview_browser.cjs',
+                'react_usage_browser.cjs',
+            }
         ) as server:
             env = dict(
                 os.environ,
