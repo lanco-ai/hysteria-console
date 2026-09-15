@@ -32,6 +32,7 @@ adopted=(
   hysteria/web_api/user_detail_models.py
   hysteria/web_api/user_detail_routes.py
   hysteria/react_server.py
+  scripts/hy2_panel_release.py
   hysteria/password_change_service.py tests/test_password_change_service.py
   hysteria/account_mutation_service.py tests/test_account_mutation_service.py
   hysteria/overview_mutation_result.py
@@ -58,6 +59,7 @@ adopted=(
   tests/test_web_api_user_detail.py
   tests/test_react_server_entrypoint.py
   tests/test_react_cutover_config.py
+  tests/test_react_release.py
   tests/test_rules_react_contract.py
   tests/test_user_panel_react_contract.py
   tests/test_user_detail_react_contract.py

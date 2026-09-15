@@ -16,6 +16,9 @@
   `nginx/hysteria-panel-react-https.conf`：React 文档/API/构建资源指向 8083，
   订阅、二维码、legacy 下载/表单和未知路径保留 8081；路由清单合同测试会检查
   两个入口及 legacy 读取边界的一致性。
+- 已增加 `scripts/hy2_panel_release.py`，可在临时根目录校验、安装并原子切换
+  React `dist` 发布指针；它会拒绝符号链接、源码映射、越界路径和缺失的
+  manifest 资源。该工具尚未接入生产部署事务。
 - 旧 Codex 额度入口、接口和静态资源保持不可用；未改动代理配置、证书、
   域名或现有 443/9444 nginx 监听。
 
@@ -28,7 +31,7 @@
    只作为预发布模板存在，`deploy.sh` 尚未安装 web 运行环境、入口或单元，
    也没有启用 8083 loopback 服务。
 2. `deploy.sh` 尚未安装 `hysteria/web_api/`、`frontend/dist` 或配套静态
-   资源，因此直接执行部署不会带上新面板。
+   资源，也未调用 React 发布指针工具，因此直接执行部署不会带上新面板。
 3. 需要在临时副本验证所有 legacy/React 方法、深链接、下载、订阅/二维码、
    证据、CSV、改密、登出及四种用户生命周期，并保存同一版本的资产与服务
    单元，才能形成可回滚发布包。
@@ -43,7 +46,8 @@
 PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh
 npm run check:frontend
 PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/pytest -q \
-  tests/test_react_route_parity.py tests/test_react_cutover_config.py
+  tests/test_react_route_parity.py tests/test_react_cutover_config.py \
+  tests/test_react_release.py
 PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/python tests/run_react_browser.py
 bash -n deploy.sh
 ```
