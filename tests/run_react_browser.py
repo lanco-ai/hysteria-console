@@ -34,6 +34,7 @@ def main():
         'react_overview_browser.cjs',
         'react_usage_browser.cjs',
         'react_health_browser.cjs',
+        'react_incidents_browser.cjs',
     )
     selected = os.environ.get('REACT_BROWSER_TEST')
     if selected is not None and selected not in browser_tests:
@@ -47,6 +48,7 @@ def main():
                 'react_overview_browser.cjs',
                 'react_usage_browser.cjs',
                 'react_health_browser.cjs',
+                'react_incidents_browser.cjs',
             }
         ) as server:
             env = dict(

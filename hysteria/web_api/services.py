@@ -478,6 +478,17 @@ class LegacyPanelServices:
 
         return self._run_read(read)
 
+    def read_admin_incidents(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            return service.build_incident_payload(now=service.local_now())
+
+        return self._run_read(read)
+
     def read_admin_logs(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module

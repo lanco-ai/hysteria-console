@@ -37,6 +37,7 @@ from .usage_models import (
     AdminUsageResponse,
     AdminUsageSummaryResponse,
 )
+from .incident_models import AdminIncidentResponse
 
 _API_SECURITY_HEADERS = {
     'Cache-Control': 'no-store',
@@ -123,6 +124,14 @@ def _usage_history_response(payload):
 def _health_response(payload):
     model = AdminHealthResponse.model_validate(payload)
     return JSONResponse(model.model_dump())
+
+
+def _incident_response(payload, *, attachment=False):
+    model = AdminIncidentResponse.model_validate(payload)
+    headers = None
+    if attachment:
+        headers = {'Content-Disposition': 'attachment; filename="incident-evidence.json"'}
+    return JSONResponse(model.model_dump(), headers=headers)
 
 
 def _password_page_response(payload):
@@ -411,6 +420,26 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _health_response(payload)
+
+    @app.api_route('/api/v1/admin/incidents', methods=['GET', 'HEAD'])
+    async def admin_incidents(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_incidents, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _incident_response(payload)
+
+    @app.api_route('/api/v1/admin/incidents/evidence', methods=['GET', 'HEAD'])
+    async def admin_incident_evidence(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_incidents, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _incident_response(payload, attachment=True)
 
     @app.api_route('/api/v1/admin/settings', methods=['GET', 'HEAD'])
     async def admin_settings(request: Request):

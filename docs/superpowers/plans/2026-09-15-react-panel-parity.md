@@ -57,7 +57,9 @@
 - [x] Capture failing health status contract and verify the missing route.
 - [x] Add a structured health adapter/model and React page with accessible status, loading, retry, and refresh feedback.
 - [x] Verify health probe regressions and browser navigation from the sidebar.
-- [ ] Add the incident read/write page and its operation contracts.
+- [x] Add the incident read/write page and its operation contracts.
+- [x] Add the incident read API, evidence download boundary, React triage tables, and existing pause/Token actions.
+- [x] Verify incident domain tests, frontend checks, real payload model validation, and browser navigation.
 
 ### Task 3: Network configuration pages
 
