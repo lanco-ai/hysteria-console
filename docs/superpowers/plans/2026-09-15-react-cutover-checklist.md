@@ -84,6 +84,8 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
 - 后端完整套件：`2244 passed, 80 warnings`。
 - React 浏览器矩阵：公共首页、登录/退出、改密、总览、流量分析、健康状态、
   事故处理、模板配置、路由规则、家宽出口和完整用户面板均通过。
+- 前端完整质量命令（CSS/JS lint、门禁、传统浏览器矩阵、React 类型检查、构建、
+  单元和 React 浏览器矩阵）通过；浏览器脚本使用包含 FastAPI 的质量虚拟环境。
 - 路由/发布工具合同：23 项通过；切换工具、部署 wiring、恢复白名单和供应链
   合同：129 项通过；`scripts/check-quality.sh --lint-only`、
   `bash -n deploy.sh` 和 `git diff --check` 通过。
