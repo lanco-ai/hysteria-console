@@ -34,6 +34,7 @@ REACT_PAGES = {
     '/__react/admin/incidents': ('事故处理', 'has-shell'),
     '/__react/admin/config': ('模板配置', 'has-shell'),
     '/__react/admin/rules': ('路由规则', 'has-shell'),
+    '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
     '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),

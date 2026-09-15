@@ -37,6 +37,7 @@ def main():
         'react_incidents_browser.cjs',
         'react_config_browser.cjs',
         'react_rules_browser.cjs',
+        'react_landing_browser.cjs',
     )
     selected = os.environ.get('REACT_BROWSER_TEST')
     if selected is not None and selected not in browser_tests:

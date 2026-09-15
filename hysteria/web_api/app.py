@@ -39,6 +39,7 @@ from .usage_models import (
 )
 from .incident_models import AdminIncidentResponse
 from .config_models import AdminRulesResponse, AdminTemplateResponse, TemplateMutationResponse
+from .landing_models import AdminLandingResponse
 
 _API_SECURITY_HEADERS = {
     'Cache-Control': 'no-store',
@@ -143,6 +144,11 @@ def _template_response(payload):
 def _rules_response(payload):
     model = AdminRulesResponse.model_validate(payload)
     return JSONResponse(model.model_dump())
+
+
+def _landing_response(payload):
+    model = AdminLandingResponse.model_validate(payload)
+    return JSONResponse(model.model_dump(exclude_none=True))
 
 
 def _template_mutation_response(payload):
@@ -479,6 +485,16 @@ def create_app(services, *, max_requests=32):
         if isinstance(payload, JSONResponse):
             return payload
         return _rules_response(payload)
+
+    @app.api_route('/api/v1/admin/landing-egresses', methods=['GET', 'HEAD'])
+    async def admin_landing_egresses(request: Request):
+        try:
+            payload = await dispatch(services.read_admin_landing, request)
+        except (LoginRequired, UserAccessDenied, StateUnavailable) as exc:
+            return _read_error_response(exc)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return _landing_response(payload)
 
     @app.post('/api/v1/admin/config/save')
     async def admin_config_save(request: Request):

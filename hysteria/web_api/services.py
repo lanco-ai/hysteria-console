@@ -490,6 +490,44 @@ class LegacyPanelServices:
 
         return self._run_read(read)
 
+    def read_admin_landing(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            registry = service._landing_registry_or_empty()
+            raw_nodes = registry.get('nodes', {}) if isinstance(registry, dict) else {}
+            nodes = []
+            for node_id, node in sorted(raw_nodes.items()):
+                if not isinstance(node, dict):
+                    continue
+                public = service.landing_egress.public_node(node)
+                if public.get('id') != node_id:
+                    continue
+                nodes.append(public)
+            users = []
+            for username, cfg in sorted(service.load_json(service.USERS_FILE, {}).items()):
+                if not isinstance(cfg, dict):
+                    continue
+                allowed = cfg.get('landing_allowed_egress_ids', [])
+                if not isinstance(allowed, list):
+                    allowed = []
+                users.append({
+                    'user': str(username),
+                    'revision': service.user_config_revision(cfg),
+                    'allowed_ids': [str(item) for item in allowed if isinstance(item, str)],
+                })
+            return {
+                'ts': service.local_now().isoformat(timespec='seconds'),
+                'revision': service.content_revision(registry),
+                'nodes': nodes,
+                'users': users,
+            }
+
+        return self._run_read(read)
+
     def read_admin_config(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module

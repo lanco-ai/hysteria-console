@@ -9,6 +9,7 @@ import { HealthPage } from './features/network-admin/health/HealthPage';
 import { IncidentsPage } from './features/network-admin/incidents/IncidentsPage';
 import { ConfigPage } from './features/network-admin/config/ConfigPage';
 import { RulesPage } from './features/network-admin/rules/RulesPage';
+import { LandingPage } from './features/network-admin/landing/LandingPage';
 import { HomePage } from './features/public/HomePage';
 import { OverviewPage } from './features/network-admin/overview/OverviewPage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
@@ -69,6 +70,12 @@ if (window.location.pathname === '/__react/') {
   applyInitialShellPreferences();
   const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
   reactRoot.render(<RulesPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/admin/landing-egresses') {
+  document.title = '家宽出口';
+  document.body.className = 'has-shell';
+  applyInitialShellPreferences();
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  reactRoot.render(<LandingPage publicHost={publicHost}/>);
 } else if (window.location.pathname === '/__react/user/change-password') {
   document.title = '修改面板密码';
   document.body.className = 'page-auth';
