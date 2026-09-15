@@ -13,13 +13,33 @@ function ErrorState({ error, retry }: { error: ResourceError; retry: () => void 
 
 function HourlyChart({ points }: { points: Usage['hourly_totals'] }) {
   const max = Math.max(1, ...points.map(point => point.bytes));
-  return <div className="usage-hourly" role="img" aria-label="过去 7 天每小时流量柱状图">
-    {points.map(point => <span
-      className="usage-hourly-bar"
-      key={point.hour}
-      title={`${point.hour} · ${fmtBytes(point.bytes)}`}
-      style={{ height: `${Math.max(3, point.bytes / max * 100)}%` }}
-    />)}
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const activePoint = activeIndex === null ? undefined : points[activeIndex];
+  const formatHour = (value: string) => {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})/);
+    return match ? `${match[2]}-${match[3]} ${match[4]}:00` : value;
+  };
+  return <div className="usage-hourly-wrap">
+    <div className="usage-hourly" role="group" aria-label="过去 7 天每小时流量柱状图" onMouseLeave={() => setActiveIndex(null)}>
+      {points.map((point, index) => {
+        const label = `${formatHour(point.hour)} · ${fmtBytes(point.bytes)}`;
+        return <span
+          className="usage-hourly-bar"
+          key={point.hour}
+          role="img"
+          tabIndex={0}
+          aria-label={label}
+          title={label}
+          onMouseEnter={() => setActiveIndex(index)}
+          onFocus={() => setActiveIndex(index)}
+          onBlur={() => setActiveIndex(null)}
+          style={{ height: `${Math.max(3, point.bytes / max * 100)}%` }}
+        />;
+      })}
+    </div>
+    {activePoint ? <div className="usage-hourly-tooltip" data-role="hourly-tooltip" role="status" aria-live="polite">
+      <span>{formatHour(activePoint.hour)}</span><strong>{fmtBytes(activePoint.bytes)}</strong>
+    </div> : null}
   </div>;
 }
 

@@ -74,3 +74,10 @@ def test_usage_chart_has_a_definite_height_and_page_spacing():
     assert 'className="admin-page usage-page"' in page
     assert 'height: 180px' in styles
     assert '.admin-page.usage-page' in sections
+
+
+def test_usage_hourly_bars_expose_interactive_unit_tooltip():
+    page = (ROOT / 'frontend/src/features/network-admin/usage/UsagePage.tsx').read_text()
+    assert 'data-role="hourly-tooltip"' in page
+    assert 'onMouseEnter' in page
+    assert 'onFocus' in page

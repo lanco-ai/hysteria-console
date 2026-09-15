@@ -5669,12 +5669,39 @@ body.has-shell .usage-hourly {
   padding: 12px 4px 4px;
   border-bottom: 1px solid var(--hairline);
 }
+body.has-shell .usage-hourly-wrap { position: relative; }
 body.has-shell .usage-hourly-bar {
   flex: 1 1 0;
   min-width: 2px;
   background: var(--accent);
   border-radius: 3px 3px 0 0;
   opacity: .82;
+  cursor: help;
+}
+body.has-shell .usage-hourly-bar:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+body.has-shell .usage-hourly-tooltip {
+  position: absolute;
+  right: 8px;
+  top: 8px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-xs);
+  font-size: var(--text-small);
+  pointer-events: none;
+}
+body.has-shell .usage-hourly-tooltip strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 body.has-shell .usage-hourly-bar:hover { opacity: 1; }
 body.has-shell .usage-heatmap { display: grid; gap: 5px; min-width: 0; }

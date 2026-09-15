@@ -18,6 +18,13 @@ async function main() {
   await expect(page).toHaveTitle('流量分析');
   await expect(page.locator('.metric-card')).toHaveCount(4);
   await expect(page.locator('.usage-hourly-bar')).toHaveCount(168);
+  const hourlyBar = page.locator('.usage-hourly-bar').first();
+  await hourlyBar.hover();
+  await expect(page.locator('[data-role="hourly-tooltip"]')).toBeVisible();
+  await expect(page.locator('[data-role="hourly-tooltip"]')).toContainText('·');
+  await expect(page.locator('[data-role="hourly-tooltip"]')).toContainText(/(?:B|KB|MB|GB|TB)$/);
+  await hourlyBar.focus();
+  await expect(page.locator('[data-role="hourly-tooltip"]')).toBeVisible();
   await expect(page.locator('.usage-heatmap-row')).toHaveCount(7);
   await expect(page.locator('.usage-heatmap-cell')).toHaveCount(7 * 24);
   await page.locator('#usage-history summary').click();
