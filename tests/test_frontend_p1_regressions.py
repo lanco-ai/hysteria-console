@@ -17,6 +17,19 @@ import subscription_service as ss
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_calibrator_policy_fields_use_grouped_label_control_layout():
+    source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "health" / "HealthPage.tsx").read_text(encoding="utf-8")
+    styles = (ROOT / "hysteria" / "styles" / "11-health-calibration.css").read_text(encoding="utf-8")
+
+    assert 'className="grid grid-3 calibrator-auto-grid"' in source
+    assert "body.has-shell .calibrator-auto-grid > label {" in styles
+    assert "display: flex;" in styles
+    assert "flex-direction: column;" in styles
+    assert "gap: 6px;" in styles
+    assert "body.has-shell .calibrator-auto-grid > label > select," in styles
+    assert "body.has-shell .calibrator-auto-grid > label > input {" in styles
+
+
 def _relative_luminance(hex_color):
     channels = [
         int(hex_color[index : index + 2], 16) / 255

@@ -3608,6 +3608,31 @@ body.has-shell .grid.grid-3 label:not(.switch) {
   margin-bottom: 4px;
 }
 
+/* Keep the five automatic-policy fields readable instead of letting labels
+   and controls run together in the generic three-column grid. */
+body.has-shell .calibrator-auto-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  column-gap: 20px;
+  row-gap: 14px;
+}
+
+body.has-shell .calibrator-auto-grid > label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+}
+
+body.has-shell .calibrator-auto-grid > label > select,
+body.has-shell .calibrator-auto-grid > label > input {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  font-size: var(--text-ui);
+}
+
 /* =====================================================
    COST CALIBRATOR — redesigned layout
    ===================================================== */
@@ -3771,7 +3796,6 @@ body.has-shell .calibrator-last-check {
 
 body.has-shell .badge-ok { background: var(--bg-subtle); color: var(--text-secondary); }
 body.has-shell .badge-warn { background: var(--bg-subtle); color: var(--warn); }
-
 /* =====================================================
    INCIDENTS PAGE
    ===================================================== */
@@ -4442,6 +4466,18 @@ body.has-shell .cost-calibrator-title {
   .topbar-right {
     flex-wrap: nowrap;
     overflow-x: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  body.has-shell .calibrator-auto-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  body.has-shell .calibrator-auto-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 /* =====================================================
