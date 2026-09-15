@@ -94,6 +94,15 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
 - 上述证据来自隔离预览和临时发布根目录；未验证线上 Nginx、域名证书、443/9444
   监听或真实回滚，因此不构成生产切换完成证明。
 
+## 线上切换前只读基线（2026-09-15）
+
+- `https://lancoai.site:9444/admin` 和 `https://lancoai.site/admin` 均返回
+  `302 Location: /login`，当前入口仍由 legacy 服务提供。
+- 9444 证书公开信息：`CN=lancoai.site`，有效期至 `2026-12-10`，SHA-256
+  指纹为 `22:DA:8F:DD:06:D7:D1:CC:3D:45:F2:73:1C:81:89:57:E0:E1:2E:D8:90:98:29:BD:F9:22:FD:B5:85:EE:64:12`。
+- 当前监听为 Nginx `443`、Nginx `9444`、legacy `127.0.0.1:8081`；未发现
+  React `127.0.0.1:8083`。该基线只读采集，不包含私钥或凭证。
+
 ## 回滚
 
 如果任一 smoke test 失败：停止新 ASGI 单元，恢复同一备份中的 nginx
