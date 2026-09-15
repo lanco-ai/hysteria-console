@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { AdminShell } from '../../../shared/AdminShell';
+import { LoadingState } from '../../../shared/LoadingState';
 import { useInitialFragmentNavigation } from '../../../shared/useInitialFragmentNavigation';
 import { OverviewTable } from './OverviewTable';
 import { CreateForm, CycleForm, EditDialog } from './UserForms';
@@ -61,7 +62,7 @@ export function OverviewPage({ publicHost }: { publicHost: string }) {
         onClick={overview.refresh}
       >刷新核对</button>}
     </div> : null}
-    {overview.loading && !data ? <p role="status">正在加载总览…</p> : null}
+    {overview.loading && !data ? <LoadingState label="正在加载总览…"/> : null}
     {data ? <>
       <div className="overview-stats">
         <div className="overview-stat">

@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AdminShell } from '../../../shared/AdminShell';
+import { LoadingState } from '../../../shared/LoadingState';
 import { useFormAction } from '../../../shared/useFormAction';
 import { ResourceError, useReadResource } from '../../../shared/readResource';
 import { mutateRules, RULES_ENDPOINT, parseRules, saveRules } from './requests';
@@ -118,7 +119,7 @@ export function RulesPage({ publicHost }: { publicHost: string }) {
 
   return <AdminShell active="rules" pageTitle="路由规则" badge={rules.status === 'success' ? `${rules.data.rules.length} 条` : ''} subtitle={`${publicHost} · 订阅匹配顺序`} topbarExtra={<span className="badge poll-status">版本受保护</span>}>
     {rules.status === 'error' ? <ErrorState error={rules.error} retry={rules.retry}/> : null}
-    {rules.status === 'loading' ? <div className="card" role="status">正在加载规则…</div> : null}
+    {rules.status === 'loading' ? <LoadingState label="正在加载规则…"/> : null}
     {rules.status === 'success' ? <div className="admin-page">
       {message ? <div className="flash" role="status">{message}</div> : null}
       <section className="form-section">

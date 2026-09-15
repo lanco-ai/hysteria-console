@@ -26,3 +26,24 @@ def test_overview_keeps_cached_data_between_route_switches():
 
     assert 'cached' in source.lower()
     assert 'setLoading' in source
+
+
+def test_first_visit_uses_a_non_blocking_loading_surface():
+    loading = (ROOT / 'frontend/src/shared/LoadingState.tsx').read_text()
+    assert 'loading-state' in loading
+    assert 'aria-label={label}' in loading
+
+    page_sources = [
+        ROOT / 'frontend/src/features/network-admin/overview/OverviewPage.tsx',
+        ROOT / 'frontend/src/features/network-admin/usage/UsagePage.tsx',
+        ROOT / 'frontend/src/features/network-admin/health/HealthPage.tsx',
+        ROOT / 'frontend/src/features/network-admin/config/ConfigPage.tsx',
+        ROOT / 'frontend/src/features/network-admin/rules/RulesPage.tsx',
+        ROOT / 'frontend/src/features/network-admin/incidents/IncidentsPage.tsx',
+        ROOT / 'frontend/src/features/network-admin/landing/LandingPage.tsx',
+        ROOT / 'frontend/src/features/network-admin/logs/LogsPage.tsx',
+        ROOT / 'frontend/src/features/network-admin/user-detail/UserDetailPage.tsx',
+        ROOT / 'frontend/src/features/auth/UserPasswordPage.tsx',
+        ROOT / 'frontend/src/features/user/UserPanelPage.tsx',
+    ]
+    assert all('LoadingState' in path.read_text() for path in page_sources)

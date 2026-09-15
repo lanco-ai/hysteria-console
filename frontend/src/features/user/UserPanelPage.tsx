@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { USER_PANEL_ENDPOINT, parseUserPanel } from './requests';
 import { ResourceError, useReadResource } from '../../shared/readResource';
+import { LoadingState } from '../../shared/LoadingState';
 import { useFormAction } from '../../shared/useFormAction';
 import { fmtBytes } from '../network-admin/overview/presentation';
 import { mutateLanding } from '../network-admin/landing/requests';
@@ -27,7 +28,7 @@ export function UserPanelPage({ publicHost }: { publicHost: string }) {
   useEffect(() => { if (resource.status === 'success' && !selectedProfile) setSelectedProfile(resource.data.subscription_profiles[0]?.key || ''); }, [resource.status, resource.data, selectedProfile]);
   useEffect(() => { if (resource.status !== 'success' || resource.data.disabled || resource.data.expired) return; const timer = window.setInterval(resource.retry, 30_000); return () => window.clearInterval(timer); }, [resource.status, resource.data, resource.retry]);
   if (resource.status === 'error') return <ErrorState error={resource.error} retry={resource.retry}/>;
-  if (resource.status !== 'success') return <main className="auth-scene"><div className="card" role="status">正在加载用户面板…</div></main>;
+  if (resource.status !== 'success') return <main className="auth-scene"><LoadingState label="正在加载用户面板…"/></main>;
   const data = resource.data;
   const current = data.subscription_profiles.find(profile => profile.key === selectedProfile) || data.subscription_profiles[0];
   const quotaUnlimited = data.total_bytes === 0;

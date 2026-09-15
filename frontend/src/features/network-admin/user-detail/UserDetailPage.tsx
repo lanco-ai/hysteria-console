@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { AdminShell } from '../../../shared/AdminShell';
+import { LoadingState } from '../../../shared/LoadingState';
 import { ResourceError, useReadResource } from '../../../shared/readResource';
 import { fmtBytes } from '../overview/presentation';
 import { parseUserDetail, USER_DETAIL_ENDPOINT } from './requests';
@@ -49,7 +50,7 @@ export function UserDetailPage({ publicHost, uid }: { publicHost: string; uid: s
     return () => window.clearInterval(timer);
   }, [resource.status, resource.retry]);
   return <AdminShell active="usage" pageTitle={`${uid} · 用量画像`} badge={resource.status === 'success' ? `${resource.data.online} 在线` : ''} subtitle={`${publicHost} · 用户详情`} topbarExtra={<span className="badge poll-status">自动更新 · 30 s</span>}>
-    {resource.status === 'loading' ? <div className="card" role="status">正在加载用户用量…</div> : null}
+    {resource.status === 'loading' ? <LoadingState label="正在加载用户用量…"/> : null}
     {resource.status === 'error' ? <ErrorState error={resource.error} retry={resource.retry}/> : null}
     {resource.status === 'success' ? <Content data={resource.data}/> : null}
   </AdminShell>;

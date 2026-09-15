@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { usePasswordChange } from '../../auth/usePasswordChange';
 import { validatePasswordPage } from '../../auth/passwordPageTypes';
 import { AdminShell } from '../../../shared/AdminShell';
+import { LoadingState } from '../../../shared/LoadingState';
 import { useReadResource } from '../../../shared/readResource';
 import { useInitialFragmentNavigation } from '../../../shared/useInitialFragmentNavigation';
 
@@ -98,7 +99,7 @@ export function SettingsPage({ publicHost }: { publicHost: string }) {
   } else if (resource.status === 'error' && resource.error.status !== 401) {
     content = <div className="card"><div className="err" role="alert" aria-live="assertive" aria-atomic="true">加载失败：{resource.error.message}</div><div className="row mt-md"><button className="btn secondary" type="button" onClick={resource.retry}>重试</button></div></div>;
   } else {
-    content = <div className="card" role="status" aria-live="polite">正在加载设置…</div>;
+    content = <LoadingState label="正在加载设置…"/>;
   }
   return <AdminShell active="settings" badge={publicHost} pageTitle="设置">{content}</AdminShell>;
 }

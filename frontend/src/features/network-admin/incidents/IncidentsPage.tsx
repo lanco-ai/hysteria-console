@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AdminShell } from '../../../shared/AdminShell';
+import { LoadingState } from '../../../shared/LoadingState';
 import { ResourceError, useReadResource } from '../../../shared/readResource';
 import { fmtBytes } from '../overview/presentation';
 import { INCIDENTS_ENDPOINT, parseIncidents, writeIncidentAction } from './requests';
@@ -34,5 +35,4 @@ function Content({ data, retry }: { data: Incidents; retry: () => void }) {
     <section className="admin-section"><div className="admin-section-header"><h2 className="admin-section-title">线路质量摘要</h2></div><div className="admin-section-body">{data.line_radar.rows.map(row => <div className="radar-summary-row" key={row.key}><span>{row.label}</span><span className="mono">{row.share.toFixed(1)}%</span><Status ok={row.ok} label={row.status}/></div>)}</div></section>
   </div>;
 }
-export function IncidentsPage({ publicHost }: { publicHost: string }) { const incidents = useReadResource(INCIDENTS_ENDPOINT, { validate: parseIncidents }); return <AdminShell active="incidents" pageTitle="事故处理" badge={incidents.status === 'success' ? `${incidents.data.alerts.length} 条告警` : ''} subtitle={`${publicHost} · 峰值 · 用户 · 证据`} topbarExtra={<span className="badge poll-status">实时快照</span>}>{incidents.status === 'error' ? <ErrorState error={incidents.error} retry={incidents.retry}/> : null}{incidents.status === 'loading' ? <div className="card" role="status">正在加载事故数据…</div> : null}{incidents.status === 'success' ? <Content data={incidents.data} retry={incidents.retry}/> : null}</AdminShell>; }
-
+export function IncidentsPage({ publicHost }: { publicHost: string }) { const incidents = useReadResource(INCIDENTS_ENDPOINT, { validate: parseIncidents }); return <AdminShell active="incidents" pageTitle="事故处理" badge={incidents.status === 'success' ? `${incidents.data.alerts.length} 条告警` : ''} subtitle={`${publicHost} · 峰值 · 用户 · 证据`} topbarExtra={<span className="badge poll-status">实时快照</span>}>{incidents.status === 'error' ? <ErrorState error={incidents.error} retry={incidents.retry}/> : null}{incidents.status === 'loading' ? <LoadingState label="正在加载事故数据…"/> : null}{incidents.status === 'success' ? <Content data={incidents.data} retry={incidents.retry}/> : null}</AdminShell>; }

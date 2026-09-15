@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AdminShell } from '../../../shared/AdminShell';
+import { LoadingState } from '../../../shared/LoadingState';
 import { ResourceError, useReadResource } from '../../../shared/readResource';
 import { fmtBytes } from '../overview/presentation';
 import { HEALTH_ENDPOINT, parseHealth, runHealthAction } from './requests';
@@ -80,7 +81,7 @@ export function HealthPage({ publicHost }: { publicHost: string }) {
   return <AdminShell active="health" pageTitle="健康状态" badge={health.status === 'success' ? '实时探测' : ''} subtitle={`${publicHost} · 服务与基础设施`} topbarExtra={<><button className="btn ghost btn-sm" type="button" onClick={refresh} disabled={health.status === 'loading'}>立即刷新</button><button className="btn ghost btn-sm" type="button" onClick={() => void runAction('update-check')} disabled={Boolean(actionBusy)}>检查更新</button><button className="btn secondary btn-sm" type="button" onClick={() => void runAction('update-apply', {}, '将更新任务加入后台队列，确认继续？')} disabled={Boolean(actionBusy)}>立即更新</button><button className="btn ghost btn-sm" type="button" onClick={() => void runAction('test-alert')} disabled={Boolean(actionBusy)}>测试告警</button><span className="badge poll-status">{health.status === 'loading' ? '加载中…' : polling}</span><span className="sr-only" role="status" aria-live="polite">{polling}</span></>}>
     {actionMessage ? <div className="flash" role="status">{actionMessage}</div> : null}
     {health.status === 'error' ? <ErrorState error={health.error} retry={health.retry}/> : null}
-    {health.status === 'loading' ? <div className="card" role="status">正在运行健康探测…</div> : null}
+    {health.status === 'loading' ? <LoadingState label="正在运行健康探测…"/> : null}
     {health.status === 'success' ? <div className="admin-page health-page">
       <div className="health-top-kpis" aria-label="健康概览">{health.data.kpis.map(kpi => <div className="health-kpi-card" key={kpi.title}><div className="health-kpi-label">{kpi.title}</div><div className="health-kpi-value"><StatusBadge status={kpi}/></div></div>)}</div>
       <section className="admin-section"><div className="admin-section-header"><h2 className="admin-section-title">核心服务与基础设施</h2><div className="small">{health.data.ts.replace('T', ' · ')}</div></div><div className="admin-section-body no-pad"><div className="data-table-wrap" tabIndex={0} aria-label="健康探测结果，可横向滚动"><table className="data-table health-service-table"><thead><tr><th>项目</th><th>状态</th></tr></thead><tbody>{health.data.services.map(item => <tr key={item.title}><th scope="row">{item.title}</th><td><StatusBadge status={item}/></td></tr>)}</tbody></table></div></div></section>

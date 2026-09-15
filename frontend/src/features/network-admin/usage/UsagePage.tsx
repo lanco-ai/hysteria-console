@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AdminShell } from '../../../shared/AdminShell';
+import { LoadingState } from '../../../shared/LoadingState';
 import { ResourceError, useReadResource } from '../../../shared/readResource';
 import { Spark, fmtBytes } from '../overview/presentation';
 import { parseUsage, parseUsageHistory } from './requests';
@@ -74,7 +75,7 @@ function LazyHistory() {
   return <details className="admin-section" id="usage-history" onToggle={event => setOpen(event.currentTarget.open)}>
     <summary>历史每日明细（可展开）</summary>
     <div className="admin-section-body">
-      {history.status === 'loading' ? <div role="status">正在加载历史明细…</div> : null}
+      {history.status === 'loading' ? <LoadingState label="正在加载历史明细…" variant="table"/> : null}
       {history.status === 'error' ? <ErrorState error={history.error} retry={history.retry}/> : null}
       {history.status === 'success' ? <HistoryTable history={history.data}/> : null}
     </div>
@@ -96,7 +97,7 @@ export function UsagePage({ publicHost }: { publicHost: string }) {
 
   return <AdminShell active="usage" pageTitle="流量分析" badge={usage.status === 'success' ? `${usage.data.stats.online} 个在线` : ''} subtitle={`${publicHost} · 实时数据`} topbarExtra={<><button className="btn ghost btn-sm" type="button" onClick={refresh} disabled={usage.status === 'loading'}>立即刷新</button><span className="badge poll-status" data-role="usage-poll-status">{usage.status === 'loading' ? '加载中…' : polling}</span><span className="sr-only" role="status" aria-live="polite">{polling}</span></>}>
     {usage.status === 'error' ? <ErrorState error={usage.error} retry={usage.retry}/> : null}
-    {usage.status === 'loading' ? <div className="card" role="status">正在加载流量分析…</div> : null}
+    {usage.status === 'loading' ? <LoadingState label="正在加载流量分析…"/> : null}
     {usage.status === 'success' ? <>
       <div className="metric-grid">
         <div className="metric-card"><div className="metric-k">当小时</div><div className="metric-v big">{fmtBytes(usage.data.stats.current_hour_bytes)}</div><div className="metric-sub">{usage.data.stats.online} 在线</div></div>

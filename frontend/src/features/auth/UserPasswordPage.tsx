@@ -3,6 +3,7 @@ import { useReadResource } from '../../shared/readResource';
 import { useInitialFragmentNavigation } from '../../shared/useInitialFragmentNavigation';
 import { validatePasswordPage, type PasswordPageData } from './passwordPageTypes';
 import { usePasswordChange } from './usePasswordChange';
+import { LoadingState } from '../../shared/LoadingState';
 
 const fragmentTargets = new Set(['main-content']);
 const initialMessages = new Map<string, string>([
@@ -116,5 +117,5 @@ export function UserPasswordPage({ publicHost }: { publicHost: string }) {
   )) {
     return <UserFrame><div className="auth-scene"><div className="auth-body"><div className="auth-form-panel"><div className="auth-card"><div className="err" role="alert" aria-live="assertive" aria-atomic="true">加载失败：{resource.error.message}</div><button className="btn secondary mt-md" type="button" onClick={resource.retry}>重试</button></div></div></div></div></UserFrame>;
   }
-  return <UserFrame><div className="auth-scene"><div className="auth-body"><div className="auth-form-panel"><div className="auth-card" role="status" aria-live="polite">正在加载密码设置…</div></div></div></div></UserFrame>;
+  return <UserFrame><div className="auth-scene"><div className="auth-body"><div className="auth-form-panel"><div className="auth-card"><LoadingState label="正在加载密码设置…" variant="auth"/></div></div></div></div></UserFrame>;
 }
