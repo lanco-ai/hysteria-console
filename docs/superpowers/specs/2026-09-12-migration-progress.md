@@ -24,17 +24,18 @@ This is an acceptance index, not a claim that the full migration is complete.
 | Overview account operations | Shared create/update service and bounded API accepted; strict outcome validation and real state tests verified | `84725cd`, `f378bc3`, `a4b78da`, `c2e276d`, overview-account-boundary/API plans |
 | Overview traffic/status operations | Shared services and six bounded APIs plus read-only reload status accepted; independent review and coverage follow-up complete | `5011a4a`, `771d7cc`, overview-basic-operations plan |
 | Overview credential operations | Shared administrator rotation/deletion and strict APIs accepted; durable recovery and user-panel legacy flow preserved | `a8a63e7`, overview-credential-operations plan |
-| React overview and real-time refresh | Not yet accepted; operation APIs are prerequisites, not completed UI | react-overview plan |
-| Remaining administrator pages and mutations | Legacy implementation remains authoritative | full spec parity register |
-| React user panel | Not yet implemented; legacy panel unchanged | full spec parity register |
-| Staging, production switch, cleanup | Not started; explicit deployment checkpoint required | full spec cutover and completion gates |
+| React overview and real-time refresh | Accepted in isolated preview with mutation ordering, 30-second refresh and recovery states | `1d0070f`, `8b5a533`, react-overview plan |
+| Remaining administrator pages and mutations | React surfaces for usage, health, incidents, configuration, rules and residential egress accepted in isolated browser matrix; legacy remains available until cutover | `6751f8b`, react cutover checklist |
+| React user panel | Accepted in isolated preview with authorization, subscription, QR, password and refresh flows; legacy panel remains available until cutover | `6751f8b`, react cutover checklist |
+| Staging, production switch, cleanup | Opt-in runtime staging and guarded apply/rollback tooling complete; production deploy, route switch, rollback and legacy cleanup remain pending explicit checkpoint | `7cd88cf`, `86b5c48`, `3fdb71f`, react cutover checklist |
 
 ## Verification boundaries
 
 Every task has its own reviewed diff and covering tests. Full backend checks
 are reserved for cross-cutting changes; focused tests cover source-inventory
 and frontend-only fixes. Passing preview tests does not establish production
-asset caching, routing, runtime drift, rollback or deployment readiness.
+asset caching, routing, runtime drift, rollback or live deployment completion;
+the opt-in runtime and guarded cutover are now packaged and isolated-tested.
 
 Known upstream TestClient/AnyIO deprecations and pre-existing naive-UTC warnings
 remain visible and tracked for final integration review. No warnings were
