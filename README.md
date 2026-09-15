@@ -106,6 +106,7 @@ revocation all use the same canonical user record.
 | `HY_XRAY_VERSION` | `v26.6.27` | Exact Xray release installed from the repository-pinned archive. |
 | `HY_ENABLE_HTTPS` | `1` | Set to `0` only for an intentionally HTTP-only private deployment. |
 | `HY_ENABLE_REACT_PANEL` | `0` | Opt-in installation of the verified React/FastAPI runtime on loopback `127.0.0.1:8083`; it does not switch nginx routes. |
+| `HY_REACT_DIST_DIR` | `frontend/dist` | Built React `dist` directory used for the opt-in release; relative paths resolve from the checkout. |
 | `HY_CERTBOT_EMAIL` | empty | Optional Let's Encrypt account email. |
 | `HY_HTTPS_PORT` | `9444` | nginx TLS port; must not conflict with Xray/TUIC. |
 

@@ -918,6 +918,10 @@ HY_XRAY_VERSION="${HY_XRAY_VERSION:-$XRAY_PINNED_VERSION}"
 HY_ENABLE_HTTPS="${HY_ENABLE_HTTPS:-1}"
 HY_HTTPS_PORT="${HY_HTTPS_PORT:-9444}"
 HY_ENABLE_REACT_PANEL="${HY_ENABLE_REACT_PANEL:-0}"
+HY_REACT_DIST_DIR="${HY_REACT_DIST_DIR:-$REPO_DIR/frontend/dist}"
+if [[ "$HY_REACT_DIST_DIR" != /* ]]; then
+  HY_REACT_DIST_DIR="$REPO_DIR/$HY_REACT_DIST_DIR"
+fi
 
 case "$HY_ENABLE_REACT_PANEL" in
   0) ;;
@@ -936,6 +940,7 @@ for v in \
   HY_OBFS_PASSWORD \
   HY_SERVER_HOST \
   HY_DISPLAY_MULTIPLIER \
+  HY_REACT_DIST_DIR \
   XRAY_REALITY_PRIVATE_KEY \
   XRAY_REALITY_PUBLIC_KEY \
   XRAY_REALITY_SHORT_ID; do
@@ -1472,7 +1477,7 @@ symlink_atomic() {
 
 stage_react_release() {
   [[ "$HY_ENABLE_REACT_PANEL" == "1" ]] || return 0
-  local dist="$REPO_DIR/frontend/dist"
+  local dist="$HY_REACT_DIST_DIR"
   local panel_root="$HY_DIR/panel"
   local release_target result release_existed=0
   [[ -d "$dist" && ! -L "$dist" ]] ||

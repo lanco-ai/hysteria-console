@@ -48,7 +48,10 @@ def test_react_deployment_is_explicitly_opt_in():
 
     assert 'HY_ENABLE_REACT_PANEL="${HY_ENABLE_REACT_PANEL:-0}"' in deploy
     assert 'HY_ENABLE_REACT_PANEL' in renderer
+    assert 'HY_REACT_DIST_DIR' in renderer
     assert 'HY_ENABLE_REACT_PANEL=0' in env_example
+    assert 'HY_REACT_DIST_DIR=frontend/dist' in env_example
+    assert 'HY_REACT_DIST_DIR="$REPO_DIR/$HY_REACT_DIST_DIR"' in deploy
     assert '[[ "$HY_ENABLE_REACT_PANEL" == "1" ]]' in deploy
 
 
@@ -57,6 +60,7 @@ def test_react_backend_sources_are_in_every_deploy_inventory():
     recovery = RECOVERY.read_text(encoding='utf-8')
 
     assert 'render "$REPO_DIR/hysteria/react_server.py" "$HY_DIR/react_server.py"' in deploy
+    assert 'local dist="$HY_REACT_DIST_DIR"' in deploy
     assert 'install -d -o root -g root -m 755 "$HY_DIR/web_api"' in deploy
     for module in WEB_API_MODULES:
         assert f'hysteria/web_api/{module}' in deploy
