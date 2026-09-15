@@ -34,6 +34,8 @@ adopted=(
   hysteria/react_server.py
   scripts/hy2_panel_release.py
   tests/test_react_deploy_wiring.py
+  tests/test_react_cutover_script.py
+  tests/test_react_cutover_runtime.py
   hysteria/password_change_service.py tests/test_password_change_service.py
   hysteria/account_mutation_service.py tests/test_account_mutation_service.py
   hysteria/overview_mutation_result.py

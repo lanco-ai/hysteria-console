@@ -395,6 +395,7 @@ build_durable_artifact_set() {
     /usr/local/sbin/hy2-lock-exec.py \
     /usr/local/sbin/hy2-enable-https.sh \
     /usr/local/sbin/hy2-deploy-recovery.py \
+    /usr/local/sbin/hy2-react-cutover.sh \
     /usr/local/sbin/hy2-cert-renew-hook.sh \
     /usr/local/sbin/hy2-health-check.sh \
     /usr/local/share/hy2/hysteria-panel-log.conf \
@@ -1846,6 +1847,7 @@ for artifact in \
   /usr/local/sbin/hy2-restore-check.sh \
   /usr/local/sbin/hy2-lock-exec.py \
   /usr/local/sbin/hy2-enable-https.sh \
+  /usr/local/sbin/hy2-react-cutover.sh \
   /usr/local/sbin/hy2-cert-renew-hook.sh \
   /usr/local/sbin/hy2-health-check.sh \
   /usr/local/share/hy2/hysteria-panel-log.conf \
@@ -2317,6 +2319,7 @@ install_atomic 755 "$REPO_DIR/scripts/hy2-restore-check.sh" /usr/local/sbin/hy2-
 install_atomic 755 "$REPO_DIR/scripts/hy2-lock-exec.py" /usr/local/sbin/hy2-lock-exec.py
 install_atomic 755 "$REPO_DIR/scripts/hy2-enable-https.sh" /usr/local/sbin/hy2-enable-https.sh
 install_atomic 755 "$REPO_DIR/scripts/hy2-deploy-recovery.py" /usr/local/sbin/hy2-deploy-recovery.py
+install_atomic 755 "$REPO_DIR/scripts/hy2-react-cutover.sh" /usr/local/sbin/hy2-react-cutover.sh
 install_atomic 755 "$REPO_DIR/scripts/hy2-cert-renew-hook.sh" /usr/local/sbin/hy2-cert-renew-hook.sh
 install_atomic 755 "$REPO_DIR/scripts/hy2-health-check.sh" /usr/local/sbin/hy2-health-check.sh
 install_atomic 644 "$REPO_DIR/logrotate/xray" /etc/logrotate.d/xray

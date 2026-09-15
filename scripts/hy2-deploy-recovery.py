@@ -111,6 +111,7 @@ EXACT_ALLOWED_PATHS = {
     "/usr/local/sbin/hy2-lock-exec.py",
     "/usr/local/sbin/hy2-enable-https.sh",
     "/usr/local/sbin/hy2-deploy-recovery.py",
+    "/usr/local/sbin/hy2-react-cutover.sh",
     "/usr/local/sbin/hy2-cert-renew-hook.sh",
     "/usr/local/sbin/hy2-health-check.sh",
     "/usr/local/share/hy2/hysteria-panel-log.conf",
