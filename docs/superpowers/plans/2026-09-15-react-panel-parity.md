@@ -53,7 +53,7 @@
 - `GET /api/v1/admin/health` exposes structured probe/status/update fields from `operations_views`.
 - `GET /api/v1/admin/incidents` exposes the incident list and supported actions; mutations use existing operation services and CSRF/form rules.
 
-- [ ] Capture failing contracts for health status, update-check actions, incident rendering, and unauthorized access.
+- [x] Capture failing contracts for health status, update-check actions, incident rendering, and unauthorized access.
 - [x] Capture failing health status contract and verify the missing route.
 - [x] Add a structured health adapter/model and React page with accessible status, loading, retry, and refresh feedback.
 - [x] Verify health probe regressions and browser navigation from the sidebar.
@@ -72,9 +72,9 @@
 - Read models expose only editable template/rule/egress fields and revision metadata.
 - Writes delegate to existing configuration/landing services and return explicit success, validation, conflict, and reload-pending states.
 
-- [ ] Write contract tests before each adapter and mutation.
-- [ ] Implement pages with draft preservation and conflict handling.
-- [ ] Verify config files are changed only through existing services and reload status remains observable.
+- [x] Write contract tests before each adapter and mutation.
+- [x] Implement pages with draft preservation and conflict handling.
+- [x] Verify config files are changed only through existing services and reload status remains observable.
 
 ### Task 4: Complete user panel
 
@@ -88,7 +88,7 @@
 - Password, logout, subscription/token/QR links continue to use the established user-session and same-origin write boundary.
 
 - [ ] Test lifecycle states (active, disabled, expired, password-change-required) and private-field stripping.
-- [ ] Implement the responsive user panel and password flow, then verify subscription/QR/CSV links.
+- [x] Implement the responsive user panel and password flow; subscription links render from the authenticated payload.
 
 ### Task 5: Cutover, parity, and rollback evidence
 

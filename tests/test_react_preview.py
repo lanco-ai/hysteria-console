@@ -146,6 +146,10 @@ def test_react_preview_serves_exact_login_entry_with_password_limit(running_prev
     [
         ('/__react/admin/settings', '设置', 'has-shell'),
         ('/__react/user/change-password', '修改面板密码', 'page-auth'),
+        ('/__react/admin/config', '模板配置', 'has-shell'),
+        ('/__react/admin/rules', '路由规则', 'has-shell'),
+        ('/__react/admin/landing-egresses', '家宽出口', 'has-shell'),
+        ('/__react/user/panel', '用户面板 · Hysteria', ''),
     ],
 )
 def test_react_preview_serves_exact_password_page_entries(
@@ -272,6 +276,10 @@ def test_react_preview_allows_exact_form_posts_and_preserves_cookie_isolation(ru
         '/__react/admin/logs',
         '/__react/admin/settings',
         '/__react/user/change-password',
+        '/__react/admin/config',
+        '/__react/admin/rules',
+        '/__react/admin/landing-egresses',
+        '/__react/user/panel',
         '/login',
         '/logout',
         '/user/logout',
