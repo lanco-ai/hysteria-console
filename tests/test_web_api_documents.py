@@ -119,6 +119,22 @@ def test_react_documents_do_not_spa_fallback_and_assets_are_immutable(tmp_path):
         )
 
 
+def test_react_document_keeps_vite_hashed_stylesheet(tmp_path, monkeypatch):
+    dist = _dist(tmp_path)
+    (dist / 'index.html').write_text(
+        '<title>old</title>'
+        '<link rel="stylesheet" href="/static/react/assets/app-123.css">'
+        '<body class="has-shell"><div id="root" data-public-host=""></div>',
+        encoding='utf-8',
+    )
+    monkeypatch.setattr(_Module, 'BASE_CSS_ETAG', '"deadbeef"', raising=False)
+    with TestClient(create_app(StubDocumentServices(), react_dist=dist)) as client:
+        response = client.get('/admin', headers={'Cookie': 'sid=admin'})
+    assert response.status_code == 200
+    assert 'href="/static/react/assets/app-123.css"' in response.text
+    assert '/static/style.css' not in response.text
+
+
 def test_legacy_daily_redirect_and_csv_export_are_authenticated(tmp_path):
     with TestClient(create_app(StubDocumentServices(), react_dist=_dist(tmp_path))) as client:
         redirect = client.get('/admin/daily', follow_redirects=False)

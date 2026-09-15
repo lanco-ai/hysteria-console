@@ -50,12 +50,12 @@ def test_first_visit_uses_a_non_blocking_loading_surface():
     assert all('LoadingState' in path.read_text() for path in page_sources)
 
 
-def test_react_documents_version_the_shared_css_reference():
+def test_react_documents_do_not_depend_on_legacy_css_reference():
     source = (ROOT / 'hysteria/web_api/document_routes.py').read_text()
 
-    assert 'BASE_CSS_ETAG' in source
-    assert 'css_version' in source
-    assert 'static/style.css?v=' in source
+    assert 'BASE_CSS_ETAG' not in source
+    assert 'static/style.css' not in source
+    assert 'css_version' not in source
 
 
 def test_react_nginx_routes_legacy_usage_bookmarks_to_react_service():

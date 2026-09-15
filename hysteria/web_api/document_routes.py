@@ -55,14 +55,6 @@ def _public_host(request: Request, services) -> str:
     return str(raw or '127.0.0.1')
 
 
-def _css_version(service) -> str | None:
-    raw = getattr(service, 'BASE_CSS_ETAG', None)
-    if not isinstance(raw, str):
-        return None
-    value = raw.strip('"')
-    return value if re.fullmatch(r'[0-9a-f]{8,64}', value) else None
-
-
 async def _guard(request: Request, services, dispatch, guard: str):
     if guard is None:
         return None
@@ -93,7 +85,6 @@ def _render_document(
     body_class: str,
     public_host: str,
     password_max: int | None,
-    css_version: str | None = None,
 ):
     title_match = _TITLE_RE.search(template)
     body_match = _BODY_RE.search(template)
@@ -116,13 +107,6 @@ def _render_document(
     )
     escaped_host = html.escape(public_host, quote=True)
     payload = _ROOT_RE.sub(f'<div id="root" data-public-host="{escaped_host}"', payload, count=1)
-    if css_version is not None:
-        if re.fullmatch(r'[0-9a-f]{8,64}', css_version) is None:
-            raise RuntimeError('invalid React stylesheet version')
-        stylesheet = 'href="/static/style.css?v=' + css_version + '"'
-        if payload.count('href="/static/style.css"') != 1:
-            raise RuntimeError('React stylesheet marker is missing or ambiguous')
-        payload = payload.replace('href="/static/style.css"', stylesheet, 1)
     if password_max is not None:
         marker = f'data-public-host="{escaped_host}"'
         if payload.count(marker) != 1:
@@ -155,7 +139,6 @@ def register_react_document_routes(app, services, dispatch, react_dist):
         if denied is not None:
             return denied
         service = getattr(services, 'service_module', None)
-        css_version = _css_version(service)
         password_max = None
         if path == '/login':
             password_max = getattr(service, 'PASSWORD_MAX_LENGTH', 256)
@@ -171,7 +154,6 @@ def register_react_document_routes(app, services, dispatch, react_dist):
             body_class=body_class,
             public_host=_public_host(request, services),
             password_max=password_max,
-            css_version=css_version,
         )
         return HTMLResponse(body)
 
@@ -193,14 +175,12 @@ def register_react_document_routes(app, services, dispatch, react_dist):
         denied = await _guard(request, services, dispatch, 'admin')
         if denied is not None:
             return denied
-        service = getattr(services, 'service_module', None)
         body = _render_document(
             template,
             title=f'{uid} · 用量画像',
             body_class='has-shell',
             public_host=_public_host(request, services),
             password_max=None,
-            css_version=_css_version(service),
         )
         return HTMLResponse(body)
 
