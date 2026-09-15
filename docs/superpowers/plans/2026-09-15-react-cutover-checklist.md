@@ -13,7 +13,8 @@
   模板和 `requirements-web.txt` 的 Uvicorn 版本已固定；入口会优先读取受控的
   `panel/current` 发布指针，并在无指针时回退到源码 dist。`deploy.sh` 在显式
   设置 `HY_ENABLE_REACT_PANEL=1` 时会安装 web runtime、入口、`web_api` 模块、
-  已校验的 dist 发布和 systemd 单元；默认值 `0` 不改变 legacy 运行路径。
+  已校验的 dist 发布和 systemd 单元；构建目录可由 `HY_REACT_DIST_DIR` 指定，
+  默认值 `0` 不改变 legacy 运行路径。
 - 已准备未启用的双后端 Nginx 模板 `nginx/hysteria-panel-react.conf` 与
   `nginx/hysteria-panel-react-https.conf`：React 文档/API/构建资源指向 8083，
   订阅、二维码、legacy 下载/表单和未知路径保留 8081；路由清单合同测试会检查
