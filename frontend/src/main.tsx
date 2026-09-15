@@ -7,6 +7,8 @@ import { SettingsPage } from './features/network-admin/settings/SettingsPage';
 import { UsagePage } from './features/network-admin/usage/UsagePage';
 import { HealthPage } from './features/network-admin/health/HealthPage';
 import { IncidentsPage } from './features/network-admin/incidents/IncidentsPage';
+import { ConfigPage } from './features/network-admin/config/ConfigPage';
+import { RulesPage } from './features/network-admin/rules/RulesPage';
 import { HomePage } from './features/public/HomePage';
 import { OverviewPage } from './features/network-admin/overview/OverviewPage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
@@ -55,6 +57,18 @@ if (window.location.pathname === '/__react/') {
   applyInitialShellPreferences();
   const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
   reactRoot.render(<IncidentsPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/admin/config') {
+  document.title = '模板配置';
+  document.body.className = 'has-shell';
+  applyInitialShellPreferences();
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  reactRoot.render(<ConfigPage publicHost={publicHost}/>);
+} else if (window.location.pathname === '/__react/admin/rules') {
+  document.title = '路由规则';
+  document.body.className = 'has-shell';
+  applyInitialShellPreferences();
+  const publicHost = root.dataset.publicHost?.trim() || window.location.hostname;
+  reactRoot.render(<RulesPage publicHost={publicHost}/>);
 } else if (window.location.pathname === '/__react/user/change-password') {
   document.title = '修改面板密码';
   document.body.className = 'page-auth';

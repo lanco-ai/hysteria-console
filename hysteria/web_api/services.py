@@ -1,5 +1,6 @@
 """Adapters from the HTTP boundary to the legacy panel services."""
 
+import json
 from dataclasses import dataclass, field
 from typing import Literal, Mapping
 
@@ -488,6 +489,89 @@ class LegacyPanelServices:
             return service.build_incident_payload(now=service.local_now())
 
         return self._run_read(read)
+
+    def read_admin_config(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            try:
+                config, revision = service.load_template_config_snapshot()
+            except (service.TemplateConfigError, OSError, UnicodeError) as exc:
+                raise StateUnavailable from exc
+            return {'config': config, 'revision': revision}
+
+        return self._run_read(read)
+
+    def read_admin_rules(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            try:
+                rules, revision = service.load_template_rules_snapshot()
+            except (service.TemplateConfigError, OSError, UnicodeError) as exc:
+                raise StateUnavailable from exc
+            return {'rules': rules, 'revision': revision}
+
+        return self._run_read(read)
+
+    def submit_template_config(self, *, headers, path, form):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def mutate():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            raw = (form.get('config_json') or [''])[0]
+            expected_revision = (form.get('template_revision') or [''])[0]
+            if not raw.strip():
+                return {'ok': False, 'error': 'validation_error', 'code': 'empty'}
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, ValueError):
+                return {'ok': False, 'error': 'validation_error', 'code': 'invalid_json'}
+            if not service.validate_template_config(data):
+                return {'ok': False, 'error': 'validation_error', 'code': 'schema_invalid'}
+            try:
+                service.replace_template_config(data, expected_revision=expected_revision)
+                _data, revision = service.load_template_config_snapshot()
+            except service.TemplateConflictError:
+                return {'ok': False, 'error': 'revision_conflict'}
+            except (service.TemplateConfigError, OSError, UnicodeError) as exc:
+                raise StateUnavailable from exc
+            return {'ok': True, 'revision': revision}
+
+        return self._run_operation(mutate, post_path='/admin/config/save')
+
+    def submit_template_rules(self, *, headers, path, form):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def mutate():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            raw = (form.get('rules_raw') or [''])[0]
+            expected_revision = (form.get('template_revision') or [''])[0]
+            rules = [line.strip() for line in raw.splitlines() if line.strip()]
+            if not rules:
+                return {'ok': False, 'error': 'validation_error', 'code': 'raw_empty'}
+            if len(rules) > 5000 or any(not service.validate_clash_rule(rule) for rule in rules):
+                return {'ok': False, 'error': 'validation_error', 'code': 'invalid_rule_schema'}
+            try:
+                service.replace_template_rules(rules, expected_revision=expected_revision)
+                _rules, revision = service.load_template_rules_snapshot()
+            except service.TemplateConflictError:
+                return {'ok': False, 'error': 'revision_conflict'}
+            except (service.TemplateConfigError, OSError, UnicodeError) as exc:
+                raise StateUnavailable from exc
+            return {'ok': True, 'revision': revision}
+
+        return self._run_operation(mutate, post_path='/admin/rules/raw')
 
     def read_admin_logs(self, *, headers, path):
         request = self._bridge(headers=headers, path=path)
