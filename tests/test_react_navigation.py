@@ -56,3 +56,12 @@ def test_react_documents_version_the_shared_css_reference():
     assert 'BASE_CSS_ETAG' in source
     assert 'css_version' in source
     assert 'static/style.css?v=' in source
+
+
+def test_react_nginx_routes_legacy_usage_bookmarks_to_react_service():
+    for path in (ROOT / 'nginx/hysteria-panel-react.conf', ROOT / 'nginx/hysteria-panel-react-https.conf'):
+        source = path.read_text()
+        for route in ('/admin/daily', '/admin/usage-history'):
+            marker = f'location = {route}'
+            start = source.index(marker)
+            assert 'proxy_pass http://127.0.0.1:8083;' in source[start:source.index('}', start)]
