@@ -22,6 +22,10 @@
   React `dist` 发布指针；它会拒绝符号链接、源码映射、越界路径和缺失的
   manifest 资源。`deploy.sh` 的显式 React 部署路径会调用它，并在失败恢复时
   清理本次新建的发布目录。
+- 已增加 `scripts/hy2-react-cutover.sh`：默认仅报告状态，`apply`/`rollback`
+  必须显式设置 `HY_REACT_CUTOVER_APPROVED=1`；它只替换面板 80/9444 vhost，
+  先检查 8083 loopback，再以备份和 `nginx -t` 保护切换，并比较前后 443
+  `listen` 指令确保无关入口不漂移。
 - 旧 Codex 额度入口、接口和静态资源保持不可用；未改动代理配置、证书、
   域名或现有 443/9444 nginx 监听。
 
@@ -47,7 +51,8 @@
 PYTHON=/tmp/hy2-quality-venv/bin/python bash scripts/check-quality.sh
 npm run check:frontend
 PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/pytest -q \
-  tests/test_react_deploy_wiring.py tests/test_react_route_parity.py \
+  tests/test_react_deploy_wiring.py tests/test_react_cutover_script.py \
+  tests/test_react_cutover_runtime.py tests/test_react_route_parity.py \
   tests/test_react_cutover_config.py tests/test_react_release.py
 PYTHONPATH=hysteria /tmp/hy2-quality-venv/bin/python tests/run_react_browser.py
 bash -n deploy.sh
@@ -67,18 +72,20 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
    时间戳的发布目录；不复制凭证或持久化用户数据到仓库。
 2. 将 FastAPI 服务、匹配的 React manifest/静态资产和路由配置作为一个版本
    原子安装；先启动新服务并在 loopback 上完成健康检查。
-3. 只在健康检查和完整 smoke test 通过后切换对应 `proxy_pass`；保留
+3. 只在健康检查和完整 smoke test 通过后，以
+   `HY_REACT_CUTOVER_APPROVED=1 /usr/local/sbin/hy2-react-cutover.sh apply`
+   切换对应 `proxy_pass`；保留
    `/api/v1` 非 SPA 边界和 legacy 兼容端点。
 4. 记录 `/`, `/admin`, `/user/panel` 以及 443/9444 的状态码、证书指纹、
    响应头和关键浏览器流程。
 
 ## 最近一次预发布证据（2026-09-15）
 
-- 后端完整套件：`2235 passed, 80 warnings`。
+- 后端完整套件：`2244 passed, 80 warnings`。
 - React 浏览器矩阵：公共首页、登录/退出、改密、总览、流量分析、健康状态、
   事故处理、模板配置、路由规则、家宽出口和完整用户面板均通过。
-- 路由/发布工具合同：15 项通过；部署 wiring、恢复白名单和供应链合同：125 项
-  通过；`scripts/check-quality.sh --lint-only`、
+- 路由/发布工具合同：23 项通过；切换工具、部署 wiring、恢复白名单和供应链
+  合同：129 项通过；`scripts/check-quality.sh --lint-only`、
   `bash -n deploy.sh` 和 `git diff --check` 通过。
 - 上述证据来自隔离预览和临时发布根目录；未验证线上 Nginx、域名证书、443/9444
   监听或真实回滚，因此不构成生产切换完成证明。
