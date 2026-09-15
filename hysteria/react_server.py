@@ -9,10 +9,8 @@ checklist is approved.
 from pathlib import Path
 
 import subscription_service
-
 from web_api import create_app
 from web_api.services import LegacyPanelServices
-
 
 RUNTIME_ROOT = Path(__file__).resolve().parent
 _REACT_DIST_CANDIDATES = (
