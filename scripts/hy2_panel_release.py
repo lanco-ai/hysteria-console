@@ -155,6 +155,9 @@ def validate_dist(path: Path | str) -> ReleaseManifest:
         raise ReleaseError('manifest.json is invalid') from exc
     if not isinstance(manifest_payload, dict):
         raise ReleaseError('manifest.json must contain an object')
+    entry = manifest_payload.get('index.html')
+    if not isinstance(entry, dict) or not entry.get('css'):
+        raise ReleaseError('React entry has no stylesheet')
     _validate_manifest_references(manifest_payload, required)
 
     files = tuple((relative, _sha256(file), 0o644) for file, relative, _size in records)

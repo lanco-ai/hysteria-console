@@ -27,8 +27,17 @@ def _dist(tmp_path: Path) -> Path:
         encoding='utf-8',
     )
     (assets / 'index.js').write_text('export default 1;', encoding='utf-8')
+    (assets / 'index.css').write_text('body { color: black; }', encoding='utf-8')
     (dist / 'manifest.json').write_text(
-        json.dumps({'index.html': {'file': 'assets/index.js', 'isEntry': True}}),
+        json.dumps(
+            {
+                'index.html': {
+                    'file': 'assets/index.js',
+                    'css': ['assets/index.css'],
+                    'isEntry': True,
+                }
+            }
+        ),
         encoding='utf-8',
     )
     return dist
@@ -98,8 +107,25 @@ def test_validate_release_rejects_forbidden_files_and_missing_entry(tmp_path):
 def test_validate_release_rejects_manifest_reference_to_missing_asset(tmp_path):
     dist = _dist(tmp_path)
     (dist / 'manifest.json').write_text(
-        json.dumps({'index.html': {'file': 'assets/missing.js', 'isEntry': True}}),
+        json.dumps(
+            {
+                'index.html': {
+                    'file': 'assets/missing.js',
+                    'css': ['assets/index.css'],
+                    'isEntry': True,
+                }
+            }
+        ),
         encoding='utf-8',
     )
     with pytest.raises(release.ReleaseError, match='missing manifest asset'):
+        release.validate_dist(dist)
+
+
+def test_validate_release_requires_css_for_the_react_entry(tmp_path):
+    dist = _dist(tmp_path)
+    payload = json.loads((dist / 'manifest.json').read_text(encoding='utf-8'))
+    payload['index.html']['css'] = []
+    (dist / 'manifest.json').write_text(json.dumps(payload), encoding='utf-8')
+    with pytest.raises(release.ReleaseError, match='stylesheet'):
         release.validate_dist(dist)
