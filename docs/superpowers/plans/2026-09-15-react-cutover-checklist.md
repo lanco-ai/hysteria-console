@@ -9,6 +9,9 @@
   鉴权用户面板和改密页。
 - FastAPI `/api/v1` 读写适配器、严格响应模型、生命周期拒绝、CSRF/请求
   大小/并发边界，以及隔离预览和浏览器合同测试。
+- 预发布 ASGI 入口 `hysteria/react_server.py`、单 worker loopback systemd
+  模板和 `requirements-web.txt` 的 Uvicorn 版本已固定；这些文件尚未由部署
+  脚本安装或启用。
 - 旧 Codex 额度入口、接口和静态资源保持不可用；未改动代理配置、证书、
   域名或现有 443/9444 nginx 监听。
 
@@ -17,8 +20,9 @@
 以下事项完成前不得把 `/admin` 或 `/user/panel` 指向 React：
 
 1. 生产运行时仍由 `systemd/hysteria-subscription.service` 启动
-   `hysteria/subscription_service.py`（127.0.0.1:8081）；仓库尚未提供
-   FastAPI ASGI 进程、依赖锁定和匹配的 systemd 单元。
+   `hysteria/subscription_service.py`（127.0.0.1:8081）。ASGI 入口和单元目前
+   只作为预发布模板存在，`deploy.sh` 尚未安装 web 运行环境、入口或单元，
+   也没有启用 8083 loopback 服务。
 2. `deploy.sh` 尚未安装 `hysteria/web_api/`、`frontend/dist` 或配套静态
    资源，因此直接执行部署不会带上新面板。
 3. 需要在临时副本验证所有 legacy/React 方法、深链接、下载、订阅/二维码、
