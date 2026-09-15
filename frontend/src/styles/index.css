@@ -1,0 +1,21 @@
+/*
+ * React owns this bundle at runtime. Keep the order in lockstep with
+ * hysteria/styles/manifest.json so legacy HTML and the Vite app share the
+ * same cascade while the compatibility service is still deployed.
+ */
+@import '../../../hysteria/styles/01-public-entry.css';
+@import '../../../hysteria/styles/02-tokens-base.css';
+@import '../../../hysteria/styles/03-controls.css';
+@import '../../../hysteria/styles/04-home.css';
+@import '../../../hysteria/styles/05-auth.css';
+@import '../../../hysteria/styles/06-shell.css';
+@import '../../../hysteria/styles/07-overview-users.css';
+@import '../../../hysteria/styles/08-dialog-status.css';
+@import '../../../hysteria/styles/09-management.css';
+@import '../../../hysteria/styles/10-admin-common.css';
+@import '../../../hysteria/styles/11-health-calibration.css';
+@import '../../../hysteria/styles/12-operations-config.css';
+@import '../../../hysteria/styles/13-responsive.css';
+@import '../../../hysteria/styles/14-admin-sections.css';
+@import '../../../hysteria/styles/16-user-panel.css';
+@import '../../../hysteria/styles/17-motion-workspace.css';

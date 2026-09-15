@@ -1,5 +1,7 @@
 """React documents must own their runtime assets."""
 
+import json
+
 from pathlib import Path
 
 
@@ -20,3 +22,10 @@ def test_built_react_document_contains_hashed_css_asset():
     assert '/static/style.css' not in html
     assert '/static/shell.js' not in html
     assert '/static/ui-core.js' not in html
+
+
+def test_react_css_entry_lists_every_manifest_section_in_order():
+    names = json.loads((ROOT / 'hysteria/styles/manifest.json').read_text(encoding='utf-8'))
+    entry = (ROOT / 'frontend/src/styles/index.css').read_text(encoding='utf-8')
+    positions = [entry.index(f'../../../hysteria/styles/{name}') for name in names]
+    assert positions == sorted(positions)

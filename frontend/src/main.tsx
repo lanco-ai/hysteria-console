@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { useEffect, useLayoutEffect, useState } from 'react';
+import './styles/index.css';
 import { LoginPage } from './features/auth/LoginPage';
 import { LogoutPage } from './features/auth/LogoutPage';
 import { UserPasswordPage } from './features/auth/UserPasswordPage';
