@@ -12,6 +12,7 @@ DEPLOY = ROOT / 'deploy.sh'
 RECOVERY = ROOT / 'scripts/hy2-deploy-recovery.py'
 RENDERER = ROOT / 'scripts/hy2-render-template.py'
 ENV_EXAMPLE = ROOT / '.env.example'
+REQUIREMENTS_WEB = ROOT / 'requirements-web.txt'
 
 
 WEB_API_MODULES = (
@@ -53,6 +54,12 @@ def test_react_deployment_is_explicitly_opt_in():
     assert 'HY_REACT_DIST_DIR=frontend/dist' in env_example
     assert 'HY_REACT_DIST_DIR="$REPO_DIR/$HY_REACT_DIST_DIR"' in deploy
     assert '[[ "$HY_ENABLE_REACT_PANEL" == "1" ]]' in deploy
+
+
+def test_react_runtime_includes_yaml_dependency_for_template_reads():
+    requirements = REQUIREMENTS_WEB.read_text(encoding='utf-8')
+
+    assert 'PyYAML==6.0.1' in requirements
 
 
 def test_react_backend_sources_are_in_every_deploy_inventory():
