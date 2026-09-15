@@ -68,6 +68,7 @@ class HealthPresentation:
 
     def _probe_rows(self):
         """Run independent probes and return stable structured rows."""
+
         def run_probe(item):
             title, probe = item
             try:
@@ -152,7 +153,4 @@ class HealthPresentation:
 
     def _render_health_cards(self):
         """Run independent probes concurrently while preserving card order."""
-        return ''.join(
-            self._health_card(row['title'], row)
-            for row in self._probe_rows()
-        )
+        return ''.join(self._health_card(row['title'], row) for row in self._probe_rows())

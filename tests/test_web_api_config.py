@@ -1,7 +1,6 @@
 """Structured template and routing-rule read API contracts."""
 
 from fastapi.testclient import TestClient
-
 from web_api import create_app
 
 
@@ -45,7 +44,10 @@ def test_config_save_route_returns_new_revision():
     with TestClient(create_app(StubConfigServices())) as client:
         response = client.post(
             '/api/v1/admin/config/save',
-            data={'config_json': '{"proxies": [], "proxy-groups": [], "rules": []}', 'template_revision': 'a' * 64},
+            data={
+                'config_json': '{"proxies": [], "proxy-groups": [], "rules": []}',
+                'template_revision': 'a' * 64,
+            },
             headers={'Origin': 'http://testserver'},
         )
 

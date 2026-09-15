@@ -1,7 +1,6 @@
 """Structured administrator residential-egress API contracts."""
 
 from fastapi.testclient import TestClient
-
 from web_api import create_app
 
 
@@ -46,4 +45,3 @@ def test_landing_route_returns_public_nodes_and_strips_credentials():
         'health': {'status': 'healthy'},
     }
     assert 'must-not-leak' not in response.text
-

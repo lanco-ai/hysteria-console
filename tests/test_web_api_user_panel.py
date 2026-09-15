@@ -1,7 +1,6 @@
 """Structured user-panel bootstrap API contracts."""
 
 from fastapi.testclient import TestClient
-
 from web_api import create_app
 
 
@@ -29,7 +28,13 @@ class StubUserPanelServices:
             'can_change_password': True,
             'can_select_egress': True,
             'subscription_profiles': [
-                {'key': 'default', 'label': '默认', 'description': '全部节点', 'url': 'https://example.invalid/sub/alice?token=redacted', 'qr_path': '/panel/alice/qr.svg?token=redacted'},
+                {
+                    'key': 'default',
+                    'label': '默认',
+                    'description': '全部节点',
+                    'url': 'https://example.invalid/sub/alice?token=redacted',
+                    'qr_path': '/panel/alice/qr.svg?token=redacted',
+                },
             ],
             'landing_nodes': [],
         }
@@ -43,10 +48,25 @@ def test_user_panel_route_returns_structured_data():
     assert response.json()['username'] == 'alice'
     assert response.json()['subscription_profiles'][0]['key'] == 'default'
     assert set(response.json()) == {
-        'ts', 'username', 'revision', 'used_bytes', 'total_bytes', 'remain_bytes',
-        'tx_bytes', 'rx_bytes', 'online', 'max_devices', 'percent',
-        'cycle_reset_date', 'cycle_days_left', 'cycle_length_days', 'disabled',
-        'expired', 'expiry_label', 'can_change_password', 'can_select_egress',
-        'subscription_profiles', 'landing_nodes',
+        'ts',
+        'username',
+        'revision',
+        'used_bytes',
+        'total_bytes',
+        'remain_bytes',
+        'tx_bytes',
+        'rx_bytes',
+        'online',
+        'max_devices',
+        'percent',
+        'cycle_reset_date',
+        'cycle_days_left',
+        'cycle_length_days',
+        'disabled',
+        'expired',
+        'expiry_label',
+        'can_change_password',
+        'can_select_egress',
+        'subscription_profiles',
+        'landing_nodes',
     }
-

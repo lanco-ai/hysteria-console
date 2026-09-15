@@ -49,7 +49,16 @@ class UserPanelResponse(PublicModel):
     subscription_profiles: list[UserSubscriptionProfileResponse]
     landing_nodes: list[UserLandingNodeResponse]
 
-    @field_validator('used_bytes', 'total_bytes', 'tx_bytes', 'rx_bytes', 'online', 'max_devices', 'cycle_days_left', 'cycle_length_days')
+    @field_validator(
+        'used_bytes',
+        'total_bytes',
+        'tx_bytes',
+        'rx_bytes',
+        'online',
+        'max_devices',
+        'cycle_days_left',
+        'cycle_length_days',
+    )
     @classmethod
     def counters_must_be_non_negative(cls, value):
         if value < 0:

@@ -48,7 +48,8 @@ def main():
         if selected not in (None, browser_test):
             continue
         with preview_server(
-            overview_fixture=browser_test in {
+            overview_fixture=browser_test
+            in {
                 'react_overview_browser.cjs',
                 'react_usage_browser.cjs',
                 'react_health_browser.cjs',

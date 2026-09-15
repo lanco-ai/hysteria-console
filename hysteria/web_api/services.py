@@ -514,11 +514,13 @@ class LegacyPanelServices:
                 allowed = cfg.get('landing_allowed_egress_ids', [])
                 if not isinstance(allowed, list):
                     allowed = []
-                users.append({
-                    'user': str(username),
-                    'revision': service.user_config_revision(cfg),
-                    'allowed_ids': [str(item) for item in allowed if isinstance(item, str)],
-                })
+                users.append(
+                    {
+                        'user': str(username),
+                        'revision': service.user_config_revision(cfg),
+                        'allowed_ids': [str(item) for item in allowed if isinstance(item, str)],
+                    }
+                )
             return {
                 'ts': service.local_now().isoformat(timespec='seconds'),
                 'revision': service.content_revision(registry),
@@ -568,23 +570,27 @@ class LegacyPanelServices:
                 )
                 for key in service.SUBSCRIPTION_PROFILE_ORDER:
                     meta = service.SUBSCRIPTION_PROFILES[key]
-                    profiles.append({
-                        'key': key,
-                        'label': str(meta.get('label', key)),
-                        'description': str(meta.get('desc', '')),
-                        'url': service.subscription_profile_url(base_url, username, token, key),
-                        'qr_path': service.subscription_profile_qr_path(username, token, key),
-                    })
+                    profiles.append(
+                        {
+                            'key': key,
+                            'label': str(meta.get('label', key)),
+                            'description': str(meta.get('desc', '')),
+                            'url': service.subscription_profile_url(base_url, username, token, key),
+                            'qr_path': service.subscription_profile_qr_path(username, token, key),
+                        }
+                    )
             landing_nodes = []
             selected = str(cfg.get('landing_selected_egress_id') or '')
             for node in service._authorized_landing_nodes(cfg):
                 public = service.landing_egress.public_node(node)
                 health = public.get('health') or {}
-                landing_nodes.append({
-                    **public,
-                    'selected': public['id'] == selected,
-                    'health_status': str(health.get('status') or '未探测'),
-                })
+                landing_nodes.append(
+                    {
+                        **public,
+                        'selected': public['id'] == selected,
+                        'health_status': str(health.get('status') or '未探测'),
+                    }
+                )
             return {
                 **stats,
                 'username': str(username),
@@ -595,8 +601,11 @@ class LegacyPanelServices:
                 'disabled': bool(cfg.get('disabled')),
                 'expired': bool(expiry.get('expired')),
                 'expiry_label': str(expiry.get('label') or ''),
-                'can_change_password': session_kind == service.USER_SESSION_PANEL_PASSWORD and not inactive,
-                'can_select_egress': session_kind == service.USER_SESSION_PANEL_PASSWORD and not inactive and bool(landing_nodes),
+                'can_change_password': session_kind == service.USER_SESSION_PANEL_PASSWORD
+                and not inactive,
+                'can_select_egress': session_kind == service.USER_SESSION_PANEL_PASSWORD
+                and not inactive
+                and bool(landing_nodes),
                 'subscription_profiles': profiles,
                 'landing_nodes': landing_nodes,
             }
