@@ -5440,17 +5440,6 @@ body.has-shell svg.spark .spark-dot.today {
 }
 .loading-state-line-wide { width: 92%; height: 18px; }
 .loading-state-line-short { width: 46%; }
-.loading-state-message {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-  border: 0;
-}
 @keyframes loading-shimmer {
   from { background-position: 100% 0; }
   to { background-position: -100% 0; }

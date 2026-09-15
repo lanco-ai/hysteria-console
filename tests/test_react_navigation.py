@@ -32,6 +32,7 @@ def test_first_visit_uses_a_non_blocking_loading_surface():
     loading = (ROOT / 'frontend/src/shared/LoadingState.tsx').read_text()
     assert 'loading-state' in loading
     assert 'aria-label={label}' in loading
+    assert 'loading-state-message' not in loading
 
     page_sources = [
         ROOT / 'frontend/src/features/network-admin/overview/OverviewPage.tsx',

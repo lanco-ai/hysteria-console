@@ -290,7 +290,8 @@ async function lateReadsAndClipboard(browser, baseline) {
   await expect(row(page)).toBeVisible();
   await page.route(boot, route => { delayed = route; });
   await page.reload();
-  await expect(page.getByText('正在加载总览…')).toBeVisible();
+  await expect(page.getByRole('status', { name: '正在加载总览…' })).toBeVisible();
+  assert.equal(await page.getByText('正在加载总览…', { exact: true }).count(), 0, 'loading state has no visible text node');
   await page.clock.runFor(10_000);
   await expect(page.getByRole('alert')).toContainText('总览加载失败');
   await reply(delayed, baseline).catch(() => {});

@@ -249,7 +249,8 @@ async function verifyReadFailuresAndAccessNavigation(browser) {
     else route.continue();
   });
   await goto(loadingPage, '/__react/admin/settings');
-  await loadingPage.getByText('正在加载设置…', { exact: true }).waitFor();
+  await loadingPage.getByRole('status', { name: '正在加载设置…' }).waitFor();
+  assert.equal(await loadingPage.getByText('正在加载设置…', { exact: true }).count(), 0, 'loading state has no visible text node');
   assert.equal(await loadingPage.locator('form[action="/admin/change-password"]').count(), 0, 'loading state has no guessed-limit form');
   await loadingPage.clock.fastForward(10_000);
   await loadingPage.getByText('加载失败：请求超时，请重试', { exact: true }).waitFor();
