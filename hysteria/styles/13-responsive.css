@@ -128,18 +128,14 @@
 }
 
 @media (max-width: 900px) {
-  body.has-shell .calibrator-auto-grid {
+  body.has-shell .calibrator-auto-row-numeric {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  body.has-shell .calibrator-auto-grid > .calibrator-auto-field-primary,
-  body.has-shell .calibrator-auto-grid > .calibrator-auto-field-numeric {
-    grid-column: span 1;
   }
 }
 
 @media (max-width: 560px) {
-  body.has-shell .calibrator-auto-grid {
+  body.has-shell .calibrator-auto-row-primary,
+  body.has-shell .calibrator-auto-row-numeric {
     grid-template-columns: minmax(0, 1fr);
   }
 }

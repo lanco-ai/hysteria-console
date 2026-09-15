@@ -21,17 +21,21 @@ def test_calibrator_policy_fields_use_grouped_label_control_layout():
     source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "health" / "HealthPage.tsx").read_text(encoding="utf-8")
     styles = (ROOT / "hysteria" / "styles" / "11-health-calibration.css").read_text(encoding="utf-8")
 
-    assert 'className="grid grid-3 calibrator-auto-grid"' in source
-    assert "body.has-shell .calibrator-auto-grid > label {" in styles
+    assert 'className="calibrator-auto-grid"' in source
+    assert "body.has-shell .calibrator-auto-grid .calibrator-auto-field {" in styles
     assert "display: flex;" in styles
     assert "flex-direction: column;" in styles
     assert "gap: 6px;" in styles
-    assert "body.has-shell .calibrator-auto-grid > label > select," in styles
-    assert "body.has-shell .calibrator-auto-grid > label > input {" in styles
+    assert "body.has-shell .calibrator-auto-grid .calibrator-auto-field > select," in styles
+    assert "body.has-shell .calibrator-auto-grid .calibrator-auto-field > input {" in styles
     assert "calibrator-auto-field-primary" in source
     assert "calibrator-auto-field-numeric" in source
-    assert "body.has-shell .calibrator-auto-grid > .calibrator-auto-field-primary {" in styles
-    assert "body.has-shell .calibrator-auto-grid > .calibrator-auto-field-numeric {" in styles
+    assert 'className="calibrator-auto-row calibrator-auto-row-primary"' in source
+    assert 'className="calibrator-auto-row calibrator-auto-row-numeric"' in source
+    assert "body.has-shell .calibrator-auto-row-primary {" in styles
+    assert "body.has-shell .calibrator-auto-row-numeric {" in styles
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in styles
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in styles
 
 
 def test_health_quality_sections_keep_copy_and_percentages_aligned():

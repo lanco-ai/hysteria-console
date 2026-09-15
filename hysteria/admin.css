@@ -3621,12 +3621,27 @@ body.has-shell .grid.grid-3 label:not(.switch) {
 /* Keep the five automatic-policy fields readable instead of letting labels
    and controls run together in the generic three-column grid. */
 body.has-shell .calibrator-auto-grid {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  column-gap: 20px;
-  row-gap: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 16px;
 }
 
-body.has-shell .calibrator-auto-grid > label {
+body.has-shell .calibrator-auto-row {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+}
+
+body.has-shell .calibrator-auto-row-primary {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body.has-shell .calibrator-auto-row-numeric {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+body.has-shell .calibrator-auto-grid .calibrator-auto-field {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -3634,16 +3649,8 @@ body.has-shell .calibrator-auto-grid > label {
   margin: 0;
 }
 
-body.has-shell .calibrator-auto-grid > .calibrator-auto-field-primary {
-  grid-column: span 3;
-}
-
-body.has-shell .calibrator-auto-grid > .calibrator-auto-field-numeric {
-  grid-column: span 2;
-}
-
-body.has-shell .calibrator-auto-grid > label > select,
-body.has-shell .calibrator-auto-grid > label > input {
+body.has-shell .calibrator-auto-grid .calibrator-auto-field > select,
+body.has-shell .calibrator-auto-grid .calibrator-auto-field > input {
   width: 100%;
   min-width: 0;
   height: 36px;
@@ -3658,8 +3665,8 @@ body.has-shell .calibrator-auto-grid > label > input {
   outline: none;
 }
 
-body.has-shell .calibrator-auto-grid > label > select:focus-visible,
-body.has-shell .calibrator-auto-grid > label > input:focus-visible {
+body.has-shell .calibrator-auto-grid .calibrator-auto-field > select:focus-visible,
+body.has-shell .calibrator-auto-grid .calibrator-auto-field > input:focus-visible {
   border-color: var(--data);
   box-shadow: 0 0 0 3px var(--data-soft);
 }
@@ -4519,18 +4526,14 @@ body.has-shell .cost-calibrator-title {
 }
 
 @media (max-width: 900px) {
-  body.has-shell .calibrator-auto-grid {
+  body.has-shell .calibrator-auto-row-numeric {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  body.has-shell .calibrator-auto-grid > .calibrator-auto-field-primary,
-  body.has-shell .calibrator-auto-grid > .calibrator-auto-field-numeric {
-    grid-column: span 1;
   }
 }
 
 @media (max-width: 560px) {
-  body.has-shell .calibrator-auto-grid {
+  body.has-shell .calibrator-auto-row-primary,
+  body.has-shell .calibrator-auto-row-numeric {
     grid-template-columns: minmax(0, 1fr);
   }
 }
