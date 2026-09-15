@@ -10,7 +10,8 @@
 - FastAPI `/api/v1` 读写适配器、严格响应模型、生命周期拒绝、CSRF/请求
   大小/并发边界，以及隔离预览和浏览器合同测试。
 - 预发布 ASGI 入口 `hysteria/react_server.py`、单 worker loopback systemd
-  模板和 `requirements-web.txt` 的 Uvicorn 版本已固定；这些文件尚未由部署
+  模板和 `requirements-web.txt` 的 Uvicorn 版本已固定；入口会优先读取受控的
+  `panel/current` 发布指针，并在无指针时回退到源码 dist。这些文件尚未由部署
   脚本安装或启用。
 - 已准备未启用的双后端 Nginx 模板 `nginx/hysteria-panel-react.conf` 与
   `nginx/hysteria-panel-react-https.conf`：React 文档/API/构建资源指向 8083，
@@ -70,6 +71,16 @@ server_name/listen/proxy_pass，以及域名证书指纹。浏览器检查必须
    `/api/v1` 非 SPA 边界和 legacy 兼容端点。
 4. 记录 `/`, `/admin`, `/user/panel` 以及 443/9444 的状态码、证书指纹、
    响应头和关键浏览器流程。
+
+## 最近一次预发布证据（2026-09-15）
+
+- 后端完整套件：`2235 passed, 80 warnings`。
+- React 浏览器矩阵：公共首页、登录/退出、改密、总览、流量分析、健康状态、
+  事故处理、模板配置、路由规则、家宽出口和完整用户面板均通过。
+- 路由/发布工具合同：15 项通过；`scripts/check-quality.sh --lint-only`、
+  `bash -n deploy.sh` 和 `git diff --check` 通过。
+- 上述证据来自隔离预览和临时发布根目录；未验证线上 Nginx、域名证书、443/9444
+  监听或真实回滚，因此不构成生产切换完成证明。
 
 ## 回滚
 
