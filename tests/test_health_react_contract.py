@@ -17,7 +17,7 @@ def test_health_react_page_uses_structured_api_and_accessible_refresh():
 
 
 def test_health_react_entry_and_preview_route_exist():
-    assert "'/__react/admin/health'" in (ROOT / 'frontend/src/main.tsx').read_text()
+    assert "'/admin/health'" in (ROOT / 'frontend/src/main.tsx').read_text()
     assert "'/__react/admin/health'" in (ROOT / 'tests/react_preview_server.py').read_text()
 
 

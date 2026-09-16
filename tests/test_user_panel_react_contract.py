@@ -29,5 +29,5 @@ def test_user_panel_parser_only_allows_unlimited_sentinel_for_remaining_bytes():
 def test_user_panel_react_route_is_registered():
     main = (ROOT / 'frontend/src/main.tsx').read_text()
     preview = (ROOT / 'tests/react_preview_server.py').read_text()
-    assert '/__react/user/panel' in main
+    assert "'/user/panel'" in main
     assert '/__react/user/panel' in preview

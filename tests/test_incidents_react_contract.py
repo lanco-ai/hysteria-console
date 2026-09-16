@@ -15,6 +15,5 @@ def test_incidents_react_page_has_triage_tables_and_safe_actions():
 
 
 def test_incidents_react_entry_and_preview_route_exist():
-    assert "'/__react/admin/incidents'" in (ROOT / 'frontend/src/main.tsx').read_text()
+    assert "'/admin/incidents'" in (ROOT / 'frontend/src/main.tsx').read_text()
     assert "'/__react/admin/incidents'" in (ROOT / 'tests/react_preview_server.py').read_text()
-

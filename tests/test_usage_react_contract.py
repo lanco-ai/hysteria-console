@@ -19,5 +19,5 @@ def test_usage_feature_has_structured_validator_and_refresh_boundary():
 def test_react_entry_and_preview_register_usage_route():
     entry = (ROOT / 'frontend/src/main.tsx').read_text()
     preview = (ROOT / 'tests/react_preview_server.py').read_text()
-    assert "'/__react/admin/usage'" in entry
+    assert "'/admin/usage'" in entry
     assert "'/__react/admin/usage'" in preview

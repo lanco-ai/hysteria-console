@@ -25,5 +25,5 @@ def test_config_and_rules_react_routes_are_registered():
     entry = (ROOT / 'frontend/src/main.tsx').read_text()
     preview = (ROOT / 'tests/react_preview_server.py').read_text()
     for path in ('config', 'rules'):
-        assert f"'/__react/admin/{path}'" in entry
+        assert f"'/admin/{path}'" in entry
         assert f"'/__react/admin/{path}'" in preview

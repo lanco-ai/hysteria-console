@@ -59,3 +59,30 @@ password-page lifecycle behavior remains unchanged.
 - `npm run build:react`: **passed**.
 - `REACT_BROWSER_TEST=react_password_pages_browser.cjs ...
   tests/run_react_browser.py`: **passed**.
+
+## Follow-up: normalized preview-route contracts
+
+The full pytest run also exposed eight source contracts that still required
+`main.tsx` to contain the preview-only `/__react/...` literals. The client now
+normalizes that prefix before matching its routes, so its route registrations
+correctly use canonical paths while `react_preview_server.py` retains the
+preview fixtures.
+
+Updated only these test contracts:
+
+- config, health, incidents, landing, rules, and usage assert the canonical
+  `/admin/...` registration in `main.tsx` and the `/__react/...` fixture in the
+  preview server;
+- user detail asserts the canonical dynamic `/admin/user/<uid>` matcher and
+  keeps the preview fixture assertion;
+- user panel asserts the canonical `/user/panel` registration and its preview
+  fixture.
+
+- Before update: the eight affected contracts failed because the retired
+  preview literals are intentionally absent from `main.tsx`.
+- `pytest -q tests/test_config_react_contract.py tests/test_health_react_contract.py
+  tests/test_incidents_react_contract.py tests/test_landing_react_contract.py
+  tests/test_rules_react_contract.py tests/test_usage_react_contract.py
+  tests/test_user_detail_react_contract.py tests/test_user_panel_react_contract.py`:
+  **19 passed**.
+- `git diff --check`: **passed**.

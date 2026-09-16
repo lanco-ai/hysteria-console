@@ -23,4 +23,4 @@ def test_rules_page_exposes_all_mutation_controls_and_api_boundaries():
 def test_rules_page_keeps_raw_editor_and_route_entry():
     page = (ROOT / 'frontend/src/features/network-admin/rules/RulesPage.tsx').read_text()
     assert '覆盖全部规则' in page
-    assert "'/__react/admin/rules'" in (ROOT / 'frontend/src/main.tsx').read_text()
+    assert "'/admin/rules'" in (ROOT / 'frontend/src/main.tsx').read_text()

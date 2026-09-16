@@ -19,5 +19,5 @@ def test_landing_react_page_has_public_node_table_and_management_actions():
 def test_landing_react_route_is_registered():
     main = (ROOT / 'frontend/src/main.tsx').read_text()
     preview = (ROOT / 'tests/react_preview_server.py').read_text()
-    assert '/__react/admin/landing-egresses' in main
+    assert '/admin/landing-egresses' in main
     assert '/__react/admin/landing-egresses' in preview
