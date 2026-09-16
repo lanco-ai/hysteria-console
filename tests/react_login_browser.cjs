@@ -7,6 +7,11 @@ const baseUrl = process.env.PREVIEW_BASE_URL || 'http://127.0.0.1:18765';
 const fixturePassword = process.env.REACT_PREVIEW_LOGIN_PASSWORD;
 const screenshotDir = process.env.REACT_LOGIN_SCREENSHOT_DIR;
 const transportError = '登录结果未确认，请检查网络后重试。';
+const modalSelectors = {
+  dialog: '[role="dialog"][aria-labelledby="login-modal-title"]',
+  username: '#login-modal-username',
+  password: '#login-modal-password',
+};
 
 function routeOf(url) {
   const parsed = new URL(url);
@@ -39,7 +44,7 @@ function assertClean(collection) {
 async function gotoLogin(page, suffix = '') {
   const response = await page.goto(`${baseUrl}/__react/login${suffix}`);
   assert.equal(response.status(), 200, 'controlled React login entry must be available');
-  await page.locator('#form-admin').waitFor();
+  await page.locator(`${modalSelectors.username}, #form-admin`).waitFor();
 }
 
 async function fulfillJson(route, payload, status = 200, headers = {}) {
