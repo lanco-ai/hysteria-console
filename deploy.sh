@@ -771,7 +771,9 @@ restore_services_on_failure() {
       rollback_failed=1
       warn "Durable recovery failed closed; the root-only journal remains at /var/lib/hysteria/deploy-recovery/pending"
     else
-      cleanup_staged_react_release
+      if declare -F cleanup_staged_react_release >/dev/null 2>&1; then
+        cleanup_staged_react_release
+      fi
     fi
   elif [[ "$DEPLOY_SUCCEEDED" != "1" && "$ROLLBACK_ACTIVE" == "1" ]]; then
     warn "Deployment failed; restoring the previous runtime artifacts and service state."
@@ -806,7 +808,9 @@ restore_services_on_failure() {
         fi
       done
     fi
-    cleanup_staged_react_release
+    if declare -F cleanup_staged_react_release >/dev/null 2>&1; then
+      cleanup_staged_react_release
+    fi
   fi
   if [[ "$rollback_failed" == "1" ]]; then
     if [[ "${DURABLE_RECOVERY_PREPARED:-0}" == "1" ]]; then

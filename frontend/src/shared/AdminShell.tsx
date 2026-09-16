@@ -57,6 +57,12 @@ export function AdminShell({ active, badge, pageTitle, children, subtitle, topba
   }, [open]);
 
   useLayoutEffect(() => {
+    if (mobile && open) {
+      sidebarRef.current?.querySelector<HTMLElement>('#sidebar-close')?.focus();
+    }
+  }, [mobile, open]);
+
+  useLayoutEffect(() => {
     if (
       logout.failureCount === 0
       || handledLogoutFailureRef.current === logout.failureCount
@@ -134,7 +140,6 @@ export function AdminShell({ active, badge, pageTitle, children, subtitle, topba
   const openSidebar = () => {
     if (!mobile) return;
     setOpen(true);
-    requestAnimationFrame(() => sidebarRef.current?.querySelector<HTMLElement>('#sidebar-close')?.focus());
   };
   const closeSidebar = (restoreFocus: boolean) => {
     restoreFocusRef.current = restoreFocus;
