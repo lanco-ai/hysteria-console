@@ -6,6 +6,7 @@ from web_api.document_routes import REACT_DOCUMENTS
 
 ROOT = Path(__file__).resolve().parents[1]
 REACT_PREVIEW_PREFIX = '/__react'
+REACT_ONLY_DOCUMENTS = {'/chat'}
 LEGACY_READ_SOURCES = (
     ROOT / 'hysteria/public_page_routes.py',
     ROOT / 'hysteria/auth_routes.py',
@@ -41,6 +42,8 @@ def test_migrated_react_routes_are_registered_in_client_and_preview():
 def test_each_react_document_has_a_legacy_read_boundary():
     legacy = _legacy_sources()
     for path in REACT_DOCUMENTS:
+        if path in REACT_ONLY_DOCUMENTS:
+            continue
         assert (
             f"path == '{path}'" in legacy
             or f'path == "{path}"' in legacy

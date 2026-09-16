@@ -16,6 +16,7 @@ import { LandingPage } from './features/network-admin/landing/LandingPage';
 import { UserDetailPage } from './features/network-admin/user-detail/UserDetailPage';
 import { HomePage } from './features/public/HomePage';
 import { OverviewPage } from './features/network-admin/overview/OverviewPage';
+import { ChatPage } from './features/chat/ChatPage';
 import { applyInitialShellPreferences } from './shared/AdminShell';
 
 const root = document.getElementById('root');
@@ -33,6 +34,7 @@ const REACT_PREVIEW_ROUTES = [
   '/__react/admin/logs', '/__react/admin/settings', '/__react/admin/usage',
   '/__react/admin/health', '/__react/admin/incidents', '/__react/admin/config',
   '/__react/admin/rules', '/__react/admin/landing-egresses',
+  '/__react/chat',
   '/__react/admin/user/demo_alex',
 ] as const;
 const REACT_PREVIEW_USER_DETAIL_PREFIX = '/__react/admin/user/';
@@ -45,6 +47,7 @@ const REACT_DOCUMENT_ROUTES = new Set([
   '/', '/logout', '/login', '/user/login', '/user/logout', '/user/change-password', '/user/panel',
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
   '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses',
+  '/chat',
 ]);
 
 function normalizeRoute(pathname: string): string {
@@ -136,6 +139,10 @@ function applyRouteDocument(route: string): void {
     document.title = '家宽出口';
     document.body.className = 'has-shell';
     applyInitialShellPreferences();
+  } else if (route === '/chat') {
+    document.title = 'AI 对话';
+    document.body.className = 'has-shell';
+    applyInitialShellPreferences();
   } else if (route === '/user/change-password') {
     document.title = '修改面板密码';
     document.body.className = 'page-auth';
@@ -180,6 +187,7 @@ function RouteContent({ route }: { route: string }) {
   if (route === '/admin/config') return <ConfigPage publicHost={publicHost}/>;
   if (route === '/admin/rules') return <RulesPage publicHost={publicHost}/>;
   if (route === '/admin/landing-egresses') return <LandingPage publicHost={publicHost}/>;
+  if (route === '/chat') return <ChatPage publicHost={publicHost}/>;
   if (route === '/user/change-password') return <UserPasswordPage publicHost={publicHost}/>;
   if (route === '/user/panel') return <UserPanelPage publicHost={publicHost}/>;
   if (route === '/login') {

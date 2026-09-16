@@ -24,6 +24,7 @@ REACT_DOCUMENTS = (
     '/admin/config',
     '/admin/rules',
     '/admin/landing-egresses',
+    '/chat',
 )
 
 

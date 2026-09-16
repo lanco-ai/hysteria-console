@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException
 
 from .account_routes import register_account_routes
 from .compat_routes import register_compatibility_routes
+from .chat_routes import register_chat_routes
 from .config_models import (
     AdminRulesResponse,
     AdminTemplateResponse,
@@ -357,6 +358,7 @@ def create_app(services, *, max_requests=32, react_dist=None):
     register_health_routes(app, services, dispatch_form_write)
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
+    register_chat_routes(app, services, dispatch)
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
 

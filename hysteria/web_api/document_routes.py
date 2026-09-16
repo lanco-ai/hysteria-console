@@ -41,6 +41,7 @@ REACT_DOCUMENTS = {
     '/admin/config': ('模板配置', 'has-shell', 'admin'),
     '/admin/rules': ('路由规则', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
+    '/chat': ('AI 对话', 'has-shell', 'admin'),
 }
 
 

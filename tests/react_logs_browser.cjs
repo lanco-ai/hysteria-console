@@ -22,6 +22,8 @@ const navigation = [
   ['模板配置', '/admin/config'],
   ['路由规则', '/admin/rules'],
   ['家宽出口', '/admin/landing-egresses'],
+  ['工具', null],
+  ['AI 对话', '/chat'],
 ];
 
 function routeOf(url) {

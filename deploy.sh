@@ -123,6 +123,8 @@ declare -a REACT_WEB_API_MODULES=(
   account_models.py
   account_routes.py
   app.py
+  chat_routes.py
+  chat_service.py
   compat_routes.py
   config_models.py
   document_routes.py
@@ -341,6 +343,8 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/account_models.py"
   add_durable_artifact "$HY_DIR/web_api/account_routes.py"
   add_durable_artifact "$HY_DIR/web_api/app.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_service.py"
   add_durable_artifact "$HY_DIR/web_api/compat_routes.py"
   add_durable_artifact "$HY_DIR/web_api/config_models.py"
   add_durable_artifact "$HY_DIR/web_api/document_routes.py"
@@ -2053,6 +2057,8 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/account_models.py" "$HY_DIR/web_api/account_models.py"
   render "$REPO_DIR/hysteria/web_api/account_routes.py" "$HY_DIR/web_api/account_routes.py"
   render "$REPO_DIR/hysteria/web_api/app.py" "$HY_DIR/web_api/app.py"
+  render "$REPO_DIR/hysteria/web_api/chat_routes.py" "$HY_DIR/web_api/chat_routes.py"
+  render "$REPO_DIR/hysteria/web_api/chat_service.py" "$HY_DIR/web_api/chat_service.py"
   render "$REPO_DIR/hysteria/web_api/compat_routes.py" "$HY_DIR/web_api/compat_routes.py"
   render "$REPO_DIR/hysteria/web_api/config_models.py" "$HY_DIR/web_api/config_models.py"
   render "$REPO_DIR/hysteria/web_api/document_routes.py" "$HY_DIR/web_api/document_routes.py"

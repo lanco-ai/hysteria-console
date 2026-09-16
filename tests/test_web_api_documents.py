@@ -117,6 +117,13 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         assert '<body class="has-shell">' in admin.text
         assert 'data-public-host="panel.example.test"' in admin.text
 
+        chat_anonymous = client.get('/chat', follow_redirects=False)
+        assert chat_anonymous.status_code == 303
+        assert chat_anonymous.headers['location'] == '/login'
+        chat = client.get('/chat', headers={'Cookie': 'sid=admin'})
+        assert chat.status_code == 200
+        assert '<title>AI 对话</title>' in chat.text
+
         user_login = client.get('/user/login')
         assert user_login.status_code == 200
         assert '<title>用户登录 · Hysteria</title>' in user_login.text

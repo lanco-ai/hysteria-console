@@ -37,4 +37,10 @@ export const navigationGroups: NavigationGroup[] = [
       { key: 'landing-egresses', href: '/admin/landing-egresses', label: '家宽出口', icon: 'rules' },
     ],
   },
+  {
+    label: '工具',
+    items: [
+      { key: 'chat', href: '/chat', label: 'AI 对话', icon: 'chat' },
+    ],
+  },
 ];

@@ -243,6 +243,8 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/web_api/account_models.py",
     "/root/hysteria/web_api/account_routes.py",
     "/root/hysteria/web_api/app.py",
+    "/root/hysteria/web_api/chat_routes.py",
+    "/root/hysteria/web_api/chat_service.py",
     "/root/hysteria/web_api/compat_routes.py",
     "/root/hysteria/web_api/config_models.py",
     "/root/hysteria/web_api/document_routes.py",
