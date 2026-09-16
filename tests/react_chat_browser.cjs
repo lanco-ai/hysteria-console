@@ -3,6 +3,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { expect } = require('@playwright/test');
 
 const baseUrl = process.env.PREVIEW_BASE_URL;
+const secretSentinel = 'sk-workbench-browser-sentinel-9f7e';
 
 async function main() {
   const browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--num-raster-threads=1', '--renderer-process-limit=2'] });
@@ -44,6 +45,13 @@ async function main() {
   });
   await context.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: baseUrl }]);
   const page = await context.newPage();
+  const browserResponseBodies = [];
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname;
+    if (path === '/__react/admin/chat' || path.startsWith('/api/chat/') || path.startsWith('/static/react/')) {
+      browserResponseBodies.push(response.text().catch(() => ''));
+    }
+  });
   let settings = {
     base_url: 'https://api.example.test/v1',
     temperature: 0.7,
@@ -99,8 +107,10 @@ async function main() {
   await page.getByRole('button', { name: '刷新模型' }).click();
   await expect(page.getByText('模型连接成功后会保存在当前会话的可用列表中')).toBeVisible();
   await expect(page.getByLabel('上下文状态')).toContainText('未知 / 未知');
+  await page.locator('#chat-api-key').fill(secretSentinel);
   await page.getByRole('button', { name: '保存设置' }).click();
   await expect(page.getByText('设置已保存')).toBeVisible();
+  assert(putBodies.some(body => body.api_key === secretSentinel));
   assert(putBodies.every(body => !Object.hasOwn(body, 'model') && !Object.hasOwn(body, 'reasoning_effort')));
   await page.locator('button[aria-label="关闭设置"]').click();
 
@@ -117,6 +127,14 @@ async function main() {
   await expect(page.getByRole('button', { name: '已复制' })).toBeVisible();
   const stored = await page.evaluate(key => localStorage.getItem(key), 'hy2.chat.sessions.v1');
   assert(stored && !stored.includes('sk-…1234'));
+  const [html, localStorageValues, responseBodies] = await Promise.all([
+    page.content(),
+    page.evaluate(() => Object.keys(localStorage).map(key => localStorage.getItem(key))),
+    Promise.all(browserResponseBodies),
+  ]);
+  assert.equal(html.includes(secretSentinel), false);
+  assert.equal(JSON.stringify(localStorageValues).includes(secretSentinel), false);
+  assert.equal(responseBodies.join('\n').includes(secretSentinel), false);
 
   await page.reload();
   await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SECOND');
