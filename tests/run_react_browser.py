@@ -37,6 +37,7 @@ def main():
         'react_incidents_browser.cjs',
         'react_config_browser.cjs',
         'react_rules_browser.cjs',
+        'react_chat_browser.cjs',
         'react_landing_browser.cjs',
         'react_user_panel_browser.cjs',
     )

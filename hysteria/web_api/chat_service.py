@@ -19,6 +19,7 @@ DEFAULT_SETTINGS_PATH = Path('/root/hysteria/state/chat/settings.json')
 MAX_BODY_BYTES = 128 * 1024
 MAX_MESSAGES = 128
 MAX_MESSAGE_CHARS = 32 * 1024
+REASONING_EFFORTS = ('auto', 'low', 'medium', 'high')
 _MISSING = object()
 
 
@@ -41,6 +42,8 @@ class ChatSettings:
     api_key: str = ''
     model: str = ''
     temperature: float = 0.7
+    reasoning_enabled: bool = False
+    reasoning_effort: str = 'auto'
 
 
 def mask_api_key(value: str) -> str:
@@ -61,6 +64,12 @@ def _coerce_settings(raw: object) -> ChatSettings:
     api_key = str(raw.get('api_key') or '')
     model = str(raw.get('model') or '').strip()
     temperature = raw.get('temperature', 0.7)
+    reasoning_enabled = raw.get('reasoning_enabled', False)
+    reasoning_effort = str(raw.get('reasoning_effort') or 'auto').strip().lower()
+    if not isinstance(reasoning_enabled, bool):
+        raise ChatSettingsError('reasoning_enabled must be a boolean')
+    if reasoning_effort not in REASONING_EFFORTS:
+        raise ChatSettingsError('reasoning_effort is invalid')
     try:
         temperature = float(temperature)
     except (TypeError, ValueError):
@@ -71,6 +80,8 @@ def _coerce_settings(raw: object) -> ChatSettings:
         api_key=api_key,
         model=model,
         temperature=temperature,
+        reasoning_enabled=reasoning_enabled,
+        reasoning_effort=reasoning_effort,
     )
 
 
@@ -115,6 +126,8 @@ class ChatSettingsStore:
             'base_url': settings.base_url,
             'model': settings.model,
             'temperature': settings.temperature,
+            'reasoning_enabled': settings.reasoning_enabled,
+            'reasoning_effort': settings.reasoning_effort,
             'api_key_configured': bool(settings.api_key),
             'api_key_masked': mask_api_key(settings.api_key),
         }
@@ -126,6 +139,8 @@ class ChatSettingsStore:
         model: object = _MISSING,
         temperature: object = _MISSING,
         api_key: object = _MISSING,
+        reasoning_enabled: object = _MISSING,
+        reasoning_effort: object = _MISSING,
     ) -> dict[str, object]:
         lock_path = self.path.with_name(self.path.name + '.lock')
         try:
@@ -139,6 +154,20 @@ class ChatSettingsStore:
                 next_model = current.model if model is _MISSING else str(model or '').strip()
                 next_temperature = current.temperature if temperature is _MISSING else temperature
                 next_api_key = current.api_key if api_key is _MISSING else str(api_key or '')
+                next_reasoning_enabled = (
+                    current.reasoning_enabled
+                    if reasoning_enabled is _MISSING
+                    else reasoning_enabled
+                )
+                next_reasoning_effort = (
+                    current.reasoning_effort
+                    if reasoning_effort is _MISSING
+                    else str(reasoning_effort or 'auto').strip().lower()
+                )
+                if not isinstance(next_reasoning_enabled, bool):
+                    raise ChatSettingsError('reasoning_enabled must be a boolean')
+                if next_reasoning_effort not in REASONING_EFFORTS:
+                    raise ChatSettingsError('reasoning_effort is invalid')
                 try:
                     next_temperature = float(next_temperature)
                 except (TypeError, ValueError):
@@ -154,6 +183,8 @@ class ChatSettingsStore:
                     'api_key': next_api_key,
                     'model': next_model,
                     'temperature': next_temperature,
+                    'reasoning_enabled': next_reasoning_enabled,
+                    'reasoning_effort': next_reasoning_effort,
                 }
                 state_store.save_json(self.path, payload)
                 self.path.chmod(0o600)
@@ -188,13 +219,30 @@ def chat_completions_url(base_url: str) -> str:
     can result from copying a provider URL into a field that already contains
     the version path.
     """
-    normalized = base_url.rstrip('/')
-    while normalized.endswith('/v1/v1'):
-        normalized = normalized[:-3]
+    normalized = _normalise_version_path(base_url)
     suffix = '/chat/completions'
     if normalized.endswith(suffix):
         return normalized
     return normalized + suffix
+
+
+def _normalise_version_path(base_url: str) -> str:
+    normalized = base_url.rstrip('/')
+    while '/v1/v1/' in normalized:
+        normalized = normalized.replace('/v1/v1/', '/v1/')
+    while normalized.endswith('/v1/v1'):
+        normalized = normalized[:-3]
+    return normalized
+
+
+def chat_models_url(base_url: str) -> str:
+    """Build a standard OpenAI ``/models`` URL from a provider base value."""
+    normalized = _normalise_version_path(base_url)
+    if normalized.endswith('/chat/completions'):
+        normalized = normalized[:-len('/chat/completions')]
+    if normalized.endswith('/models'):
+        return normalized
+    return normalized + '/models'
 
 
 def build_upstream_request(
@@ -206,15 +254,15 @@ def build_upstream_request(
     if not settings.base_url or not settings.model:
         raise ChatSettingsError('chat settings are incomplete')
     url = chat_completions_url(settings.base_url)
-    body = json.dumps(
-        {
-            'model': settings.model,
-            'messages': messages,
-            'temperature': settings.temperature,
-            'stream': False,
-        },
-        ensure_ascii=False,
-    ).encode('utf-8')
+    payload: dict[str, object] = {
+        'model': settings.model,
+        'messages': messages,
+        'temperature': settings.temperature,
+        'stream': False,
+    }
+    if settings.reasoning_enabled and settings.reasoning_effort != 'auto':
+        payload['reasoning_effort'] = settings.reasoning_effort
+    body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     request = urllib.request.Request(url, data=body, method='POST')
     request.add_header('Authorization', f'Bearer {settings.api_key}')
     request.add_header('Content-Type', 'application/json')
@@ -229,9 +277,47 @@ def forward_chat(
     opener=None,
 ) -> dict[str, object]:
     request = build_upstream_request(settings, messages)
+    return _read_json_request(request, opener=opener, timeout=120)
+
+
+def list_chat_models(
+    settings: ChatSettings,
+    *,
+    opener=None,
+) -> list[dict[str, str]]:
+    """Fetch only safe model identifiers from an OpenAI-compatible endpoint."""
+    if not settings.api_key:
+        raise ChatSettingsError('api key is not configured')
+    if not settings.base_url:
+        raise ChatSettingsError('chat settings are incomplete')
+    request = urllib.request.Request(chat_models_url(settings.base_url), method='GET')
+    request.add_header('Authorization', f'Bearer {settings.api_key}')
+    request.add_header('Accept', 'application/json')
+    payload = _read_json_request(request, opener=opener, timeout=20)
+    data = payload.get('data')
+    if not isinstance(data, list):
+        raise ChatUpstreamError(200)
+    models: list[dict[str, str]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get('id')
+        if not isinstance(model_id, str):
+            continue
+        model_id = model_id.strip()
+        if not model_id or len(model_id) > 256:
+            continue
+        name = item.get('name')
+        models.append({'id': model_id, 'name': name.strip() if isinstance(name, str) and name.strip() else model_id})
+        if len(models) >= 256:
+            break
+    return models
+
+
+def _read_json_request(request, *, opener=None, timeout: int) -> dict[str, object]:
     opener = opener or urllib.request.urlopen
     try:
-        with opener(request, timeout=120) as response:
+        with opener(request, timeout=timeout) as response:
             status = int(getattr(response, 'status', 200))
             raw = response.read(MAX_BODY_BYTES + 1)
     except urllib.error.HTTPError as exc:
@@ -239,9 +325,7 @@ def forward_chat(
         raise ChatUpstreamError(exc.code, retry_after=retry_after) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise ChatUpstreamError() from None
-    if status < 200 or status >= 300:
-        raise ChatUpstreamError(status)
-    if len(raw) > MAX_BODY_BYTES:
+    if status < 200 or status >= 300 or len(raw) > MAX_BODY_BYTES:
         raise ChatUpstreamError(status)
     try:
         payload = json.loads(raw.decode('utf-8'))

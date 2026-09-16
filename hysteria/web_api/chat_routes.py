@@ -14,6 +14,7 @@ from .chat_service import (
     ChatSettingsStore,
     ChatUpstreamError,
     forward_chat,
+    list_chat_models,
     validate_messages,
 )
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
@@ -57,6 +58,29 @@ def _same_origin(request: Request) -> bool:
     return http_utils.is_same_origin_post(SimpleNamespace(headers=request.headers))
 
 
+def _settings_error_code(error: ChatSettingsError) -> str:
+    message = str(error)
+    if 'api key' in message:
+        return 'api_key_not_configured'
+    if 'settings unavailable' in message:
+        return 'settings_unavailable'
+    return 'settings_incomplete'
+
+
+def _connection_error_code(error: ChatUpstreamError) -> str:
+    if error.status in (401, 403):
+        return 'authentication_failed'
+    if error.status == 404:
+        return 'models_endpoint_unavailable'
+    if error.status == 429:
+        return 'rate_limited'
+    if isinstance(error.status, int) and error.status >= 500:
+        return 'upstream_unavailable'
+    if error.status is None:
+        return 'timeout'
+    return 'upstream_error'
+
+
 def register_chat_routes(app, services, dispatch, *, settings_store=None):
     store = settings_store or ChatSettingsStore()
 
@@ -72,6 +96,11 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
         del headers, path
         settings = store.read()
         return forward_chat(settings, messages)
+
+    def models(*, headers, path):
+        del headers, path
+        settings = store.read()
+        return list_chat_models(settings)
 
     @app.get('/api/chat/settings')
     async def get_chat_settings(request: Request):
@@ -101,7 +130,14 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
                 'request_too_large' if too_large else 'bad_request',
                 status=413 if too_large else 400,
             )
-        allowed = {'base_url', 'api_key', 'model', 'temperature'}
+        allowed = {
+            'base_url',
+            'api_key',
+            'model',
+            'temperature',
+            'reasoning_enabled',
+            'reasoning_effort',
+        }
         if any(key not in allowed for key in payload):
             return _json_error('bad_request')
         values = {key: payload[key] for key in allowed if key in payload}
@@ -112,6 +148,63 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
         if isinstance(result, JSONResponse):
             return result
         return JSONResponse(result)
+
+    @app.get('/api/chat/models')
+    async def get_chat_models(request: Request):
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        try:
+            result = await dispatch(models, request)
+        except ChatSettingsError as exc:
+            code = _settings_error_code(exc)
+            return _json_error(code, status=503 if code == 'settings_unavailable' else 422)
+        except ChatUpstreamError as exc:
+            content = {'error': 'upstream_error'}
+            if isinstance(exc.status, int):
+                content['upstream_status'] = exc.status
+            return JSONResponse(status_code=502, content=content)
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(result)
+
+    @app.post('/api/chat/test')
+    async def test_chat_connection(request: Request):
+        if not _same_origin(request):
+            return _json_error('cross_site_request', status=403)
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        try:
+            payload = await _read_json(request)
+            if payload:
+                raise ChatSettingsError('invalid request')
+        except ChatSettingsError as exc:
+            too_large = 'large' in str(exc)
+            return _json_error(
+                'request_too_large' if too_large else 'bad_request',
+                status=413 if too_large else 400,
+            )
+        try:
+            models_result = await dispatch(models, request)
+        except ChatSettingsError as exc:
+            code = _settings_error_code(exc)
+            return JSONResponse(
+                status_code=503 if code == 'settings_unavailable' else 422,
+                content={'ok': False, 'error': code},
+            )
+        except ChatUpstreamError as exc:
+            return JSONResponse(
+                status_code=502,
+                content={'ok': False, 'error': _connection_error_code(exc)},
+            )
+        if isinstance(models_result, JSONResponse):
+            return models_result
+        return JSONResponse({
+            'ok': True,
+            'message': 'Connected',
+            'models_count': len(models_result),
+        })
 
     @app.post('/api/chat/completions')
     async def post_chat_completion(request: Request):
@@ -134,10 +227,8 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
         try:
             result = await dispatch(partial(complete, messages=messages), request)
         except ChatSettingsError as exc:
-            if 'settings unavailable' in str(exc):
-                return _json_error('settings_unavailable', status=503)
-            code = 'api_key_not_configured' if 'api key' in str(exc) else 'settings_incomplete'
-            return _json_error(code, status=422)
+            code = _settings_error_code(exc)
+            return _json_error(code, status=503 if code == 'settings_unavailable' else 422)
         except ChatUpstreamError as exc:
             content = {'error': 'upstream_error'}
             if isinstance(exc.status, int):
