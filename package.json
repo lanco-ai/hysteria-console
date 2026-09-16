@@ -15,8 +15,9 @@
     "test:react-assets": "python3 -m pytest -q tests/test_react_asset_boundary.py",
     "test:react-unit": "node --experimental-vm-modules --test tests/overview_pagehide_state.test.cjs",
     "test:react-browser": "PYTHONPATH=. ${PYTHON:-python3} tests/run_react_browser.py",
-    "check:react": "npm run typecheck:react && npm run build:react && npm run test:react-assets && npm run test:react-unit && npm run test:react-browser",
-    "check:frontend": "npm run lint:js && npm run lint:css && npm run test:gates && npm run test:browser && npm run check:react"
+    "check:react-core": "npm run typecheck:react && npm run build:react && npm run test:react-assets && npm run test:react-unit",
+    "check:react": "npm run check:react-core && npm run test:react-browser",
+    "check:frontend": "npm run lint:js && npm run lint:css && npm run test:gates && npm run test:browser && npm run check:react-core"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
