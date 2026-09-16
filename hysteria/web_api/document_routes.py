@@ -41,8 +41,12 @@ REACT_DOCUMENTS = {
     '/admin/config': ('模板配置', 'has-shell', 'admin'),
     '/admin/rules': ('路由规则', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
-    '/chat': ('AI 对话', 'has-shell', 'admin'),
+    '/admin/chat': ('AI 对话', 'has-shell', 'admin'),
 }
+
+# Keep the first release's short URL working while making the panel hierarchy
+# consistent with the other administrator tools.
+REACT_DOCUMENT_REDIRECTS = {'/chat': '/admin/chat'}
 
 
 def _public_host(request: Request, services) -> str:
@@ -192,6 +196,26 @@ def register_react_document_routes(app, services, dispatch, react_dist):
         router.add_api_route(
             path,
             endpoint_for(path),
+            methods=['GET', 'HEAD'],
+            include_in_schema=False,
+        )
+
+    async def redirect_document(request: Request, *, path: str):
+        target = REACT_DOCUMENT_REDIRECTS[path]
+        if request.url.query:
+            target += f'?{request.url.query}'
+        return RedirectResponse(target, status_code=308)
+
+    def redirect_endpoint_for(path):
+        async def endpoint(request: Request):
+            return await redirect_document(request, path=path)
+
+        return endpoint
+
+    for path in REACT_DOCUMENT_REDIRECTS:
+        router.add_api_route(
+            path,
+            redirect_endpoint_for(path),
             methods=['GET', 'HEAD'],
             include_in_schema=False,
         )

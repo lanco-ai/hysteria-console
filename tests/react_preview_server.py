@@ -50,8 +50,8 @@ REACT_PAGES = {
     '/__react/user/logout': ('确认退出', ''),
     '/__react/user/change-password': ('修改面板密码', 'page-auth'),
     '/__react/user/panel': ('用户面板 · Hysteria', ''),
-    '/__react/chat': ('AI 对话', 'has-shell'),
-    '/chat': ('AI 对话', 'has-shell'),
+    '/__react/admin/chat': ('AI 对话', 'has-shell'),
+    '/admin/chat': ('AI 对话', 'has-shell'),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'

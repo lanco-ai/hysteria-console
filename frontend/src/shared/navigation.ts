@@ -40,7 +40,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: '工具',
     items: [
-      { key: 'chat', href: '/chat', label: 'AI 对话', icon: 'chat' },
+      { key: 'chat', href: '/admin/chat', label: 'AI 对话', icon: 'chat' },
     ],
   },
 ];

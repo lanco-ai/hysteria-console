@@ -23,7 +23,7 @@ const navigation = [
   ['路由规则', '/admin/rules'],
   ['家宽出口', '/admin/landing-egresses'],
   ['工具', null],
-  ['AI 对话', '/chat'],
+  ['AI 对话', '/admin/chat'],
 ];
 
 function routeOf(url) {

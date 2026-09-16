@@ -6,7 +6,7 @@ from web_api.document_routes import REACT_DOCUMENTS
 
 ROOT = Path(__file__).resolve().parents[1]
 REACT_PREVIEW_PREFIX = '/__react'
-REACT_ONLY_DOCUMENTS = {'/chat'}
+REACT_ONLY_DOCUMENTS = {'/admin/chat'}
 LEGACY_READ_SOURCES = (
     ROOT / 'hysteria/public_page_routes.py',
     ROOT / 'hysteria/auth_routes.py',

@@ -34,7 +34,7 @@ const REACT_PREVIEW_ROUTES = [
   '/__react/admin/logs', '/__react/admin/settings', '/__react/admin/usage',
   '/__react/admin/health', '/__react/admin/incidents', '/__react/admin/config',
   '/__react/admin/rules', '/__react/admin/landing-egresses',
-  '/__react/chat',
+  '/__react/admin/chat',
   '/__react/admin/user/demo_alex',
 ] as const;
 const REACT_PREVIEW_USER_DETAIL_PREFIX = '/__react/admin/user/';
@@ -47,7 +47,7 @@ const REACT_DOCUMENT_ROUTES = new Set([
   '/', '/logout', '/login', '/user/login', '/user/logout', '/user/change-password', '/user/panel',
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
   '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses',
-  '/chat',
+  '/admin/chat',
 ]);
 
 function normalizeRoute(pathname: string): string {
@@ -139,7 +139,7 @@ function applyRouteDocument(route: string): void {
     document.title = '家宽出口';
     document.body.className = 'has-shell';
     applyInitialShellPreferences();
-  } else if (route === '/chat') {
+  } else if (route === '/admin/chat') {
     document.title = 'AI 对话';
     document.body.className = 'has-shell';
     applyInitialShellPreferences();
@@ -187,7 +187,7 @@ function RouteContent({ route }: { route: string }) {
   if (route === '/admin/config') return <ConfigPage publicHost={publicHost}/>;
   if (route === '/admin/rules') return <RulesPage publicHost={publicHost}/>;
   if (route === '/admin/landing-egresses') return <LandingPage publicHost={publicHost}/>;
-  if (route === '/chat') return <ChatPage publicHost={publicHost}/>;
+  if (route === '/admin/chat') return <ChatPage publicHost={publicHost}/>;
   if (route === '/user/change-password') return <UserPasswordPage publicHost={publicHost}/>;
   if (route === '/user/panel') return <UserPanelPage publicHost={publicHost}/>;
   if (route === '/login') {
