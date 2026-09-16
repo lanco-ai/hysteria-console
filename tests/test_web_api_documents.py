@@ -117,9 +117,9 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         assert '<body class="has-shell">' in admin.text
         assert 'data-public-host="panel.example.test"' in admin.text
 
-        chat_alias = client.get('/chat?from=legacy', follow_redirects=False)
-        assert chat_alias.status_code == 308
-        assert chat_alias.headers['location'] == '/admin/chat?from=legacy'
+        retired_chat = client.get('/chat?from=legacy', follow_redirects=False)
+        assert retired_chat.status_code == 404
+        assert 'location' not in retired_chat.headers
 
         chat_anonymous = client.get('/admin/chat', follow_redirects=False)
         assert chat_anonymous.status_code == 303

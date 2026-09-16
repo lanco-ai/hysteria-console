@@ -52,7 +52,8 @@ def test_react_documents_and_api_use_8083():
         assert (
             'location ^~ /static/react/assets/ {\n        proxy_pass http://127.0.0.1:8083;' in text
         )
-        assert 'location = /chat {\n        proxy_pass http://127.0.0.1:8083;' in text
+        assert 'location = /chat {\n        return 404;\n    }' in text
+        assert 'location = /chat {\n        proxy_pass' not in text
 
 
 def test_legacy_downloads_and_fallback_remain_on_8081():
