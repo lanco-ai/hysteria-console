@@ -178,3 +178,10 @@ def test_router_composes_every_workbench_alias_through_the_session_gate():
     assert "window.history.pushState({}, '', returnTo)" in router
     assert "window.history.replaceState({}, '', destination)" in router
     assert "session.status === 'authenticated' && session.role === 'admin'" in router
+    assert "const SAFE_LOGIN_QUERY_KEYS" in router
+    assert "function sanitizeReturnTo" in router
+    assert "function protectedRouteReturnTo" in router
+    assert "query.has('next')" in router
+    assert "SAFE_LOGIN_QUERY_KEYS.has(key)" in router
+    assert "isProtectedAdminRoute && !authenticated && session.status !== 'loading'" in router
+    assert "protectedReturnTo ? { returnTo: protectedReturnTo }" in router

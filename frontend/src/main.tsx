@@ -31,6 +31,7 @@ const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
   '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses',
 ]);
+const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter']);
 const REACT_DOCUMENT_ROUTES = new Set([
   ...WORKBENCH_ROUTES, '/logout', '/user/logout', '/user/change-password', '/user/panel', ...ADMIN_ROUTES,
 ]);
@@ -71,6 +72,24 @@ function isReactDocumentPath(pathname: string): boolean {
 function previewPath(path: string): string {
   if (!window.location.pathname.startsWith(REACT_PREVIEW_PREFIX) || path.startsWith(REACT_PREVIEW_PREFIX)) return path;
   return `${REACT_PREVIEW_PREFIX}${path}`;
+}
+
+function sanitizeReturnTo(value?: string): string | undefined {
+  const sameOrigin = resolveSameOriginReturnTo(value);
+  if (!sameOrigin) return undefined;
+  const destination = new URL(sameOrigin, window.location.origin);
+  const query = new URLSearchParams();
+  for (const [key, item] of destination.searchParams) {
+    if (SAFE_LOGIN_QUERY_KEYS.has(key)) query.append(key, item);
+  }
+  const suffix = query.toString();
+  return `${destination.pathname}${suffix ? `?${suffix}` : ''}`;
+}
+
+function protectedRouteReturnTo(route: string, search: string): string | undefined {
+  const query = new URLSearchParams(search);
+  if (query.has('next')) return sanitizeReturnTo(query.get('next') || undefined);
+  return sanitizeReturnTo(`${route}${search}`);
 }
 
 function installClientNavigation(onNavigate: () => void): () => void {
@@ -157,7 +176,7 @@ function AdminRoute({ route, publicHost, authenticated, status }: { route: strin
 function WorkbenchRoute({ route, publicHost, authenticated, loginOpen, onAuthenticated, onUnauthenticated, onClose }: {
   route: string; publicHost: string; authenticated: boolean; loginOpen: boolean; onAuthenticated: (returnTo?: string) => Promise<void>; onUnauthenticated: () => void; onClose: () => void;
 }) {
-  const returnTo = new URL(window.location.href).searchParams.get('next') || undefined;
+  const returnTo = sanitizeReturnTo(new URL(window.location.href).searchParams.get('next') || undefined);
   return <>
     <ChatPage publicHost={publicHost} authenticated={authenticated} onUnauthenticated={onUnauthenticated}/>
     <LoginModal open={loginOpen} realm={route === '/user/login' ? 'user' : 'admin'} passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
@@ -174,7 +193,9 @@ function App() {
   const sessionStatus = session.status === 'authenticated' ? 'anonymous' : session.status;
   const publicHost = appRoot.dataset.publicHost?.trim() || window.location.hostname;
   const isProtectedAdminRoute = ADMIN_ROUTES.has(route) || /^\/admin\/user\/[^/]+$/.test(route);
-  const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/' || route === '/admin/chat' || isProtectedAdminRoute) && session.status === 'anonymous');
+  const needsAdminLogin = isProtectedAdminRoute && !authenticated && session.status !== 'loading';
+  const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/' || route === '/admin/chat') && session.status === 'anonymous') || needsAdminLogin;
+  const protectedReturnTo = protectedRouteReturnTo(route, location.search);
 
   const navigate = useCallback((path: string) => { window.history.pushState({}, '', path); setLocationKey(currentLocationKey()); }, []);
   const closeLogin = useCallback(() => { setLoginRequested(false); if (LOGIN_ROUTES.has(route)) navigate(previewPath('/')); }, [navigate, route]);
@@ -182,7 +203,7 @@ function App() {
   const handleAuthenticated = useCallback(async (candidate?: string) => {
     await session.refresh();
     setLoginRequested(false);
-    const returnTo = resolveSameOriginReturnTo(candidate) || (route === '/user/login' ? '/user/panel' : '/');
+    const returnTo = sanitizeReturnTo(candidate) || (route === '/user/login' ? '/user/panel' : '/');
     const destination = previewPath(returnTo);
     window.history.pushState({}, '', returnTo);
     if (destination !== returnTo) window.history.replaceState({}, '', destination);
@@ -194,7 +215,7 @@ function App() {
   useEffect(() => { if (LOGIN_ROUTES.has(route)) setLoginRequested(true); }, [route]);
 
   if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
-  if (isProtectedAdminRoute) return <><AdminRoute route={route} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(location.search ? { returnTo: `${route}${location.search}` } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
+  if (isProtectedAdminRoute) return <><AdminRoute route={route} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
   if (route === '/user/change-password') return <UserPasswordPage publicHost={publicHost}/>;
   if (route === '/user/panel') return <UserPanelPage publicHost={publicHost}/>;
   if (route === '/logout' || route === '/user/logout') return <LogoutPage realm={route === '/logout' ? 'admin' : 'user'} publicHost={publicHost}/>;
