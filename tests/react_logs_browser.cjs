@@ -136,7 +136,10 @@ async function verifyAuthenticationBoundaries(browser) {
     allowedResponses: ['GET /api/v1/session 401'],
   });
   await gotoReact(anonymous);
-  await anonymous.getByRole('link', { name: '前往登录' }).waitFor();
+  await anonymous.getByRole('dialog', { name: '登录控制台' }).waitFor();
+  assert.equal(await anonymous.locator('.app').count(), 1, 'anonymous admin routes remain inside the shared workbench shell');
+  assert.equal(await anonymous.locator('.sidebar').count(), 1, 'anonymous admin routes retain the shared workbench sidebar');
+  assert.equal(await anonymous.locator('.main').count(), 1, 'anonymous admin routes retain the shared workbench main region');
   assert.equal(await anonymous.locator('text=preview-admin').count(), 0);
   assert.equal(await anonymous.locator('.data-table').count(), 0);
   assertClean(anonymousFailures);
@@ -147,7 +150,8 @@ async function verifyAuthenticationBoundaries(browser) {
   const userPage = await userContext.newPage();
   const userFailures = collectFailures(userPage, 'user-session logs');
   await gotoReact(userPage);
-  await userPage.getByRole('link', { name: '管理员登录' }).waitFor();
+  await userPage.getByRole('dialog', { name: '登录控制台' }).waitFor();
+  assert.equal(await userPage.locator('.app').count(), 1, 'a non-admin session remains inside the shared workbench shell');
   assert.equal(await userPage.locator('text=preview-admin').count(), 0);
   assert.equal(await userPage.locator('.data-table').count(), 0);
   assertClean(userFailures);

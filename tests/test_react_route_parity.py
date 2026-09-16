@@ -38,8 +38,11 @@ def test_migrated_react_routes_are_registered_in_client_and_preview():
             f'{preview_path} is missing from the isolated preview'
         )
 
-    assert "'/__react/admin/user/demo_alex'" in main
-    assert "'/__react/admin/user/demo_alex'" in preview
+    # User-detail documents are intentionally dynamic.  The client must accept
+    # one path segment, while the isolated preview must serve that same route.
+    assert "^\\/admin\\/user\\/[^/]+$" in main
+    assert "path.startswith('/__react/admin/user/')" in preview
+    assert "path.count('/') == 4" in preview
 
 
 def test_each_react_document_has_a_legacy_read_boundary():
