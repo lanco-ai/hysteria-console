@@ -1392,6 +1392,7 @@ def test_frozen_static_allowlist_exactly_matches_helper_contract(tmp_path):
             "XRAY_INSTALL_REQUIRED=1",
             "TUIC_INSTALL_REQUIRED=1",
             "HY_ENABLE_HTTPS=0",
+            "HY_UNIFIED_FASTAPI=0",
             "declare -a DURABLE_ARTIFACT_PATHS=()",
             "declare -A DURABLE_ARTIFACT_SET=()",
             "die() { printf '%s\\n' \"$*\" >&2; exit 1; }",

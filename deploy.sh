@@ -435,7 +435,14 @@ build_durable_artifact_set() {
     add_durable_artifact \
       /etc/nginx/sites-available/hysteria-panel.conf
   fi
-  if [[ "$HY_ENABLE_HTTPS" == "0" ]]; then
+  if [[ "$HY_UNIFIED_FASTAPI" == "1" ]]; then
+    # Unified mode atomically replaces both the active symlink and its
+    # versioned HTTPS vhost target.
+    add_durable_artifact \
+      /etc/nginx/sites-available/hysteria-panel-https.conf
+    add_durable_artifact \
+      /etc/nginx/sites-enabled/hysteria-panel-https.conf
+  elif [[ "$HY_ENABLE_HTTPS" == "0" ]]; then
     add_durable_artifact \
       /etc/nginx/sites-enabled/hysteria-panel-https.conf
   fi
