@@ -100,10 +100,9 @@ git commit -m "feat: add workbench document route contracts"
 - Create: `frontend/src/shared/session.ts`
 - Create: `frontend/src/features/auth/LoginModal.tsx`
 - Modify: `frontend/src/features/auth/loginRequest.ts` only if the modal needs an existing typed response extension
-- Modify: `tests/test_workbench_frontend_contract.py` (create)
+- Test: `tests/test_workbench_frontend_contract.py` (create)
 - Modify: `tests/react_login_browser.cjs`
 - Modify: `tests/react_home_browser.cjs`
-- Test: `tests/test_workbench_frontend_contract.py` (create)
 
 **Interfaces:**
 - `useSession(requiredRole?: 'admin' | 'user'): { status: 'loading' | 'anonymous' | 'authenticated' | 'unavailable'; role?: 'admin' | 'user'; refresh: () => Promise<void> }`.
