@@ -25,7 +25,7 @@ def test_built_react_document_contains_hashed_css_asset():
 
 
 def test_react_css_entry_lists_every_manifest_section_in_order():
-    names = json.loads((ROOT / 'hysteria/styles/manifest.json').read_text(encoding='utf-8'))
+    names = json.loads((ROOT / 'frontend/src/styles/manifest.json').read_text(encoding='utf-8'))
     entry = (ROOT / 'frontend/src/styles/index.css').read_text(encoding='utf-8')
-    positions = [entry.index(f'../../../hysteria/styles/{name}') for name in names]
+    positions = [entry.index(f'./sections/{name}') for name in names]
     assert positions == sorted(positions)
