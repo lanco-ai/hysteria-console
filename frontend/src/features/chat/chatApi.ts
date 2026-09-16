@@ -21,6 +21,13 @@ export type SettingsUpdate = {
 export type ChatModel = { id: string; name: string; context_window?: number };
 export type ChatConnectionResult = { ok: true; message: string; models_count: number };
 
+export class ChatApiError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = 'ChatApiError';
+  }
+}
+
 async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json();
@@ -52,7 +59,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   const payload = await readJson(response);
-  if (!response.ok) throw new Error(errorMessage(response.status, payload));
+  if (!response.ok) throw new ChatApiError(response.status, errorMessage(response.status, payload));
   return payload as T;
 }
 

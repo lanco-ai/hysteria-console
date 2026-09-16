@@ -65,6 +65,30 @@
   min-height: min(720px, calc(100dvh - 150px));
 }
 
+/* Chat history now occupies CodexShell's optional sidebar-top slot. */
+.sidebar-top {
+  display: flex;
+  flex: 0 1 380px;
+  min-height: 220px;
+  max-height: 380px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--hairline);
+}
+
+.chat-history {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-overlay);
+}
+
+.sidebar.collapsed .sidebar-top {
+  display: none;
+}
+
 .chat-sidebar,
 .chat-thread {
   min-width: 0;
@@ -242,6 +266,7 @@
 }
 
 .chat-sidebar-footer {
+  flex: 0 0 auto;
   display: grid;
   gap: 2px;
   padding: 10px 8px;
@@ -709,6 +734,12 @@
     position: relative;
     grid-template-columns: minmax(0, 1fr);
     min-height: calc(100dvh - 140px);
+  }
+
+  .sidebar-top {
+    flex: 1 1 0;
+    min-height: 220px;
+    max-height: none;
   }
 
   .chat-sidebar {
