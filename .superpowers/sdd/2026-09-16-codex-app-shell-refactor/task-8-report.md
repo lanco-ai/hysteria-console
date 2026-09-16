@@ -43,3 +43,19 @@ access boundaries.
 ## Production changes
 
 None.
+
+## Follow-up: password-page access boundary
+
+The full browser audit subsequently reached an additional stale assertion in
+`tests/react_password_pages_browser.cjs`. Its anonymous `/admin/settings`
+scenario expected a document navigation to `/login`; protected admin routes
+now retain the shared Shell and open the “登录控制台” `LoginModal` in place.
+
+The scenario now waits for that dialog and verifies one `.app` frame with no
+protected `.data-table`. All other password-page lifecycle behavior remains
+unchanged.
+
+- Before update: the focused suite waited for the retired `/login` navigation.
+- `npm run build:react`: **passed**.
+- `REACT_BROWSER_TEST=react_password_pages_browser.cjs ...
+  tests/run_react_browser.py`: **passed**.
