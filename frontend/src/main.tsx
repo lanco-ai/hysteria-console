@@ -124,7 +124,8 @@ function applyRouteDocument(route: string): void {
     : ROUTE_METADATA[route];
   if (!metadata) return;
   document.title = metadata.title;
-  document.body.className = metadata.bodyClass;
+  if (metadata.bodyClass) document.body.className = metadata.bodyClass;
+  else document.body.removeAttribute('class');
   if (metadata.shell) applyInitialShellPreferences();
 }
 
@@ -188,11 +189,12 @@ function App() {
   const [loginRequested, setLoginRequested] = useState(false);
   const location = new URL(locationKey, window.location.origin);
   const route = normalizeRoute(location.pathname);
-  const session = useSession();
-  const authenticated = session.status === 'authenticated' && session.role === 'admin';
-  const sessionStatus = session.status === 'authenticated' ? 'anonymous' : session.status;
   const publicHost = appRoot.dataset.publicHost?.trim() || window.location.hostname;
   const isProtectedAdminRoute = ADMIN_ROUTES.has(route) || /^\/admin\/user\/[^/]+$/.test(route);
+  const needsSession = WORKBENCH_ROUTES.has(route) || isProtectedAdminRoute;
+  const session = useSession(undefined, needsSession);
+  const authenticated = session.status === 'authenticated' && session.role === 'admin';
+  const sessionStatus = session.status === 'authenticated' ? 'anonymous' : session.status;
   const needsAdminLogin = isProtectedAdminRoute && !authenticated && session.status !== 'loading';
   const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/' || route === '/admin/chat') && session.status === 'anonymous') || needsAdminLogin;
   const protectedReturnTo = protectedRouteReturnTo(route, location.search);

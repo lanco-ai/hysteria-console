@@ -37,16 +37,20 @@ async function readSession(signal: AbortSignal): Promise<SessionState> {
   return { status: 'authenticated', role: payload.role };
 }
 
-export function useSession(requiredRole?: 'admin' | 'user'): {
+export function useSession(requiredRole?: 'admin' | 'user', enabled = true): {
   status: 'loading' | 'anonymous' | 'authenticated' | 'unavailable';
   role?: 'admin' | 'user';
   refresh: () => Promise<void>;
 } {
-  const [session, setSession] = useState<SessionState>({ status: 'loading' });
+  const [session, setSession] = useState<SessionState>({ status: enabled ? 'loading' : 'authenticated' });
   const generation = useRef(0);
   const activeController = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
+    if (!enabled) {
+      setSession({ status: 'authenticated' });
+      return;
+    }
     const request = generation.current + 1;
     generation.current = request;
     activeController.current?.abort();
@@ -65,16 +69,23 @@ export function useSession(requiredRole?: 'admin' | 'user'): {
       if (controller.signal.aborted || generation.current !== request) return;
       setSession({ status: 'unavailable' });
     }
-  }, [requiredRole]);
+  }, [enabled, requiredRole]);
 
   useEffect(() => {
+    if (!enabled) {
+      generation.current += 1;
+      activeController.current?.abort();
+      activeController.current = null;
+      setSession({ status: 'authenticated' });
+      return;
+    }
     void refresh();
     return () => {
       generation.current += 1;
       activeController.current?.abort();
       activeController.current = null;
     };
-  }, [refresh]);
+  }, [enabled, refresh]);
 
   return { ...session, refresh };
 }

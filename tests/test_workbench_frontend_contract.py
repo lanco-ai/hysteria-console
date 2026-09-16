@@ -24,6 +24,8 @@ def test_session_hook_exposes_safe_typed_session_states():
     assert "response.status === 401" in session
     assert "value === 'admin' || value === 'user'" in session
     assert "useCallback" in session
+    assert "enabled = true" in session
+    assert "if (!enabled)" in session
     assert "localStorage" not in session
 
 

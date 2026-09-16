@@ -70,7 +70,7 @@ async function verifyConfirmationDocumentsAndCancel(browser) {
     const failures = collectFailures(page, `${realm.name} confirmation`, {
       allowedResponses: realm.name === 'user'
         ? ['GET /api/v1/user/panel 401']
-        : ['GET /api/v1/admin/overview-page 401'],
+        : ['GET /api/v1/admin/overview-page 401', 'GET /api/v1/session 401'],
     });
     const posts = [];
     page.on('request', request => {
