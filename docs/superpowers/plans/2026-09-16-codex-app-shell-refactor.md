@@ -106,7 +106,7 @@ git commit -m "feat: add workbench document route contracts"
 
 **Interfaces:**
 - `useSession(requiredRole?: 'admin' | 'user'): { status: 'loading' | 'anonymous' | 'authenticated' | 'unavailable'; role?: 'admin' | 'user'; refresh: () => Promise<void> }`.
-- `LoginModal` props: `{ open: boolean; realm: LoginRealm; passwordMaxLength: number; returnTo?: string; onAuthenticated: () => Promise<void> | void; onClose?: () => void }`.
+- `LoginModal` props: `{ open: boolean; realm: LoginRealm; passwordMaxLength: number; returnTo?: string; onAuthenticated: (returnTo?: string) => Promise<void> | void; onClose?: () => void }`.
 - `LoginModal` calls `submitLogin({ username, password }, signal, realm)` and never stores credentials or response fields in localStorage.
 
 - [ ] **Step 1: Write failing session and modal contract tests.** Add a Python source contract that requires the typed status union, same-origin session fetch options, abort handling, `LoginModal` dialog semantics, reuse of `submitLogin`, and absence of localStorage writes for credentials. Browser assertions in `react_login_browser.cjs` cover the actual interaction.
@@ -121,7 +121,7 @@ Expected: FAIL because the new modules and required source markers do not exist.
 
 - [ ] **Step 4: Implement `LoginModal.tsx`.** Reuse `useFormAction` conventions and `submitLogin`; set `aria-modal="true"`, `role="dialog"`, labelled heading, focus the first field on open, trap Escape/close safely, and expose busy/error states. Resolve a same-origin `returnTo` path before invoking the success callback. Do not render or echo API keys, upstream URLs, cookies, or raw server exceptions.
 
-- [ ] **Step 5: Update browser auth scenarios before running them.** Replace assertions that `/login` renders `LoginPage` with assertions that `/`, `/auth`, `/login`, and `/user/login` show the same workbench and modal. Cover wrong credentials staying on the same URL, valid credentials closing the modal, and a refresh using the session cookie without reopening it.
+- [ ] **Step 5: Prepare browser auth helpers for the new modal.** Add selectors and helper branching that can address either the current legacy fixture or the new modal while Task 5 is not mounted. The full scenarios must be rewritten and run in Task 5: `/`, `/auth`, `/login`, and `/user/login` show the same workbench and modal; wrong credentials stay on the same URL; valid credentials close the modal; refresh with the session cookie does not reopen it.
 
 - [ ] **Step 6: Run focused source and browser auth tests.**
 
