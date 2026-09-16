@@ -10,6 +10,7 @@ def test_config_react_page_has_revision_safe_editor():
     assert "'/api/v1/admin/config'" in requests
     assert 'template_revision' in page
     assert '保存订阅模板' in page
+    assert '版本：' not in page
 
 
 def test_rules_react_page_has_ordered_rule_editor():
@@ -26,4 +27,3 @@ def test_config_and_rules_react_routes_are_registered():
     for path in ('config', 'rules'):
         assert f"'/__react/admin/{path}'" in entry
         assert f"'/__react/admin/{path}'" in preview
-

@@ -293,6 +293,10 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
   const send = async () => {
     const content = message.trim();
     if (!content || busy) return;
+    if (!selectedModel) {
+      setError('请先在聊天顶部选择模型，或在设置中测试连接获取模型列表。');
+      return;
+    }
     const current: ChatSession = active || { id: newId(), title: '新对话', messages: [], updatedAt: Date.now() };
     const userMessage: ChatMessageData = { role: 'user', content };
     const nextMessages = [...current.messages, userMessage];
@@ -308,11 +312,6 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     setBusy(true);
     setError('');
     setNotice('');
-    if (!selectedModel) {
-      setBusy(false);
-      setError('请先在聊天顶部选择模型，或在设置中测试连接获取模型列表。');
-      return;
-    }
     setUsage(currentUsage => ({
       ...currentUsage,
       day: usageDay(),
@@ -332,7 +331,7 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
       setContextUsed(tokenUsage.inputTokens || tokenUsage.totalTokens ? tokenUsage.inputTokens || tokenUsage.totalTokens : null);
       if (tokenUsage.contextMax !== null) setContextMax(tokenUsage.contextMax);
       if (response.chat_notice === 'reasoning_unsupported') setNotice('当前 API 不支持思考强度，已按普通模式发送。');
-      if (tokenUsage.inputTokens || tokenUsage.outputTokens) {
+      if (tokenUsage.totalTokens || tokenUsage.inputTokens || tokenUsage.outputTokens) {
         setUsage(currentUsage => ({
           ...currentUsage,
           inputTokens: currentUsage.inputTokens + tokenUsage.inputTokens,

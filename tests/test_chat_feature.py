@@ -281,6 +281,45 @@ def test_reasoning_error_can_be_classified_without_retaining_upstream_body():
         raise AssertionError('expected reasoning classification')
 
 
+def test_forward_chat_retries_without_reasoning_when_upstream_rejects_it():
+    requests = []
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _limit):
+            return b'{"choices":[{"message":{"content":"ok"}}]}'
+
+    class Error(urllib.error.HTTPError):
+        def __init__(self):
+            super().__init__('https://example.test/v1/chat/completions', 400, 'bad request', {}, None)
+
+        def read(self, _limit=-1):
+            return b'{"error":{"message":"unsupported parameter reasoning_effort"}}'
+
+    def opener(request, **_kwargs):
+        requests.append(json.loads(request.data))
+        if len(requests) == 1:
+            raise Error()
+        return Response()
+
+    result = forward_chat(
+        ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+        [{'role': 'user', 'content': 'hello'}],
+        model='model-x', reasoning_effort='high', opener=opener,
+    )
+    assert result['choices'][0]['message']['content'] == 'ok'
+    assert result['chat_notice'] == 'reasoning_unsupported'
+    assert requests[0]['reasoning_effort'] == 'high'
+    assert 'reasoning_effort' not in requests[1]
+
+
 def test_chat_models_and_connection_test_are_admin_only_and_sanitized(tmp_path, monkeypatch):
     store = ChatSettingsStore(tmp_path / 'settings.json')
     store.update(

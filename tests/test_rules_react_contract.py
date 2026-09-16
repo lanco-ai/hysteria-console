@@ -16,6 +16,8 @@ def test_rules_page_exposes_all_mutation_controls_and_api_boundaries():
     assert '删除' in page
     assert '内置' in page
     assert 'useFormAction' in page
+    assert '规则说明' not in page
+    assert '当前版本：' not in page
 
 
 def test_rules_page_keeps_raw_editor_and_route_entry():

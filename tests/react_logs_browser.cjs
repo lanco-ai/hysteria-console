@@ -8,7 +8,7 @@ const adminCookie = process.env.REACT_PREVIEW_ADMIN_COOKIE || 'missing-admin-ses
 const userCookie = process.env.REACT_PREVIEW_USER_COOKIE || 'missing-user-session';
 const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
 
-const columns = ['时间', '操作人', 'IP', '操作', '目标', '月份', '流量变化'];
+const columns = ['时间', '操作人', 'IP', '操作', '目标', '日期', '流量变化'];
 const navigation = [
   ['概览与用量', null],
   ['总览', '/admin'],
@@ -97,7 +97,7 @@ async function verifyAuthenticatedLogs(browser) {
     '192.0.2.10',
     'reset_user',
     'demo_alex',
-    '2026-07',
+    '2026.7.18',
     '1.00 GB → 0.00 B',
   ]);
   const stylesheet = await page.locator('link[rel="stylesheet"]').getAttribute('href');

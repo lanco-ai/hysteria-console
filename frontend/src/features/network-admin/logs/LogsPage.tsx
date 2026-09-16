@@ -22,8 +22,10 @@ function LoginState({ userSession = false }: { userSession?: boolean }) {
 }
 
 function formatResetDate(value: string, fallback: string): string {
+  const isoDate = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoDate) return `${Number(isoDate[1])}.${Number(isoDate[2])}.${Number(isoDate[3])}`;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return fallback || '—';
+  if (Number.isNaN(date.getTime())) return /^\d{4}-\d{2}$/.test(fallback) ? '—' : (fallback || '—');
   return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
 }
 
