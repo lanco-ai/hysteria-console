@@ -60,12 +60,21 @@ async function assertNoOverflow(page, label) {
     await assertNoOverflow(page, 'tablet workbench');
     await save(page, 'workbench-tablet-1024');
 
-    await page.setViewportSize({width: 390, height: 844});
+    await page.setViewportSize({width: 800, height: 900});
     await page.goto(`${baseUrl}/login`, {waitUntil: 'domcontentloaded'});
     await page.locator('#login-modal-username').fill('admin');
     await page.locator('#login-modal-password').fill(fixturePassword);
     await page.getByRole('button', {name: '登录', exact: true}).click();
     await page.locator('.login-modal').waitFor({state: 'detached'});
+    await page.locator('#sidebar-toggle').click();
+    await page.locator('.sidebar.open').waitFor();
+    assert.equal(await page.locator('.scrim').evaluate(node => getComputedStyle(node).display), 'block', '800px drawer has a scrim');
+    assert.equal(await page.locator('.sidebar.open').count(), 1, '800px exposes one drawer');
+    await assertNoOverflow(page, '800px workbench');
+    await save(page, 'workbench-drawer-800');
+
+    await page.setViewportSize({width: 390, height: 844});
+    await page.reload({waitUntil: 'domcontentloaded'});
     await page.locator('#sidebar-toggle').click();
     await page.locator('.sidebar.open').waitFor();
     assert.equal(await page.locator('.scrim').evaluate(node => getComputedStyle(node).display), 'block', 'mobile drawer has a scrim');
