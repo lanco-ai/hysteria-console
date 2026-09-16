@@ -73,3 +73,49 @@ def test_login_browser_keeps_modal_selectors_ready_for_route_integration():
     assert "#login-modal-username" in browser
     assert "#login-modal-password" in browser
     assert "[role=\"dialog\"][aria-labelledby=\"login-modal-title\"]" in browser
+
+
+def test_codex_shell_owns_the_single_responsive_workbench_tree():
+    """Removing the shell frame or its drawer safety would leave pages stranded."""
+    shell = source("frontend/src/shared/CodexShell.tsx")
+
+    assert "export type CodexShellProps" in shell
+    assert "sidebarTop?: ReactNode" in shell
+    assert "sidebarBottom?: ReactNode" in shell
+    assert "authStatus?: SessionStatus" in shell
+    assert "const MOBILE_BREAKPOINT = 880" in shell
+    assert 'className={`app${effectiveCollapsed' in shell
+    assert 'className={`sidebar${effectiveCollapsed' in shell
+    assert 'className="main"' in shell
+    assert 'className="scrim"' in shell
+    assert "inert={mobile && !open ? true : undefined}" in shell
+    assert "inert={mobile && open ? true : undefined}" in shell
+    assert "aria-current={item.key === active ? 'page' : undefined}" in shell
+    assert "event.key === 'Escape'" in shell
+    assert "event.key !== 'Tab'" in shell
+    assert "last.focus()" in shell
+    assert "first.focus()" in shell
+    assert "{sidebarTop}" in shell
+    assert "{sidebarBottom}" in shell
+
+
+def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
+    """A second frame or a missing route link would break admin page compatibility."""
+    adapter = source("frontend/src/shared/AdminShell.tsx")
+    navigation = source("frontend/src/shared/navigation.ts")
+
+    assert "import { CodexShell }" in adapter
+    assert "return <CodexShell" in adapter
+    assert 'className="app"' not in adapter
+    assert 'className="sidebar"' not in adapter
+    assert 'className="main"' not in adapter
+    assert "navigationGroups" in navigation
+    assert "placement: 'bottom'" in navigation
+    for label in ("概览与用量", "运行维护", "网络配置"):
+        assert label in navigation
+    for href in (
+        "/admin", "/admin/usage", "/admin/health", "/admin/incidents",
+        "/admin/logs", "/admin/settings", "/admin/config", "/admin/rules",
+        "/admin/landing-egresses", "/admin/chat",
+    ):
+        assert href in navigation

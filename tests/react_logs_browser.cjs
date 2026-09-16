@@ -17,12 +17,11 @@ const navigation = [
   ['健康状态', '/admin/health'],
   ['事故处理', '/admin/incidents'],
   ['清零日志', '/admin/logs'],
-  ['设置', '/admin/settings'],
   ['网络配置', null],
   ['模板配置', '/admin/config'],
   ['路由规则', '/admin/rules'],
   ['家宽出口', '/admin/landing-egresses'],
-  ['工具', null],
+  ['设置', '/admin/settings'],
   ['AI 对话', '/admin/chat'],
 ];
 
@@ -87,8 +86,12 @@ async function verifyAuthenticatedLogs(browser) {
   assert.equal(await page.title(), '清零日志');
   assert.equal(await page.locator('.page-title').innerText(), '清零日志');
   assert.equal(await page.locator('.badge').innerText(), 'preview.invalid');
+  assert.equal(await page.locator('.app').count(), 1, 'the page must have one shell frame');
+  assert.equal(await page.locator('.sidebar').count(), 1, 'the page must have one sidebar');
+  assert.equal(await page.locator('.main').count(), 1, 'the page must have one main region');
   assert.deepEqual(await page.locator('.sidebar-section').allTextContents(), navigation.filter(([, href]) => !href).map(([label]) => label));
   assert.deepEqual(await page.locator('.sidebar-link').evaluateAll(links => links.map(link => [link.textContent.trim(), new URL(link.href).pathname])), navigation.filter(([, href]) => href));
+  assert.equal(await page.locator('.sidebar-link[aria-current="page"]').count(), 1);
   assert.equal(await page.locator('.sidebar-link[aria-current="page"]').innerText(), '清零日志');
   assert.deepEqual(await page.locator('.data-table th').allTextContents(), columns);
   assert.deepEqual(await page.locator('.data-table tbody tr').first().locator('td').allTextContents(), [

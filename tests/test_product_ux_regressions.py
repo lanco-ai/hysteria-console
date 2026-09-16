@@ -287,7 +287,7 @@ def test_pages_expose_skip_target_main_landmark_and_current_navigation():
         in admin_page
     )
     assert '/static/shell.js' not in admin_page
-    shell_source = (ROOT / "frontend/src/shared/AdminShell.tsx").read_text(encoding="utf-8")
+    shell_source = (ROOT / "frontend/src/shared/CodexShell.tsx").read_text(encoding="utf-8")
     assert 'onClick={() => open ? closeSidebar(true) : openSidebar()}' in shell_source
     assert 'querySelector<HTMLElement>(\'#sidebar-close\')' in shell_source
 
