@@ -95,7 +95,7 @@ def test_react_release_is_staged_and_activated_atomically():
     assert 'HY_DIR/panel/current' in deploy
 
 
-def test_react_flag_does_not_replace_legacy_nginx_by_default():
+def test_unified_flag_replaces_legacy_nginx_after_new_service_is_live():
     deploy = DEPLOY.read_text(encoding='utf-8')
 
     legacy_render = 'render "$REPO_DIR/nginx/hysteria-panel.conf" /etc/nginx/sites-available/hysteria-panel.conf'
@@ -108,9 +108,11 @@ def test_react_flag_does_not_replace_legacy_nginx_by_default():
         'render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react-https.conf" \\\n'
         '    /usr/local/share/hy2/hysteria-panel-react-https.conf'
     ) in deploy
+    nginx_section = deploy.split(
+        '# ---------- 9. nginx reverse proxy for the admin panel ----------', 1
+    )[1].split('# ---------- 10. Systemd units ----------', 1)[0]
+    assert '[[ "$HY_UNIFIED_FASTAPI" == "1" && "$HY_ENABLE_HTTPS" == "1"' in nginx_section
     assert (
-        'hysteria-panel-react-https.conf'
-        not in deploy.split(
-            '# ---------- 9. nginx reverse proxy for the admin panel ----------', 1
-        )[1].split('# ---------- 10. Systemd units ----------', 1)[0]
+        'render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react-https.conf"'
+        in nginx_section
     )

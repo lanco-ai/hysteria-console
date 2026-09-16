@@ -101,6 +101,6 @@ def test_react_systemd_unit_is_loopback_staged_and_single_worker():
     unit = (ROOT / 'systemd/hysteria-react.service').read_text(encoding='utf-8')
     assert '--host 127.0.0.1 --port 8083 --workers 1' in unit
     assert 'WorkingDirectory=/root/hysteria' in unit
-    assert 'Requires=hysteria-subscription.service' in unit
+    assert 'Requires=hysteria-subscription.service' not in unit
     assert 'TasksMax=32' in unit
     assert 'deploy.sh' in unit

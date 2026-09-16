@@ -7,7 +7,7 @@ tls:
 auth:
   type: http
   http:
-    url: http://127.0.0.1:8082/auth
+    url: http://127.0.0.1:8083/auth
 
 obfs:
   type: salamander

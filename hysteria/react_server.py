@@ -1,15 +1,14 @@
-"""Opt-in ASGI entrypoint for the staged React panel.
+"""Unified FastAPI entrypoint for the React panel and compatibility APIs.
 
-This module is intentionally separate from the legacy ``subscription_service``
-listener.  A release may run it on loopback for pre-production verification;
-``deploy.sh`` installs and enables it only with the explicit
-``HY_ENABLE_REACT_PANEL=1`` flag, while the public nginx route remains legacy
-until a separately approved cutover.
+The synchronous domain functions remain in ``subscription_service`` while all
+HTTP transport is owned by this single ASGI process on loopback :8083.
 """
 
 import os
 import re
 import stat
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import subscription_service
@@ -90,10 +89,31 @@ REACT_DIST = resolve_react_dist()
 
 
 def build_app():
-    """Construct the ASGI app from the authoritative legacy service module."""
+    """Construct the ASGI app from the authoritative domain service module."""
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        stop_event = threading.Event()
+        subscription_service.load_meta()
+        subscription_service.migrate_plaintext_passwords()
+        subscription_service.migrate_admin_password()
+        worker = threading.Thread(
+            target=subscription_service._revocation_worker_loop,
+            args=(stop_event,),
+            name='credential-revocation-retry',
+            daemon=True,
+        )
+        worker.start()
+        try:
+            yield
+        finally:
+            stop_event.set()
+            worker.join(timeout=5)
+
     return create_app(
         LegacyPanelServices(subscription_service),
         react_dist=REACT_DIST,
+        lifespan=lifespan,
     )
 
 

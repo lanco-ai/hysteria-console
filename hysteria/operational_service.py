@@ -227,7 +227,7 @@ class OperationalService:
                     f'hy2-subscription-restart-{int(time.time())}',
                     'systemctl',
                     'restart',
-                    'hysteria-subscription.service',
+                    'hysteria-react.service',
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

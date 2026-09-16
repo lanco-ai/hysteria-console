@@ -1688,6 +1688,7 @@ die() {{ printf '%s\\n' "$*" >&2; exit 97; }}
         "nginx.service",
         "hysteria-subscription.service",
         "hysteria-auth.service",
+        "hysteria-react.service",
         "hysteria-server.service",
         "xray.service",
         "tuic-server.service",

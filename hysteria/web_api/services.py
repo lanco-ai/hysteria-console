@@ -6,6 +6,8 @@ from typing import Literal, Mapping
 
 import admin_overview_data
 import http_utils
+import subscription_profiles as profile_defs
+import user_compat
 from login_service import LoginResult
 from password_change_service import PasswordChangeResult
 from reset_log_data import read_reset_logs
@@ -30,6 +32,15 @@ class UserAccessDenied(Exception):
         self.code = code if code in self._PUBLIC_CODES else 'forbidden'
         self.cookie = cookie
         super().__init__()
+
+
+class SubscriptionAccessDenied(Exception):
+    """A subscription token cannot access the requested resource."""
+
+    def __init__(self, code='forbidden', message='无权限访问'):
+        self.code = str(code)
+        self.message = str(message)
+        super().__init__(self.message)
 
 
 @dataclass(frozen=True, slots=True)
@@ -571,7 +582,7 @@ class LegacyPanelServices:
 
         return self._run_read(read)
 
-    def read_admin_user_detail(self, *, headers, path, uid):
+    def read_admin_user_detail(self, *, headers, path, uid, include_charts=True):
         request = self._bridge(headers=headers, path=path)
         service = self.service_module
         if not isinstance(uid, str) or not uid or '/' in uid:
@@ -583,7 +594,7 @@ class LegacyPanelServices:
             return service._build_user_json_payload(
                 uid,
                 now=service.local_now(),
-                include_charts=True,
+                include_charts=bool(include_charts),
             )
 
         return self._run_read(read)
@@ -596,6 +607,17 @@ class LegacyPanelServices:
             if not service.is_logged_in(request):
                 raise LoginRequired
             return service._build_health_json_payload(now=service.local_now())
+
+        return self._run_read(read)
+
+    def read_admin_health_snapshot(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            return service._build_health_read_snapshot()
 
         return self._run_read(read)
 
@@ -1143,3 +1165,108 @@ class LegacyPanelServices:
             return service._static_reload_status()
 
         return self._run_read(read)
+
+    def read_subscription_download(self, *, headers, path, username, token, profile):
+        del headers, path
+        service = self.service_module
+
+        def read():
+            cfg = service.check_user_token(username, token)
+            if not isinstance(cfg, dict):
+                raise SubscriptionAccessDenied()
+            if cfg.get('disabled'):
+                raise SubscriptionAccessDenied('disabled', '账号已停用，请联系管理员')
+            if user_compat.is_expired(cfg, today=service.local_now().date()):
+                raise SubscriptionAccessDenied('expired', '账号已到期，请联系管理员续费')
+            normalized = service.normalize_subscription_profile(profile)
+            generated_at = profile_defs.utc_now_iso()
+            body = service.build_yaml(
+                username,
+                str(cfg.get('sub_token') or ''),
+                profile=normalized,
+                generated_at=generated_at,
+            )
+            tx, rx, used = service.scaled_usage_for_user(username)
+            total = service.user_total_quota(cfg)
+            filename = (
+                f'{username}.yaml' if normalized == 'default' else f'{username}-{normalized}.yaml'
+            )
+            return {
+                'body': body,
+                'filename': filename,
+                'profile': normalized,
+                'generated_at': generated_at,
+                'template_mtime': service.subscription_template_mtime(),
+                'userinfo': f'upload={tx}; download={rx}; total={total}; expire=0',
+                'usage_total': str(used),
+            }
+
+        return self._run_read(read)
+
+    def read_panel_json(self, *, headers, path, username, token):
+        del headers, path
+        service = self.service_module
+
+        def read():
+            cfg = service.check_user_token(username, token)
+            if not isinstance(cfg, dict):
+                raise SubscriptionAccessDenied()
+            if cfg.get('disabled'):
+                raise SubscriptionAccessDenied('disabled', '账号已停用')
+            if user_compat.is_expired(cfg, today=service.local_now().date()):
+                raise SubscriptionAccessDenied('expired', '账号已到期')
+            return service._build_panel_json_payload(username, cfg, now=service.local_now())
+
+        return self._run_read(read)
+
+    def read_panel_qr(self, *, headers, path, username, token, profile):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            cfg = service.check_user_token(username, token)
+            if not isinstance(cfg, dict):
+                raise SubscriptionAccessDenied()
+            if cfg.get('disabled'):
+                raise SubscriptionAccessDenied('disabled', '账号已停用')
+            if user_compat.is_expired(cfg, today=service.local_now().date()):
+                raise SubscriptionAccessDenied('expired', '账号已到期')
+            normalized = service.normalize_subscription_profile(profile)
+            host = service.configured_public_host(request.headers.get('Host', '127.0.0.1'))
+            base_url = service.safe_base_url(
+                host,
+                request.headers.get('X-Forwarded-Proto', 'http'),
+                request.headers.get('X-Forwarded-Port', ''),
+            )
+            svg = service.render_profile_qr_svg(base_url, username, token, normalized)
+            if not svg:
+                raise StateUnavailable
+            return {'body': svg, 'profile': normalized}
+
+        return self._run_read(read)
+
+    def exchange_panel_token(self, *, headers, path, username, token):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def exchange():
+            cfg = service.check_user_token(username, token)
+            if not isinstance(cfg, dict):
+                raise SubscriptionAccessDenied()
+            if cfg.get('disabled'):
+                raise SubscriptionAccessDenied('disabled', '账号已停用，请联系管理员')
+            if user_compat.is_expired(cfg, today=service.local_now().date()):
+                raise SubscriptionAccessDenied('expired', '账号已到期，请联系管理员续费')
+            sid = service.create_user_session(
+                username,
+                service._credential_generation(str(cfg.get('sub_token') or '')),
+                service.USER_SESSION_SUBSCRIPTION_TOKEN,
+            )
+            return {
+                'cookie': service.user_session_cookie(
+                    sid,
+                    secure=http_utils.is_secure_request(request),
+                )
+            }
+
+        return self._run_operation(exchange, post_path=f'/panel/{username}')

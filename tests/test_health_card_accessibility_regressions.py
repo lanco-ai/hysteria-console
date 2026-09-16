@@ -77,7 +77,7 @@ def test_ssr_and_live_fragment_render_text_status_for_every_card(
     assert fragment.count("data-health=") == 15
     for probe_title in (
         "CRON 心跳",
-        "鉴权服务",
+        "统一 FastAPI",
         "鉴权依赖",
         "Hysteria",
         "Xray",

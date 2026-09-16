@@ -17,7 +17,7 @@ def test_hysteria_uses_loopback_http_auth():
 
     assert config["auth"] == {
         "type": "http",
-        "http": {"url": "http://127.0.0.1:8082/auth"},
+        "http": {"url": "http://127.0.0.1:8083/auth"},
     }
     assert "command:" not in _read("hysteria/config.yaml.tpl")
 
@@ -44,26 +44,19 @@ def test_auth_unit_is_bounded_sandboxed_and_orders_hysteria():
     ):
         assert directive in auth_unit
     assert "Before=hysteria-server.service" in auth_unit
-    assert "Requires=hysteria-auth.service" in server_unit
-    assert "BindsTo=hysteria-auth.service" in server_unit
-    assert "PartOf=hysteria-auth.service" in server_unit
-    assert "After=network-online.target hysteria-auth.service" in server_unit
-    assert "http://127.0.0.1:8082/readyz" in server_unit
+    assert "Requires=hysteria-auth.service" not in server_unit
+    assert "BindsTo=hysteria-auth.service" not in server_unit
+    assert "PartOf=hysteria-auth.service" not in server_unit
+    assert "After=network-online.target" in server_unit
+    assert "http://127.0.0.1:8083/readyz" in server_unit
     assert "--noproxy *" in server_unit
     live_probe = auth_unit.index("http://127.0.0.1:8082/livez")
     recover = auth_unit.index(
         "ExecStartPost=/usr/local/sbin/hysteria-auth-recover.sh recover"
     )
     assert live_probe < recover
-    deep_probe = server_unit.index("http://127.0.0.1:8082/readyz")
-    mark = server_unit.index(
-        "ExecStartPost=/usr/local/sbin/hysteria-auth-recover.sh mark"
-    )
-    clear = server_unit.index(
-        "ExecStopPost=/usr/local/sbin/hysteria-auth-recover.sh "
-        "clear-if-manual"
-    )
-    assert deep_probe < mark < clear
+    assert server_unit.count("http://127.0.0.1:8083/readyz") == 1
+    assert "hysteria-auth-recover.sh" not in server_unit
 
 
 def test_deploy_installs_rolls_back_and_probes_auth_before_hysteria():

@@ -123,6 +123,7 @@ declare -a REACT_WEB_API_MODULES=(
   account_models.py
   account_routes.py
   app.py
+  auth_routes.py
   compat_routes.py
   config_models.py
   document_routes.py
@@ -138,6 +139,7 @@ declare -a REACT_WEB_API_MODULES=(
   requests.py
   rules_routes.py
   services.py
+  subscription_routes.py
   usage_models.py
   user_detail_models.py
   user_detail_routes.py
@@ -907,6 +909,7 @@ HY_XRAY_VERSION="${HY_XRAY_VERSION:-$XRAY_PINNED_VERSION}"
 HY_ENABLE_HTTPS="${HY_ENABLE_HTTPS:-1}"
 HY_HTTPS_PORT="${HY_HTTPS_PORT:-9444}"
 HY_ENABLE_REACT_PANEL="${HY_ENABLE_REACT_PANEL:-0}"
+HY_UNIFIED_FASTAPI="${HY_UNIFIED_FASTAPI:-0}"
 HY_REACT_DIST_DIR="${HY_REACT_DIST_DIR:-$REPO_DIR/frontend/dist}"
 if [[ "$HY_REACT_DIST_DIR" != /* ]]; then
   HY_REACT_DIST_DIR="$REPO_DIR/$HY_REACT_DIST_DIR"
@@ -917,6 +920,17 @@ case "$HY_ENABLE_REACT_PANEL" in
   1) CRITICAL_UNITS+=(hysteria-react.service) ;;
   *) die "HY_ENABLE_REACT_PANEL must be 0 or 1" ;;
 esac
+case "$HY_UNIFIED_FASTAPI" in
+  0) ;;
+  1) [[ "$HY_ENABLE_REACT_PANEL" == "1" ]] || die "HY_UNIFIED_FASTAPI requires HY_ENABLE_REACT_PANEL=1" ;;
+  *) die "HY_UNIFIED_FASTAPI must be 0 or 1" ;;
+esac
+if [[ "${HY_UNIFIED_FASTAPI:-0}" == "1" ]]; then
+  # The unified app owns both subscription and authentication HTTP contracts.
+  # Keep legacy unit files available for rollback, but do not treat them as
+  # deployment prerequisites or start them in this mode.
+  CRITICAL_UNITS=(nginx.service hysteria-server.service hysteria-react.service xray.service tuic-server.service)
+fi
 
 validate_template_value() {
   local name="$1" value="${!1-}"
@@ -937,7 +951,7 @@ for v in \
   export "$v"
 done
 export HY_HYSTERIA_VERSION HY_XRAY_VERSION HY_ENABLE_HTTPS HY_HTTPS_PORT
-export HY_ENABLE_REACT_PANEL
+export HY_ENABLE_REACT_PANEL HY_UNIFIED_FASTAPI
 export HYSTERIA_PINNED_VERSION
 export XRAY_PINNED_VERSION
 
@@ -1546,7 +1560,7 @@ stage_react_release() {
     die "React release was not installed as a regular directory"
   # The release helper is content-addressed and may have reused an existing
   # release. Only remove a release that did not exist before this call.
-  log "Verified React asset release $REACT_RELEASE_ID (route remains legacy until cutover)."
+  log "Verified React asset release $REACT_RELEASE_ID."
 }
 
 cleanup_staged_react_release() {
@@ -1608,20 +1622,28 @@ wait_for_stable_readiness() {
         break
       fi
     done
-    if (( all_ready )) &&
-      ! curl -fsS --noproxy '*' --max-time 3 \
-        http://127.0.0.1:8082/readyz >/dev/null; then
-      all_ready=0
-    fi
-    if (( all_ready )) &&
-      ! curl -fsS --noproxy '*' --max-time 3 \
-        http://127.0.0.1:8081/healthz >/dev/null; then
-      all_ready=0
-    fi
-    if (( all_ready )) && [[ "${HY_ENABLE_REACT_PANEL:-0}" == "1" ]] &&
-      ! curl -fsS --noproxy '*' --max-time 3 \
-        http://127.0.0.1:8083/ >/dev/null; then
-      all_ready=0
+    if (( all_ready )); then
+      if [[ "${HY_UNIFIED_FASTAPI:-0}" == "1" ]]; then
+        for probe in /livez /readyz /healthz /; do
+          if ! curl -fsS --noproxy '*' --max-time 3 \
+            "http://127.0.0.1:8083${probe}" >/dev/null; then
+            all_ready=0
+            break
+          fi
+        done
+      else
+        if ! curl -fsS --noproxy '*' --max-time 3 \
+          http://127.0.0.1:8082/readyz >/dev/null ||
+          ! curl -fsS --noproxy '*' --max-time 3 \
+          http://127.0.0.1:8081/healthz >/dev/null; then
+          all_ready=0
+        fi
+        if (( all_ready )) && [[ "${HY_ENABLE_REACT_PANEL:-0}" == "1" ]] &&
+          ! curl -fsS --noproxy '*' --max-time 3 \
+            http://127.0.0.1:8083/ >/dev/null; then
+          all_ready=0
+        fi
+      fi
     fi
 
     if (( all_ready )); then
@@ -1689,8 +1711,9 @@ require_unit_active() {
 stage_react_release
 install_react_runtime
 
-# Quiesce every critical reader/writer only after package and binary
-# installation has succeeded. Block every scheduled activation first, then
+# Quiesce every critical reader/writer
+# only after package and binary installation has succeeded. Block every
+# scheduled activation first, then
 # drain and verify its worker before stopping core dependencies. Stopping a
 # timer alone is insufficient when its oneshot is already active. Never
 # overwrite runtime code while a writer remains active or is transitioning.
@@ -1706,6 +1729,14 @@ done
 for unit in "${CRITICAL_UNITS[@]}"; do
   require_unit_quiescent "$unit"
 done
+if [[ "${HY_UNIFIED_FASTAPI:-0}" == "1" ]]; then
+  # These units are retained as rollback artifacts but must not continue
+  # reading the files while the unified process is being staged.
+  for unit in hysteria-auth.service hysteria-subscription.service; do
+    systemctl stop "$unit" 2>/dev/null || true
+    require_unit_quiescent "$unit"
+  done
+fi
 
 # Freeze the one complete static allowlist only after package installation has
 # finished and every dynamic writer is stopped. This is the last operation
@@ -2359,10 +2390,21 @@ printf 'tcp_bbr\n' |
 sysctl --system >/dev/null
 
 # ---------- 9. nginx reverse proxy for the admin panel ----------
-# The subscription service only listens on 127.0.0.1:8081; nginx on :80 fronts it.
+# The unified FastAPI service listens on 127.0.0.1:8083; nginx fronts it on
+# the configured public listeners.
 log "Installing nginx site for hysteria-panel..."
 install_atomic 644 "$REPO_DIR/nginx/hysteria-panel-log.conf" /etc/nginx/conf.d/hysteria-panel-log.conf
-if [[ "$HY_ENABLE_HTTPS" == "1" &&
+if [[ "$HY_UNIFIED_FASTAPI" == "1" && "$HY_ENABLE_HTTPS" == "1" &&
+      -e /etc/nginx/sites-enabled/hysteria-panel-https.conf ]]; then
+  log "Activating the unified FastAPI HTTPS vhost"
+  render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react-https.conf" \
+    /etc/nginx/sites-available/hysteria-panel-https.conf
+  symlink_atomic \
+    /etc/nginx/sites-available/hysteria-panel-https.conf \
+    /etc/nginx/sites-enabled/hysteria-panel-https.conf
+  render_react_nginx_template "$REPO_DIR/nginx/hysteria-panel-react.conf" \
+    /etc/nginx/sites-available/hysteria-panel.conf
+elif [[ "$HY_ENABLE_HTTPS" == "1" &&
       -e /etc/nginx/sites-enabled/hysteria-panel-https.conf &&
       -f /etc/nginx/sites-available/hysteria-panel.conf ]]; then
   log "Preserving the active HTTPS and redirect vhosts until certificate validation completes"
@@ -2465,22 +2507,44 @@ fi
 log "Enabling and starting services..."
 systemctl enable --now hysteria-porthop.service
 systemctl enable --now hysteria-tcp-mss.service
-systemctl enable --now hysteria-auth.service
-auth_live=0
-for _attempt in {1..10}; do
-  if curl -fsS --noproxy '*' --max-time 2 \
-    http://127.0.0.1:8082/livez >/dev/null; then
-    auth_live=1
-    break
-  fi
-  sleep 1
-done
-[[ "$auth_live" == "1" ]] ||
-  die "Hysteria authentication service failed its shallow liveness check"
-systemctl enable --now hysteria-server.service
-systemctl enable --now hysteria-subscription.service
-if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+if [[ "$HY_UNIFIED_FASTAPI" == "1" ]]; then
+  # Validate the new listener before stopping the old processes.  This keeps
+  # the cutover reversible if the ASGI application cannot start.
   systemctl enable --now hysteria-react.service
+  react_live=0
+  for _attempt in {1..10}; do
+    if curl -fsS --noproxy '*' --max-time 2 \
+      http://127.0.0.1:8083/livez >/dev/null; then
+      react_live=1
+      break
+    fi
+    sleep 1
+  done
+  [[ "$react_live" == "1" ]] ||
+    die "Unified FastAPI service failed its shallow liveness check"
+else
+  systemctl enable --now hysteria-auth.service
+  auth_live=0
+  for _attempt in {1..10}; do
+    if curl -fsS --noproxy '*' --max-time 2 \
+      http://127.0.0.1:8082/livez >/dev/null; then
+      auth_live=1
+      break
+    fi
+    sleep 1
+  done
+  [[ "$auth_live" == "1" ]] ||
+    die "Hysteria authentication service failed its shallow liveness check"
+fi
+systemctl enable --now hysteria-server.service
+if [[ "$HY_UNIFIED_FASTAPI" == "1" ]]; then
+  # Legacy listeners are deliberately quiesced only after :8083 is live.
+  systemctl disable --now hysteria-auth.service hysteria-subscription.service 2>/dev/null || true
+else
+  systemctl enable --now hysteria-subscription.service
+  if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+    systemctl enable --now hysteria-react.service
+  fi
 fi
 systemctl enable --now hysteria-traffic-limiter.timer
 systemctl enable --now hy2-backup.timer
@@ -2491,7 +2555,9 @@ systemctl enable --now tuic-server.service
 
 # Existing active units do not automatically reload changed configs or sandbox
 # settings after daemon-reload. Restart them explicitly during an in-place deploy.
-systemctl restart hysteria-subscription.service
+if [[ "$HY_UNIFIED_FASTAPI" != "1" ]]; then
+  systemctl restart hysteria-subscription.service
+fi
 systemctl restart xray.service
 systemctl restart tuic-server.service
 systemctl restart hysteria-traffic-limiter.timer
@@ -2504,9 +2570,7 @@ required_active_units=(
   nginx.service
   hysteria-porthop.service
   hysteria-tcp-mss.service
-  hysteria-auth.service
   hysteria-server.service
-  hysteria-subscription.service
   hysteria-traffic-limiter.timer
   hy2-backup.timer
   hy2-health-check.timer
@@ -2514,8 +2578,13 @@ required_active_units=(
   xray.service
   tuic-server.service
 )
-if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+if [[ "$HY_UNIFIED_FASTAPI" == "1" ]]; then
   required_active_units+=(hysteria-react.service)
+else
+  required_active_units+=(hysteria-auth.service hysteria-subscription.service)
+  if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
+    required_active_units+=(hysteria-react.service)
+  fi
 fi
 wait_for_stable_readiness 3 15 1 ||
   die "Deployment did not sustain three consecutive healthy observations"
@@ -2567,7 +2636,7 @@ First-time setup:
   1. Log in. If no admin password was preconfigured, the first service start
      writes root-only credentials to $HY_DIR/admin_initial_password.txt.
   2. Create users. Each user gets a /sub/<name>?token=... URL to import into Clash.
-  3. Hysteria uses the loopback-only persistent HTTP auth service on :8082.
+  3. Hysteria uses the unified FastAPI auth endpoint on :8083.
      $HY_DIR/auth_backend.py remains available as a token-only emergency CLI.
 
 Keep $HY_DIR/{users.json,subscription_meta.json,server.key} safe — they are NOT in git.

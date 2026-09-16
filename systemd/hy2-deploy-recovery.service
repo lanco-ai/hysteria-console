@@ -2,8 +2,8 @@
 Description=Recover an interrupted hy2 outer deployment
 After=local-fs.target
 Before=nginx.service hysteria-porthop.service hysteria-tcp-mss.service
-Before=hysteria-auth.service hysteria-server.service
-Before=hysteria-subscription.service hysteria-traffic-limiter.service
+Before=hysteria-react.service hysteria-server.service
+Before=hysteria-subscription.service hysteria-auth.service hysteria-traffic-limiter.service
 Before=hysteria-traffic-limiter.timer xray.service tuic-server.service
 Before=hy2-https-recovery.service
 Before=hy2-backup.service hy2-backup.timer
@@ -50,8 +50,8 @@ MemoryMax=384M
 
 [Install]
 RequiredBy=nginx.service hysteria-porthop.service hysteria-tcp-mss.service
-RequiredBy=hysteria-auth.service hysteria-server.service
-RequiredBy=hysteria-subscription.service hysteria-traffic-limiter.service
+RequiredBy=hysteria-react.service hysteria-server.service
+RequiredBy=hysteria-subscription.service hysteria-auth.service hysteria-traffic-limiter.service
 RequiredBy=hysteria-traffic-limiter.timer xray.service tuic-server.service
 RequiredBy=hy2-https-recovery.service
 RequiredBy=hy2-backup.service hy2-backup.timer

@@ -66,8 +66,8 @@ exit 0
 def test_operational_health_check_requires_auth_service_and_deep_readiness():
     script = SCRIPT.read_text(encoding="utf-8")
 
-    assert "hysteria-auth.service" in script
-    assert "http://127.0.0.1:8082/readyz" in script
+    assert "hysteria-react.service" in script
+    assert "http://127.0.0.1:8083/readyz" in script
     assert "--noproxy '*'" in script
     assert "--connect-timeout 1" in script
     assert "--max-time 3" in script
@@ -163,7 +163,7 @@ def test_http_only_runtime_does_not_report_optional_tls_as_broken(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "panel HTTPS intentionally not required" in result.stdout
     calls = call_log.read_text(encoding="utf-8")
-    assert "http://127.0.0.1:8082/readyz" in calls
+    assert "http://127.0.0.1:8083/readyz" in calls
     assert "https://" not in calls
 
 
