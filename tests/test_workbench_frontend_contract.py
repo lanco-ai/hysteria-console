@@ -158,3 +158,23 @@ def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authent
     assert "anonymousContext" in browser
     assert "anonymousChatRequests" in browser
     assert "anonymousStorageCalls" in browser
+
+
+def test_router_composes_every_workbench_alias_through_the_session_gate():
+    """Root and legacy login paths must share one shell instead of old page layouts."""
+    router = source("frontend/src/main.tsx")
+
+    assert "LoginModal" in router
+    assert "import { useSession }" in router
+    assert "'/auth'" in router
+    assert "REACT_PREVIEW_PREFIX" in router
+    assert "const WORKBENCH_ROUTES" in router
+    assert "function WorkbenchRoute" in router
+    assert "<ChatPage publicHost={publicHost} authenticated={authenticated}" in router
+    assert "<LoginModal" in router
+    assert "return <HomePage/>" not in router
+    assert "return <LoginPage" not in router
+    assert "resolveSameOriginReturnTo" in router
+    assert "window.history.pushState({}, '', returnTo)" in router
+    assert "window.history.replaceState({}, '', destination)" in router
+    assert "session.status === 'authenticated' && session.role === 'admin'" in router
