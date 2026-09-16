@@ -1392,7 +1392,7 @@ def test_frozen_static_allowlist_exactly_matches_helper_contract(tmp_path):
             "XRAY_INSTALL_REQUIRED=1",
             "TUIC_INSTALL_REQUIRED=1",
             "HY_ENABLE_HTTPS=0",
-            "HY_UNIFIED_FASTAPI=0",
+            "HY_UNIFIED_FASTAPI=1",
             "declare -a DURABLE_ARTIFACT_PATHS=()",
             "declare -A DURABLE_ARTIFACT_SET=()",
             "die() { printf '%s\\n' \"$*\" >&2; exit 1; }",
@@ -1440,7 +1440,6 @@ def test_frozen_static_allowlist_exactly_matches_helper_contract(tmp_path):
         "/usr/local/etc/xray/config.json",
         "/var/log/xray/hy2-access.log",
         "/var/log/xray/hy2-error.log",
-        "/etc/nginx/sites-available/hysteria-panel-https.conf",
         "/etc/letsencrypt/renewal-hooks/deploy/hy2-cert-renew-hook.sh",
     ):
         assert forbidden not in helper_paths

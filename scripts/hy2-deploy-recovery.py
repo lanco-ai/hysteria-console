@@ -125,6 +125,7 @@ EXACT_ALLOWED_PATHS = {
     "/etc/modules-load.d/tcp-bbr.conf",
     "/etc/nginx/conf.d/hysteria-panel-log.conf",
     "/etc/nginx/sites-available/hysteria-panel.conf",
+    "/etc/nginx/sites-available/hysteria-panel-https.conf",
     "/etc/nginx/sites-enabled/hysteria-panel.conf",
     "/etc/nginx/sites-enabled/hysteria-panel-https.conf",
     "/etc/nginx/sites-enabled/default",
