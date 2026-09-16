@@ -14,5 +14,7 @@
   "13-responsive.css",
   "14-admin-sections.css",
   "16-user-panel.css",
-  "17-motion-workspace.css"
+  "17-motion-workspace.css",
+  "18-chat.css",
+  "19-workbench.css"
 ]
