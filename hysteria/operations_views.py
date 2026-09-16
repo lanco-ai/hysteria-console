@@ -11,7 +11,6 @@ from reset_log_data import read_reset_logs
 
 @dataclass(frozen=True)
 class Context:
-    ADMIN_POLL_JS_ETAG: str
     PASSWORD_MAX_LENGTH: int
     PASSWORD_MIN_LENGTH: int
     RESET_LOG_FILE: Path
@@ -99,7 +98,6 @@ def render_health(ctx: Context, host, flash=''):
         + hysteria_update.render_history()
         + '</div>'
         + '</div>'
-        + f"""<script src="/static/admin-poll.js?v={ctx.ADMIN_POLL_JS_ETAG.strip('"')}" defer></script>"""
         + """<span class="sr-only" id="health-refresh-announcer" role="status" aria-live="polite"></span>
 <script>
 (function(){

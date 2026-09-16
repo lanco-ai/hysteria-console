@@ -10,9 +10,8 @@ def test_home_view_can_render_without_runtime_service_dependencies():
 
     body = public_views.render_home(
         html_page=lambda title, body, **kwargs: body,
-        asset_version='test-version',
     )
     assert (
         hashlib.sha256(body.encode()).hexdigest()
-        == 'ccbd6593b79cf68f252645269254ebe4a56c824842ed7d24df3fc3e6cc082919'
+        == '65b5433353b5bcefe374b074738c90809894fbe63a7789ef0abf3011167f85b6'
     )

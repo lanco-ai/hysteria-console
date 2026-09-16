@@ -14,6 +14,30 @@ class _Module:
     def configured_public_host(_raw):
         return 'panel.example.test'
 
+    @staticmethod
+    def _safe_secret_equal(supplied, expected):
+        return supplied == expected
+
+    @staticmethod
+    def _credential_generation(_stored_hash):
+        return 'generation'
+
+    @staticmethod
+    def create_session(_username, _generation):
+        return 'session-id'
+
+    @staticmethod
+    def session_cookie(_sid, *, secure=False):
+        return f'sid=session-id; Path=/; HttpOnly; SameSite=Lax{"; Secure" if secure else ""}'
+
+    class state_store:
+        class StateStoreError(Exception):
+            pass
+
+    @staticmethod
+    def load_meta():
+        return {'admin_token': 'admin-token', 'admin_pass_hash': 'hash'}
+
 
 class StubDocumentServices:
     service_module = _Module()
@@ -46,6 +70,14 @@ class StubDocumentServices:
             'password_min_length': 8,
             'password_max_length': 128,
         }
+
+    def exchange_admin_token(self, *, headers, path, token):
+        del headers, path
+        if token != 'admin-token':
+            return None
+        from web_api.services import AdminTokenExchangeReply
+
+        return AdminTokenExchangeReply(cookie='sid=session-id; Path=/; HttpOnly; SameSite=Lax')
 
     def read_admin_usage_csv(self, *, headers, path, window):
         del path
@@ -84,6 +116,20 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         assert '<title>总览</title>' in admin.text
         assert '<body class="has-shell">' in admin.text
         assert 'data-public-host="panel.example.test"' in admin.text
+
+        user_login = client.get('/user/login')
+        assert user_login.status_code == 200
+        assert '<title>用户登录 · Hysteria</title>' in user_login.text
+        assert 'data-password-max-length="128"' in user_login.text
+
+        exchanged = client.get('/admin?token=admin-token&msg=from-link', follow_redirects=False)
+        assert exchanged.status_code == 303
+        assert exchanged.headers['location'] == '/admin?msg=from-link'
+        assert exchanged.headers['set-cookie'].startswith('sid=session-id;')
+
+        invalid_exchange = client.get('/admin?token=wrong', follow_redirects=False)
+        assert invalid_exchange.status_code == 303
+        assert invalid_exchange.headers['location'] == '/login'
 
         user = client.get('/user/panel', headers={'Cookie': 'usid=user'})
         assert user.status_code == 200

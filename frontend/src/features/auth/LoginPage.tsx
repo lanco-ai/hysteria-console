@@ -1,7 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useFormAction } from '../../shared/useFormAction';
 import { useInitialFragmentNavigation } from '../../shared/useInitialFragmentNavigation';
-import { submitLogin } from './loginRequest';
+import { submitLogin, type LoginRealm } from './loginRequest';
 
 const fragmentTargets = new Set(['main-content']);
 const TRANSPORT_ERROR = '登录结果未确认，请检查网络后重试。';
@@ -10,7 +10,9 @@ function LockIcon() {
   return <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>;
 }
 
-export function LoginPage({ passwordMaxLength }: { passwordMaxLength: number }) {
+export function LoginPage({ passwordMaxLength, realm = 'admin' }: { passwordMaxLength: number; realm?: LoginRealm }) {
+  const isUser = realm === 'user';
+  const fieldPrefix = isUser ? 'user' : 'admin';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -37,7 +39,7 @@ export function LoginPage({ passwordMaxLength }: { passwordMaxLength: number }) 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const submitted = { username: usernameRef.current, password: passwordRef.current };
-    void run(signal => submitLogin(submitted, signal), {
+    void run(signal => submitLogin(submitted, signal, realm), {
       onStart: () => {
         setFeedback('');
         setProgress('正在验证登录信息');
@@ -72,9 +74,9 @@ export function LoginPage({ passwordMaxLength }: { passwordMaxLength: number }) 
       <main className="login-stage">
         <div className="login-layout">
           <section className="login-story" aria-labelledby="login-story-title">
-            <div className="login-eyebrow"><span/> NETWORK CONSOLE</div>
-            <h1 id="login-story-title">连接网络，<br/><span>掌控全局。</span></h1>
-            <p className="login-description">让每一次连接，清晰可见。<br/>在一个控制台中，管理你的网络。</p>
+            <div className="login-eyebrow"><span/> {isUser ? 'USER · PANEL' : 'NETWORK CONSOLE'}</div>
+            <h1 id="login-story-title">{isUser ? <>查看用量，<br/><span>管理订阅。</span></> : <>连接网络，<br/><span>掌控全局。</span></>}</h1>
+            <p className="login-description">{isUser ? <>实时查看流量与订阅状态。<br/>安全、清晰地管理你的连接。</> : <>让每一次连接，清晰可见。<br/>在一个控制台中，管理你的网络。</>}</p>
             <div className="login-network" aria-hidden="true">
               <svg viewBox="0 0 460 220" fill="none">
                 <defs><linearGradient id="login-line"><stop stopColor="#b9d8e1"/><stop offset="1" stopColor="#68a8bf"/></linearGradient></defs>
@@ -91,29 +93,29 @@ export function LoginPage({ passwordMaxLength }: { passwordMaxLength: number }) 
                 <circle cx="28" cy="162" r="3" fill="#83a4b0"/>
               </svg>
             </div>
-            <div className="login-story-foot"><span>HYSTERIA</span><span>连接 · 洞察 · 管理</span></div>
+            <div className="login-story-foot"><span>HYSTERIA</span><span>{isUser ? '查看 · 管理 · 订阅' : '连接 · 洞察 · 管理'}</span></div>
           </section>
           <section className="login-panel" aria-labelledby="login-title">
-            <div className="login-panel-kicker"><LockIcon/><span>管理员访问</span></div>
-            <h2 id="login-title">登录控制台</h2>
-            <p className="login-subtitle">使用管理员账号登录。</p>
-            <form method="post" action="/login" className="login-form" id="form-admin" onSubmit={onSubmit}>
+            <div className="login-panel-kicker"><LockIcon/><span>{isUser ? '用户面板访问' : '管理员访问'}</span></div>
+            <h2 id="login-title">{isUser ? '用户登录' : '登录控制台'}</h2>
+            <p className="login-subtitle">{isUser ? '登录后查看用量和订阅信息。' : '使用管理员账号登录。'}</p>
+            <form method="post" action={isUser ? '/user/login' : '/login'} className="login-form" id={isUser ? 'form-user' : 'form-admin'} onSubmit={onSubmit}>
               <div className="login-feedback">{feedback ? <div className="err" role="alert" aria-live="assertive" aria-atomic="true">{feedback}</div> : null}</div>
               <div className="field">
-                <label className="label" htmlFor="admin-username">管理员账号</label>
-                <input className="input" id="admin-username" name="admin_username" value={username} onChange={event => changeUsername(event.target.value)} required autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder="输入管理员账号"/>
+                <label className="label" htmlFor={`${fieldPrefix}-username`}>{isUser ? '用户名' : '管理员账号'}</label>
+                <input className="input" id={`${fieldPrefix}-username`} name={isUser ? 'user_username' : 'admin_username'} value={username} onChange={event => changeUsername(event.target.value)} required autoComplete="username" autoCapitalize="none" spellCheck={false} placeholder={isUser ? '输入用户名' : '输入管理员账号'}/>
               </div>
               <div className="field">
-                <label className="label" htmlFor="admin-password">密码</label>
+                <label className="label" htmlFor={`${fieldPrefix}-password`}>{isUser ? '面板密码' : '密码'}</label>
                 <div className="login-password">
-                  <input className="input" id="admin-password" name="admin_password" type={passwordVisible ? 'text' : 'password'} value={password} onChange={event => changePassword(event.target.value)} required maxLength={passwordMaxLength} autoComplete="current-password" placeholder="输入密码"/>
-                  <button type="button" id="login-password-toggle" aria-controls="admin-password" aria-label={passwordVisible ? '隐藏密码' : '显示密码'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible(value => !value)}>{passwordVisible ? '隐藏' : '显示'}</button>
+                  <input className="input" id={`${fieldPrefix}-password`} name={isUser ? 'user_password' : 'admin_password'} type={passwordVisible ? 'text' : 'password'} value={password} onChange={event => changePassword(event.target.value)} required maxLength={passwordMaxLength} autoComplete="current-password" placeholder={isUser ? '输入面板密码' : '输入密码'}/>
+                  <button type="button" id="login-password-toggle" aria-controls={`${fieldPrefix}-password`} aria-label={passwordVisible ? '隐藏密码' : '显示密码'} aria-pressed={passwordVisible} onClick={() => setPasswordVisible(value => !value)}>{passwordVisible ? '隐藏' : '显示'}</button>
                 </div>
               </div>
-              <button className="btn btn-primary login-submit auth-submit" type="submit" disabled={busy} aria-busy={busy ? true : undefined}><span className="auth-submit-text">{busy ? '正在验证…' : '登录控制台'}</span><span aria-hidden="true">→</span></button>
+              <button className="btn btn-primary login-submit auth-submit" type="submit" disabled={busy} aria-busy={busy ? true : undefined}><span className="auth-submit-text">{busy ? '正在验证…' : (isUser ? '登录用户面板' : '登录控制台')}</span><span aria-hidden="true">→</span></button>
               <span id="login-progress" className="sr-only" role="status" aria-live="polite">{progress}</span>
             </form>
-            <div className="login-panel-foot"><LockIcon/><span>仅限授权管理员访问</span></div>
+            <div className="login-panel-foot"><LockIcon/><span>{isUser ? '面板密码由管理员设置' : '仅限授权管理员访问'}</span></div>
           </section>
         </div>
         <footer className="login-footer">Hysteria <span>／</span> Network Console</footer>

@@ -60,7 +60,7 @@ def test_admin_render_includes_sparkline_column(tmp_path, monkeypatch):
     assert 'class="spark"' in out
 
 
-def test_admin_render_loads_poll_script_as_external_script(tmp_path, monkeypatch):
+def test_admin_render_does_not_load_retired_poll_script(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json', raising=False)
     monkeypatch.setattr(ss, 'USAGE_FILE', tmp_path / 'usage.json', raising=False)
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json', raising=False)
@@ -72,6 +72,4 @@ def test_admin_render_loads_poll_script_as_external_script(tmp_path, monkeypatch
     (tmp_path / 'online.json').write_text('{}')
 
     out = ss.render_admin('panel.example.com', 'http://panel.example.com')
-    expected = f'<script src="/static/admin-poll.js?v={ss.ADMIN_POLL_JS_ETAG.strip(chr(34))}" defer></script>'
-    assert expected in out
-    assert '<script>\n<script src="/static/admin-poll.js' not in out
+    assert '/static/admin-poll.js' not in out

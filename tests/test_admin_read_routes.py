@@ -11,16 +11,18 @@ from tests.test_reliability_regressions import _configure_state, _request, _runn
 
 NOW = datetime.fromisoformat('2026-09-08T12:00:00+08:00')
 CASES = [
-    ('/admin/usage', 302, b'usage page'),
     ('/admin/analytics.json', 401, b'{"charts":true}'),
     ('/admin/analytics.json?summary=yes', 401, b'{"charts":false}'),
-    ('/admin/usage-history', 401, b'history'),
     ('/admin/usage.json', 401, b'{"bytes":123}'),
     ('/admin/usage.csv', 302, b'window,cycle\n'),
-    ('/admin/health', 302, b'health page'),
-    ('/admin/health.fragment', 401, b'health rows'),
-    ('/admin/health.fragment?snapshot=1', 401, None),
 ]
+
+LEGACY_DOCUMENTS = (
+    '/admin/usage',
+    '/admin/usage-history',
+    '/admin/health',
+    '/admin/health.fragment',
+)
 
 
 @pytest.fixture
@@ -119,6 +121,24 @@ def test_csv_validation_and_download_header(read_state, method):
     assert valid.status == 200
     assert valid.headers['content-disposition'] == 'attachment; filename="usage-30d-20260908.csv"'
     assert valid.body == (b'' if method == 'HEAD' else b'window,30d\n')
+
+
+@pytest.mark.parametrize('path', LEGACY_DOCUMENTS)
+@pytest.mark.parametrize('method', ['GET', 'HEAD'])
+@pytest.mark.parametrize('authenticated', [False, True])
+def test_legacy_browser_documents_are_rejected_by_compat_listener(
+    read_state, path, method, authenticated
+):
+    """8081 no longer serves Python-rendered browser documents."""
+    cookie, calls, _ = read_state
+    with _running_server() as server:
+        response = _request(server, method, path, headers=cookie if authenticated else {})
+    assert response.status == 404
+    assert response.headers['content-type'].startswith('text/plain')
+    assert calls == []
+    assert response.body == (
+        b'' if method == 'HEAD' else '此网页已由 React 前端提供，请访问公开面板地址。'.encode()
+    )
 
 
 def test_unrelated_routes_are_not_consumed_or_authenticated():

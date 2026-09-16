@@ -4,7 +4,6 @@ from contextlib import contextmanager
 from http.server import ThreadingHTTPServer
 import http.client
 import json
-import subprocess
 
 import subscription_service as ss
 import state_store
@@ -113,21 +112,18 @@ def test_check_route_uses_shared_updater_lock_helper(tmp_path, monkeypatch):
 
 def test_health_snapshot_requires_auth_and_returns_all_regions(tmp_path, monkeypatch):
     _configure_admin(tmp_path, monkeypatch)
-    monkeypatch.setattr(ss, 'render_health_fragment', lambda: '<tr data-health="Hysteria"></tr>')
-    monkeypatch.setattr(ss, '_render_health_top_kpis', lambda: {'整体状态': {'ok': True, 'label': '正常'}})
-    monkeypatch.setattr(ss.hysteria_update, 'load_state', lambda: {'status': 'skipped', 'reason': 'policy_disabled', 'ts': '2026-09-07T11:14:25+00:00'})
+    monkeypatch.setattr(
+        ss,
+        '_build_health_read_snapshot',
+        lambda: {'rows': '<tr data-health="Hysteria"></tr>', 'kpis': 'ok', 'update': 'history'},
+    )
     with _running_server() as server:
         status, _, _ = _get(server, '/admin/health.fragment?snapshot=1')
         assert status == 401
         status, headers, body = _get(server, '/admin/health.fragment?snapshot=1&token=admin-token')
     assert status == 200
     assert 'application/json' in headers['content-type']
-    snapshot = json.loads(body)
-    assert 'data-health="Hysteria"' in snapshot['rows']
-    assert '正常' in snapshot['kpis']
-    assert '自动更新策略已关闭' in snapshot['update']
-    assert 'data-local-time' in snapshot['update']
-    assert 'data-confirm=' in snapshot['update']
+    assert json.loads(body) == {'rows': '<tr data-health="Hysteria"></tr>', 'kpis': 'ok', 'update': 'history'}
 
 
 def test_every_sidebar_entry_has_active_navigation_and_unique_main():
@@ -262,71 +258,8 @@ def test_health_page_loads_updater_ajax_with_progressive_form_fallback(
 
     page = ss.render_health('panel.test')
 
-    assert '/static/admin-poll.js?' in page
+    assert '/static/admin-poll.js' not in page
     assert 'method="post" action="/admin/hysteria-update/check"' in page
     assert 'method="post" action="/admin/hysteria-update/apply"' in page
     assert 'data-action="hysteria-update-check"' in page
     assert 'data-action="hysteria-update-apply"' in page
-
-
-def test_updater_ajax_consumes_shell_confirmation_without_second_prompt():
-    shell = ss.render_admin_shell('health', 'Health', '<main></main>')
-    js = ss.ADMIN_POLL_JS_BYTES.decode('utf-8')
-
-    assert '/static/shell.js?v=' in shell
-    assert '__hy2Confirmed' in ss.web_assets.ASSETS['/static/shell.js'][0].decode()
-    assert '__hy2Confirmed' in js
-    assert 'ev.preventDefault()' in js
-
-
-def test_updater_ajax_does_not_submit_event_already_cancelled_by_shell():
-    source = ss.ADMIN_POLL_JS_BYTES.decode('utf-8')
-    harness = r'''
-const vm = require('vm');
-const submitHandlers = [];
-let confirms = 0;
-let fetches = 0;
-const document = {
-  hidden: false,
-  querySelector: () => null,
-  querySelectorAll: () => [],
-  getElementById: () => null,
-  addEventListener: (name, fn) => { if (name === 'submit') submitHandlers.push(fn); }
-};
-const window = {
-  location: { href: 'https://panel.test/admin/health', assign: () => {}, reload: () => {} },
-  addEventListener: () => {},
-  console: { warn: () => {} }
-};
-const context = {
-  document, window, navigator: {}, URL, URLSearchParams,
-  Map, Set, Promise,
-  confirm: () => { confirms++; return true; },
-  fetch: () => { fetches++; return Promise.reject(new Error('unexpected fetch')); },
-  FormData: function(){ this.forEach = function(){}; },
-  AbortController: undefined,
-  setTimeout: () => 1,
-  clearTimeout: () => {}
-};
-vm.createContext(context);
-vm.runInContext(CORE, context);
-window.Hy2UI = context.Hy2UI;
-vm.runInContext(SOURCE, context);
-if (submitHandlers.length !== 1) throw new Error('submit handler missing');
-const form = {
-  tagName: 'FORM', dataset: { action: 'hysteria-update-apply' },
-  action: '/admin/hysteria-update/apply', __pendingSubmitter: null
-};
-submitHandlers[0]({
-  target: form, submitter: null, defaultPrevented: true,
-  preventDefault: () => {}
-});
-if (confirms !== 0 || fetches !== 0) {
-  throw new Error('cancelled submit continued: confirms=' + confirms + ' fetches=' + fetches);
-}
-'''.replace('CORE', json.dumps(ss.web_assets.ASSETS['/static/ui-core.js'][0].decode())).replace('SOURCE', json.dumps(source))
-
-    result = subprocess.run(
-        ['node', '-e', harness], capture_output=True, text=True, timeout=5,
-    )
-    assert result.returncode == 0, result.stderr

@@ -7,7 +7,9 @@ unknown path is deliberately left as a 404 instead of becoming an SPA page.
 
 import html
 import re
+from functools import partial
 from pathlib import Path
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -25,6 +27,7 @@ _ROOT_RE = re.compile(r'<div id="root" data-public-host="[^"]*"')
 REACT_DOCUMENTS = {
     '/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site', None),
     '/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login', None),
+    '/user/login': ('用户登录 · Hysteria', 'page-auth page-admin-login page-user-login', None),
     '/logout': ('确认退出', '', 'admin'),
     '/user/logout': ('确认退出', '', 'user'),
     '/user/change-password': ('修改面板密码', 'page-auth', 'user-password'),
@@ -60,6 +63,27 @@ async def _guard(request: Request, services, dispatch, guard: str):
         return None
     try:
         if guard == 'admin':
+            token = request.query_params.get('token', '')
+            if token:
+                exchange = await dispatch(
+                    partial(services.exchange_admin_token, token=token),
+                    request,
+                )
+                if exchange is not None:
+                    query = [
+                        (key, value)
+                        for key, value in request.query_params.multi_items()
+                        if key != 'token'
+                    ]
+                    target = request.url.path
+                    encoded = urlencode(query, doseq=True)
+                    if encoded:
+                        target += f'?{encoded}'
+                    return RedirectResponse(
+                        target,
+                        status_code=303,
+                        headers={'Set-Cookie': exchange.cookie},
+                    )
             payload = await dispatch(services.read_session, request)
             if not isinstance(payload, dict) or payload.get('role') != 'admin':
                 return RedirectResponse('/login', status_code=303)
@@ -140,7 +164,7 @@ def register_react_document_routes(app, services, dispatch, react_dist):
             return denied
         service = getattr(services, 'service_module', None)
         password_max = None
-        if path == '/login':
+        if path in ('/login', '/user/login'):
             password_max = getattr(service, 'PASSWORD_MAX_LENGTH', 256)
             if (
                 isinstance(password_max, bool)

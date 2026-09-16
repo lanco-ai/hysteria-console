@@ -15,8 +15,8 @@ def test_public_home_is_illustrative_and_does_not_read_private_state(monkeypatch
     assert page.count('href="/login"') == 3
     assert 'id="services"' in page
     assert 'id="console-preview"' in page
-    assert ss.HOME_JS_ETAG.strip('"') in page
-    assert '{HOME_JS_ETAG' not in page
+    assert '/static/home.js' not in page
+    assert '/static/ui-core.js' not in page
 
 
 def test_home_previews_have_accessible_labels_and_no_js_fallback():

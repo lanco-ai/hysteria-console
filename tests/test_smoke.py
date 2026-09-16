@@ -20,9 +20,10 @@ def test_usage_routes_wired_in_dispatcher():
     assert "/admin/usage.json" in ss.admin_read_routes._ROUTES
     assert "/admin/usage" in ss.admin_read_routes._ROUTES
     assert "/admin/user/" in text
-    assert "/static/usage.js" in text
+    assert "is_legacy_html_document(path)" in text
+    assert "/static/usage.js" not in text
     page = ss.html_page('smoke', '')
-    assert '/static/style.css?v=' + ss.BASE_CSS_ETAG.strip('"') in page
+    assert '/static/style.css' not in page
 
 
 def test_render_usage_page_smoke(tmp_path, monkeypatch):

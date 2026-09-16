@@ -1,4 +1,4 @@
-"""Preserve login form contracts and escaping across script extraction."""
+"""Preserve login form contracts and escaping after the React cutover."""
 
 import hashlib
 import html
@@ -97,6 +97,6 @@ def test_login_body_matches_pre_extraction_baseline(case):
     )
     assert fields.inputs['admin_username']['value'] == expected
     assert 'autofocus' not in fields.inputs['admin_username']
-    assert len(fields.scripts) == 1
-    assert fields.scripts[0]['src'].startswith('/static/login.js?v=')
+    assert fields.scripts == []
+    assert '/static/login.js' not in body
     assert 'private error' not in body

@@ -264,7 +264,6 @@ build_durable_artifact_set() {
     subscription_service.py \
     public_views.py \
     auth_views.py \
-    web_assets.py \
     admin_read_routes.py \
     admin_config_routes.py \
     admin_operations_routes.py \
@@ -335,21 +334,7 @@ build_durable_artifact_set() {
     hysteria_update.py \
     display.py \
     timeutil.py \
-    react_server.py \
-    admin.css \
-    admin_poll.js \
-    usage.js \
-    static/home.js \
-    static/login.js \
-    static/shell.js \
-    static/shell-preferences.js \
-    static/ui-core.js \
-    static/user-panel.js \
-    static/user-poll.js \
-    static/config-editor.js \
-    static/rules.js \
-    static/fonts/inter-var.woff2 \
-    static/fonts/jetbrains-mono.woff2; do
+    react_server.py; do
     add_durable_artifact "$HY_DIR/$name"
   done
   add_durable_artifact "$HY_DIR/web_api/__init__.py"
@@ -1785,7 +1770,6 @@ for artifact in \
   "$HY_DIR/subscription_service.py" \
   "$HY_DIR/public_views.py" \
   "$HY_DIR/auth_views.py" \
-  "$HY_DIR/web_assets.py" \
   "$HY_DIR/admin_read_routes.py" \
   "$HY_DIR/admin_config_routes.py" \
   "$HY_DIR/admin_operations_routes.py" \
@@ -1855,20 +1839,6 @@ for artifact in \
   "$HY_DIR/user_compat.py" \
   "$HY_DIR/display.py" \
   "$HY_DIR/timeutil.py" \
-  "$HY_DIR/admin.css" \
-  "$HY_DIR/admin_poll.js" \
-  "$HY_DIR/usage.js" \
-  "$HY_DIR/static/home.js" \
-  "$HY_DIR/static/login.js" \
-  "$HY_DIR/static/shell.js" \
-  "$HY_DIR/static/shell-preferences.js" \
-  "$HY_DIR/static/ui-core.js" \
-  "$HY_DIR/static/user-panel.js" \
-  "$HY_DIR/static/user-poll.js" \
-  "$HY_DIR/static/config-editor.js" \
-  "$HY_DIR/static/rules.js" \
-  "$HY_DIR/static/fonts/inter-var.woff2" \
-  "$HY_DIR/static/fonts/jetbrains-mono.woff2" \
   "$HY_DIR/template.yaml" \
   "$HY_DIR/users.json" \
   "$HY_DIR/subscription_meta.json" \
@@ -2002,7 +1972,6 @@ render "$REPO_DIR/hysteria/auth_service.py"          "$HY_DIR/auth_service.py"
 render "$REPO_DIR/hysteria/subscription_service.py"  "$HY_DIR/subscription_service.py"
 render "$REPO_DIR/hysteria/public_views.py"          "$HY_DIR/public_views.py"
 render "$REPO_DIR/hysteria/auth_views.py"            "$HY_DIR/auth_views.py"
-render "$REPO_DIR/hysteria/web_assets.py"            "$HY_DIR/web_assets.py"
 render "$REPO_DIR/hysteria/admin_read_routes.py"     "$HY_DIR/admin_read_routes.py"
 render "$REPO_DIR/hysteria/admin_config_routes.py"     "$HY_DIR/admin_config_routes.py"
 render "$REPO_DIR/hysteria/admin_operations_routes.py"     "$HY_DIR/admin_operations_routes.py"
@@ -2100,27 +2069,6 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/user_detail_routes.py" "$HY_DIR/web_api/user_detail_routes.py"
   render "$REPO_DIR/hysteria/web_api/user_models.py" "$HY_DIR/web_api/user_models.py"
 fi
-install_atomic 644 "$REPO_DIR/hysteria/admin.css"      "$HY_DIR/admin.css"
-install_atomic 644 "$REPO_DIR/hysteria/admin_poll.js"  "$HY_DIR/admin_poll.js"
-install_atomic 644 "$REPO_DIR/hysteria/usage.js"       "$HY_DIR/usage.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/home.js" "$HY_DIR/static/home.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/login.js" "$HY_DIR/static/login.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/shell.js" "$HY_DIR/static/shell.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/shell-preferences.js" "$HY_DIR/static/shell-preferences.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/ui-core.js" "$HY_DIR/static/ui-core.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/user-panel.js" "$HY_DIR/static/user-panel.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/user-poll.js" "$HY_DIR/static/user-poll.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/config-editor.js" "$HY_DIR/static/config-editor.js"
-install_atomic 644 "$REPO_DIR/hysteria/static/rules.js" "$HY_DIR/static/rules.js"
-
-# ---- Font assets ----
-install -d -o root -g root -m 755 "$HY_DIR/static/fonts"
-install_atomic 644 \
-  "$REPO_DIR/hysteria/static/fonts/inter-var.woff2" \
-  "$HY_DIR/static/fonts/inter-var.woff2"
-install_atomic 644 \
-  "$REPO_DIR/hysteria/static/fonts/jetbrains-mono.woff2" \
-  "$HY_DIR/static/fonts/jetbrains-mono.woff2"
 
 chmod 700 \
   "$HY_DIR/auth_backend.py" \
@@ -2128,7 +2076,6 @@ chmod 700 \
   "$HY_DIR/subscription_service.py" \
   "$HY_DIR/public_views.py" \
   "$HY_DIR/auth_views.py" \
-  "$HY_DIR/web_assets.py" \
   "$HY_DIR/admin_read_routes.py" \
   "$HY_DIR/admin_config_routes.py" \
   "$HY_DIR/admin_operations_routes.py" \

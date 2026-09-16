@@ -68,7 +68,6 @@ adopted=(
   tests/test_user_detail_react_contract.py
   tests/test_react_route_parity.py
   hysteria/reset_log_data.py tests/test_reset_log_data.py
-  hysteria/web_assets.py tests/test_web_assets.py
   tests/preview_http_server.py
   tests/workspace_preview_server.py tests/run_frontend_browser.py
   tests/test_preview_isolation.py tests/test_preview_page_parity.py

@@ -30,6 +30,7 @@ def test_legacy_frontend_build_chain_and_assets_are_removed():
         ROOT / "hysteria/admin.css",
         ROOT / "hysteria/admin_poll.js",
         ROOT / "hysteria/usage.js",
+        ROOT / "hysteria/web_assets.py",
         ROOT / "hysteria/static/config-editor.js",
         ROOT / "hysteria/static/home.js",
         ROOT / "hysteria/static/login.js",

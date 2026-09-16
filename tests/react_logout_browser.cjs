@@ -400,39 +400,28 @@ async function confirmationSnapshot(page) {
   };
 }
 
-async function verifyLegacyParity(browser) {
+async function verifyResponsiveLogout(browser) {
   const context = await browser.newContext({ reducedMotion: 'reduce' });
   for (const realm of realms) {
     for (const width of [1920, 1024, 390]) {
       const reactPage = await context.newPage();
-      const legacyPage = await context.newPage();
       const reactFailures = collectFailures(reactPage, `React ${realm.name} parity ${width}`);
-      const legacyFailures = collectFailures(legacyPage, `legacy ${realm.name} parity ${width}`);
       await reactPage.setViewportSize({ width, height: 1080 });
-      await legacyPage.setViewportSize({ width, height: 1080 });
       await gotoLogout(reactPage, realm);
-      const legacyResponse = await legacyPage.goto(`${baseUrl}${realm.legacy}`);
-      assert.equal(legacyResponse.status(), 200);
-      await legacyPage.locator('.auth-card').waitFor();
-      assert.deepEqual(await confirmationSnapshot(reactPage), await confirmationSnapshot(legacyPage), `${realm.name} content parity at ${width}px`);
+      const current = await confirmationSnapshot(reactPage);
+      assert.equal(current.form.method, 'post');
+      assert.equal(current.form.action, realm.entry === '/__react/logout' ? '/logout' : '/user/logout');
       for (const selector of ['#main-content', '.auth-page', '.auth-wrap', '.auth-card', '.auth-title', 'form', '.btn-full', '.auth-back']) {
-        const actual = await bounds(reactPage, selector);
-        const expected = await bounds(legacyPage, selector);
-        for (const key of ['x', 'y', 'width', 'height']) {
-          assert(Math.abs(actual[key] - expected[key]) <= 2, `${realm.name} ${selector} ${key} parity at ${width}px`);
-        }
+        const box = await bounds(reactPage, selector);
+        assert(box.width > 0 && box.height > 0, `${realm.name} ${selector} must be visible at ${width}px`);
       }
       assert.equal(await reactPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-      assert.equal(await legacyPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       if (screenshotDir) {
         fs.mkdirSync(screenshotDir, { recursive: true });
         await reactPage.screenshot({ path: path.join(screenshotDir, `react-${realm.name}-logout-${width}.png`), fullPage: true });
-        await legacyPage.screenshot({ path: path.join(screenshotDir, `legacy-${realm.name}-logout-${width}.png`), fullPage: true });
       }
       assertClean(reactFailures);
-      assertClean(legacyFailures);
       await reactPage.close();
-      await legacyPage.close();
     }
   }
   await context.close();
@@ -506,9 +495,9 @@ async function verifyRealRootLifecycle(browser) {
     await verifyTimeoutAndPageTransitions(browser);
     await verifyShellDirectLogoutAndErrors(browser);
     await verifyRealRealmIsolation(browser);
-    await verifyLegacyParity(browser);
+    await verifyResponsiveLogout(browser);
     await verifyRealRootLifecycle(browser);
-    console.log('PASS: React logout confirmation, shell, faults, lifecycle, realm isolation, and visual parity');
+    console.log('PASS: React logout confirmation, shell, faults, lifecycle, realm isolation, and responsive layout');
   } finally {
     await browser.close();
   }

@@ -207,8 +207,9 @@ def test_logout_get_is_read_only_and_same_origin_post_revokes_session(
             headers={**cookie, "Origin": "http://panel.test"},
         )
 
-    assert confirmation.status == 200
-    assert f'action="{path}"'.encode() in confirmation.body
+    assert confirmation.status == 404
+    assert confirmation.headers["content-type"].startswith("text/plain")
+    assert confirmation.body
     assert present_after_get is True
     assert cross_site.status == 403
     assert present_after_cross_site is True
@@ -735,12 +736,10 @@ def test_stale_credential_generation_sessions_are_rejected_and_deleted(
             headers={"Cookie": f"sid={stale_admin_sid}"},
         )
 
-    assert stale_user.status == 403
+    assert stale_user.status == 404
     assert "location" not in stale_user.headers
-    assert current_user.status == 200
-    assert b"alice" in current_user.body
-    assert stale_admin.status == 302
-    assert stale_admin.headers["location"] == "/login"
+    assert current_user.status == 404
+    assert stale_admin.status == 404
     _assert_security_headers(stale_user)
     _assert_security_headers(stale_admin)
 
@@ -753,43 +752,21 @@ def test_stale_credential_generation_sessions_are_rejected_and_deleted(
     )
 
 
-def test_static_assets_accept_weak_if_none_match_and_keep_hardening_headers():
+def test_retired_static_assets_are_unavailable():
+    """The compatibility listener no longer serves the legacy CSS/JS chain."""
+    paths = (
+        "/static/style.css",
+        "/static/admin-poll.js",
+        "/static/usage.js",
+        "/static/shell.js",
+        "/static/ui-core.js",
+    )
     with _running_server() as server:
-        initial = _request(server, "GET", "/static/style.css")
-        etag = initial.headers["etag"]
-        weak = _request(
-            server,
-            "GET",
-            "/static/style.css",
-            headers={"If-None-Match": f'W/{etag}'},
-        )
-        listed = _request(
-            server,
-            "GET",
-            "/static/style.css",
-            headers={"If-None-Match": f'"old", W/{etag}'},
-        )
-        stale = _request(
-            server,
-            "GET",
-            "/static/style.css",
-            headers={"If-None-Match": '"old"'},
-        )
-
-    assert initial.status == 200
-    assert initial.body
-    _assert_security_headers(initial, cache_control="public, max-age=86400")
-    for response in (weak, listed):
-        assert response.status == 304
-        assert response.body == b""
-        assert response.headers["etag"] == etag
-        _assert_security_headers(
-            response, cache_control="public, max-age=86400"
-        )
-    assert stale.status == 200
-    assert stale.body == initial.body
-    assert ss._etag_matches(etag, f"W/{etag}")
-    assert ss._etag_matches("*", etag)
+        responses = [_request(server, "GET", path) for path in paths]
+    for response in responses:
+        assert response.status == 404
+        assert response.headers["content-type"].startswith("text/plain")
+        _assert_security_headers(response)
 
 
 def test_sensitive_subscription_json_and_error_responses_are_not_cacheable(
@@ -966,7 +943,7 @@ def test_delete_and_disable_routes_revoke_existing_user_panel_sessions(
     sessions = ss.get_user_sessions()
     assert alice_sessions.isdisjoint(sessions)
     assert sessions[bob_session]["user"] == "bob"
-    assert stale_cookie.status == 403
+    assert stale_cookie.status == 404
     assert "location" not in stale_cookie.headers
     _assert_security_headers(stale_cookie)
 

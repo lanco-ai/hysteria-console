@@ -8,6 +8,7 @@ export type LoginResponse =
   | { ok: false; message: string };
 
 type Credentials = { username: string; password: string };
+export type LoginRealm = 'admin' | 'user';
 
 const destinations = new Set([
   '/admin?msg=login+success',
@@ -38,10 +39,22 @@ function validateLoginResponse(value: unknown, status: number): LoginResponse {
   throw new Error('Invalid login response');
 }
 
-export async function submitLogin(credentials: Credentials, signal: AbortSignal): Promise<LoginResponse> {
+export async function submitLogin(
+  credentials: Credentials,
+  signal: AbortSignal,
+  realm: LoginRealm = 'admin',
+): Promise<LoginResponse> {
+  const fields = realm === 'user'
+    ? {
+        user_username: credentials.username,
+        user_password: credentials.password,
+      }
+    : {
+        admin_username: credentials.username,
+        admin_password: credentials.password,
+      };
   const { value, status } = await postFormJson('/api/v1/login', {
-    admin_username: credentials.username,
-    admin_password: credentials.password,
+    ...fields,
   }, signal);
   return validateLoginResponse(value, status);
 }

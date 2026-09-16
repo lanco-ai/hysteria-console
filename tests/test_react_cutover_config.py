@@ -10,6 +10,7 @@ TEMPLATES = (
 REACT_DOCUMENTS = (
     '/',
     '/login',
+    '/user/login',
     '/logout',
     '/user/logout',
     '/user/change-password',

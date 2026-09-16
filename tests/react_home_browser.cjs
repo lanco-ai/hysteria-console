@@ -79,24 +79,10 @@ async function homeSnapshot(page) {
   };
 }
 
-async function compareBounds(reactPage, legacyPage, width) {
-  for (const selector of ['.site-main', '.site-hero', '.site-topology', '.site-feature', '.site-console']) {
-    const actual = await bounds(reactPage, selector);
-    const expected = await bounds(legacyPage, selector);
-    for (const key of ['x', 'y', 'width', 'height']) {
-      assert(
-        Math.abs(actual[key] - expected[key]) <= 2,
-        `${selector} ${key} parity at ${width}px: React ${actual[key]}, legacy ${expected[key]}`,
-      );
-    }
-  }
-}
-
-async function capturePair(reactPage, legacyPage, name) {
+async function captureHome(reactPage, name) {
   if (!screenshotDir) return;
   fs.mkdirSync(screenshotDir, { recursive: true });
   await reactPage.screenshot({ path: path.join(screenshotDir, `react-home-${name}.png`), fullPage: true });
-  await legacyPage.screenshot({ path: path.join(screenshotDir, `legacy-home-${name}.png`), fullPage: true });
 }
 
 async function verifyPublicDocumentAndTabs(browser) {
@@ -179,76 +165,46 @@ async function verifyInitialFragmentNavigation(browser) {
     await gotoHome(reactPage, suffix);
     await reactPage.waitForFunction(() => document.readyState === 'complete');
 
-    const legacyPage = await context.newPage();
-    const legacyCollection = collectFailures(legacyPage, `legacy initial fragment ${suffix || '(absent)'}`);
-    const legacyResponse = await legacyPage.goto(`${baseUrl}/${suffix}`);
-    assert.equal(legacyResponse.status(), 200);
-    await legacyPage.locator('.site-main').waitFor();
-    await legacyPage.waitForFunction(() => document.readyState === 'complete');
-
     const actual = await fragmentState(reactPage);
-    const expected = await fragmentState(legacyPage);
-    assert(
-      Math.abs(actual.scrollY - expected.scrollY) <= 2,
-      `initial ${suffix || '(absent)'} scroll parity: React ${actual.scrollY}, legacy ${expected.scrollY}`,
-    );
-    assert.equal(actual.activeId, expected.activeId, `initial ${suffix || '(absent)'} active element id parity`);
-    assert.equal(actual.activeTag, expected.activeTag, `initial ${suffix || '(absent)'} active element tag parity`);
+    if (fragment.startsWith('demo-')) {
+      assert.equal(actual.activeId, fragment, `initial ${suffix} should focus its target panel`);
+      assert.equal(actual.activeTag, 'SECTION');
+    }
+    if (fragment === 'main-content') assert.equal(actual.activeId, fragment);
     assertClean(reactCollection);
-    assertClean(legacyCollection);
     await reactPage.close();
-    await legacyPage.close();
   }
   await context.close();
 }
 
-async function verifyLegacyParity(browser) {
+async function verifyResponsiveHome(browser) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' });
   for (const width of [1920, 1024, 390]) {
     const reactPage = await context.newPage();
     const reactCollection = collectFailures(reactPage, `React comparison ${width}`);
     await reactPage.setViewportSize({ width, height: 1080 });
     await gotoHome(reactPage, '#demo-traffic');
-
-    const legacyPage = await context.newPage();
-    const legacyCollection = collectFailures(legacyPage, `legacy comparison ${width}`);
-    await legacyPage.setViewportSize({ width, height: 1080 });
-    const legacyResponse = await legacyPage.goto(`${baseUrl}/#demo-traffic`);
-    assert.equal(legacyResponse.status(), 200);
-    await legacyPage.locator('.site-main').waitFor();
-    await legacyPage.locator('#demo-tab-traffic[aria-selected="true"]').waitFor();
-    await reactPage.evaluate(() => scrollTo(0, 0));
-    await legacyPage.evaluate(() => scrollTo(0, 0));
-
-    assert.deepEqual(await homeSnapshot(reactPage), await homeSnapshot(legacyPage), `legacy/React content parity at ${width}px`);
-    await compareBounds(reactPage, legacyPage, width);
+    assert.match((await homeSnapshot(reactPage)).background, /^rgb\(/);
+    assert.equal(await reactPage.locator('#demo-tab-traffic[aria-selected="true"]').count(), 1);
+    for (const selector of ['.site-main', '.site-hero', '.site-topology', '.site-feature', '.site-console']) {
+      const box = await bounds(reactPage, selector);
+      assert(box.width > 0 && box.height > 0, `${selector} must be visible at ${width}px`);
+    }
     assert.equal(await reactPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    assert.equal(await legacyPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    await capturePair(reactPage, legacyPage, `traffic-${width}`);
+    await captureHome(reactPage, `traffic-${width}`);
     assertClean(reactCollection);
-    assertClean(legacyCollection);
     await reactPage.close();
-    await legacyPage.close();
   }
 
   for (const demo of ['users', 'health']) {
     const reactPage = await context.newPage();
     const reactCollection = collectFailures(reactPage, `React ${demo} desktop`);
     await gotoHome(reactPage, `#demo-${demo}`);
-    const legacyPage = await context.newPage();
-    const legacyCollection = collectFailures(legacyPage, `legacy ${demo} desktop`);
-    const legacyResponse = await legacyPage.goto(`${baseUrl}/#demo-${demo}`);
-    assert.equal(legacyResponse.status(), 200);
-    await legacyPage.locator(`#demo-tab-${demo}[aria-selected="true"]`).waitFor();
-    await reactPage.evaluate(() => scrollTo(0, 0));
-    await legacyPage.evaluate(() => scrollTo(0, 0));
-    assert.deepEqual(await homeSnapshot(reactPage), await homeSnapshot(legacyPage), `legacy/React ${demo} content parity`);
-    await compareBounds(reactPage, legacyPage, 1920);
-    await capturePair(reactPage, legacyPage, `${demo}-1920`);
+    await reactPage.locator(`#demo-tab-${demo}[aria-selected="true"]`).waitFor();
+    assert.equal(await reactPage.locator(`#demo-${demo}`).isVisible(), true);
+    await captureHome(reactPage, `${demo}-1920`);
     assertClean(reactCollection);
-    assertClean(legacyCollection);
     await reactPage.close();
-    await legacyPage.close();
   }
   await context.close();
 }
@@ -301,9 +257,9 @@ async function verifyRevealFallbacks(browser) {
   try {
     await verifyPublicDocumentAndTabs(browser);
     await verifyInitialFragmentNavigation(browser);
-    await verifyLegacyParity(browser);
+    await verifyResponsiveHome(browser);
     await verifyRevealFallbacks(browser);
-    console.log('PASS: React public home content, tabs, visual parity, isolation, and reveal behavior');
+    console.log('PASS: React public home content, tabs, responsive layout, isolation, and reveal behavior');
   } finally {
     await browser.close();
   }

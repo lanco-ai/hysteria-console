@@ -41,7 +41,6 @@ class UsageDashboardContext:
     pct: object
     fmt_bytes: object
     render_admin_shell: object
-    asset_version: str
     user_revision: object = None
 
 
@@ -681,7 +680,6 @@ def render_usage_page(ctx, host):
 
 <div class="hover-tip" id="usage-hover-tip" role="status" aria-live="polite"
      aria-atomic="true" style="display:none;position:absolute;"></div>
-<script src="/static/usage.js?v={html.escape(ctx.asset_version, quote=True)}" defer></script>
 '''
     return ctx.render_admin_shell(
         'usage', '流量分析', content,
@@ -763,7 +761,6 @@ def render_user_detail_page(ctx, uid, host):
 
 <div class="hover-tip" id="usage-hover-tip" role="status" aria-live="polite"
      aria-atomic="true" style="display:none;position:absolute;"></div>
-<script src="/static/usage.js?v={html.escape(ctx.asset_version, quote=True)}" defer></script>
 '''
     return ctx.render_admin_shell(
         'usage', f'{uid} · 用量画像', content,

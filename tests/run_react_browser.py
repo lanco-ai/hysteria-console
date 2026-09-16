@@ -44,8 +44,23 @@ def main():
     if selected is not None and selected not in browser_tests:
         print(f'unknown REACT_BROWSER_TEST: {selected}', file=sys.stderr)
         raise SystemExit(64)
+    if selected is None:
+        # Keep each browser suite in a fresh Python process.  The preview
+        # server deliberately monkeypatches the shared legacy service module;
+        # process isolation prevents a late request/fixture thread from one
+        # suite delaying the next suite's teardown.
+        for browser_test in browser_tests:
+            env = dict(os.environ, REACT_BROWSER_TEST=browser_test)
+            subprocess.run(
+                [sys.executable, str(Path(__file__).resolve())],
+                cwd=root,
+                env=env,
+                check=True,
+                timeout=180,
+            )
+        return
     for browser_test in browser_tests:
-        if selected not in (None, browser_test):
+        if selected != browser_test:
             continue
         with preview_server(
             overview_fixture=browser_test

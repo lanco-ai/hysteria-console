@@ -7,8 +7,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import web_assets
-
 
 @dataclass(frozen=True)
 class Context:
@@ -104,7 +102,7 @@ def render_config_editor(ctx: Context, host, flash='', *, draft=None, expected_r
     </form>
   </section>
 </div>
-{web_assets.script_tag('config-editor')}'''
+'''
     return ctx.render_admin_shell('config', '订阅模板配置', content, badge=host)
 
 
@@ -300,5 +298,5 @@ def render_rules(ctx: Context, host, flash='', *, raw_draft=None, expected_revis
   </section>
 
 </div><!-- /.admin-page -->
-{web_assets.script_tag('rules')}'''
+'''
     return ctx.render_admin_shell('rules', '订阅路由规则', content, badge=f'{len(rules)} 条')

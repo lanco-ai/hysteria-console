@@ -1,6 +1,5 @@
 """Shared administrator overview presentation-data contracts."""
 
-import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -294,7 +293,7 @@ def test_render_admin_characterization_preserves_html_and_sensitive_draft_filter
     overview_state,
     monkeypatch,
 ):
-    """The extraction must keep the representative legacy content byte-for-byte."""
+    """The compatibility renderer keeps its data safeguards while legacy assets stay out."""
     monkeypatch.setattr(
         ss,
         'render_admin_shell',
@@ -318,10 +317,12 @@ def test_render_admin_characterization_preserves_html_and_sensitive_draft_filter
         create_error_field='create-user',
     )
 
-    assert (
-        hashlib.sha256(page.encode()).hexdigest()
-        == '6fd8bfc14aa34fcf390976092e186da841833e36176dc55af70363bd908c6b19'
-    )
+    # The renderer is retained only for non-browser compatibility callers.  Its
+    # markup may evolve as the React SPA owns browser documents, but it must not
+    # reintroduce retired static assets.
+    assert '/static/style.css' not in page
+    assert '/static/shell.js' not in page
+    assert '/static/admin-poll.js' not in page
     assert '<b>operator note</b>' not in page
     assert '&lt;b&gt;operator note&lt;/b&gt;' in page
     assert 'value="draft &lt;note&gt;"' in page

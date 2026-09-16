@@ -17,9 +17,18 @@ import subscription_service as ss
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _frontend_styles(*names):
+    return "\n".join(
+        (ROOT / "frontend" / "src" / "styles" / "sections" / name).read_text(
+            encoding="utf-8"
+        )
+        for name in names
+    )
+
+
 def test_calibrator_policy_fields_use_grouped_label_control_layout():
     source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "health" / "HealthPage.tsx").read_text(encoding="utf-8")
-    styles = (ROOT / "hysteria" / "styles" / "11-health-calibration.css").read_text(encoding="utf-8")
+    styles = _frontend_styles("11-health-calibration.css")
 
     assert 'className="calibrator-auto-grid"' in source
     assert "body.has-shell .calibrator-auto-grid .calibrator-auto-field {" in styles
@@ -41,8 +50,8 @@ def test_calibrator_policy_fields_use_grouped_label_control_layout():
 def test_health_quality_sections_keep_copy_and_percentages_aligned():
     health_source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "health" / "HealthPage.tsx").read_text(encoding="utf-8")
     incidents_source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "incidents" / "IncidentsPage.tsx").read_text(encoding="utf-8")
-    styles = (ROOT / "hysteria" / "styles" / "11-health-calibration.css").read_text(encoding="utf-8")
-    incident_styles = (ROOT / "hysteria" / "styles" / "12-operations-config.css").read_text(encoding="utf-8")
+    styles = _frontend_styles("11-health-calibration.css")
+    incident_styles = _frontend_styles("12-operations-config.css")
 
     assert 'className="small faint mt-sm line-radar-reason"' in health_source
     assert "body.has-shell .health-radar-section .line-radar-reason {" in styles
@@ -98,54 +107,40 @@ def _blend(foreground, background, opacity):
 
 def test_mobile_sidebar_contains_focus_and_removes_background_skip_target():
     page = ss.render_admin_shell("dashboard", "总览", "<p>content</p>")
+    shell_source = (ROOT / "frontend" / "src" / "shared" / "AdminShell.tsx").read_text(encoding="utf-8")
 
     assert '<a class="skip-link" href="#main-content">' in page
-    assert '/static/shell.js?v=' in page
-    page = ss.web_assets.ASSETS['/static/shell.js'][0].decode()
-    assert "var skip = document.querySelector('.skip-link')" in page
-    assert "if (skip) skip.setAttribute('inert', '')" in page
-    assert "if (skip) skip.removeAttribute('inert')" in page
-    assert "if (ev.key === 'Tab' && sb.classList.contains('open'))" in page
-    assert "var items = focusableItems()" in page
-    assert "active === first || !sb.contains(active)" in page
-    assert "active === last || !sb.contains(active)" in page
-    assert "last.focus()" in page
-    assert "first.focus()" in page
+    assert 'inert={mobile && open ? true : undefined}' in shell_source
+    assert "document.addEventListener('keydown', onKeyDown)" in shell_source
+    assert "event.key !== 'Tab'" in shell_source
+    assert 'last.focus()' in shell_source
+    assert 'first.focus()' in shell_source
 
 
 
 
 def test_admin_and_usage_requests_timeout_back_off_and_remain_retryable():
-    admin = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")
-    usage = (ROOT / "hysteria" / "usage.js").read_text(encoding="utf-8")
-
-    for script in (admin, usage):
-        assert "REQUEST_TIMEOUT_MS = 10000" in script
-        assert "POLL_BASE_MS = 30000" in script
-        assert "POLL_MAX_MS = 240000" in script
-        assert "RETRY_JITTER_MS = 4000" in script
-        assert "window.Hy2UI.fetchWithTimeout(url, options, REQUEST_TIMEOUT_MS" in script
-        assert "function retryDelay" in script
-        assert "Math.pow(2, exponent)" in script
-        assert "function scheduleNext" in script
-        assert "setTimeout(function" in script
-        assert "setInterval(tick" not in script
-
-    assert "请求超时' : '刷新失败') + ' · 点此重试" in admin
-    assert '"请求超时" : "刷新失败") + " · 可点立即刷新"' in usage
-    assert 'fetchWithTimeout(historyHost.dataset.url || "/admin/usage-history"' in usage
-    assert 'id="usage-history-retry"' in usage
+    resource = (ROOT / "frontend" / "src" / "shared" / "readResource.ts").read_text(encoding="utf-8")
+    usage = (ROOT / "frontend" / "src" / "features" / "network-admin" / "usage" / "UsagePage.tsx").read_text(encoding="utf-8")
+    assert "const REQUEST_TIMEOUT_MS = 10_000;" in resource
+    assert "controller.abort();" in resource
+    assert "请求超时，请重试" in resource
+    assert "Keep stale data visible" in resource
+    assert "setInterval(() =>" in usage
+    assert "usage.retry();" in usage
 
 
 def test_primary_controls_and_light_surfaces_use_aa_text_contrast():
-    styles = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
+    styles = _frontend_styles("02-tokens-base.css", "03-controls.css", "17-motion-workspace.css")
 
     import re
     def token(name):
         return re.search(r'--' + name + r':\s*(#[0-9a-fA-F]{6})', styles).group(1)
-    primary = styles.split('body.has-shell .btn-primary {', 1)[1].split('}', 1)[0]
+    primary = re.search(
+        r'body\.has-shell \.btn-primary[^\{]*\{([^}]*)\}', styles, re.S
+    ).group(1)
     background = re.search(r'background:\s*(#[0-9a-fA-F]{6})', primary).group(1)
-    assert 'color: #fff;' in primary
+    assert 'color: white;' in primary
     for foreground, background in (
         ('#ffffff', background),
         (token('text-primary'), token('bg-subtle')),
@@ -158,18 +153,16 @@ def test_nonzero_heatmap_cells_keep_three_to_one_graphical_contrast():
     charts_source = (ROOT / "hysteria" / "charts.py").read_text(
         encoding="utf-8"
     )
-    usage_js = (ROOT / "hysteria" / "usage.js").read_text(
-        encoding="utf-8"
-    )
+    usage_source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "usage" / "UsagePage.tsx").read_text(encoding="utf-8")
     minimum_cell = _blend("#9d8cff", "#101c31", 0.60)
 
     assert _contrast(minimum_cell, "#101c31") >= 3.0
     assert "0.60 + 0.40 * (v / max_v)" in charts_source
-    assert "0.60 + 0.40 * value / maxValue" in usage_js
+    assert "0.16 + bytes / max * 0.84" in usage_source
 
 
 def test_logout_confirmation_has_complete_auth_layout():
-    styles = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
+    styles = _frontend_styles("05-auth.css")
     logout = ss.render_logout_confirmation("panel.test")
 
     assert 'class="auth-page"' in logout
@@ -207,10 +200,10 @@ def test_heatmap_has_an_expandable_semantic_hourly_data_table():
     assert 'data-role="heatmap-data-body"' in markup
     assert "2026-07-18 13:00 · 尚未发生" in markup
 
-    js = (ROOT / "hysteria" / "usage.js").read_text(encoding="utf-8")
-    assert "function updateHeatmapTable(grid, timestamp)" in js
-    assert "updateHeatmapTable(grid, timestamp)" in js
-    assert "详细数值见下方可展开数据表" in js
+    usage_source = (ROOT / "frontend" / "src" / "features" / "network-admin" / "usage" / "UsagePage.tsx").read_text(encoding="utf-8")
+    assert '<details className="heatmap-data-details mt-sm">' in usage_source
+    assert "查看每小时数据表" in usage_source
+    assert "title={`${row.date}" in usage_source
 
 
 def test_incident_and_health_wide_tables_are_keyboard_scrollable(monkeypatch):

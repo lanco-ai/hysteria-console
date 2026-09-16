@@ -66,7 +66,7 @@ def login_state(tmp_path, monkeypatch):
     ss._login_attempts_inflight.clear()
     _write_json(
         paths['META_FILE'],
-        {'admin_user': 'admin', 'admin_pass_hash': ADMIN_HASH},
+        {'admin_user': 'admin', 'admin_pass_hash': ADMIN_HASH, 'admin_token': 'admin-token'},
     )
     _write_json(
         paths['USERS_FILE'],
@@ -147,6 +147,27 @@ def test_admin_login_returns_allowlisted_json_and_generation_bound_cookie(
     assert ADMIN_HASH not in response.text
     assert 'fixture-correct' not in response.text
     _assert_api_security_headers(response)
+
+
+def test_admin_bearer_exchange_mints_a_generation_bound_cookie(login_state):
+    services = LegacyPanelServices(ss)
+    reply = services.exchange_admin_token(
+        headers={'Host': 'panel.test'},
+        path='/admin',
+        token='admin-token',
+    )
+    assert reply.cookie.startswith('sid=')
+    assert 'HttpOnly' in reply.cookie
+    sessions = json.loads(login_state['SESSIONS_FILE'].read_text(encoding='utf-8'))
+    stored = next(iter(sessions.values()))
+    assert stored['user'] == 'admin'
+    assert stored['credential_generation'] == ss._credential_generation(ADMIN_HASH)
+    assert (
+        services.exchange_admin_token(
+            headers={'Host': 'panel.test'}, path='/admin', token='wrong-token'
+        )
+        is None
+    )
 
 
 def test_admin_login_preserves_first_value_precedence_and_ignores_redirect_input(
@@ -319,7 +340,7 @@ def test_api_security_headers_exactly_match_real_legacy_invariants(
         legacy = _legacy_request(server, 'GET', '/login')
     api = login_client.post('/api/v1/login', data={})
 
-    assert legacy.status == 200
+    assert legacy.status == 404
     assert {name: legacy.headers[name] for name in INVARIANT_SECURITY_HEADERS} == (
         INVARIANT_SECURITY_HEADERS
     )

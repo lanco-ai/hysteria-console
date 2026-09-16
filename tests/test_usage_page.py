@@ -123,7 +123,7 @@ def test_admin_usage_page_html_contains_three_charts(tmp_path, monkeypatch):
     assert 'class="hourly-bars"' in html_out
     assert 'class="heatmap"' in html_out
     assert 'class="spark"' in html_out
-    assert 'usage.js' in html_out
+    assert 'usage.js' not in html_out
     assert 'id="usage-history"' in html_out
     assert 'data-url="/admin/usage-history"' in html_out
     assert 'daily-table-collapsed' not in html_out

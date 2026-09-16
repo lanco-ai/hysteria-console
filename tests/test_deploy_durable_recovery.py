@@ -325,11 +325,10 @@ def test_snapshot_accepts_a_strict_root_owned_allowlist_file(recovery):
     assert payload["allowlist"] == [str(first), str(second)]
 
 
-def test_snapshot_accepts_exact_deploy_static_artifacts(recovery):
+def test_snapshot_accepts_exact_deploy_runtime_artifacts(recovery):
     static_artifacts = [
-        "/root/hysteria/static/home.js",
-        "/root/hysteria/static/fonts/inter-var.woff2",
-        "/root/hysteria/static/fonts/jetbrains-mono.woff2",
+        "/root/hysteria/react_server.py",
+        "/root/hysteria/subscription_service.py",
     ]
     prepared = recovery["run"]("prepare")
     assert prepared.returncode == 0, prepared.stderr

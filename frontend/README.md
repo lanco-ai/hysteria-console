@@ -9,7 +9,7 @@ immutable assets under `/static/react/assets/`.
 
 The explicit React document allow-list covers:
 
-- `/`, `/login`, `/logout`, `/user/logout`
+- `/`, `/login`, `/user/login`, `/logout`, `/user/logout`
 - `/user/panel`, `/user/change-password`
 - `/admin`, `/admin/logs`, `/admin/settings`, `/admin/usage`, `/admin/health`
 - `/admin/incidents`, `/admin/config`, `/admin/rules`,
@@ -22,14 +22,11 @@ cookie-authenticated `/api/v1/*` adapters.
 ## Asset ownership
 
 `frontend/src/styles/index.css` imports the ordered sections listed in
-`hysteria/styles/manifest.json`. Vite emits a hashed CSS file alongside the
-hashed JavaScript entry in `frontend/dist/assets`. React documents do not load
-`/static/style.css`, `/static/shell.js`, `/static/ui-core.js`, or any other
-legacy page script.
-
-The legacy bundle (`hysteria/admin.css` and its scripts) remains deployed only
-for compatibility pages while those endpoints are retired separately. It is
-not part of the React document runtime.
+`frontend/src/styles/manifest.json`. Vite emits hashed CSS, JavaScript, and
+font assets in `frontend/dist/assets`. React documents do not load
+`/static/style.css` or any legacy page script. The old CSS build chain and
+page-specific JavaScript were removed; `/static/style.css` and retired script
+URLs return 404 from the compatibility listener.
 
 ## Compatibility boundary
 
@@ -42,8 +39,10 @@ must not be removed during the React migration:
   JSON/download routes
 
 Nginx keeps these locations separate from `/static/react/assets/` and the
-`/api/v1/*` FastAPI routes. The existing certificates, domain, 443/9444
-listeners, proxy configuration, and backend domain services are unchanged.
+`/api/v1/*` FastAPI routes. Direct browser document paths on internal 8081 are
+explicitly rejected so the Python service cannot emit a second HTML frontend.
+The existing certificates, domain, 443/9444 listeners, proxy configuration,
+and backend domain services are unchanged.
 
 ## Checks
 

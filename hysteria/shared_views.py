@@ -6,12 +6,9 @@ import html
 from dataclasses import dataclass
 from typing import Callable
 
-import web_assets
-
 
 @dataclass(frozen=True)
 class Context:
-    BASE_CSS_ETAG: str
     CYCLE_LENGTH_MAX: int
     CYCLE_LENGTH_MIN: int
     PASSWORD_MAX_LENGTH: int
@@ -63,7 +60,6 @@ def render_user_state_conflict(target, host, draft=None, *, render_admin_shell):
 
 def html_page(ctx: Context, title, body, body_class=''):
     cls = f' class="{body_class}"' if body_class else ''
-    css_version = ctx.BASE_CSS_ETAG.strip('"')
     page_body = (
         body
         if body_class == 'has-shell'
@@ -78,8 +74,6 @@ def html_page(ctx: Context, title, body, body_class=''):
         f'<meta name="color-scheme" content="light">'
         f'<meta name="theme-color" content="#F8F7F3">'
         f'<title>{html.escape(title)}</title>'
-        f'<link rel="stylesheet" href="/static/style.css?v={css_version}">'
-        f'{web_assets.script_tag("ui-core")}'
         f'</head><body{cls}>{page_body}</body></html>'
     )
 

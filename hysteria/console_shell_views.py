@@ -4,8 +4,6 @@ import html
 from dataclasses import dataclass
 from typing import Callable
 
-import web_assets
-
 
 @dataclass(frozen=True)
 class Context:
@@ -101,9 +99,7 @@ def render_admin_shell(
     nav_items = ''.join(nav_parts)
     badge_html = f'<span class="badge">{html.escape(badge)}</span>' if badge else ''
     sub_html = f'<small>{html.escape(subtitle)}</small>' if subtitle else ''
-    body = f"""{web_assets.script_tag('shell-preferences', defer=False)}
-{web_assets.script_tag('shell')}
-<a class="skip-link" href="#main-content">跳到主内容</a>
+    body = f"""<a class="skip-link" href="#main-content">跳到主内容</a>
 <div class="app">
 <aside class="sidebar" id="sidebar">
   <div class="sidebar-brand">

@@ -119,13 +119,8 @@ def test_user_panel_without_session_shows_share_link_prompt(tmp_path, monkeypatc
     _configure_state(tmp_path, monkeypatch, users={"alice": _alice()})
     with _running_server() as server:
         status, _h, body = _request(server, "GET", "/user/panel")
-    html = body.decode("utf-8")
-    assert status == 403
-    assert "请使用管理员提供的专属链接" in html
-    assert "<input" not in html.lower()
-    assert "alice" not in html
-    assert 'name="token"' not in html
-    assert 'href="/login"' in html
+    assert status == 404
+    assert body.decode("utf-8") == "此网页已由 React 前端提供，请访问公开面板地址。"
 
 
 def test_panel_token_exchange_still_creates_session(tmp_path, monkeypatch):
@@ -203,11 +198,9 @@ def test_admin_copy_button_exposes_unique_share_link(tmp_path, monkeypatch):
     assert 'data-copy="https://panel.test/panel/bob?token=bob-token"' in bob_row
     assert "alice-token" not in bob_row
 
-    poll_js = (Path(ss.__file__).parent / "admin_poll.js").read_text(
-        encoding="utf-8",
-    )
-    assert "anchor.setAttribute('href', url);" in poll_js
-    assert "copyBtn.dataset.copy = url;" in poll_js
+    # Copy-link behavior is implemented by the React overview; the retired
+    # admin_poll.js compatibility asset must not be present.
+    assert not (Path(ss.__file__).parent / "admin_poll.js").exists()
 
 
 def test_landing_write_rejects_overlong_and_control_chars():

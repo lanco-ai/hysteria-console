@@ -28,7 +28,7 @@ const REACT_PREVIEW_PREFIX = '/__react';
 // Keep preview aliases explicit while allowing the same build to serve the
 // production document paths without a reverse-proxy pathname rewrite.
 const REACT_PREVIEW_ROUTES = [
-  '/__react/', '/__react/login', '/__react/logout', '/__react/user/logout',
+  '/__react/', '/__react/login', '/__react/user/login', '/__react/logout', '/__react/user/logout',
   '/__react/user/change-password', '/__react/user/panel', '/__react/admin',
   '/__react/admin/logs', '/__react/admin/settings', '/__react/admin/usage',
   '/__react/admin/health', '/__react/admin/incidents', '/__react/admin/config',
@@ -42,7 +42,7 @@ void REACT_PREVIEW_USER_DETAIL_PREFIX;
 const REACT_DOCUMENT_ROUTES = new Set([
   // Login is intentionally left as a document navigation: the server adds
   // the configured password limit to that bootstrap document.
-  '/', '/logout', '/user/logout', '/user/change-password', '/user/panel',
+  '/', '/logout', '/login', '/user/login', '/user/logout', '/user/change-password', '/user/panel',
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
   '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses',
 ]);
@@ -141,6 +141,12 @@ function applyRouteDocument(route: string): void {
   } else if (route === '/login') {
     document.title = '管理员登录 · Hysteria';
     document.body.className = 'page-auth page-admin-login';
+  } else if (route === '/user/login') {
+    document.title = '用户登录 · Hysteria';
+    // The user login intentionally shares the hardened split-login layout;
+    // retain the layout's existing style scope while exposing a semantic
+    // realm class for selectors and diagnostics.
+    document.body.className = 'page-auth page-admin-login page-user-login';
   } else if (route === '/logout' || route === '/user/logout') {
     document.title = '确认退出';
     document.body.removeAttribute('class');
@@ -178,6 +184,13 @@ function RouteContent({ route }: { route: string }) {
       throw new Error('Invalid login password length');
     }
     return <LoginPage passwordMaxLength={passwordMaxLength}/>;
+  }
+  if (route === '/user/login') {
+    const passwordMaxLength = Number(appRoot.dataset.passwordMaxLength);
+    if (!Number.isInteger(passwordMaxLength) || passwordMaxLength <= 0) {
+      throw new Error('Invalid login password length');
+    }
+    return <LoginPage passwordMaxLength={passwordMaxLength} realm="user"/>;
   }
   if (route === '/logout' || route === '/user/logout') {
     return <LogoutPage realm={route === '/logout' ? 'admin' : 'user'} publicHost={publicHost}/>;

@@ -3,7 +3,7 @@
 from typing import Callable
 
 
-def render_home(*, html_page: Callable[..., str], asset_version: str) -> str:
+def render_home(*, html_page: Callable[..., str]) -> str:
     """Public product overview with explicitly illustrative, non-live previews."""
     body = """<header class="site-header">
   <a href="/" class="site-brand"><span aria-hidden="true">H</span><strong>Hysteria<small>NETWORK CONSOLE</small></strong></a>
@@ -81,5 +81,4 @@ def render_home(*, html_page: Callable[..., str], asset_version: str) -> str:
 <section class="site-closing"><div><p class="site-eyebrow">LESS FRICTION. MORE CLARITY.</p><h2>让网络管理，回归简单。</h2><p>从一个清晰的控制台开始。</p></div><a href="/login" class="site-button">进入控制台 <span aria-hidden="true">→</span></a></section>
 </main>
 <footer class="site-footer"><a href="/" class="site-footer-brand">Hysteria <span>Network Console</span></a><span>连接 · 洞察 · 管理</span></footer>"""
-    body += '<script src="/static/home.js?v=' + asset_version + '" defer></script>'
     return html_page('Hysteria · 连接网络，掌控全局', body, body_class='page-home page-site')

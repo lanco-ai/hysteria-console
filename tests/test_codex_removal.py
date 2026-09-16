@@ -19,5 +19,7 @@ def test_admin_navigation_has_no_retired_quota_link(tmp_path, monkeypatch):
     cookie = {'Cookie': f'sid={ss.create_session()}'}
     with _running_server() as server:
         response = _request(server, 'GET', '/admin', headers=cookie)
-    assert response.status == 200
+    # Browser documents are owned by the React listener; the compatibility
+    # listener must not fall back to the retired Python shell.
+    assert response.status == 404
     assert b'/admin/codex' not in response.body

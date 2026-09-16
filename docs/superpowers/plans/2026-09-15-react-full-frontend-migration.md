@@ -1,10 +1,14 @@
 # React 全前端迁移实施计划
 
+> 状态：已实施（2026-09-16）。以下步骤是迁移历史记录；现行维护请参阅
+> `frontend/README.md` 与 `deploy.sh`。计划中保留 legacy HTML/CSS 的条目已由
+> 后续阶段完成并不再适用于生产部署。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 Vite 构建的 React 资源独立提供所有网页页面，同时保持订阅、面板交换、CSV、证据下载及后端 API 合同不变。
 
-**Architecture:** `hysteria/styles/manifest.json` 继续作为 CSS 顺序的唯一来源；React 通过 `frontend/src/styles/index.css` 导入这些源并由 Vite 输出 hash CSS。FastAPI 仅提供 React 文档壳和 `/static/react/assets`，旧 Python 服务继续提供 `/sub/*`、`/panel/*`、CSV、证据及登记的兼容 JSON，直到后续路由退役工作单独完成。
+**Architecture:** `frontend/src/styles/manifest.json` 是 CSS 顺序来源；React 通过 `frontend/src/styles/index.css` 导入这些源并由 Vite 输出 hash CSS。FastAPI 提供 React 文档壳和 `/static/react/assets`，兼容服务仅提供 `/sub/*`、`/panel/*`、CSV、证据及登记的 JSON/API。
 
 **Tech Stack:** React 19.3, TypeScript 7.0, Vite 8.3, FastAPI/Uvicorn, Python pytest, Playwright browser checks.
 
@@ -15,7 +19,7 @@
 - 不修改 provider、模型、权限、证书、域名、443/9444 或代理配置。
 - 不删除订阅、面板交换、CSV、证据下载、模板存储或后端领域服务。
 - React 文档路由必须显式白名单；未知路径不得 SPA fallback。
-- 旧 `hysteria/admin.css` 与 legacy 脚本在兼容页面仍需要期间继续部署。
+- 旧 `hysteria/admin.css` 与 legacy 页面脚本已删除；8081 不再提供浏览器文档。
 - 每个实现任务遵循 RED → GREEN → REFACTOR，并只提交该任务相关文件。
 
 ---

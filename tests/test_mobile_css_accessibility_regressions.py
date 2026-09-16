@@ -2,7 +2,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CSS = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
+CSS = "\n".join(
+    (ROOT / "frontend/src/styles/sections" / name).read_text(encoding="utf-8")
+    for name in (
+        "07-overview-users.css",
+        "13-responsive.css",
+        "16-user-panel.css",
+    )
+)
 
 
 def _block(source: str, marker: str) -> str:

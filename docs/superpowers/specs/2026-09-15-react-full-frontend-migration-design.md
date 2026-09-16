@@ -1,5 +1,9 @@
 # React 全前端迁移设计
 
+> 状态：已实施（2026-09-16）。本文保留为设计历史；当前部署以
+> `frontend/README.md`、`deploy.sh` 和 React release 校验为准。文中的
+> “暂时保留 legacy 页面/样式”仅描述迁移前状态，不是现行部署指引。
+
 ## 目标
 
 让 React/Vite 成为所有网页文档（公共首页、登录、管理员控制台、用户面板及深链接）的唯一前端运行时和样式资源所有者，同时保留订阅、面板交换、CSV、证据下载及现有后端 API 的兼容合同。
@@ -7,15 +11,15 @@
 ## 现状与约束
 
 - React 19 + TypeScript + Vite 已覆盖 `/`、`/login`、`/logout`、`/user/*` 和 `/admin/*` 页面；路由由 `frontend/src/main.tsx` 的显式路径表处理。
-- `frontend/index.html` 仍通过 `/static/style.css` 外链 `hysteria/admin.css`；Vite 构建目前只产生 JS，因此页面运行时仍依赖 legacy 静态服务。
-- `hysteria/styles/*.css` 与 `hysteria/admin.css` 同时服务旧 Python HTML；`/sub/`、`/panel/`、CSV、证据和兼容 `.json` 端点不能因迁移页面而中断。
+- 迁移前 `frontend/index.html` 曾通过 `/static/style.css` 外链旧样式；现已改为 Vite 哈希 CSS，旧资源不再由生产服务提供。
+- 旧样式源码已迁入 `frontend/src/styles/`；`/sub/`、`/panel/`、CSV、证据和兼容 `.json` 端点仍保持后端合同。
 - 当前生产 Nginx 已把 React 文档和 `/api/v1/*` 指向 8083，兼容下载与旧 JSON 指向 8081；这个边界继续保留，迁移期间支持原子回滚。
 
 ## 方案
 
 ### 样式资源
 
-以 `hysteria/styles/manifest.json` 为唯一 CSS 顺序来源，在 `frontend/src/styles/index.css` 中按 manifest 顺序导入现有分段。`main.tsx` 导入该入口，Vite 生成带 hash 的 CSS 并写入 `frontend/dist/assets`。React 文档不再声明 `/static/style.css`；`hysteria/admin.css` 和 `/static/style.css` 暂时保留为 legacy 兼容产物，直到旧文档路由完全退役。
+以迁入 `frontend/src/styles/manifest.json` 为 CSS 顺序来源，在 `frontend/src/styles/index.css` 中按 manifest 顺序导入分段。`main.tsx` 导入该入口，Vite 生成带 hash 的 CSS 并写入 `frontend/dist/assets`。React 文档不声明 `/static/style.css`；旧 Python 文档路由和旧静态资源已退役。
 
 ### 页面与后端边界
 
@@ -27,7 +31,7 @@
 ## 错误与回滚
 
 - Vite 构建必须在 dist 中产生 CSS 资源；缺失或仍含 `/static/style.css` 的构建由静态门禁拒绝发布。
-- React 静态资源通过 `/static/react/assets/` 的 immutable 路径提供，旧 CSS 继续由 8081 提供，避免兼容页面白屏。
+- React 静态资源通过 `/static/react/assets/` 的 immutable 路径提供；8081 仅保留 API/下载合同，浏览器文档和旧静态资源返回明确的 404。
 - 部署先写入新 release，再原子更新 `panel/current`；浏览器 smoke 失败时恢复上一 release 指针，不修改证书、域名、443/9444 或订阅状态。
 
 ## 验收

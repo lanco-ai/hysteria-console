@@ -205,16 +205,22 @@ def test_user_password_login_reaches_clean_panel_url(tmp_path, monkeypatch):
         })
         panel = conn.getresponse()
         body = panel.read().decode()
-        assert panel.status == 200
-        assert '用户面板' in body
-        assert '/user/panel.json' in body
-        assert 'href="/user/change-password"' in body
-        assert 'method="post" action="/user/logout"' in body
+        assert panel.status == 404
+        assert panel.getheader('Content-Type').startswith('text/plain')
+        assert 'React' in body
+
+        conn.request('GET', '/user/panel.json', headers={
+            'Host': 'panel.test', 'Cookie': cookie.split(';', 1)[0],
+        })
+        panel_json = conn.getresponse()
+        panel_json_body = json.loads(panel_json.read().decode())
+        assert panel_json.status == 200
+        assert {'used_bytes', 'total_bytes', 'remain_bytes', 'percent'} <= set(panel_json_body)
 
         conn.request('GET', '/user/panel', headers={'Host': 'panel.test'})
         denied = conn.getresponse()
         denied.read()
-        assert denied.status == 403
+        assert denied.status == 404
         assert denied.getheader('Location') is None
         conn.close()
     finally:
@@ -275,18 +281,15 @@ def test_user_must_change_initial_password_before_opening_panel(tmp_path, monkey
         })
         forced = conn.getresponse()
         forced.read()
-        assert forced.status == 302
-        assert forced.getheader('Location') == '/user/change-password'
+        assert forced.status == 404
 
         conn.request('GET', '/user/change-password', headers={
             'Host': 'panel.test', 'Cookie': old_cookie,
         })
         change_page = conn.getresponse()
         body = change_page.read().decode()
-        assert change_page.status == 200
-        assert 'action="/user/change-password"' in body
-        assert '当前密码' in body
-        assert '新密码' in body
+        assert change_page.status == 404
+        assert 'React' in body
 
         change = 'current=12345678&new=a-new-password&confirm=a-new-password'
         conn.request('POST', '/user/change-password', body=change, headers={
@@ -586,10 +589,12 @@ def test_user_panel_wires_live_refresh_poll(tmp_path, monkeypatch):
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
     assert '/panel/alice.json?token=tok' in page
-    assert '/static/user-poll.js?v=' in page
+    assert '/static/user-poll.js' not in page
     assert 'data-poll-url="/panel/alice.json?token=tok"' in page
     for role in ('used', 'remain', 'online', 'percent', 'bar', 'txrx', 'poll-status'):
         assert f'data-role="{role}"' in page
+    source = (Path(ss.__file__).resolve().parents[1] / 'frontend/src/features/user/UserPanelPage.tsx').read_text(encoding='utf-8')
+    assert 'useReadResource' in source
 
 
 def test_build_panel_json_payload_schema_and_values(tmp_path, monkeypatch):
@@ -975,7 +980,9 @@ def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
     assert 'http://h/sub/alice?token=tok&amp;profile=work' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=lowdata' in page
     assert 'http://h/sub/alice?token=tok&amp;profile=safe' in page
-    assert '/static/user-panel.js?v=' in page
+    assert '/static/user-panel.js' not in page
+    source = (Path(ss.__file__).resolve().parents[1] / 'frontend/src/features/user/UserPanelPage.tsx').read_text(encoding='utf-8')
+    assert 'subscription_profiles' in source
 
 
 def test_protocol_hourly_accumulator_records_source_totals(tmp_path, monkeypatch):
@@ -1226,11 +1233,12 @@ def test_resume_expired_temporary_disables_reenables_user(tmp_path, monkeypatch)
     assert saved['alice']['disabled'] is False
 
 
-def test_admin_poll_js_confirms_destructive_admin_actions():
-    text = (Path(ss.__file__).resolve().parent / 'admin_poll.js').read_text(encoding='utf-8')
-    assert "action === 'rotate-user-token'" in text
-    assert "action === 'disable-user'" in text
-    assert 'ev.submitter || f.__pendingSubmitter || null' in text
+def test_react_admin_actions_confirm_destructive_operations():
+    text = (Path(ss.__file__).resolve().parents[1] / 'frontend/src/features/network-admin/overview/OverviewTable.tsx').read_text(encoding='utf-8')
+    assert "window.confirm" in text
+    assert "rotate-token" in text
+    assert "toggle-user" in text
+    assert "此操作不可撤销" in text
 
 
 def test_alerts_test_kind_has_friendly_message():
@@ -1529,7 +1537,7 @@ def test_render_user_panel_expired_shows_banner_and_omits_poll(tmp_path, monkeyp
     assert '/panel/alice.json' not in page
 
 
-def test_render_user_panel_enabled_still_has_poll(tmp_path, monkeypatch):
+def test_render_user_panel_enabled_has_no_retired_poll_script(tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
@@ -1539,8 +1547,10 @@ def test_render_user_panel_enabled_still_has_poll(tmp_path, monkeypatch):
     (tmp_path / 'meta.json').write_text('{}')
     cfg = {'sub_token': 'tok', 'monthly_quota_bytes': 1 << 30, 'max_devices': 2}
     page = ss.render_user_panel('h', 'http://h', 'alice', 'tok', cfg)
-    assert '/static/user-poll.js?v=' in page
+    assert '/static/user-poll.js' not in page
     assert '<div class="err"' not in page
+    source = (Path(ss.__file__).resolve().parents[1] / 'frontend/src/features/user/UserPanelPage.tsx').read_text(encoding='utf-8')
+    assert 'useReadResource' in source
 
 
 # F3: /admin/add reset-token construction preserves `disabled`.
@@ -1586,7 +1596,7 @@ def test_user_panel_poll_url_escapes_left_angle(tmp_path, monkeypatch):
     page = ss.render_user_panel('h', 'http://h', 'a<b', 'tok', cfg)
     # Attribute encoding must preserve the URL without injecting HTML.
     assert 'data-poll-url="/panel/a&lt;b.json?token=tok"' in page
-    assert '/static/user-poll.js?v=' in page
+    assert '/static/user-poll.js' not in page
     assert 'data-poll-url="/panel/a<b' not in page
 
 

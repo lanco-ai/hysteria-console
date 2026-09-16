@@ -37,6 +37,10 @@ REACT_PAGES = {
     '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
     '/__react/admin/user/demo_alex': ('demo_alex · 用量画像', 'has-shell'),
     '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
+    '/__react/user/login': (
+        '用户登录 · Hysteria',
+        'page-auth page-admin-login page-user-login',
+    ),
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),
     '/__react/user/change-password': ('修改面板密码', 'page-auth'),
@@ -72,6 +76,15 @@ def _manifest_assets(dist):
         for imported in item.get('imports', []):
             if isinstance(imported, str):
                 pending.append(imported)
+    # CSS may reference local fonts or other emitted files that Vite does not
+    # list in the entry's ``css``/``imports`` arrays.  Keep the preview's
+    # allowlist in lock-step with the release directory while still rejecting
+    # missing and out-of-tree paths in ``_react_asset``.
+    assets_root = (dist / 'assets').resolve()
+    if assets_root.is_dir():
+        for file in assets_root.rglob('*'):
+            if file.is_file() and file.is_relative_to(dist.resolve()):
+                selected.add('/static/react/' + file.relative_to(dist).as_posix())
     return selected
 
 
@@ -183,7 +196,7 @@ def _handler(api_client, allowed_assets):
                 if payload.count(marker) != 1:
                     raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
                 payload = payload.replace(marker, replacement, 1)
-            if path == '/__react/login':
+            if path in ('/__react/login', '/__react/user/login'):
                 marker = f'data-public-host="{escaped_public_host}"'
                 replacement = (
                     marker + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'

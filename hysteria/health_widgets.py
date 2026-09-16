@@ -224,9 +224,9 @@ _CALIBRATION_CONFIDENCE_STYLES = {
     'none': 'background:var(--bg-subtle);color:var(--text-secondary);',
 }
 
-# admin.css has no `.num` rule, so these columns were left-aligned with
-# proportional figures. Keep the class for future styling but carry the
-# alignment inline so the table reads as numeric today.
+# The retired stylesheet had no dedicated `.num` rule, so these columns were
+# left-aligned with proportional figures. Keep the class for future styling
+# but carry the alignment inline so the table reads as numeric today.
 _NUM_CELL_ATTRS = ' class="num" style="text-align:right;font-variant-numeric:tabular-nums;"'
 
 

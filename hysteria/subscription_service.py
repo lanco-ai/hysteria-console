@@ -36,7 +36,6 @@ import admin_account_routes
 import admin_user_status_routes
 import admin_user_delete_routes
 import auth_views
-import web_assets
 import user_views
 import admin_views
 import console_shell_views
@@ -269,53 +268,6 @@ class CredentialRotationCommitted(state_store.CriticalStateUnavailable):
         self.new_token = str(new_token)
         self.user_config = dict(user_config)
         self.durability_uncertain = bool(durability_uncertain)
-
-
-_STATIC_DIR = Path(__file__).resolve().parent
-BASE_CSS_BYTES = (_STATIC_DIR / 'admin.css').read_bytes()
-BASE_CSS_ETAG = '"' + hashlib.sha1(BASE_CSS_BYTES).hexdigest()[:16] + '"'
-ADMIN_POLL_JS_BYTES = (_STATIC_DIR / 'admin_poll.js').read_bytes()
-ADMIN_POLL_JS_ETAG = '"' + hashlib.sha1(ADMIN_POLL_JS_BYTES).hexdigest()[:16] + '"'
-USAGE_JS_BYTES = (_STATIC_DIR / 'usage.js').read_bytes()
-USAGE_JS_ETAG = '"' + hashlib.sha1(USAGE_JS_BYTES).hexdigest()[:16] + '"'
-HOME_JS_BYTES = (_STATIC_DIR / 'static' / 'home.js').read_bytes()
-HOME_JS_ETAG = '"' + hashlib.sha1(HOME_JS_BYTES).hexdigest()[:16] + '"'
-
-# Strict whitelist for /static/fonts/*.woff2 — no path traversal, no arbitrary files.
-STATIC_FONT_FILES = {
-    '/static/fonts/inter-var.woff2': (
-        (_STATIC_DIR / 'static' / 'fonts' / 'inter-var.woff2').read_bytes(),
-        'font/woff2',
-    ),
-    '/static/fonts/jetbrains-mono.woff2': (
-        (_STATIC_DIR / 'static' / 'fonts' / 'jetbrains-mono.woff2').read_bytes(),
-        'font/woff2',
-    ),
-}
-
-
-def _etag_matches(raw_header, current_etag):
-    """Weakly compare an If-None-Match list with a generated asset ETag."""
-    current = str(current_etag or '').strip()
-    if current.startswith('W/'):
-        current = current[2:].strip()
-    for candidate in str(raw_header or '').split(','):
-        candidate = candidate.strip()
-        if candidate == '*':
-            return True
-        if candidate.startswith('W/'):
-            candidate = candidate[2:].strip()
-        if candidate and candidate == current:
-            return True
-    return False
-
-
-def _static_asset_cache_control(query, etag):
-    requested = str((query.get('v') or [''])[0])
-    current = str(etag or '').strip('"')
-    if requested and hmac.compare_digest(requested, current):
-        return 'public, max-age=31536000, immutable'
-    return 'public, max-age=86400'
 
 
 def load_json(path, default, *, required=None):
@@ -1454,7 +1406,6 @@ def render_panel_link_required():
 
 def _shared_views_context():
     return shared_views.Context(
-        BASE_CSS_ETAG=BASE_CSS_ETAG,
         CYCLE_LENGTH_MAX=CYCLE_LENGTH_MAX,
         CYCLE_LENGTH_MIN=CYCLE_LENGTH_MIN,
         PASSWORD_MAX_LENGTH=PASSWORD_MAX_LENGTH,
@@ -1587,7 +1538,6 @@ def flash_text(msg):
 def render_home(host):
     return public_views.render_home(
         html_page=html_page,
-        asset_version=HOME_JS_ETAG.strip('"'),
     )
 
 
@@ -1786,7 +1736,6 @@ def _usage_context():
         pct=pct,
         fmt_bytes=fmt_bytes,
         render_admin_shell=render_admin_shell,
-        asset_version=USAGE_JS_ETAG.strip('"'),
         user_revision=user_config_revision,
     )
 
@@ -2437,6 +2386,39 @@ def is_admin_ui_document(path):
     }
 
 
+def is_legacy_html_document(path):
+    """Identify browser documents retired from the compatibility listener.
+
+    The public React ASGI app owns these paths.  Keeping the explicit denylist
+    here prevents a direct request to the internal 8081 listener from falling
+    through to a Python HTML renderer while preserving every JSON/download
+    endpoint handled below.
+    """
+    if path in {
+        '/',
+        '/login',
+        '/user/login',
+        '/logout',
+        '/user/logout',
+        '/user/change-password',
+        '/user/panel',
+        '/admin',
+        '/admin/logs',
+        '/admin/settings',
+        '/admin/usage',
+        '/admin/usage-history',
+        '/admin/health',
+        '/admin/health.fragment',
+        '/admin/incidents',
+        '/admin/config',
+        '/admin/rules',
+        '/admin/landing-egresses',
+        '/admin/daily',
+    }:
+        return True
+    return path.startswith('/admin/user/') and not path.endswith('.json')
+
+
 def _parse_clash_rule(rule_str):
     """Parse 'TYPE,value,action[,extra]' into display parts."""
     parts = rule_str.split(',', 2)
@@ -2865,7 +2847,6 @@ def _user_views_context():
 
 def _admin_views_context():
     return admin_views.Context(
-        ADMIN_POLL_JS_ETAG=ADMIN_POLL_JS_ETAG,
         CYCLE_LENGTH_MAX=CYCLE_LENGTH_MAX,
         CYCLE_LENGTH_MIN=CYCLE_LENGTH_MIN,
         ONLINE_FILE=ONLINE_FILE,
@@ -2911,7 +2892,6 @@ def _console_shell_views_context():
 
 def _operations_views_context():
     return operations_views.Context(
-        ADMIN_POLL_JS_ETAG=ADMIN_POLL_JS_ETAG,
         PASSWORD_MAX_LENGTH=PASSWORD_MAX_LENGTH,
         PASSWORD_MIN_LENGTH=PASSWORD_MIN_LENGTH,
         RESET_LOG_FILE=RESET_LOG_FILE,
@@ -3010,27 +2990,6 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         if send_body:
             self.wfile.write(data)
-
-    def _serve_static(
-        self, payload_bytes, etag, ctype, send_payload, cache_control='public, max-age=86400'
-    ):
-        """Serve a cacheable static asset with ETag-aware 304 handling."""
-        if _etag_matches(self.headers.get('If-None-Match'), etag):
-            self.send_response(304)
-            self._send_security_headers()
-            self.send_header('ETag', etag)
-            self.send_header('Cache-Control', cache_control)
-            self.end_headers()
-            return
-        self.send_response(200)
-        self.send_header('Content-Type', ctype)
-        self.send_header('Content-Length', str(len(payload_bytes)))
-        self._send_security_headers()
-        self.send_header('Cache-Control', cache_control)
-        self.send_header('ETag', etag)
-        self.end_headers()
-        if send_payload:
-            self.wfile.write(payload_bytes)
 
     def redirect(self, to, cookie=None, status=302):
         if '\r' in str(to) or '\n' in str(to):
@@ -3199,67 +3158,24 @@ class Handler(BaseHTTPRequestHandler):
                     )
                     return
 
-        if path == '/static/style.css':
-            self._serve_static(
-                BASE_CSS_BYTES,
-                BASE_CSS_ETAG,
-                'text/css; charset=utf-8',
+        # Keep the authenticated JSON health snapshot available to existing
+        # operators while retiring the old HTML fragment document.
+        health_snapshot = path == '/admin/health.fragment' and q.get('snapshot') == ['1']
+        if is_legacy_html_document(path) and not health_snapshot:
+            # Preserve session-generation invalidation even though this
+            # compatibility listener no longer renders browser documents.
+            # The auth checks deliberately discard their boolean result; the
+            # response remains a non-HTML 404 for both authenticated and
+            # anonymous callers.
+            if path.startswith('/admin') or path == '/logout':
+                is_logged_in(self)
+            elif path.startswith('/user/'):
+                get_logged_in_user_context(self)
+            self.send_response_body(
+                404,
+                '此网页已由 React 前端提供，请访问公开面板地址。',
+                'text/plain; charset=utf-8',
                 send_payload,
-                cache_control=_static_asset_cache_control(q, BASE_CSS_ETAG),
-            )
-            return
-
-        if path == '/static/admin-poll.js':
-            self._serve_static(
-                ADMIN_POLL_JS_BYTES,
-                ADMIN_POLL_JS_ETAG,
-                'application/javascript; charset=utf-8',
-                send_payload,
-                cache_control=_static_asset_cache_control(q, ADMIN_POLL_JS_ETAG),
-            )
-            return
-
-        if path == '/static/usage.js':
-            self._serve_static(
-                USAGE_JS_BYTES,
-                USAGE_JS_ETAG,
-                'application/javascript; charset=utf-8',
-                send_payload,
-                cache_control=_static_asset_cache_control(q, USAGE_JS_ETAG),
-            )
-            return
-
-        if path == '/static/home.js':
-            self._serve_static(
-                HOME_JS_BYTES,
-                HOME_JS_ETAG,
-                'application/javascript; charset=utf-8',
-                send_payload,
-                cache_control=_static_asset_cache_control(q, HOME_JS_ETAG),
-            )
-            return
-
-        page_asset = web_assets.ASSETS.get(path)
-        if page_asset is not None:
-            payload, etag = page_asset
-            self._serve_static(
-                payload,
-                etag,
-                'application/javascript; charset=utf-8',
-                send_payload,
-                cache_control=_static_asset_cache_control(q, etag),
-            )
-            return
-
-        font_entry = STATIC_FONT_FILES.get(path)
-        if font_entry is not None:
-            font_bytes, font_ctype = font_entry
-            self._serve_static(
-                font_bytes,
-                '"' + hashlib.sha1(font_bytes).hexdigest()[:16] + '"',
-                font_ctype,
-                send_payload,
-                cache_control='public, max-age=31536000, immutable',
             )
             return
 

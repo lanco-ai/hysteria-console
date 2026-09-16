@@ -336,22 +336,6 @@ async function bounds(page, selector) {
   return box;
 }
 
-async function compareBounds(reactPage, legacyPage, width) {
-  for (const selector of ['#main-content', '.login-stage', '.login-layout', '.login-panel', '.login-form .field', '.auth-submit']) {
-    const actual = await bounds(reactPage, selector);
-    const expected = await bounds(legacyPage, selector);
-    for (const key of ['x', 'y', 'width', 'height']) {
-      assert(Math.abs(actual[key] - expected[key]) <= 2, `${selector} ${key} parity at ${width}px: React ${actual[key]}, legacy ${expected[key]}`);
-    }
-  }
-  assert.equal(await reactPage.locator('.login-story').isVisible(), await legacyPage.locator('.login-story').isVisible());
-  if (await reactPage.locator('.login-story').isVisible()) {
-    const actual = await bounds(reactPage, '.login-story');
-    const expected = await bounds(legacyPage, '.login-story');
-    for (const key of ['x', 'y', 'width', 'height']) assert(Math.abs(actual[key] - expected[key]) <= 2);
-  }
-}
-
 async function contentSnapshot(page) {
   const normalized = locator => locator.evaluate(element => element.innerHTML.replace(/>\s+</g, '><').trim());
   return {
@@ -369,7 +353,7 @@ async function contentSnapshot(page) {
   };
 }
 
-async function verifyLegacyParity(browser) {
+async function verifyResponsiveLogin(browser) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, reducedMotion: 'reduce' });
   for (const width of [1920, 1024, 390]) {
     const reactPage = await context.newPage();
@@ -378,31 +362,20 @@ async function verifyLegacyParity(browser) {
     await gotoLogin(reactPage, '#main-content');
     assert.equal(await reactPage.locator('#main-content').evaluate(element => element === document.activeElement), true);
 
-    const legacyPage = await context.newPage();
-    const legacyCollection = collectFailures(legacyPage, `legacy parity ${width}`);
-    await legacyPage.setViewportSize({ width, height: 1080 });
-    const response = await legacyPage.goto(`${baseUrl}/login#main-content`);
-    assert.equal(response.status(), 200);
-    await legacyPage.locator('#form-admin').waitFor();
-    await legacyPage.waitForFunction(() => document.readyState === 'complete');
-    assert.equal(await legacyPage.locator('#main-content').evaluate(element => element === document.activeElement), true);
-    assert.equal(await legacyPage.locator('script[src*="login.js"]').count(), 1);
-    assert.equal(await legacyPage.locator('script[src*="ui-core.js"]').count(), 1);
-    await reactPage.evaluate(() => scrollTo(0, 0));
-    await legacyPage.evaluate(() => scrollTo(0, 0));
-    assert.deepEqual(await contentSnapshot(reactPage), await contentSnapshot(legacyPage), `legacy/React content parity at ${width}px`);
-    await compareBounds(reactPage, legacyPage, width);
+    const current = await contentSnapshot(reactPage);
+    assert.equal(current.form.method, 'post');
+    assert.equal(current.form.action, '/login');
+    for (const selector of ['#main-content', '.login-stage', '.login-layout', '.login-panel', '.login-form .field', '.auth-submit']) {
+      const box = await bounds(reactPage, selector);
+      assert(box.width > 0 && box.height > 0, `${selector} must be visible at ${width}px`);
+    }
     assert.equal(await reactPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    assert.equal(await legacyPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
     if (screenshotDir) {
       fs.mkdirSync(screenshotDir, { recursive: true });
       await reactPage.screenshot({ path: path.join(screenshotDir, `react-login-${width}.png`), fullPage: true });
-      await legacyPage.screenshot({ path: path.join(screenshotDir, `legacy-login-${width}.png`), fullPage: true });
     }
     assertClean(reactCollection);
-    assertClean(legacyCollection);
     await reactPage.close();
-    await legacyPage.close();
   }
   await context.close();
 }
@@ -415,8 +388,8 @@ async function verifyLegacyParity(browser) {
     await verifyRealAuthentication(browser);
     await verifyFeedbackFaults(browser);
     await verifyLifecycleStaleSuppression(browser);
-    await verifyLegacyParity(browser);
-    console.log('PASS: React login real auth, validation, fault recovery, stale safety, isolation, and visual parity');
+    await verifyResponsiveLogin(browser);
+    console.log('PASS: React login real auth, validation, fault recovery, stale safety, isolation, and responsive layout');
   } finally {
     await browser.close();
   }

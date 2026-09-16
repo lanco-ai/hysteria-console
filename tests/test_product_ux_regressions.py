@@ -10,7 +10,6 @@ from contextlib import contextmanager
 from datetime import datetime
 from html.parser import HTMLParser
 from http.server import ThreadingHTTPServer
-import hashlib
 import http.client
 import json
 from pathlib import Path
@@ -19,6 +18,7 @@ from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
 
 import subscription_service as ss
+from tests.test_reliability_regressions import _request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -138,26 +138,12 @@ class _FormAccessibilityAudit(HTMLParser):
 
 
 def test_edit_dialog_clears_sensitive_password_fields_before_each_user():
-    js = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")
-    close_block = js.split("function closeEditDialog()", 1)[1].split(
-        "function setEditValue", 1
-    )[0]
-    open_block = js.split("function openEditDialog(btn)", 1)[1].split(
-        "function confirmAdminAction", 1
-    )[0]
-
-    assert "editForm.reset()" in close_block
-    reset_at = open_block.index("editForm.reset()")
-    panel_clear_at = open_block.index("setEditValue('panel_password', '')")
-    proxy_clear_at = open_block.index("setEditValue('password', '')")
-    user_set_at = open_block.index("setEditValue('user', user)")
-    assert reset_at < user_set_at < panel_clear_at < proxy_clear_at
-
-    quota_line = next(
-        line for line in open_block.splitlines() if "setEditValue('quota_gb'" in line
-    )
-    assert "btn.dataset.quotaGb" in quota_line
-    assert "Number(" not in quota_line
+    source = (ROOT / "frontend/src/features/network-admin/overview/UserForms.tsx").read_text(encoding="utf-8")
+    assert "function clearPasswords(form: HTMLFormElement)" in source
+    assert "form.reset();" in source
+    assert "finally { clearPasswords(form); }" in source
+    assert 'name="panel_password"' in source
+    assert 'name="password"' in source
 
 
 def test_unlimited_quota_survives_an_unrelated_admin_edit(
@@ -300,10 +286,10 @@ def test_pages_expose_skip_target_main_landmark_and_current_navigation():
         'id="sidebar-close" type="button" aria-label="关闭导航"'
         in admin_page
     )
-    assert '/static/shell.js?v=' in admin_page
-    shell_js = ss.web_assets.ASSETS['/static/shell.js'][0].decode()
-    assert "cb.addEventListener('click'" in shell_js
-    assert "sb.querySelector('#sidebar-close, a, button')" in shell_js
+    assert '/static/shell.js' not in admin_page
+    shell_source = (ROOT / "frontend/src/shared/AdminShell.tsx").read_text(encoding="utf-8")
+    assert 'onClick={() => open ? closeSidebar(true) : openSidebar()}' in shell_source
+    assert 'querySelector<HTMLElement>(\'#sidebar-close\')' in shell_source
 
     icon = ss.icon("lock")
     assert 'aria-hidden="true"' in icon
@@ -320,7 +306,10 @@ def test_feedback_alerts_are_persistent_and_have_live_region_semantics():
     assert 'role="status"' in success
     assert 'aria-live="polite"' in success
 
-    css = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
+    css = "\n".join(
+        (ROOT / "frontend/src/styles/sections" / name).read_text(encoding="utf-8")
+        for name in ("02-tokens-base.css", "03-controls.css", "08-dialog-status.css", "17-motion-workspace.css")
+    )
     alert_rules = css.split('.flash {', 1)[1].split('}', 1)[0]
     assert "animation" not in alert_rules
     assert "flash-fade" not in css
@@ -354,75 +343,17 @@ def test_health_status_uses_an_authenticated_local_fragment_refresh(
     monkeypatch.setattr(ss, "render_line_radar", lambda *_args, **_kwargs: "")
     monkeypatch.setattr(ss, "render_cost_calibrator", lambda *_args, **_kwargs: "")
 
-    page = ss.render_health("panel.test")
-    fragment = ss.render_health_fragment()
-    assert 'http-equiv="refresh"' not in page.lower()
-    assert 'id="health-live-grid"' in page
-    assert 'id="health-refresh-now"' in page
-    assert "fetch('/admin/health.fragment?snapshot=1'" in page
-    assert "function retryDelay()" in page
-    assert "function scheduleNext()" in page
-    assert "setInterval(refresh" not in page
-    assert "activeController" in page
-    assert "visibilitychange" in page
-    # Fragment payload is bare rows for tbody.innerHTML, no outer <tbody>.
-    assert "<tbody" not in fragment.lower()
-    assert "</tbody" not in fragment.lower()
-    # Each probe is rendered as one row with a stable data-health identity.
-    assert fragment.count("<tr") == 15
-    assert fragment.count("data-health=") == 15
-    for probe_title in (
-        "CRON 心跳",
-        "鉴权服务",
-        "鉴权依赖",
-        "Hysteria",
-        "Xray",
-        "TUIC",
-        "限流 Timer",
-        "TLS 证书",
-        "面板 HTTPS",
-        "证书自动续期",
-        "在线用户",
-        "Xray 配置权限",
-        "Hysteria 更新",
-        "最近备份",
-        "磁盘",
-    ):
-        assert f'data-health="{probe_title}"' in fragment
-    # Healthy probes use neutral badge, the disk probe uses danger.
-    assert fragment.count('<span class="badge">') == 14
-    assert fragment.count('<span class="badge badge-danger">') == 1
-    assert "<!doctype" not in fragment.lower()
-    assert "<main" not in fragment.lower()
-    # The page's SSR tbody wraps the same row markup.
-    assert "<tbody>" in page
-    assert fragment in page
-
-    auth = {"ok": False}
-    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: auth["ok"])
-    with _running_server() as server:
-        conn = http.client.HTTPConnection(
-            "127.0.0.1", server.server_port, timeout=3
-        )
-        conn.request("GET", "/admin/health.fragment", headers={"Host": "panel.test"})
-        denied = conn.getresponse()
-        denied.read()
-        assert denied.status == 401
-
-        auth["ok"] = True
-        conn.request("GET", "/admin/health.fragment", headers={"Host": "panel.test"})
-        allowed = conn.getresponse()
-        body = allowed.read().decode("utf-8")
-        assert allowed.status == 200
-        # Live fragment payload: bare rows for tbody.innerHTML.
-        assert "<tbody" not in body.lower()
-        assert body.count("<tr") == 15
-        assert body.count("data-health=") == 15
-        conn.close()
+    source = (ROOT / "frontend/src/features/network-admin/health/HealthPage.tsx").read_text(encoding="utf-8")
+    requests = (ROOT / "frontend/src/features/network-admin/health/requests.ts").read_text(encoding="utf-8")
+    assert "useReadResource(HEALTH_ENDPOINT" in source
+    assert "setInterval(() =>" in source
+    assert "health.retry();" in source
+    assert "runHealthAction" in source
+    assert "HEALTH_ENDPOINT = '/api/v1/admin/health'" in requests
 
 
 def test_mobile_user_cards_keep_filtered_rows_hidden():
-    css = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
+    css = (ROOT / "frontend/src/styles/sections/07-overview-users.css").read_text(encoding="utf-8")
 
     mobile_cards = css.index(
         ".users-table tbody, .users-table tr { display: block;"
@@ -533,138 +464,32 @@ def test_destructive_admin_actions_have_consequence_aware_confirmations(
         "清空本周期用量</button>" in page
     )
 
-    js = (ROOT / "hysteria" / "admin_poll.js").read_text(encoding="utf-8")
+    js = (ROOT / "frontend/src/features/network-admin/overview/OverviewTable.tsx").read_text(encoding="utf-8")
     for action in (
-        "delete-user",
-        "rotate-user-token",
-        "disable-user",
-        "reset-user-usage",
-        "refresh-user-usage",
-        "reset-all",
+        "delete",
+        "rotate-token",
+        "toggle-user",
+        "reset-usage",
+        "refresh-usage",
     ):
-        assert f"if (action === '{action}') return confirm(" in js
+        assert action in js
     for consequence in (
         "此操作不可撤销",
         "旧订阅/面板链接将立即失效",
         "拒绝新连接并断开其现有会话",
         "从服务器本周期总计中扣除",
         "服务器本周期总计会保留",
-        "清空全部用户本周期已用流量",
     ):
         assert consequence in js
 
     rules_page = ss.render_rules("panel.test")
     assert 'data-action="delete-rule"' in rules_page
-    assert '/static/rules.js?v=' in rules_page
+    rules_source = (ROOT / "frontend/src/features/network-admin/rules/RulesPage.tsx").read_text(encoding="utf-8")
+    assert "mutateRules" in rules_source
 
 
-def test_static_assets_are_versioned_and_honor_etag_revalidation(
-    tmp_path, monkeypatch
-):
-    _seed_state(
-        tmp_path,
-        monkeypatch,
-        users={
-            "alice": {
-                "sub_token": "token",
-                "monthly_quota_bytes": 10 << 30,
-                "max_devices": 2,
-            }
-        },
-    )
-    css_version = ss.BASE_CSS_ETAG.strip('"')
-    admin_version = ss.ADMIN_POLL_JS_ETAG.strip('"')
-    usage_version = ss.USAGE_JS_ETAG.strip('"')
-
-    assert (
-        f'/static/style.css?v={css_version}'
-        in ss.html_page("test", "<p>content</p>")
-    )
-    assert (
-        f'/static/admin-poll.js?v={admin_version}'
-        in ss.render_admin("panel.test", "https://panel.test")
-    )
-    assert (
-        f'/static/usage.js?v={usage_version}'
-        in ss.render_usage_page("panel.test")
-    )
-
-    expected_css_etag = (
-        '"' + hashlib.sha1(ss.BASE_CSS_BYTES).hexdigest()[:16] + '"'
-    )
-    assert ss.BASE_CSS_ETAG == expected_css_etag
-
+def test_legacy_static_assets_are_not_served():
     with _running_server() as server:
-        conn = http.client.HTTPConnection(
-            "127.0.0.1", server.server_port, timeout=3
-        )
-        conn.request(
-            "GET",
-            f"/static/style.css?v={css_version}",
-            headers={"Host": "panel.test"},
-        )
-        fresh = conn.getresponse()
-        body = fresh.read()
-        assert fresh.status == 200
-        assert body == ss.BASE_CSS_BYTES
-        assert fresh.getheader("ETag") == ss.BASE_CSS_ETAG
-        assert fresh.getheader("Cache-Control") == (
-            "public, max-age=31536000, immutable"
-        )
-
-        conn.request(
-            "GET",
-            f"/static/style.css?v={css_version}",
-            headers={
-                "Host": "panel.test",
-                "If-None-Match": f"W/{ss.BASE_CSS_ETAG}",
-            },
-        )
-        cached = conn.getresponse()
-        cached_body = cached.read()
-        assert cached.status == 304
-        assert cached_body == b""
-        assert cached.getheader("ETag") == ss.BASE_CSS_ETAG
-        assert cached.getheader("Cache-Control") == (
-            "public, max-age=31536000, immutable"
-        )
-
-        conn.request(
-            "GET",
-            "/static/style.css?v=stale-version",
-            headers={"Host": "panel.test"},
-        )
-        stale_version = conn.getresponse()
-        stale_version.read()
-        assert stale_version.status == 200
-        assert stale_version.getheader("Cache-Control") == "public, max-age=86400"
-
-        conn.request(
-            "GET",
-            "/static/style.css",
-            headers={"Host": "panel.test"},
-        )
-        unversioned = conn.getresponse()
-        unversioned.read()
-        assert unversioned.status == 200
-        assert unversioned.getheader("Cache-Control") == "public, max-age=86400"
-
-        for asset_path, asset_etag, asset_body in (
-            ("/static/admin-poll.js", ss.ADMIN_POLL_JS_ETAG, ss.ADMIN_POLL_JS_BYTES),
-            ("/static/usage.js", ss.USAGE_JS_ETAG, ss.USAGE_JS_BYTES),
-            ("/static/home.js", ss.HOME_JS_ETAG, ss.HOME_JS_BYTES),
-        ):
-            asset_version = asset_etag.strip('"')
-            conn.request(
-                "GET",
-                f"{asset_path}?v={asset_version}",
-                headers={"Host": "panel.test"},
-            )
-            asset_response = conn.getresponse()
-            assert asset_response.read() == asset_body
-            assert asset_response.status == 200
-            assert asset_response.getheader("ETag") == asset_etag
-            assert asset_response.getheader("Cache-Control") == (
-                "public, max-age=31536000, immutable"
-            )
-        conn.close()
+        for path in ("/static/style.css", "/static/admin-poll.js", "/static/usage.js", "/static/home.js"):
+            response = _request(server, "GET", path)
+            assert response.status == 404

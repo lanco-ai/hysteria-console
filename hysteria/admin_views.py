@@ -10,7 +10,6 @@ import admin_overview_data
 
 @dataclass(frozen=True)
 class Context:
-    ADMIN_POLL_JS_ETAG: str
     CYCLE_LENGTH_MAX: int
     CYCLE_LENGTH_MIN: int
     ONLINE_FILE: Path
@@ -410,7 +409,6 @@ def render_admin(
     </form>
   </div>
 </details>
-<script src="/static/admin-poll.js?v={ctx.ADMIN_POLL_JS_ETAG.strip('"')}" defer></script>
 '''
     poll_status = (
         '<button class="badge poll-status poll-status-button" data-role="admin-poll-status" '

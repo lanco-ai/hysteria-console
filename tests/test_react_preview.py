@@ -143,6 +143,17 @@ def test_react_preview_serves_exact_login_entry_with_password_limit(running_prev
     _assert_head_matches_get(base_url + '/__react/login')
 
 
+def test_react_preview_serves_user_login_entry_with_password_limit(running_preview):
+    _, base_url = running_preview
+    with urlopen(base_url + '/__react/user/login', timeout=5) as response:
+        page = response.read().decode()
+        assert response.headers.get_content_type() == 'text/html'
+        assert '<title>用户登录 · Hysteria</title>' in page
+        assert '<body class="page-auth page-admin-login page-user-login">' in page
+        assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
+    _assert_head_matches_get(base_url + '/__react/user/login')
+
+
 @pytest.mark.parametrize(
     ('path', 'title', 'body_class'),
     [

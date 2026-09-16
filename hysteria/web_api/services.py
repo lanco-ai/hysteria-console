@@ -78,6 +78,13 @@ class LoginReply:
 
 
 @dataclass(frozen=True, slots=True)
+class AdminTokenExchangeReply:
+    """One-time result for exchanging the admin bearer URL token."""
+
+    cookie: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
 class LogoutReply:
     cookie: str = field(repr=False)
 
@@ -155,6 +162,38 @@ class LegacyPanelServices:
             return LoginReply(result=result, cookie=cookie)
 
         return self._run_operation(login, post_path='/login')
+
+    def exchange_admin_token(self, *, headers, path, token):
+        """Mint the same admin session as the legacy bearer URL exchange.
+
+        The token is supplied by the document boundary and is never included
+        in the returned value or any loggable request path.  Invalid tokens
+        return ``None`` so the caller can continue through the normal session
+        guard and redirect anonymously.
+        """
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def exchange():
+            meta = service.load_meta()
+            expected = str(meta.get('admin_token') or '')
+            if not service._safe_secret_equal(str(token or ''), expected):
+                return None
+            generation = service._credential_generation(meta.get('admin_pass_hash'))
+            if not generation:
+                raise StateUnavailable
+            try:
+                sid = service.create_session('admin', generation)
+            except (service.state_store.StateStoreError, OSError) as exc:
+                raise StateUnavailable from exc
+            return AdminTokenExchangeReply(
+                cookie=service.session_cookie(
+                    sid,
+                    secure=http_utils.is_secure_request(request),
+                )
+            )
+
+        return self._run_operation(exchange, post_path='/admin')
 
     def submit_logout(
         self,

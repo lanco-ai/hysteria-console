@@ -359,7 +359,7 @@ def test_user_panel_sections_follow_its_h1_without_div_titles(
 
 
 def test_section_title_css_resets_heading_user_agent_styles():
-    styles = (ROOT / "hysteria" / "admin.css").read_text(encoding="utf-8")
+    styles = (ROOT / "frontend" / "src" / "styles" / "sections" / "10-admin-common.css").read_text(encoding="utf-8")
     match = re.search(
         r"^\.section-title \{(?P<body>[^}]*)\}",
         styles,

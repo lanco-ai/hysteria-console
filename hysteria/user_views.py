@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Callable
 
 import user_compat
-import web_assets
 
 
 @dataclass(frozen=True)
@@ -221,7 +220,7 @@ def render_user_panel(
         )
     # Inactive accounts never load the polling script or expose a poll URL.
     poll_attrs = '' if inactive else f' data-poll-url="{html.escape(json_path, quote=True)}"'
-    poll_script = '' if inactive else web_assets.script_tag('user-poll')
+    poll_script = ''
     if password_session:
         panel_link_hint = '此地址不含订阅令牌，其他设备需要先使用用户名和面板密码登录。'
     elif session_auth:
@@ -401,6 +400,5 @@ def render_user_panel(
 </section>
 
 </div>
-{web_assets.script_tag('user-panel')}
 {poll_script}'''
     return ctx.html_page(f'{user} 用户面板', body)

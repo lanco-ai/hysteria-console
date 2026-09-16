@@ -3,8 +3,6 @@
 import html
 from typing import Callable
 
-import web_assets
-
 _LOGIN_MESSAGES = {
     'invalid': '用户名或密码错误',
     'missing': '请输入用户名和密码',
@@ -93,7 +91,7 @@ def render_login(
   </div>
   <footer class="login-footer">Hysteria <span>／</span> Network Console</footer>
 </main>
-{web_assets.script_tag('login')}'''
+'''
     return html_page('管理员登录 · Hysteria', body, body_class='page-auth page-admin-login')
 
 

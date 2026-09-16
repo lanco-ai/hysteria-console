@@ -267,12 +267,9 @@ def test_token_panel_get_exchanges_query_for_revocable_clean_session(
     assert session["credential_generation"] == ss._credential_generation(
         "secret-token"
     )
-    assert clean.status == 200
-    assert "查看当前会话详情".encode("utf-8") in clean.body
-    assert "修改密码".encode("utf-8") not in clean.body
-    assert "退出登录".encode("utf-8") in clean.body
-    assert change_password.status == 302
-    assert change_password.headers["location"] == "/login"
+    assert clean.status == 404
+    assert clean.body == "此网页已由 React 前端提供，请访问公开面板地址。".encode("utf-8")
+    assert change_password.status == 404
 
 
 def test_admin_bearer_get_exchanges_to_clean_password_bound_session(
@@ -313,7 +310,7 @@ def test_admin_bearer_get_exchanges_to_clean_password_bound_session(
     assert session["credential_generation"] == ss._credential_generation(
         "unused-but-present"
     )
-    assert clean.status == 200
+    assert clean.status == 404
 
 
 def test_rotated_token_revokes_exchanged_panel_session(
@@ -353,7 +350,7 @@ def test_rotated_token_revokes_exchanged_panel_session(
             headers={"Cookie": f"usid={sid}"},
         )
 
-    assert stale.status == 403
+    assert stale.status == 404
     assert "location" not in stale.headers
     assert sid not in json.loads(
         state["USER_SESSIONS_FILE"].read_text(encoding="utf-8")
@@ -485,16 +482,12 @@ def test_inactive_password_session_gets_safe_status_page_and_no_live_data(
             headers={"Cookie": f"usid={sid}"},
         )
 
-    assert panel.status == 403
-    assert expected_message.encode("utf-8") in panel.body
+    assert panel.status == 404
+    assert panel.body == "此网页已由 React 前端提供，请访问公开面板地址。".encode("utf-8")
     assert b"never-render-this-token" not in panel.body
-    assert b"/static/user-poll.js?v=" not in panel.body
-    assert 'href="/user/change-password"'.encode() not in panel.body
-    assert "退出登录".encode("utf-8") in panel.body
     assert payload.status == 403
     assert json.loads(payload.body) == {"error": expected_error}
-    assert password_page.status == 302
-    assert password_page.headers["location"] == "/user/panel"
+    assert password_page.status == 404
 
 
 @pytest.mark.parametrize(
@@ -839,12 +832,9 @@ def test_self_rotation_delivers_new_token_in_clean_revocable_session(
     assert sessions["new-session"]["credential_generation"] == (
         ss._credential_generation("new-token")
     )
-    assert stale.status == 403
+    assert stale.status == 404
     assert "location" not in stale.headers
-    assert recovered.status == 200
-    assert "Token 已重置".encode("utf-8") in recovered.body
-    assert b"new-token" in recovered.body
-    assert b"old-token" not in recovered.body
+    assert recovered.status == 404
     assert kicked == [["alice"]]
 
 
@@ -954,9 +944,7 @@ def test_self_rotation_survives_committed_static_sync_failure(
     assert session["credential_generation"] == (
         ss._credential_generation("new-token")
     )
-    assert recovered.status == 200
-    assert "Xray/TUIC".encode("utf-8") in recovered.body
-    assert "Hysteria".encode("utf-8") in recovered.body
+    assert recovered.status == 404
     assert kicked == [["alice"]]
 
 
