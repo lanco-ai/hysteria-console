@@ -100,7 +100,7 @@ git commit -m "feat: add workbench document route contracts"
 - Create: `frontend/src/shared/session.ts`
 - Create: `frontend/src/features/auth/LoginModal.tsx`
 - Modify: `frontend/src/features/auth/loginRequest.ts` only if the modal needs an existing typed response extension
-- Test: `tests/session_contract.test.cjs` (create)
+- Modify: `tests/test_workbench_frontend_contract.py` (create)
 - Modify: `tests/react_login_browser.cjs`
 - Modify: `tests/react_home_browser.cjs`
 - Test: `tests/test_workbench_frontend_contract.py` (create)
@@ -135,7 +135,7 @@ Expected: the unit test passes in this task; browser tests are rerun in Task 5 a
 - [ ] **Step 7: Commit the session/modal slice after its focused tests are green.**
 
 ```bash
-git add frontend/src/shared/session.ts frontend/src/features/auth/LoginModal.tsx tests/session_contract.test.cjs tests/react_login_browser.cjs tests/react_home_browser.cjs
+git add frontend/src/shared/session.ts frontend/src/features/auth/LoginModal.tsx tests/test_workbench_frontend_contract.py tests/react_login_browser.cjs tests/react_home_browser.cjs
 git commit -m "feat: add workbench session gate and login modal"
 ```
 
