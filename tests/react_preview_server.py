@@ -26,7 +26,10 @@ from tests import workspace_preview_server as legacy_preview
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
     '/__react/admin': ('总览', 'has-shell'),
-    '/__react/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site'),
+    '/__react/': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/__react/auth': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/auth': ('Hysteria 工作台', 'has-shell page-workbench'),
     '/__react/admin/logs': ('清零日志', 'has-shell'),
     '/__react/admin/settings': ('设置', 'has-shell'),
     '/__react/admin/usage': ('流量分析', 'has-shell'),
@@ -36,16 +39,10 @@ REACT_PAGES = {
     '/__react/admin/rules': ('路由规则', 'has-shell'),
     '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
     '/__react/admin/user/demo_alex': ('demo_alex · 用量画像', 'has-shell'),
-    '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
-    '/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
-    '/__react/user/login': (
-        '用户登录 · Hysteria',
-        'page-auth page-admin-login page-user-login',
-    ),
-    '/user/login': (
-        '用户登录 · Hysteria',
-        'page-auth page-admin-login page-user-login',
-    ),
+    '/__react/login': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/login': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/__react/user/login': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/user/login': ('Hysteria 工作台', 'has-shell page-workbench'),
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),
     '/__react/user/change-password': ('修改面板密码', 'page-auth'),
@@ -238,7 +235,7 @@ def _handler(api_client, allowed_assets):
                 if payload.count(marker) != 1:
                     raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
                 payload = payload.replace(marker, replacement, 1)
-            if path in ('/__react/login', '/__react/user/login', '/login', '/user/login'):
+            if path in ('/__react/', '/__react/auth', '/__react/login', '/__react/user/login', '/login', '/user/login'):
                 marker = f'data-public-host="{escaped_public_host}"'
                 replacement = (
                     marker + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'

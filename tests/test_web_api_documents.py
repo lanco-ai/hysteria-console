@@ -109,7 +109,7 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
     with TestClient(create_app(StubDocumentServices(), react_dist=_dist(tmp_path))) as client:
         anonymous = client.get('/admin', follow_redirects=False)
         assert anonymous.status_code == 303
-        assert anonymous.headers['location'] == '/login'
+        assert anonymous.headers['location'] == '/login?next=%2Fadmin'
 
         admin = client.get('/admin', headers={'Cookie': 'sid=admin'})
         assert admin.status_code == 200
@@ -123,14 +123,15 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
 
         chat_anonymous = client.get('/admin/chat', follow_redirects=False)
         assert chat_anonymous.status_code == 303
-        assert chat_anonymous.headers['location'] == '/login'
+        assert chat_anonymous.headers['location'] == '/login?next=%2Fadmin%2Fchat'
         chat = client.get('/admin/chat', headers={'Cookie': 'sid=admin'})
         assert chat.status_code == 200
         assert '<title>AI 对话</title>' in chat.text
 
         user_login = client.get('/user/login')
         assert user_login.status_code == 200
-        assert '<title>用户登录 · Hysteria</title>' in user_login.text
+        assert '<title>Hysteria 工作台</title>' in user_login.text
+        assert '<body class="has-shell page-workbench">' in user_login.text
         assert 'data-password-max-length="128"' in user_login.text
 
         exchanged = client.get('/admin?token=admin-token&msg=from-link', follow_redirects=False)
@@ -140,7 +141,7 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
 
         invalid_exchange = client.get('/admin?token=wrong', follow_redirects=False)
         assert invalid_exchange.status_code == 303
-        assert invalid_exchange.headers['location'] == '/login'
+        assert invalid_exchange.headers['location'] == '/login?next=%2Fadmin'
 
         user = client.get('/user/panel', headers={'Cookie': 'usid=user'})
         assert user.status_code == 200
@@ -152,7 +153,7 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
 
         wrong_realm = client.get('/admin', headers={'Cookie': 'usid=user'}, follow_redirects=False)
         assert wrong_realm.status_code == 303
-        assert wrong_realm.headers['location'] == '/login'
+        assert wrong_realm.headers['location'] == '/login?next=%2Fadmin'
 
         password = client.get('/user/change-password', headers={'Cookie': 'usid=user'})
         assert password.status_code == 200

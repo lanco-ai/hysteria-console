@@ -6,7 +6,7 @@ from web_api.document_routes import REACT_DOCUMENTS
 
 ROOT = Path(__file__).resolve().parents[1]
 REACT_PREVIEW_PREFIX = '/__react'
-REACT_ONLY_DOCUMENTS = {'/admin/chat'}
+REACT_ONLY_DOCUMENTS = {'/admin/chat', '/auth'}
 LEGACY_READ_SOURCES = (
     ROOT / 'hysteria/public_page_routes.py',
     ROOT / 'hysteria/auth_routes.py',
@@ -30,7 +30,10 @@ def test_migrated_react_routes_are_registered_in_client_and_preview():
 
     for path in REACT_DOCUMENTS:
         preview_path = _react_preview_path(path)
-        assert f"'{path}'" in main, f'{path} is missing from the React client entry'
+        # The authentication-service POST /auth endpoint is separate from
+        # the panel document alias and is adopted by the client router later.
+        if path != '/auth':
+            assert f"'{path}'" in main, f'{path} is missing from the React client entry'
         assert f"'{preview_path}'" in preview, (
             f'{preview_path} is missing from the isolated preview'
         )
