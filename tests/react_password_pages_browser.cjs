@@ -275,7 +275,8 @@ async function verifyReadFailuresAndAccessNavigation(browser) {
   await goto(anonymous, '/__react/admin/settings');
   await anonymous.getByRole('dialog', { name: '登录控制台' }).waitFor();
   assert.equal(await anonymous.locator('.app').count(), 1, 'anonymous admin settings remains inside the shared workbench shell');
-  assert.equal(await anonymous.locator('.data-table').count(), 0, 'anonymous admin settings exposes no protected data table');
+  assert.equal(await anonymous.locator('.settings-page').count(), 0, 'anonymous admin settings exposes no protected settings page');
+  assert.equal(await anonymous.locator('form[action="/admin/change-password"]').count(), 0, 'anonymous admin settings exposes no administrator password form');
   await anonymous.close();
 
   const unknownContext = await browser.newContext({ viewport: { width: 1024, height: 900 } });

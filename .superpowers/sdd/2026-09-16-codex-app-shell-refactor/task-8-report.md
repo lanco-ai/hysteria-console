@@ -52,8 +52,8 @@ scenario expected a document navigation to `/login`; protected admin routes
 now retain the shared Shell and open the “登录控制台” `LoginModal` in place.
 
 The scenario now waits for that dialog and verifies one `.app` frame with no
-protected `.data-table`. All other password-page lifecycle behavior remains
-unchanged.
+protected `.settings-page` or administrator password form. All other
+password-page lifecycle behavior remains unchanged.
 
 - Before update: the focused suite waited for the retired `/login` navigation.
 - `npm run build:react`: **passed**.
