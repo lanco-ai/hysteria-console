@@ -1132,6 +1132,7 @@ def test_recovery_unit_is_a_fail_closed_pre_service_gate():
         "hysteria-porthop.service",
         "hysteria-tcp-mss.service",
         "hysteria-auth.service",
+        "hysteria-react.service",
         "hysteria-server.service",
         "hysteria-subscription.service",
         "hysteria-traffic-limiter.service",
@@ -1650,7 +1651,9 @@ systemctl() {{
   return 0
 }}
 die() {{ printf '%s\\n' "$*" >&2; exit 97; }}
+HY_UNIFIED_FASTAPI=1
 {declarations}
+CRITICAL_UNITS=(nginx.service hysteria-server.service hysteria-react.service xray.service tuic-server.service)
 {capture}
 {function}
 {quiesce_block}
