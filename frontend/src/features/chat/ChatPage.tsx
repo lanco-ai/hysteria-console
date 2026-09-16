@@ -22,7 +22,7 @@ type ChatSession = {
   updatedAt: number;
 };
 
-type ChatUsage = { day: string; today: number; total: number };
+type ChatUsage = { day: string; today: number; total: number; inputTokens: number; outputTokens: number };
 type Drawer = 'settings' | 'usage' | null;
 
 const STORAGE_KEY = 'hy2.chat.sessions.v1';
@@ -81,7 +81,7 @@ function usageDay() {
 }
 
 function loadUsage(): ChatUsage {
-  const empty = { day: usageDay(), today: 0, total: 0 };
+  const empty = { day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0 };
   try {
     const value: unknown = JSON.parse(localStorage.getItem(USAGE_KEY) || 'null');
     if (!value || typeof value !== 'object') return empty;
@@ -90,10 +90,26 @@ function loadUsage(): ChatUsage {
     const today = record.day === empty.day && typeof record.today === 'number' && Number.isFinite(record.today)
       ? Math.max(0, record.today)
       : 0;
-    return { day: empty.day, today, total };
+    const inputTokens = record.day === empty.day && typeof record.inputTokens === 'number' && Number.isFinite(record.inputTokens)
+      ? Math.max(0, record.inputTokens)
+      : 0;
+    const outputTokens = record.day === empty.day && typeof record.outputTokens === 'number' && Number.isFinite(record.outputTokens)
+      ? Math.max(0, record.outputTokens)
+      : 0;
+    return { day: empty.day, today, total, inputTokens, outputTokens };
   } catch {
     return empty;
   }
+}
+
+function responseUsage(payload: Record<string, unknown>): { inputTokens: number; outputTokens: number } {
+  const value = payload.usage;
+  if (!value || typeof value !== 'object') return { inputTokens: 0, outputTokens: 0 };
+  const usage = value as Record<string, unknown>;
+  const input = usage.prompt_tokens ?? usage.input_tokens;
+  const output = usage.completion_tokens ?? usage.output_tokens;
+  const valid = (tokenValue: unknown) => typeof tokenValue === 'number' && Number.isFinite(tokenValue) && tokenValue >= 0 ? tokenValue : 0;
+  return { inputTokens: valid(input), outputTokens: valid(output) };
 }
 
 function assistantText(payload: Record<string, unknown>): string {
@@ -261,12 +277,28 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     setMessage('');
     setBusy(true);
     setError('');
-    setUsage(currentUsage => ({ day: usageDay(), today: (currentUsage.day === usageDay() ? currentUsage.today : 0) + 1, total: currentUsage.total + 1 }));
+    setUsage(currentUsage => ({
+      ...currentUsage,
+      day: usageDay(),
+      today: (currentUsage.day === usageDay() ? currentUsage.today : 0) + 1,
+      total: currentUsage.total + 1,
+      inputTokens: currentUsage.day === usageDay() ? currentUsage.inputTokens : 0,
+      outputTokens: currentUsage.day === usageDay() ? currentUsage.outputTokens : 0,
+    }));
     try {
-      const reply = assistantText(await completeChat(nextMessages));
+      const response = await completeChat(nextMessages);
+      const reply = assistantText(response);
       if (!reply) throw new Error('第三方 API 没有返回文本。');
       const assistantMessage: ChatMessageData = { role: 'assistant', content: reply };
       setSessions(existing => existing.map(session => session.id === current.id ? { ...session, messages: [...nextMessages, assistantMessage], updatedAt: Date.now() } : session));
+      const tokenUsage = responseUsage(response);
+      if (tokenUsage.inputTokens || tokenUsage.outputTokens) {
+        setUsage(currentUsage => ({
+          ...currentUsage,
+          inputTokens: currentUsage.inputTokens + tokenUsage.inputTokens,
+          outputTokens: currentUsage.outputTokens + tokenUsage.outputTokens,
+        }));
+      }
     } catch (errorValue) {
       setError(errorValue instanceof Error ? errorValue.message : '发送失败');
     } finally {
@@ -316,7 +348,7 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     if (!window.confirm('清空全部本地聊天记录和请求计数？此操作不可撤销。')) return;
     setSessions([]);
     setActiveId('');
-    setUsage({ day: usageDay(), today: 0, total: 0 });
+    setUsage({ day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0 });
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* Storage is optional. */ }
     setSettingsFeedback('本地数据已清空');
   };
@@ -364,6 +396,6 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
       {error ? <div className="err" role="alert">{error}</div> : null}
     </section>
 
-    {drawer ? <div className="chat-drawer-layer"><button className="chat-drawer-backdrop" type="button" aria-label="关闭抽屉" onClick={() => setDrawer(null)} /><aside className="chat-drawer" role="dialog" aria-modal="true" aria-labelledby="chat-drawer-title"><header className="chat-drawer-header"><div><h2 id="chat-drawer-title">{drawer === 'settings' ? '设置' : 'AI 用量'}</h2><p>{drawer === 'settings' ? '低频配置集中在这里' : '只记录本地请求次数，不估算 Token'}</p></div><button className="btn btn-ghost btn-icon" type="button" aria-label="关闭设置" onClick={() => setDrawer(null)}>×</button></header>{drawer === 'settings' ? <ChatSettings settings={settings} models={models} modelsBusy={modelsBusy} modelsError={modelsError} busy={settingsBusy} testBusy={testBusy} feedback={settingsFeedback || (settingsError && !settings ? settingsError : '')} onSave={saveSettings} onRefreshModels={refreshModels} onTest={testConnection} onClearData={clearLocalData} /> : <div className="chat-usage"><div className="chat-usage-grid"><div><span>今日请求</span><strong>{usage.today}</strong></div><div><span>总请求</span><strong>{usage.total}</strong></div></div><div className="chat-usage-empty"><strong>暂无 Token 数据</strong><p>第三方 API 未返回 usage 时不会估算或伪造统计。</p></div></div>}</aside></div> : null}
+    {drawer ? <div className="chat-drawer-layer"><button className="chat-drawer-backdrop" type="button" aria-label="关闭抽屉" onClick={() => setDrawer(null)} /><aside className="chat-drawer" role="dialog" aria-modal="true" aria-labelledby="chat-drawer-title"><header className="chat-drawer-header"><div><h2 id="chat-drawer-title">{drawer === 'settings' ? '设置' : 'AI 用量'}</h2><p>{drawer === 'settings' ? '低频配置集中在这里' : '只记录本地请求次数，不估算 Token'}</p></div><button className="btn btn-ghost btn-icon" type="button" aria-label="关闭设置" onClick={() => setDrawer(null)}>×</button></header>{drawer === 'settings' ? <ChatSettings settings={settings} models={models} modelsBusy={modelsBusy} modelsError={modelsError} busy={settingsBusy} testBusy={testBusy} feedback={settingsFeedback || (settingsError && !settings ? settingsError : '')} onSave={saveSettings} onRefreshModels={refreshModels} onTest={testConnection} onClearData={clearLocalData} /> : <div className="chat-usage"><div className="chat-usage-grid"><div><span>今日请求</span><strong>{usage.today}</strong></div><div><span>总请求</span><strong>{usage.total}</strong></div></div>{usage.inputTokens || usage.outputTokens ? <div className="chat-usage-grid"><div><span>今日输入 tokens</span><strong>{usage.inputTokens}</strong></div><div><span>今日输出 tokens</span><strong>{usage.outputTokens}</strong></div></div> : <div className="chat-usage-empty"><strong>暂无 Token 数据</strong><p>第三方 API 未返回 usage 时不会估算或伪造统计。</p></div>}</div>}</aside></div> : null}
   </AdminShell>;
 }
