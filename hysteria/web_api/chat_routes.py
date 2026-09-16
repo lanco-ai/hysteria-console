@@ -92,10 +92,10 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
         del headers, path
         return store.update(**values)
 
-    def complete(*, headers, path, messages):
+    def complete(*, headers, path, messages, model, reasoning_effort):
         del headers, path
         settings = store.read()
-        return forward_chat(settings, messages)
+        return forward_chat(settings, messages, model=model, reasoning_effort=reasoning_effort)
 
     def models(*, headers, path):
         del headers, path
@@ -130,14 +130,7 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
                 'request_too_large' if too_large else 'bad_request',
                 status=413 if too_large else 400,
             )
-        allowed = {
-            'base_url',
-            'api_key',
-            'model',
-            'temperature',
-            'reasoning_enabled',
-            'reasoning_effort',
-        }
+        allowed = {'base_url', 'api_key', 'temperature'}
         if any(key not in allowed for key in payload):
             return _json_error('bad_request')
         values = {key: payload[key] for key in allowed if key in payload}
@@ -215,9 +208,15 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
             return denied
         try:
             payload = await _read_json(request)
-            if set(payload) != {'messages'}:
+            if set(payload) - {'messages', 'model', 'reasoning_effort'} or 'model' not in payload:
                 raise ChatSettingsError('invalid request')
             messages = validate_messages(payload['messages'])
+            model = payload['model']
+            if not isinstance(model, str) or not model.strip() or len(model.strip()) > 256:
+                raise ChatSettingsError('model is invalid')
+            reasoning_effort = payload.get('reasoning_effort', 'auto')
+            if not isinstance(reasoning_effort, str) or reasoning_effort not in ('auto', 'low', 'medium', 'high'):
+                raise ChatSettingsError('reasoning_effort is invalid')
         except ChatSettingsError as exc:
             too_large = 'large' in str(exc)
             return _json_error(
@@ -225,7 +224,7 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
                 status=413 if too_large else 422,
             )
         try:
-            result = await dispatch(partial(complete, messages=messages), request)
+            result = await dispatch(partial(complete, messages=messages, model=model.strip(), reasoning_effort=reasoning_effort), request)
         except ChatSettingsError as exc:
             code = _settings_error_code(exc)
             return _json_error(code, status=503 if code == 'settings_unavailable' else 422)

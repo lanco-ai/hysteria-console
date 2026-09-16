@@ -21,6 +21,12 @@ function LoginState({ userSession = false }: { userSession?: boolean }) {
   </div>;
 }
 
+function formatResetDate(value: string, fallback: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback || '—';
+  return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
+}
+
 function LogsContent() {
   const session = useReadResource('/api/v1/session', { validate: validateSession });
   const isAdmin = session.status === 'success' && session.data.role === 'admin';
@@ -46,12 +52,12 @@ function LogsContent() {
     </div>
     <div className="data-table-wrap" tabIndex={0} aria-label="清零日志，可横向滚动">
       <table className="data-table">
-        <thead><tr><th>时间</th><th>操作人</th><th>IP</th><th>操作</th><th>目标</th><th>月份</th><th>流量变化</th></tr></thead>
+        <thead><tr><th>时间</th><th>操作人</th><th>IP</th><th>操作</th><th>目标</th><th>日期</th><th>流量变化</th></tr></thead>
         <tbody>
           {logs.status !== 'success' ? <tr><td colSpan={7}><LoadingState label="正在加载日志…" variant="table"/></td></tr> : null}
           {logs.status === 'success' && logs.data.rows.length === 0 ? <tr><td colSpan={7} className="empty">暂无日志记录</td></tr> : null}
           {logs.status === 'success' ? logs.data.rows.map((row, index) => <tr key={`${row.time}-${row.actor}-${row.target}-${index}`}>
-            <td className="small">{row.time}</td><td>{row.actor}</td><td className="small">{row.ip}</td><td>{row.action}</td><td>{row.target}</td><td className="small">{row.month}</td><td className="small">{row.detail}</td>
+            <td className="small">{row.time}</td><td>{row.actor}</td><td className="small">{row.ip}</td><td>{row.action}</td><td>{row.target}</td><td className="small">{formatResetDate(row.time, row.month)}</td><td className="small">{row.detail}</td>
           </tr>) : null}
         </tbody>
       </table>

@@ -122,12 +122,6 @@ export function RulesPage({ publicHost }: { publicHost: string }) {
     {rules.status === 'loading' ? <LoadingState label="正在加载规则…"/> : null}
     {rules.status === 'success' ? <div className="admin-page">
       {message ? <div className="flash" role="status">{message}</div> : null}
-      <section className="form-section">
-        <div className="form-section-title">规则说明</div>
-        <div className="form-section-desc">自定义规则优先级高于规则集，从上到下依次匹配。灰色行为内置规则，不可删除。</div>
-        <div className="small">当前版本：<code>{revision}</code></div>
-      </section>
-
       <div className="rules-ops-grid">
         <section className="op-panel">
           <div className="op-panel-title">规则包</div>

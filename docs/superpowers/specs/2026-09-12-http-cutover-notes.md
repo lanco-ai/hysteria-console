@@ -346,3 +346,13 @@ Continuation inspection2026-09-14 (not migration acceptance):
   acceptance must test these together, not just counters or a static QR image.
 - User subscription rotation keeps its own confirmation and receipt/session
   recovery flow. Administrator rotation extraction does not replace that flow.
+- Health's `_build_health_read_snapshot` currently returns HTML strings for
+  `rows`, `kpis` and update history, not typed health data. React needs structured
+  probe/update results while retaining the existing probe bounds and policies;
+  do not treat the old snapshot JSON as a completed React API.
+- Health includes infrastructure/lifecycle, line radar, multiplier calibration
+  and update history beyond the four KPIs/core-services table. Update-check is
+  distinct from queued update application (`202`), lock-busy (`409`), check
+  failure (`502`) and scheduling failure (`503`). Preserve those states and
+  test-alert's dispatched-not-delivered wording; preview must never run a real
+  update, multiplier write or external alert.

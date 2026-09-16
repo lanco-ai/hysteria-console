@@ -43,14 +43,14 @@ def test_settings_store_masks_keys_and_enforces_file_mode(tmp_path):
     result = store.update(
         base_url='https://example.test/v1',
         api_key='sk-super-secret-value',
-        model='gemini-test',
         temperature=0.4,
     )
 
     assert result['api_key_configured'] is True
     assert result['api_key_masked'] == 'sk-…alue'
-    assert result['reasoning_enabled'] is False
-    assert result['reasoning_effort'] == 'auto'
+    assert 'model' not in result
+    assert 'reasoning_enabled' not in result
+    assert 'reasoning_effort' not in result
     assert 'sk-super-secret-value' not in json.dumps(result)
     assert oct(store.path.stat().st_mode & 0o777) == '0o600'
 
@@ -78,8 +78,9 @@ def test_forward_chat_builds_openai_request_without_logging_credentials():
         return Response()
 
     result = forward_chat(
-        ChatSettings('https://example.test/v1', 'sk-secret', 'model-x', 0.7),
+        ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
         [{'role': 'user', 'content': 'hello'}],
+        model='model-x',
         opener=opener,
     )
 
@@ -121,7 +122,7 @@ def test_list_chat_models_builds_safe_get_request():
             return False
 
         def read(self, _limit):
-            return b'{"data":[{"id":"model-a","owned_by":"provider"},{"id":"model-b","name":"Friendly"}]}'
+            return b'{"data":[{"id":"model-a","owned_by":"provider","context_length":8192},{"id":"model-b","name":"Friendly"}]}'
 
     def opener(request, timeout):
         seen['url'] = request.full_url
@@ -131,12 +132,12 @@ def test_list_chat_models_builds_safe_get_request():
         return Response()
 
     result = list_chat_models(
-        ChatSettings('https://example.test/v1', 'sk-secret', 'model-x', 0.7),
+        ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
         opener=opener,
     )
 
     assert result == [
-        {'id': 'model-a', 'name': 'model-a'},
+        {'id': 'model-a', 'name': 'model-a', 'context_window': 8192},
         {'id': 'model-b', 'name': 'Friendly'},
     ]
     assert seen == {
@@ -148,16 +149,14 @@ def test_list_chat_models_builds_safe_get_request():
 
 
 def test_reasoning_effort_is_opt_in_and_omits_auto():
-    base = ChatSettings('https://example.test/v1', 'sk-secret', 'model-x', 0.7)
-    disabled_request = build_upstream_request(base, [{'role': 'user', 'content': 'hello'}])
+    base = ChatSettings('https://example.test/v1', 'sk-secret', 0.7)
+    disabled_request = build_upstream_request(base, [{'role': 'user', 'content': 'hello'}], model='model-x')
     assert 'reasoning_effort' not in json.loads(disabled_request.data)
 
-    high = ChatSettings('https://example.test/v1', 'sk-secret', 'model-x', 0.7, True, 'high')
-    high_request = build_upstream_request(high, [{'role': 'user', 'content': 'hello'}])
+    high_request = build_upstream_request(base, [{'role': 'user', 'content': 'hello'}], model='model-x', reasoning_effort='high')
     assert json.loads(high_request.data)['reasoning_effort'] == 'high'
 
-    auto = ChatSettings('https://example.test/v1', 'sk-secret', 'model-x', 0.7, True, 'auto')
-    auto_request = build_upstream_request(auto, [{'role': 'user', 'content': 'hello'}])
+    auto_request = build_upstream_request(base, [{'role': 'user', 'content': 'hello'}], model='model-x', reasoning_effort='auto')
     assert 'reasoning_effort' not in json.loads(auto_request.data)
 
 
@@ -173,8 +172,9 @@ def test_forward_chat_sanitizes_upstream_http_errors():
 
     try:
         forward_chat(
-            ChatSettings('https://example.test/v1', 'sk-secret', 'model-x', 0.7),
+            ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
             [{'role': 'user', 'content': 'hello'}],
+            model='model-x',
             opener=opener,
         )
     except ChatUpstreamError as error:
@@ -188,7 +188,7 @@ def test_forward_chat_sanitizes_upstream_http_errors():
 def test_chat_routes_require_admin_and_never_return_raw_key(tmp_path, monkeypatch):
     store = ChatSettingsStore(tmp_path / 'settings.json')
     monkeypatch.setattr(chat_routes, 'ChatSettingsStore', lambda: store)
-    monkeypatch.setattr(chat_routes, 'forward_chat', lambda settings, messages: {
+    monkeypatch.setattr(chat_routes, 'forward_chat', lambda settings, messages, **kwargs: {
         'choices': [{'message': {'content': messages[-1]['content'].upper()}}],
     })
     with TestClient(create_app(_Services())) as client:
@@ -199,7 +199,6 @@ def test_chat_routes_require_admin_and_never_return_raw_key(tmp_path, monkeypatc
             json={
                 'base_url': 'https://example.test/v1',
                 'api_key': 'sk-secret-value',
-                'model': 'model-x',
                 'temperature': 0.7,
             },
         )
@@ -209,10 +208,77 @@ def test_chat_routes_require_admin_and_never_return_raw_key(tmp_path, monkeypatc
         completion = client.post(
             '/api/chat/completions',
             headers={'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'same-origin'},
-            json={'messages': [{'role': 'user', 'content': 'hello'}]},
+            json={'messages': [{'role': 'user', 'content': 'hello'}], 'model': 'model-x'},
         )
         assert completion.status_code == 200
         assert completion.json()['choices'][0]['message']['content'] == 'HELLO'
+
+
+def test_chat_settings_rejects_removed_default_model_fields(tmp_path, monkeypatch):
+    store = ChatSettingsStore(tmp_path / 'settings.json')
+    monkeypatch.setattr(chat_routes, 'ChatSettingsStore', lambda: store)
+    with TestClient(create_app(_Services())) as client:
+        response = client.put(
+            '/api/chat/settings',
+            headers={'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'same-origin'},
+            json={'base_url': 'http://127.0.0.1:8088/v1', 'api_key': 'sk-secret', 'model': 'legacy'},
+        )
+        assert response.status_code == 400
+        assert not store.path.exists()
+
+
+def test_chat_completion_requires_ephemeral_model_and_accepts_optional_reasoning(tmp_path, monkeypatch):
+    store = ChatSettingsStore(tmp_path / 'settings.json')
+    store.update(base_url='http://127.0.0.1:8088/v1', api_key='sk-secret', temperature=0.7)
+    seen = []
+    monkeypatch.setattr(chat_routes, 'ChatSettingsStore', lambda: store)
+    monkeypatch.setattr(chat_routes, 'forward_chat', lambda settings, messages, **kwargs: (seen.append(kwargs) or {'choices': [{'message': {'content': 'ok'}}]}))
+    with TestClient(create_app(_Services())) as client:
+        headers = {'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'same-origin'}
+        missing = client.post('/api/chat/completions', headers=headers, json={'messages': [{'role': 'user', 'content': 'hi'}]})
+        assert missing.status_code == 422
+        response = client.post('/api/chat/completions', headers=headers, json={
+            'messages': [{'role': 'user', 'content': 'hi'}], 'model': 'model-x', 'reasoning_effort': 'high',
+        })
+        assert response.status_code == 200
+        assert seen == [{'model': 'model-x', 'reasoning_effort': 'high'}]
+
+
+def test_chat_settings_legacy_disk_fields_are_ignored(tmp_path):
+    path = tmp_path / 'settings.json'
+    path.write_text(json.dumps({
+        'base_url': 'http://127.0.0.1:8088/v1', 'api_key': 'sk-secret', 'model': 'legacy',
+        'temperature': 0.5, 'reasoning_enabled': True, 'reasoning_effort': 'high',
+    }))
+    store = ChatSettingsStore(path)
+    settings = store.read()
+    assert not hasattr(settings, 'model')
+    assert store.public() == {
+        'base_url': 'http://127.0.0.1:8088/v1', 'temperature': 0.5,
+        'api_key_configured': True, 'api_key_masked': 'sk-…cret',
+    }
+
+
+def test_reasoning_error_can_be_classified_without_retaining_upstream_body():
+    body = '{"error":{"message":"unsupported parameter reasoning_effort: secret details"}}'.encode()
+
+    class Error(urllib.error.HTTPError):
+        def __init__(self):
+            super().__init__('https://example.test/v1/chat/completions', 400, 'bad request', {'Retry-After': '1'}, None)
+
+        def read(self, _limit=-1):
+            return body
+
+    def opener(_request, **_kwargs):
+        raise Error()
+
+    try:
+        forward_chat(ChatSettings('https://example.test/v1', 'sk-secret', 0.7), [{'role': 'user', 'content': 'hello'}], model='model-x', reasoning_effort='high', opener=opener)
+    except ChatUpstreamError as error:
+        assert error.reasoning_unsupported is True
+        assert 'secret details' not in str(error)
+    else:
+        raise AssertionError('expected reasoning classification')
 
 
 def test_chat_models_and_connection_test_are_admin_only_and_sanitized(tmp_path, monkeypatch):
@@ -220,12 +286,11 @@ def test_chat_models_and_connection_test_are_admin_only_and_sanitized(tmp_path, 
     store.update(
         base_url='https://example.test/v1',
         api_key='sk-secret-value',
-        model='model-x',
         temperature=0.7,
     )
     monkeypatch.setattr(chat_routes, 'ChatSettingsStore', lambda: store)
     monkeypatch.setattr(chat_routes, 'list_chat_models', lambda settings: [
-        {'id': settings.model, 'name': settings.model},
+        {'id': 'model-x', 'name': 'model-x'},
     ])
     with TestClient(create_app(_Services())) as client:
         assert client.get('/api/chat/models').status_code == 401
@@ -245,7 +310,7 @@ def test_chat_models_and_connection_test_are_admin_only_and_sanitized(tmp_path, 
 
 def test_chat_connection_test_maps_upstream_errors_without_body(tmp_path, monkeypatch):
     store = ChatSettingsStore(tmp_path / 'settings.json')
-    store.update(base_url='https://example.test/v1', api_key='sk-secret', model='model-x', temperature=0.7)
+    store.update(base_url='https://example.test/v1', api_key='sk-secret', temperature=0.7)
     monkeypatch.setattr(chat_routes, 'ChatSettingsStore', lambda: store)
     monkeypatch.setattr(
         chat_routes,

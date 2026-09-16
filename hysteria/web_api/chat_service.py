@@ -30,9 +30,16 @@ class ChatSettingsError(ValueError):
 class ChatUpstreamError(RuntimeError):
     """A third-party API failed without retaining its response body."""
 
-    def __init__(self, status: int | None = None, *, retry_after: str | None = None):
+    def __init__(
+        self,
+        status: int | None = None,
+        *,
+        retry_after: str | None = None,
+        reasoning_unsupported: bool = False,
+    ):
         self.status = status
         self.retry_after = retry_after
+        self.reasoning_unsupported = reasoning_unsupported
         super().__init__('chat upstream request failed')
 
 
@@ -40,10 +47,7 @@ class ChatUpstreamError(RuntimeError):
 class ChatSettings:
     base_url: str = ''
     api_key: str = ''
-    model: str = ''
     temperature: float = 0.7
-    reasoning_enabled: bool = False
-    reasoning_effort: str = 'auto'
 
 
 def mask_api_key(value: str) -> str:
@@ -62,30 +66,20 @@ def _coerce_settings(raw: object) -> ChatSettings:
         raise ChatSettingsError('invalid settings shape')
     base_url = str(raw.get('base_url') or '').strip()
     api_key = str(raw.get('api_key') or '')
-    model = str(raw.get('model') or '').strip()
     temperature = raw.get('temperature', 0.7)
-    reasoning_enabled = raw.get('reasoning_enabled', False)
-    reasoning_effort = str(raw.get('reasoning_effort') or 'auto').strip().lower()
-    if not isinstance(reasoning_enabled, bool):
-        raise ChatSettingsError('reasoning_enabled must be a boolean')
-    if reasoning_effort not in REASONING_EFFORTS:
-        raise ChatSettingsError('reasoning_effort is invalid')
     try:
         temperature = float(temperature)
     except (TypeError, ValueError):
         raise ChatSettingsError('temperature must be a number') from None
-    _validate_values(base_url=base_url, api_key=api_key, model=model, temperature=temperature)
+    _validate_values(base_url=base_url, api_key=api_key, temperature=temperature)
     return ChatSettings(
         base_url=base_url,
         api_key=api_key,
-        model=model,
         temperature=temperature,
-        reasoning_enabled=reasoning_enabled,
-        reasoning_effort=reasoning_effort,
     )
 
 
-def _validate_values(*, base_url: str, api_key: str, model: str, temperature: float) -> None:
+def _validate_values(*, base_url: str, api_key: str, temperature: float) -> None:
     if len(base_url) > 2048:
         raise ChatSettingsError('base_url is too long')
     if base_url:
@@ -101,8 +95,6 @@ def _validate_values(*, base_url: str, api_key: str, model: str, temperature: fl
             raise ChatSettingsError('base_url contains an unsupported authority')
     if len(api_key) > 1024:
         raise ChatSettingsError('api_key is too long')
-    if len(model) > 256:
-        raise ChatSettingsError('model is too long')
     if isinstance(temperature, bool) or not math.isfinite(float(temperature)):
         raise ChatSettingsError('temperature must be finite')
     if not 0 <= float(temperature) <= 2:
@@ -124,10 +116,7 @@ class ChatSettingsStore:
         settings = self.read()
         return {
             'base_url': settings.base_url,
-            'model': settings.model,
             'temperature': settings.temperature,
-            'reasoning_enabled': settings.reasoning_enabled,
-            'reasoning_effort': settings.reasoning_effort,
             'api_key_configured': bool(settings.api_key),
             'api_key_masked': mask_api_key(settings.api_key),
         }
@@ -136,11 +125,8 @@ class ChatSettingsStore:
         self,
         *,
         base_url: object = _MISSING,
-        model: object = _MISSING,
         temperature: object = _MISSING,
         api_key: object = _MISSING,
-        reasoning_enabled: object = _MISSING,
-        reasoning_effort: object = _MISSING,
     ) -> dict[str, object]:
         lock_path = self.path.with_name(self.path.name + '.lock')
         try:
@@ -151,23 +137,8 @@ class ChatSettingsStore:
                     if base_url is _MISSING
                     else str(base_url or '').strip()
                 )
-                next_model = current.model if model is _MISSING else str(model or '').strip()
                 next_temperature = current.temperature if temperature is _MISSING else temperature
                 next_api_key = current.api_key if api_key is _MISSING else str(api_key or '')
-                next_reasoning_enabled = (
-                    current.reasoning_enabled
-                    if reasoning_enabled is _MISSING
-                    else reasoning_enabled
-                )
-                next_reasoning_effort = (
-                    current.reasoning_effort
-                    if reasoning_effort is _MISSING
-                    else str(reasoning_effort or 'auto').strip().lower()
-                )
-                if not isinstance(next_reasoning_enabled, bool):
-                    raise ChatSettingsError('reasoning_enabled must be a boolean')
-                if next_reasoning_effort not in REASONING_EFFORTS:
-                    raise ChatSettingsError('reasoning_effort is invalid')
                 try:
                     next_temperature = float(next_temperature)
                 except (TypeError, ValueError):
@@ -175,16 +146,12 @@ class ChatSettingsStore:
                 _validate_values(
                     base_url=next_base_url,
                     api_key=next_api_key,
-                    model=next_model,
                     temperature=next_temperature,
                 )
                 payload = {
                     'base_url': next_base_url,
                     'api_key': next_api_key,
-                    'model': next_model,
                     'temperature': next_temperature,
-                    'reasoning_enabled': next_reasoning_enabled,
-                    'reasoning_effort': next_reasoning_effort,
                 }
                 state_store.save_json(self.path, payload)
                 self.path.chmod(0o600)
@@ -248,20 +215,26 @@ def chat_models_url(base_url: str) -> str:
 def build_upstream_request(
     settings: ChatSettings,
     messages: list[dict[str, str]],
+    *,
+    model: str,
+    reasoning_effort: str = 'auto',
 ) -> urllib.request.Request:
     if not settings.api_key:
         raise ChatSettingsError('api key is not configured')
-    if not settings.base_url or not settings.model:
+    model = model.strip() if isinstance(model, str) else ''
+    if not settings.base_url or not model or len(model) > 256:
         raise ChatSettingsError('chat settings are incomplete')
+    if reasoning_effort not in REASONING_EFFORTS:
+        raise ChatSettingsError('reasoning_effort is invalid')
     url = chat_completions_url(settings.base_url)
     payload: dict[str, object] = {
-        'model': settings.model,
+        'model': model,
         'messages': messages,
         'temperature': settings.temperature,
         'stream': False,
     }
-    if settings.reasoning_enabled and settings.reasoning_effort != 'auto':
-        payload['reasoning_effort'] = settings.reasoning_effort
+    if reasoning_effort != 'auto':
+        payload['reasoning_effort'] = reasoning_effort
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     request = urllib.request.Request(url, data=body, method='POST')
     request.add_header('Authorization', f'Bearer {settings.api_key}')
@@ -274,17 +247,27 @@ def forward_chat(
     settings: ChatSettings,
     messages: list[dict[str, str]],
     *,
+    model: str,
+    reasoning_effort: str = 'auto',
     opener=None,
 ) -> dict[str, object]:
-    request = build_upstream_request(settings, messages)
-    return _read_json_request(request, opener=opener, timeout=120)
+    request = build_upstream_request(settings, messages, model=model, reasoning_effort=reasoning_effort)
+    try:
+        return _read_json_request(request, opener=opener, timeout=120)
+    except ChatUpstreamError as error:
+        if reasoning_effort == 'auto' or not error.reasoning_unsupported:
+            raise
+        fallback_request = build_upstream_request(settings, messages, model=model, reasoning_effort='auto')
+        result = _read_json_request(fallback_request, opener=opener, timeout=120)
+        result['chat_notice'] = 'reasoning_unsupported'
+        return result
 
 
 def list_chat_models(
     settings: ChatSettings,
     *,
     opener=None,
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     """Fetch only safe model identifiers from an OpenAI-compatible endpoint."""
     if not settings.api_key:
         raise ChatSettingsError('api key is not configured')
@@ -297,7 +280,7 @@ def list_chat_models(
     data = payload.get('data')
     if not isinstance(data, list):
         raise ChatUpstreamError(200)
-    models: list[dict[str, str]] = []
+    models: list[dict[str, object]] = []
     for item in data:
         if not isinstance(item, dict):
             continue
@@ -308,7 +291,16 @@ def list_chat_models(
         if not model_id or len(model_id) > 256:
             continue
         name = item.get('name')
-        models.append({'id': model_id, 'name': name.strip() if isinstance(name, str) and name.strip() else model_id})
+        item_result: dict[str, object] = {
+            'id': model_id,
+            'name': name.strip() if isinstance(name, str) and name.strip() else model_id,
+        }
+        for key in ('context_window', 'context_length', 'max_context_tokens', 'max_model_len', 'input_token_limit'):
+            candidate = item.get(key)
+            if isinstance(candidate, (int, float)) and not isinstance(candidate, bool) and math.isfinite(float(candidate)) and int(candidate) == candidate and 0 < int(candidate) <= 10_000_000:
+                item_result['context_window'] = int(candidate)
+                break
+        models.append(item_result)
         if len(models) >= 256:
             break
     return models
@@ -322,7 +314,17 @@ def _read_json_request(request, *, opener=None, timeout: int) -> dict[str, objec
             raw = response.read(MAX_BODY_BYTES + 1)
     except urllib.error.HTTPError as exc:
         retry_after = exc.headers.get('Retry-After') if exc.headers else None
-        raise ChatUpstreamError(exc.code, retry_after=retry_after) from None
+        reasoning_unsupported = False
+        if exc.code == 400:
+            try:
+                error_body = exc.read(MAX_BODY_BYTES + 1).decode('utf-8', 'ignore').lower()
+            except (OSError, UnicodeError):
+                error_body = ''
+            reasoning_unsupported = any(marker in error_body for marker in (
+                'reasoning_effort', 'unsupported parameter', 'unknown parameter',
+                'unknown field', 'unrecognized parameter',
+            ))
+        raise ChatUpstreamError(exc.code, retry_after=retry_after, reasoning_unsupported=reasoning_unsupported) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise ChatUpstreamError() from None
     if status < 200 or status >= 300 or len(raw) > MAX_BODY_BYTES:

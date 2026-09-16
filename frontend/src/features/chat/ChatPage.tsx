@@ -22,16 +22,16 @@ type ChatSession = {
   updatedAt: number;
 };
 
-type ChatUsage = { day: string; today: number; total: number; inputTokens: number; outputTokens: number };
+type ChatUsage = { day: string; today: number; total: number; inputTokens: number; outputTokens: number; totalTokens: number };
 type Drawer = 'settings' | 'usage' | null;
 
 const STORAGE_KEY = 'hy2.chat.sessions.v1';
 const USAGE_KEY = 'hy2.chat.usage.v1';
 const reasoningOptions: Array<{ value: ReasoningEffort; label: string }> = [
   { value: 'auto', label: '自动' },
-  { value: 'low', label: '低' },
-  { value: 'medium', label: '中' },
-  { value: 'high', label: '高' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
 ];
 
 function newId() {
@@ -81,7 +81,7 @@ function usageDay() {
 }
 
 function loadUsage(): ChatUsage {
-  const empty = { day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0 };
+  const empty = { day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 };
   try {
     const value: unknown = JSON.parse(localStorage.getItem(USAGE_KEY) || 'null');
     if (!value || typeof value !== 'object') return empty;
@@ -96,20 +96,30 @@ function loadUsage(): ChatUsage {
     const outputTokens = record.day === empty.day && typeof record.outputTokens === 'number' && Number.isFinite(record.outputTokens)
       ? Math.max(0, record.outputTokens)
       : 0;
-    return { day: empty.day, today, total, inputTokens, outputTokens };
+    const totalTokens = record.day === empty.day && typeof record.totalTokens === 'number' && Number.isFinite(record.totalTokens)
+      ? Math.max(0, record.totalTokens)
+      : inputTokens + outputTokens;
+    return { day: empty.day, today, total, inputTokens, outputTokens, totalTokens };
   } catch {
     return empty;
   }
 }
 
-function responseUsage(payload: Record<string, unknown>): { inputTokens: number; outputTokens: number } {
+function responseUsage(payload: Record<string, unknown>): { inputTokens: number; outputTokens: number; totalTokens: number; contextMax: number | null } {
   const value = payload.usage;
-  if (!value || typeof value !== 'object') return { inputTokens: 0, outputTokens: 0 };
+  if (!value || typeof value !== 'object') return { inputTokens: 0, outputTokens: 0, totalTokens: 0, contextMax: null };
   const usage = value as Record<string, unknown>;
   const input = usage.prompt_tokens ?? usage.input_tokens;
   const output = usage.completion_tokens ?? usage.output_tokens;
+  const total = usage.total_tokens ?? usage.totalTokens;
+  const max = usage.context_window ?? usage.context_length ?? usage.max_context_tokens;
   const valid = (tokenValue: unknown) => typeof tokenValue === 'number' && Number.isFinite(tokenValue) && tokenValue >= 0 ? tokenValue : 0;
-  return { inputTokens: valid(input), outputTokens: valid(output) };
+  const validMax = typeof max === 'number' && Number.isFinite(max) && max > 0 ? Math.floor(max) : null;
+  return { inputTokens: valid(input), outputTokens: valid(output), totalTokens: valid(total) || valid(input) + valid(output), contextMax: validMax };
+}
+
+function formatTokens(value: number | null): string {
+  return value === null ? '未知' : value.toLocaleString();
 }
 
 function assistantText(payload: Record<string, unknown>): string {
@@ -157,10 +167,15 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
   const [models, setModels] = useState<ChatModel[]>([]);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [modelsError, setModelsError] = useState('');
+  const [selectedModel, setSelectedModel] = useState('');
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('auto');
+  const [contextUsed, setContextUsed] = useState<number | null>(null);
+  const [contextMax, setContextMax] = useState<number | null>(null);
   const [testBusy, setTestBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [innerSidebarOpen, setInnerSidebarOpen] = useState(false);
@@ -220,6 +235,20 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
   }, [refreshModels, settings?.api_key_configured, settings?.base_url]);
 
   useEffect(() => {
+    if (!models.length) {
+      setSelectedModel('');
+      setContextMax(null);
+      return;
+    }
+    setSelectedModel(current => models.some(item => item.id === current) ? current : (models[0]?.id || ''));
+  }, [models]);
+
+  useEffect(() => {
+    const model = models.find(item => item.id === selectedModel);
+    if (model?.context_window) setContextMax(model.context_window);
+  }, [models, selectedModel]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setDrawer(null);
@@ -238,6 +267,7 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     setSessions(current => [session, ...current]);
     setActiveId(session.id);
     setError('');
+    setNotice('');
     setInnerSidebarOpen(false);
     focusComposer();
   };
@@ -277,6 +307,12 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     setMessage('');
     setBusy(true);
     setError('');
+    setNotice('');
+    if (!selectedModel) {
+      setBusy(false);
+      setError('请先在聊天顶部选择模型，或在设置中测试连接获取模型列表。');
+      return;
+    }
     setUsage(currentUsage => ({
       ...currentUsage,
       day: usageDay(),
@@ -284,19 +320,24 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
       total: currentUsage.total + 1,
       inputTokens: currentUsage.day === usageDay() ? currentUsage.inputTokens : 0,
       outputTokens: currentUsage.day === usageDay() ? currentUsage.outputTokens : 0,
+      totalTokens: currentUsage.day === usageDay() ? currentUsage.totalTokens : 0,
     }));
     try {
-      const response = await completeChat(nextMessages);
+      const response = await completeChat(nextMessages, selectedModel, reasoningEffort);
       const reply = assistantText(response);
       if (!reply) throw new Error('第三方 API 没有返回文本。');
       const assistantMessage: ChatMessageData = { role: 'assistant', content: reply };
       setSessions(existing => existing.map(session => session.id === current.id ? { ...session, messages: [...nextMessages, assistantMessage], updatedAt: Date.now() } : session));
       const tokenUsage = responseUsage(response);
+      setContextUsed(tokenUsage.inputTokens || tokenUsage.totalTokens ? tokenUsage.inputTokens || tokenUsage.totalTokens : null);
+      if (tokenUsage.contextMax !== null) setContextMax(tokenUsage.contextMax);
+      if (response.chat_notice === 'reasoning_unsupported') setNotice('当前 API 不支持思考强度，已按普通模式发送。');
       if (tokenUsage.inputTokens || tokenUsage.outputTokens) {
         setUsage(currentUsage => ({
           ...currentUsage,
           inputTokens: currentUsage.inputTokens + tokenUsage.inputTokens,
           outputTokens: currentUsage.outputTokens + tokenUsage.outputTokens,
+          totalTokens: currentUsage.totalTokens + tokenUsage.totalTokens,
         }));
       }
     } catch (errorValue) {
@@ -323,13 +364,11 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     }
   };
 
-  const selectModel = async (model: string) => {
-    if (!model || model === settings?.model) return;
-    await saveSettings({ model });
-  };
-  const selectReasoning = async (reasoning_effort: ReasoningEffort) => {
-    if (!settings?.reasoning_enabled || reasoning_effort === settings.reasoning_effort) return;
-    await saveSettings({ reasoning_effort });
+  const selectModel = (model: string) => {
+    setSelectedModel(model);
+    setContextUsed(null);
+    const selected = models.find(item => item.id === model);
+    setContextMax(selected?.context_window ?? null);
   };
   const testConnection = async () => {
     setTestBusy(true);
@@ -348,7 +387,7 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     if (!window.confirm('清空全部本地聊天记录和请求计数？此操作不可撤销。')) return;
     setSessions([]);
     setActiveId('');
-    setUsage({ day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0 });
+    setUsage({ day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 });
     try { localStorage.removeItem(STORAGE_KEY); } catch { /* Storage is optional. */ }
     setSettingsFeedback('本地数据已清空');
   };
@@ -361,12 +400,11 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
     focusComposer();
   };
 
-  const toolbarModels = models.some(item => item.id === settings?.model) || !settings?.model
-    ? models
-    : [{ id: settings.model, name: settings.model }, ...models];
+  const toolbarModels = models;
   const toolbar = <div className="chat-topbar-controls">
-    <label className="chat-toolbar-field"><span className="sr-only">模型</span><select className="chat-toolbar-select" aria-label="当前模型" value={settings?.model || ''} onChange={event => void selectModel(event.target.value)} disabled={!settings || modelsBusy && models.length === 0}><option value="">选择模型</option>{toolbarModels.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-    <label className="chat-toolbar-field"><span className="sr-only">思考强度</span><select className="chat-toolbar-select chat-toolbar-select-small" aria-label="思考强度" value={settings?.reasoning_effort || 'auto'} onChange={event => void selectReasoning(event.target.value as ReasoningEffort)} disabled={!settings?.reasoning_enabled}>{reasoningOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+    <label className="chat-toolbar-field"><span className="sr-only">模型</span>{toolbarModels.length ? <select className="chat-toolbar-select" aria-label="当前模型" value={selectedModel} onChange={event => selectModel(event.target.value)} disabled={!settings || modelsBusy}><option value="">选择模型</option>{toolbarModels.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <input className="chat-toolbar-select chat-toolbar-model-input" aria-label="当前模型" value={selectedModel} onChange={event => selectModel(event.target.value)} placeholder="输入模型标识" disabled={!settings}/>}</label>
+    <label className="chat-toolbar-field"><span className="sr-only">思考强度</span><select className="chat-toolbar-select chat-toolbar-select-small" aria-label="思考强度" value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value as ReasoningEffort)} disabled={!settings}>{reasoningOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+    <span className="chat-context-status" aria-label="上下文状态">上下文：{formatTokens(contextUsed)} / {formatTokens(contextMax)}</span>
     <button className="btn btn-ghost btn-icon" type="button" aria-label="AI 用量" title="AI 用量" onClick={() => setDrawer('usage')}>⌁</button>
     <button className="btn btn-ghost btn-icon" type="button" aria-label="设置" title="设置" onClick={() => setDrawer('settings')}>⚙</button>
   </div>;
@@ -386,16 +424,17 @@ export function ChatPage({ publicHost }: { publicHost: string }) {
         </aside>
         {innerSidebarOpen ? <button className="chat-sidebar-scrim" type="button" aria-label="关闭会话栏" onClick={() => setInnerSidebarOpen(false)} /> : null}
         <section className="chat-thread card">
-          <header className="chat-thread-heading"><div className="chat-thread-title"><button className="btn btn-ghost btn-icon chat-sidebar-open" type="button" aria-label="打开会话栏" onClick={() => setInnerSidebarOpen(true)}>☰</button><div><strong>{active ? sessionTitle(active) : '新对话'}</strong><span>{settings?.model || '尚未选择模型'}</span></div></div>{active ? <button className="btn btn-ghost btn-sm" type="button" onClick={clearSession}>清空</button> : null}</header>
+          <header className="chat-thread-heading"><div className="chat-thread-title"><button className="btn btn-ghost btn-icon chat-sidebar-open" type="button" aria-label="打开会话栏" onClick={() => setInnerSidebarOpen(true)}>☰</button><div><strong>{active ? sessionTitle(active) : '新对话'}</strong><span>{selectedModel || '尚未选择模型'}</span></div></div>{active ? <button className="btn btn-ghost btn-sm" type="button" onClick={clearSession}>清空</button> : null}</header>
           <div className="chat-messages" role="log" aria-live="polite">
             {active?.messages.length ? active.messages.map((item, index) => <ChatMessage key={`${active.id}-${index}`} message={item} />) : <div className="chat-empty-state"><div className="chat-empty-mark">✦</div><h2>Lanco AI</h2><p>有什么可以帮你？</p><div className="chat-quick-prompts"><button type="button" onClick={() => choosePrompt('翻译一段文字：')}>翻译一段文字</button><button type="button" onClick={() => choosePrompt('请润色以下学术表达：')}>润色学术表达</button><button type="button" onClick={() => choosePrompt('请解释这段代码：')}>解释一段代码</button><button type="button" onClick={() => choosePrompt('')}>自由对话</button></div></div>}
           </div>
           <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { setMessage(event.target.value); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={busy} /><div className="chat-composer-footer"><span>{busy ? '正在等待回复…' : 'Enter 发送 · Shift + Enter 换行'}</span><button className="btn btn-primary" type="button" onClick={() => void send()} disabled={busy || !message.trim()}>{busy ? '发送中…' : '发送 ↑'}</button></div></div>
         </section>
       </div>
+      {notice ? <div className="chat-notice" role="status">{notice}</div> : null}
       {error ? <div className="err" role="alert">{error}</div> : null}
     </section>
 
-    {drawer ? <div className="chat-drawer-layer"><button className="chat-drawer-backdrop" type="button" aria-label="关闭抽屉" onClick={() => setDrawer(null)} /><aside className="chat-drawer" role="dialog" aria-modal="true" aria-labelledby="chat-drawer-title"><header className="chat-drawer-header"><div><h2 id="chat-drawer-title">{drawer === 'settings' ? '设置' : 'AI 用量'}</h2><p>{drawer === 'settings' ? '低频配置集中在这里' : '只记录本地请求次数，不估算 Token'}</p></div><button className="btn btn-ghost btn-icon" type="button" aria-label="关闭设置" onClick={() => setDrawer(null)}>×</button></header>{drawer === 'settings' ? <ChatSettings settings={settings} models={models} modelsBusy={modelsBusy} modelsError={modelsError} busy={settingsBusy} testBusy={testBusy} feedback={settingsFeedback || (settingsError && !settings ? settingsError : '')} onSave={saveSettings} onRefreshModels={refreshModels} onTest={testConnection} onClearData={clearLocalData} /> : <div className="chat-usage"><div className="chat-usage-grid"><div><span>今日请求</span><strong>{usage.today}</strong></div><div><span>总请求</span><strong>{usage.total}</strong></div></div>{usage.inputTokens || usage.outputTokens ? <div className="chat-usage-grid"><div><span>今日输入 tokens</span><strong>{usage.inputTokens}</strong></div><div><span>今日输出 tokens</span><strong>{usage.outputTokens}</strong></div></div> : <div className="chat-usage-empty"><strong>暂无 Token 数据</strong><p>第三方 API 未返回 usage 时不会估算或伪造统计。</p></div>}</div>}</aside></div> : null}
+    {drawer ? <div className="chat-drawer-layer"><button className="chat-drawer-backdrop" type="button" aria-label="关闭抽屉" onClick={() => setDrawer(null)} /><aside className="chat-drawer" role="dialog" aria-modal="true" aria-labelledby="chat-drawer-title"><header className="chat-drawer-header"><div><h2 id="chat-drawer-title">{drawer === 'settings' ? '设置' : 'AI 用量'}</h2><p>{drawer === 'settings' ? '低频配置集中在这里' : '只记录本地请求次数，不估算 Token'}</p></div><button className="btn btn-ghost btn-icon" type="button" aria-label="关闭设置" onClick={() => setDrawer(null)}>×</button></header>{drawer === 'settings' ? <ChatSettings settings={settings} models={models} modelsBusy={modelsBusy} modelsError={modelsError} busy={settingsBusy} testBusy={testBusy} feedback={settingsFeedback || (settingsError && !settings ? settingsError : '')} onSave={saveSettings} onRefreshModels={refreshModels} onTest={testConnection} onClearData={clearLocalData} /> : <div className="chat-usage"><div className="chat-usage-grid"><div><span>今日请求</span><strong>{usage.today}</strong></div><div><span>总请求</span><strong>{usage.total}</strong></div></div>{usage.inputTokens || usage.outputTokens ? <div className="chat-usage-grid"><div><span>今日输入 tokens</span><strong>{usage.inputTokens}</strong></div><div><span>今日输出 tokens</span><strong>{usage.outputTokens}</strong></div><div><span>今日总 tokens</span><strong>{usage.totalTokens}</strong></div></div> : <div className="chat-usage-empty"><strong>暂无 Token 数据</strong><p>第三方 API 未返回 usage 时不会估算或伪造统计。</p></div>}</div>}</aside></div> : null}
   </AdminShell>;
 }
