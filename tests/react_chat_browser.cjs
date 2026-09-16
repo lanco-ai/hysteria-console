@@ -53,6 +53,7 @@ async function main() {
   await expect(page).toHaveTitle('AI 对话');
   await expect(page.getByRole('heading', { name: 'Lanco AI' })).toBeVisible();
   await expect(page.locator('.chat-toolbar-select').first()).toHaveValue('model-a');
+  await expect(page.getByLabel('上下文状态')).toContainText('未知 / 8,192');
 
   await page.locator('button[aria-label="设置"]').click();
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
