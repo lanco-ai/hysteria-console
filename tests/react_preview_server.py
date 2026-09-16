@@ -37,7 +37,12 @@ REACT_PAGES = {
     '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
     '/__react/admin/user/demo_alex': ('demo_alex · 用量画像', 'has-shell'),
     '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
+    '/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
     '/__react/user/login': (
+        '用户登录 · Hysteria',
+        'page-auth page-admin-login page-user-login',
+    ),
+    '/user/login': (
         '用户登录 · Hysteria',
         'page-auth page-admin-login page-user-login',
     ),
@@ -196,7 +201,7 @@ def _handler(api_client, allowed_assets):
                 if payload.count(marker) != 1:
                     raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
                 payload = payload.replace(marker, replacement, 1)
-            if path in ('/__react/login', '/__react/user/login'):
+            if path in ('/__react/login', '/__react/user/login', '/login', '/user/login'):
                 marker = f'data-public-host="{escaped_public_host}"'
                 replacement = (
                     marker + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'

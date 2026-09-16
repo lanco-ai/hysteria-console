@@ -71,6 +71,10 @@ function installClientNavigation(onNavigate: () => void): () => void {
     if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
     const url = new URL(anchor.href, window.location.href);
     if (url.origin !== window.location.origin || !isReactDocumentPath(url.pathname)) return;
+    // Login documents carry the server-provided password limit bootstrap
+    // attribute. Force a document navigation so links from the home or an
+    // authenticated page cannot reuse a root without that attribute.
+    if (url.pathname === '/login' || url.pathname === '/user/login') return;
     // Hash links (including the skip link) should keep their native scrolling behavior.
     if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) return;
     const destinationPathname = window.location.pathname.startsWith(REACT_PREVIEW_PREFIX) && !url.pathname.startsWith(REACT_PREVIEW_PREFIX)

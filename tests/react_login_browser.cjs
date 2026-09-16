@@ -330,6 +330,22 @@ async function verifyLifecycleStaleSuppression(browser) {
   await context.close();
 }
 
+async function verifyLoginClientNavigation(browser) {
+  const context = await browser.newContext({ viewport: { width: 1024, height: 900 } });
+  const page = await context.newPage();
+  const collection = collectFailures(page, 'login client navigation');
+  const response = await page.goto(`${baseUrl}/__react/`);
+  assert.equal(response.status(), 200, 'React home entry must be available');
+  await page.locator('.site-main').waitFor();
+  await page.locator('a[href="/login"]').first().click();
+  await page.locator('#form-admin').waitFor();
+  assert.equal(routeOf(page.url()), '/login');
+  const maxLength = Number(await page.locator('#admin-password').getAttribute('maxlength'));
+  assert(maxLength > 0, 'client navigation must preserve the login password limit');
+  assertClean(collection);
+  await context.close();
+}
+
 async function bounds(page, selector) {
   const box = await page.locator(selector).first().boundingBox();
   assert(box, `${selector} must have visible bounds`);
@@ -388,6 +404,7 @@ async function verifyResponsiveLogin(browser) {
     await verifyRealAuthentication(browser);
     await verifyFeedbackFaults(browser);
     await verifyLifecycleStaleSuppression(browser);
+    await verifyLoginClientNavigation(browser);
     await verifyResponsiveLogin(browser);
     console.log('PASS: React login real auth, validation, fault recovery, stale safety, isolation, and responsive layout');
   } finally {
