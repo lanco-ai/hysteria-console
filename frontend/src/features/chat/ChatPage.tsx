@@ -191,8 +191,11 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
 
   useEffect(() => {
     if (!authenticated || !localStateReady) return;
+    // Streaming updates are kept in React state and persisted once after the
+    // request settles, rather than writing one localStorage record per delta.
+    if (busy) return;
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions)); } catch { /* Storage is optional. */ }
-  }, [authenticated, localStateReady, sessions]);
+  }, [authenticated, busy, localStateReady, sessions]);
 
   useEffect(() => {
     if (!authenticated || !localStateReady) return;
