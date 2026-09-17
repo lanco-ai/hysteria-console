@@ -49,6 +49,7 @@ def test_react_documents_and_api_use_8083():
             assert f'location = {document} {{\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location = /api/v1 {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location ^~ /api/v1/ {\n        proxy_pass http://127.0.0.1:8083;' in text
+        assert 'location ^~ /api/chat/ {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert (
             'location ^~ /static/react/assets/ {\n        proxy_pass http://127.0.0.1:8083;' in text
         )
