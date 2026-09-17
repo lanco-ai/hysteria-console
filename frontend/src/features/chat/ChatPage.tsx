@@ -152,6 +152,9 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [usage, setUsage] = useState<ChatUsage>(() => ({ day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }));
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const followMessagesRef = useRef(true);
+  const userScrollIntentRef = useRef(false);
   const [localStateReady, setLocalStateReady] = useState(false);
   const authenticatedRef = useRef(authenticated);
   const streamAbortRef = useRef<AbortController | null>(null);
@@ -286,6 +289,39 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   }, [models, selectedModel]);
 
   useEffect(() => {
+    if (!authenticated || !activeId) return;
+    followMessagesRef.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      const element = messagesRef.current;
+      if (element) element.scrollTop = element.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeId, authenticated]);
+
+  useEffect(() => {
+    if (!authenticated || !activeId || !followMessagesRef.current) return;
+    const frame = window.requestAnimationFrame(() => {
+      const element = messagesRef.current;
+      if (followMessagesRef.current && element) element.scrollTop = element.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeId, authenticated, sessions]);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    const element = messagesRef.current;
+    if (!element || typeof MutationObserver === 'undefined') return;
+    const observer = new MutationObserver(() => {
+      if (!followMessagesRef.current) return;
+      window.requestAnimationFrame(() => {
+        if (followMessagesRef.current) element.scrollTop = element.scrollHeight;
+      });
+    });
+    observer.observe(element, { childList: true, characterData: true, subtree: true });
+    return () => observer.disconnect();
+  }, [authenticated]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setDrawer(null);
@@ -296,7 +332,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   }, []);
 
   const focusComposer = () => {
-    window.requestAnimationFrame(() => composerRef.current?.focus());
+    window.requestAnimationFrame(() => composerRef.current?.focus({ preventScroll: true }));
   };
   const createSession = () => {
     if (!authenticated) return;
@@ -341,6 +377,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
       return;
     }
     const current: ChatSession = active || { id: newId(), title: '新对话', messages: [], updatedAt: Date.now(), ...(selectedModel ? { model: selectedModel } : {}), reasoningEffort };
+    followMessagesRef.current = true;
     const userMessage: ChatMessageData = { role: 'user', content };
     const nextMessages = [...current.messages, userMessage];
     const nextSession: ChatSession = {
@@ -404,6 +441,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     };
     const streamErrorMessage = (code: string) => {
       if (code === 'authentication_failed') return '第三方 API 认证失败，请检查 API Key。';
+      if (code === 'model_not_found') return '当前模型不存在或不可用，请切换模型。';
       if (code === 'rate_limited') return '第三方 API 请求过于频繁，请稍后重试。';
       if (code === 'upstream_unavailable') return '模型服务当前没有可用容量，请稍后重试或切换模型。';
       if (code === 'timeout') return '连接第三方 API 超时，请稍后重试。';
@@ -446,7 +484,6 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
       if (streamAbortRef.current === abortController) streamAbortRef.current = null;
       if (authenticatedRef.current) {
         setBusy(false);
-        focusComposer();
       }
     }
   };
@@ -548,7 +585,12 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
         /></aside> : null}
         <section className="chat-thread card">
           <header className="chat-thread-heading"><div className="chat-thread-title"><div><strong>{active ? sessionTitle(active) : '新对话'}</strong><span>{selectedModel || '尚未选择模型'}</span></div></div>{active ? <button className="btn btn-ghost btn-sm" type="button" onClick={clearSession} disabled={!authenticated}>清空</button> : null}</header>
-          <div className="chat-messages" role="log" aria-live="polite">
+          <div ref={messagesRef} className="chat-messages" role="log" aria-live="polite" onScroll={event => {
+            if (!userScrollIntentRef.current) return;
+            userScrollIntentRef.current = false;
+            const element = event.currentTarget;
+            followMessagesRef.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
+          }} onWheel={() => { userScrollIntentRef.current = true; }} onTouchMove={() => { userScrollIntentRef.current = true; }} onPointerDown={() => { userScrollIntentRef.current = true; }}>
             {active?.messages.length ? active.messages.map((item, index) => <ChatMessage key={`${active.id}-${index}`} message={item} />) : <div className="chat-empty-state"><div className="chat-empty-mark">✦</div><h2>Lanco AI</h2><p>有什么可以帮你？</p><div className="chat-quick-prompts"><button type="button" onClick={() => choosePrompt('翻译一段文字：')} disabled={!authenticated}>翻译一段文字</button><button type="button" onClick={() => choosePrompt('请润色以下学术表达：')} disabled={!authenticated}>润色学术表达</button><button type="button" onClick={() => choosePrompt('请解释这段代码：')} disabled={!authenticated}>解释一段代码</button><button type="button" onClick={() => choosePrompt('')} disabled={!authenticated}>自由对话</button></div></div>}
           </div>
           <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { const next = event.target.value; setMessage(next); setSessions(current => current.map(session => session.id === activeId ? { ...session, draft: next } : session)); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={!authenticated || busy} /><div className="chat-composer-footer"><span>{busy ? '正在生成回复…' : 'Enter 发送 · Shift + Enter 换行'}</span>{busy ? <button className="btn btn-secondary" type="button" onClick={() => streamAbortRef.current?.abort()}>停止</button> : <button className="btn btn-primary" type="button" onClick={() => void send()} disabled={!authenticated || !message.trim()}>发送 ↑</button>}</div></div>

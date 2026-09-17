@@ -137,6 +137,32 @@ async function main() {
   await composer.fill('second');
   await composer.press('Enter');
   await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SECOND');
+
+  const seededMessages = Array.from({ length: 24 }, (_, index) => ({
+    role: index % 2 ? 'assistant' : 'user',
+    content: `历史消息 ${index + 1} `.repeat(12),
+  }));
+  await page.evaluate(messages => {
+    localStorage.setItem('hy2.chat.sessions.v1', JSON.stringify([{
+      id: 'scroll-test',
+      title: '滚动测试',
+      messages,
+      updatedAt: Date.now(),
+      model: 'model-a',
+      reasoningEffort: 'high',
+    }]));
+  }, seededMessages);
+  await page.reload();
+  await expect(page.locator('.chat-history-count')).toHaveText('1');
+  await expect(page.getByLabel('当前模型')).toHaveValue('model-a');
+  await composer.fill('scroll-check');
+  await composer.press('Enter');
+  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SCROLL-CHECK');
+  await page.waitForFunction(() => {
+    const node = document.querySelector('.chat-messages');
+    return node && node.scrollHeight - node.scrollTop - node.clientHeight <= 4;
+  }, undefined, { timeout: 5000 });
+
   await page.getByRole('button', { name: '复制' }).last().click();
   await expect(page.getByRole('button', { name: '已复制' })).toBeVisible();
   await composer.fill('slow');
@@ -156,7 +182,7 @@ async function main() {
   assert.equal(responseBodies.join('\n').includes(secretSentinel), false);
 
   await page.reload();
-  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SECOND');
+  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SCROLL-CHECK');
   await expect(page.locator('.chat-history-panel')).toHaveCount(0);
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: '清空' }).click();
