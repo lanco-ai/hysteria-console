@@ -1,9 +1,11 @@
+import asyncio
 import json
 import urllib.error
 
 from fastapi.testclient import TestClient
 
 import web_api.chat_routes as chat_routes
+import web_api.chat_service as chat_service
 from web_api import create_app
 from web_api.chat_service import (
     ChatSettings,
@@ -388,3 +390,339 @@ def test_chat_completion_maps_capacity_failures_to_actionable_error(tmp_path, mo
     assert response.status_code == 502
     assert response.json() == {'error': 'upstream_unavailable', 'upstream_status': 503}
     assert 'sk-secret' not in response.text
+
+
+def test_stream_payload_requests_incremental_events_and_usage():
+    payload = chat_service.build_stream_payload(
+        ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+        [{'role': 'user', 'content': 'hello'}],
+        model='model-x',
+    )
+
+    assert payload['stream'] is True
+    assert payload['stream_options'] == {'include_usage': True}
+    assert 'reasoning_effort' not in payload
+
+
+def test_sse_decoder_handles_split_delta_usage_and_done_events():
+    decoder = chat_service.SSEDecoder()
+    events = []
+    chunks = [
+        b'data: {"choices":[{"delta":{"content":"hel',
+        b'lo"},"finish_reason":null}]}\r\n\r\n',
+        b'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}\n\n',
+        b'data: [DONE]\n\n',
+    ]
+    for chunk in chunks:
+        events.extend(decoder.feed(chunk))
+    events.extend(decoder.finish())
+
+    assert events == [
+        {'type': 'delta', 'text': 'hello'},
+        {'type': 'usage', 'usage': {'prompt_tokens': 2, 'completion_tokens': 3, 'total_tokens': 5}},
+        {'type': 'done'},
+    ]
+
+
+def test_forward_chat_stream_returns_sanitized_incremental_events(monkeypatch):
+    seen = {}
+
+    class Response:
+        status_code = 200
+        headers = {'content-type': 'text/event-stream'}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self, _size):
+            yield b'data: {"choices":[{"delta":{"content":"hel'
+            yield b'lo"},"finish_reason":null}]}\n\n'
+            yield b'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}\n\n'
+            yield b'data: [DONE]\n\n'
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, method, url, *, headers, json):
+            seen.update(method=method, url=url, headers=headers, body=json)
+            return Response()
+
+    monkeypatch.setattr(chat_service.httpx, 'AsyncClient', Client)
+
+    async def collect():
+        chunks = []
+        async for chunk in chat_service.forward_chat_stream(
+            ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+            [{'role': 'user', 'content': 'hello'}],
+            model='model-x',
+        ):
+            chunks.append(chunk)
+        return b''.join(chunks)
+
+    body = asyncio.run(collect())
+    assert seen['method'] == 'POST'
+    assert seen['url'] == 'https://example.test/v1/chat/completions'
+    assert seen['body']['stream'] is True
+    assert seen['body']['stream_options'] == {'include_usage': True}
+    assert 'sk-secret' not in body.decode()
+    assert b'"type":"delta"' in body
+    assert b'"type":"usage"' in body
+    assert b'"type":"done"' in body
+
+
+def test_forward_chat_stream_falls_back_to_normal_json_response(monkeypatch):
+    class Response:
+        status_code = 200
+        headers = {'content-type': 'application/json'}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self, _size):
+            yield b'{"choices":[{"message":{"content":"ok"}}],"usage":{"total_tokens":4}}'
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(chat_service.httpx, 'AsyncClient', Client)
+
+    async def collect():
+        return b''.join([
+            chunk async for chunk in chat_service.forward_chat_stream(
+                ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+                [{'role': 'user', 'content': 'hello'}],
+                model='model-x',
+            )
+        ])
+
+    body = asyncio.run(collect())
+    assert b'"type":"delta"' in body
+    assert b'"text":"ok"' in body
+    assert b'"type":"usage"' in body
+    assert b'"type":"done"' in body
+
+
+def test_stream_route_returns_event_stream_for_admin(tmp_path, monkeypatch):
+    store = ChatSettingsStore(tmp_path / 'settings.json')
+    store.update(base_url='https://example.test/v1', api_key='sk-secret', temperature=0.7)
+    monkeypatch.setattr(chat_routes, 'ChatSettingsStore', lambda: store)
+
+    async def fake_events():
+        yield b'data: {"type":"delta","text":"OK"}\n\n'
+        yield b'data: {"type":"done"}\n\n'
+
+    monkeypatch.setattr(
+        chat_routes,
+        'forward_chat_stream',
+        lambda *_args, **_kwargs: fake_events(),
+    )
+    with TestClient(create_app(_Services())) as client:
+        response = client.post(
+            '/api/chat/completions',
+            headers={'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'same-origin'},
+            json={
+                'messages': [{'role': 'user', 'content': 'hello'}],
+                'model': 'model-x',
+                'stream': True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers['content-type'].startswith('text/event-stream')
+    assert response.headers['cache-control'] == 'no-store'
+    assert response.headers['x-accel-buffering'] == 'no'
+    assert b'"type":"delta"' in response.content
+    assert b'"type":"done"' in response.content
+
+
+def test_forward_chat_stream_retries_reasoning_before_first_delta(monkeypatch):
+    requests = []
+
+    class ErrorResponse:
+        status_code = 400
+        headers = {}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self, _size):
+            yield b'{"error":{"message":"unsupported parameter reasoning_effort"}}'
+
+    class SuccessResponse:
+        status_code = 200
+        headers = {'content-type': 'text/event-stream'}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self, _size):
+            yield b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+            yield b'data: [DONE]\n\n'
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, _method, _url, *, json, **_kwargs):
+            requests.append(json)
+            return ErrorResponse() if len(requests) == 1 else SuccessResponse()
+
+    monkeypatch.setattr(chat_service.httpx, 'AsyncClient', Client)
+
+    async def collect():
+        chunks = []
+        async for chunk in chat_service.forward_chat_stream(
+            ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+            [{'role': 'user', 'content': 'hello'}],
+            model='model-x',
+            reasoning_effort='high',
+        ):
+            chunks.append(chunk)
+        return b''.join(chunks)
+
+    body = asyncio.run(collect())
+    assert requests[0]['reasoning_effort'] == 'high'
+    assert 'reasoning_effort' not in requests[1]
+    assert b'reasoning_unsupported' in body
+    assert b'"type":"delta"' in body
+    assert b'"type":"done"' in body
+
+
+def test_forward_chat_stream_falls_back_without_usage_option(monkeypatch):
+    requests = []
+
+    class ErrorResponse:
+        status_code = 400
+        headers = {}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self, _size):
+            yield b'{"error":{"message":"unknown field stream_options"}}'
+
+    class SuccessResponse:
+        status_code = 200
+        headers = {}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self, _size):
+            yield b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
+            yield b'data: [DONE]\n\n'
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, _method, _url, *, json, **_kwargs):
+            requests.append(json)
+            return ErrorResponse() if len(requests) == 1 else SuccessResponse()
+
+    monkeypatch.setattr(chat_service.httpx, 'AsyncClient', Client)
+
+    async def collect():
+        return b''.join([
+            chunk async for chunk in chat_service.forward_chat_stream(
+                ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+                [{'role': 'user', 'content': 'hello'}],
+                model='model-x',
+            )
+        ])
+
+    body = asyncio.run(collect())
+    assert requests[0]['stream_options'] == {'include_usage': True}
+    assert 'stream_options' not in requests[1]
+    assert b'"type":"delta"' in body
+
+
+def test_forward_chat_stream_sanitizes_error_event(monkeypatch):
+    class Response:
+        status_code = 429
+        headers = {'Retry-After': '9'}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self, _size):
+            yield b'{"error":{"message":"secret provider details"}}'
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(chat_service.httpx, 'AsyncClient', Client)
+
+    async def collect():
+        return b''.join([
+            chunk async for chunk in chat_service.forward_chat_stream(
+                ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+                [{'role': 'user', 'content': 'hello'}],
+                model='model-x',
+            )
+        ])
+
+    body = asyncio.run(collect()).decode()
+    assert 'rate_limited' in body
+    assert 'Retry-After' not in body
+    assert 'secret provider details' not in body

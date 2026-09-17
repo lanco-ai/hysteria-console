@@ -319,6 +319,44 @@ def create_app(services, *, max_requests=32, react_dist=None):
         finally:
             release_capacity()
 
+    async def dispatch_stream(function, request, *, prepare=None):
+        """Run a streaming handler while retaining one request slot."""
+        if not capacity.acquire(blocking=False):
+            return JSONResponse(
+                status_code=503,
+                content={'error': 'server_busy'},
+                headers={'Retry-After': '1'},
+            )
+        released = False
+
+        def release_capacity():
+            nonlocal released
+            if not released:
+                released = True
+                capacity.release()
+
+        try:
+            headers = _request_headers(request)
+            arguments = {
+                'headers': headers,
+                'path': request.scope['path'],
+            }
+            if prepare is not None:
+                arguments.update(await prepare(request, headers))
+            iterator = function(**arguments)
+        except Exception:
+            release_capacity()
+            raise
+
+        async def retain_capacity():
+            try:
+                async for chunk in iterator:
+                    yield chunk
+            finally:
+                release_capacity()
+
+        return retain_capacity()
+
     async def prepare_form_write(request, headers):
         origin_request = SimpleNamespace(headers=headers)
         if not http_utils.is_same_origin_post(origin_request):
@@ -358,7 +396,7 @@ def create_app(services, *, max_requests=32, react_dist=None):
     register_health_routes(app, services, dispatch_form_write)
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
-    register_chat_routes(app, services, dispatch)
+    register_chat_routes(app, services, dispatch, dispatch_stream=dispatch_stream)
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
 

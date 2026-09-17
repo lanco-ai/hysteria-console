@@ -4,6 +4,7 @@ The module deliberately keeps credentials on the server.  It does not log
 request bodies, upstream headers, or upstream response bodies.
 """
 
+import asyncio
 import json
 import math
 import urllib.error
@@ -12,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
+import httpx
 import state_store
 
 
@@ -20,6 +22,11 @@ MAX_BODY_BYTES = 128 * 1024
 MAX_MESSAGES = 128
 MAX_MESSAGE_CHARS = 32 * 1024
 REASONING_EFFORTS = ('auto', 'low', 'medium', 'high')
+STREAM_CONNECT_TIMEOUT = 5.0
+STREAM_READ_TIMEOUT = 45.0
+STREAM_WRITE_TIMEOUT = 10.0
+STREAM_POOL_TIMEOUT = 5.0
+STREAM_TOTAL_TIMEOUT = 10 * 60
 _MISSING = object()
 
 
@@ -36,10 +43,12 @@ class ChatUpstreamError(RuntimeError):
         *,
         retry_after: str | None = None,
         reasoning_unsupported: bool = False,
+        stream_options_unsupported: bool = False,
     ):
         self.status = status
         self.retry_after = retry_after
         self.reasoning_unsupported = reasoning_unsupported
+        self.stream_options_unsupported = stream_options_unsupported
         super().__init__('chat upstream request failed')
 
 
@@ -210,6 +219,334 @@ def chat_models_url(base_url: str) -> str:
     if normalized.endswith('/models'):
         return normalized
     return normalized + '/models'
+
+
+class SSEDecoder:
+    """Decode OpenAI-compatible SSE records across arbitrary network chunks."""
+
+    def __init__(self):
+        self._buffer = ''
+
+    def feed(self, chunk: bytes | str) -> list[dict[str, object]]:
+        if isinstance(chunk, bytes):
+            chunk = chunk.decode('utf-8', 'replace')
+        self._buffer += chunk
+        self._buffer = self._buffer.replace('\r\n', '\n').replace('\r', '\n')
+        events: list[dict[str, object]] = []
+        while '\n\n' in self._buffer:
+            raw_event, self._buffer = self._buffer.split('\n\n', 1)
+            event = _decode_sse_event(raw_event)
+            if event is not None:
+                events.append(event)
+        return events
+
+    def finish(self) -> list[dict[str, object]]:
+        if not self._buffer.strip():
+            return []
+        event = _decode_sse_event(self._buffer)
+        self._buffer = ''
+        return [event] if event is not None else []
+
+
+def _decode_sse_event(raw_event: str) -> dict[str, object] | None:
+    data_lines = []
+    for line in raw_event.split('\n'):
+        if line.startswith('data:'):
+            data_lines.append(line[5:].lstrip(' '))
+    if not data_lines:
+        return None
+    data = '\n'.join(data_lines).strip()
+    if data == '[DONE]':
+        return {'type': 'done'}
+    try:
+        payload = json.loads(data)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    usage = payload.get('usage')
+    if isinstance(usage, dict):
+        safe_usage = {
+            key: int(value)
+            for key, value in usage.items()
+            if key in ('prompt_tokens', 'completion_tokens', 'total_tokens')
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and int(value) >= 0
+        }
+        if safe_usage:
+            return {'type': 'usage', 'usage': safe_usage}
+    choices = payload.get('choices')
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        delta = choices[0].get('delta')
+        if isinstance(delta, dict):
+            content = delta.get('content')
+            if isinstance(content, str):
+                return {'type': 'delta', 'text': content}
+            if isinstance(content, list):
+                text = ''.join(
+                    item.get('text', '')
+                    for item in content
+                    if isinstance(item, dict) and isinstance(item.get('text'), str)
+                )
+                if text:
+                    return {'type': 'delta', 'text': text}
+    error = payload.get('error')
+    if error is not None:
+        return {'type': 'error', 'error': 'upstream_error'}
+    return None
+
+
+def build_stream_payload(
+    settings: ChatSettings,
+    messages: list[dict[str, str]],
+    *,
+    model: str,
+    reasoning_effort: str = 'auto',
+    include_usage: bool = True,
+) -> dict[str, object]:
+    if not settings.api_key:
+        raise ChatSettingsError('api key is not configured')
+    model = model.strip() if isinstance(model, str) else ''
+    if not settings.base_url or not model or len(model) > 256:
+        raise ChatSettingsError('chat settings are incomplete')
+    if reasoning_effort not in REASONING_EFFORTS:
+        raise ChatSettingsError('reasoning_effort is invalid')
+    payload: dict[str, object] = {
+        'model': model,
+        'messages': messages,
+        'temperature': settings.temperature,
+        'stream': True,
+    }
+    if include_usage:
+        payload['stream_options'] = {'include_usage': True}
+    if reasoning_effort != 'auto':
+        payload['reasoning_effort'] = reasoning_effort
+    return payload
+
+
+def _stream_sse(event: dict[str, object]) -> bytes:
+    return f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n".encode('utf-8')
+
+
+async def _read_error_preview(response: httpx.Response) -> str:
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes(4096):
+        remaining = 16 * 1024 - total
+        if remaining <= 0:
+            break
+        piece = chunk[:remaining]
+        chunks.append(piece)
+        total += len(piece)
+        if total >= 16 * 1024:
+            break
+    return b''.join(chunks).decode('utf-8', 'ignore').lower()
+
+
+async def _read_response_bytes(response: httpx.Response, limit: int = 256 * 1024) -> bytes | None:
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes(8192):
+        remaining = limit - total
+        if remaining <= 0:
+            return None
+        piece = chunk[:remaining]
+        chunks.append(piece)
+        total += len(piece)
+        if len(chunk) > remaining:
+            return None
+    return b''.join(chunks)
+
+
+def _normal_response_events(raw: bytes | None) -> list[dict[str, object]]:
+    if raw is None:
+        return []
+    try:
+        payload = json.loads(raw.decode('utf-8'))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    events: list[dict[str, object]] = []
+    choices = payload.get('choices')
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        message = choices[0].get('message')
+        content = message.get('content') if isinstance(message, dict) else None
+        if isinstance(content, str) and content:
+            events.append({'type': 'delta', 'text': content})
+        elif isinstance(content, list):
+            text = ''.join(
+                item.get('text', '')
+                for item in content
+                if isinstance(item, dict) and isinstance(item.get('text'), str)
+            )
+            if text:
+                events.append({'type': 'delta', 'text': text})
+    usage = payload.get('usage')
+    if isinstance(usage, dict):
+        safe_usage = {
+            key: int(value)
+            for key, value in usage.items()
+            if key in ('prompt_tokens', 'completion_tokens', 'total_tokens')
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and int(value) >= 0
+        }
+        if safe_usage:
+            events.append({'type': 'usage', 'usage': safe_usage})
+    if events:
+        events.append({'type': 'done'})
+    return events
+
+
+def _stream_error_event(error: ChatUpstreamError) -> dict[str, object]:
+    if error.status in (401, 403):
+        code = 'authentication_failed'
+    elif error.status == 404:
+        code = 'models_endpoint_unavailable'
+    elif error.status == 429:
+        code = 'rate_limited'
+    elif isinstance(error.status, int) and error.status >= 500:
+        code = 'upstream_unavailable'
+    elif error.status is None:
+        code = 'timeout'
+    else:
+        code = 'upstream_error'
+    event: dict[str, object] = {'type': 'error', 'error': code}
+    if isinstance(error.status, int):
+        event['upstream_status'] = error.status
+    if isinstance(error.retry_after, str):
+        retry_after = error.retry_after.strip()
+        if retry_after.isdigit() and len(retry_after) <= 6:
+            event['retry_after'] = retry_after
+    return event
+
+
+def forward_chat_stream(
+    settings: ChatSettings,
+    messages: list[dict[str, str]],
+    *,
+    model: str,
+    reasoning_effort: str = 'auto',
+):
+    """Return an async iterator of sanitized SSE events from the upstream."""
+    # Validate synchronously so route errors are returned before headers start.
+    build_stream_payload(settings, messages, model=model, reasoning_effort=reasoning_effort)
+
+    async def generate():
+        timeout = httpx.Timeout(
+            connect=STREAM_CONNECT_TIMEOUT,
+            read=STREAM_READ_TIMEOUT,
+            write=STREAM_WRITE_TIMEOUT,
+            pool=STREAM_POOL_TIMEOUT,
+        )
+        current_reasoning = reasoning_effort
+        include_usage = True
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            try:
+                async with asyncio.timeout(STREAM_TOTAL_TIMEOUT):
+                    while True:
+                        payload = build_stream_payload(
+                            settings,
+                            messages,
+                            model=model,
+                            reasoning_effort=current_reasoning,
+                            include_usage=include_usage,
+                        )
+                        try:
+                            async with client.stream(
+                                'POST',
+                                chat_completions_url(settings.base_url),
+                                headers={
+                                    'Authorization': f'Bearer {settings.api_key}',
+                                    'Accept': 'text/event-stream',
+                                },
+                                json=payload,
+                            ) as response:
+                                if response.status_code < 200 or response.status_code >= 300:
+                                    preview = await _read_error_preview(response)
+                                    error = ChatUpstreamError(
+                                        response.status_code,
+                                        retry_after=response.headers.get('Retry-After'),
+                                        reasoning_unsupported=(
+                                            response.status_code == 400
+                                            and any(marker in preview for marker in (
+                                                'reasoning_effort', 'unsupported parameter',
+                                                'unknown parameter', 'unknown field',
+                                                'unrecognized parameter',
+                                            ))
+                                        ),
+                                        stream_options_unsupported=(
+                                            response.status_code == 400
+                                            and any(marker in preview for marker in (
+                                                'stream_options', 'include_usage',
+                                            ))
+                                        ),
+                                    )
+                                    if (
+                                        error.reasoning_unsupported
+                                        and current_reasoning != 'auto'
+                                    ):
+                                        current_reasoning = 'auto'
+                                        yield _stream_sse({'type': 'notice', 'notice': 'reasoning_unsupported'})
+                                        continue
+                                    if error.stream_options_unsupported and include_usage:
+                                        include_usage = False
+                                        continue
+                                    yield _stream_sse(_stream_error_event(error))
+                                    return
+
+                                content_type = response.headers.get('content-type', '').split(';', 1)[0].strip().lower()
+                                if content_type and content_type != 'text/event-stream':
+                                    normal_events = _normal_response_events(await _read_response_bytes(response))
+                                    if not normal_events:
+                                        yield _stream_sse({'type': 'error', 'error': 'streaming_unavailable'})
+                                        return
+                                    for event in normal_events:
+                                        yield _stream_sse(event)
+                                    return
+
+                                decoder = SSEDecoder()
+                                saw_done = False
+                                try:
+                                    async for chunk in response.aiter_bytes(8192):
+                                        for event in decoder.feed(chunk):
+                                            if event.get('type') == 'done':
+                                                saw_done = True
+                                            yield _stream_sse(event)
+                                            if saw_done:
+                                                return
+                                    for event in decoder.finish():
+                                        if event.get('type') == 'done':
+                                            saw_done = True
+                                        yield _stream_sse(event)
+                                except asyncio.CancelledError:
+                                    raise
+                                except httpx.TimeoutException:
+                                    yield _stream_sse(_stream_error_event(ChatUpstreamError()))
+                                    return
+                                except httpx.HTTPError:
+                                    yield _stream_sse(_stream_error_event(ChatUpstreamError()))
+                                    return
+                                if not saw_done:
+                                    yield _stream_sse({'type': 'done'})
+                                return
+                        except asyncio.CancelledError:
+                            raise
+                        except httpx.TimeoutException:
+                            yield _stream_sse(_stream_error_event(ChatUpstreamError()))
+                            return
+                        except httpx.HTTPError:
+                            yield _stream_sse(_stream_error_event(ChatUpstreamError()))
+                            return
+            except asyncio.TimeoutError:
+                yield _stream_sse(_stream_error_event(ChatUpstreamError()))
+                return
+
+    return generate()
 
 
 def build_upstream_request(

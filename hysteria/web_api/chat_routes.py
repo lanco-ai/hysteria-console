@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import http_utils
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .chat_service import (
     MAX_BODY_BYTES,
@@ -14,6 +14,7 @@ from .chat_service import (
     ChatSettingsStore,
     ChatUpstreamError,
     forward_chat,
+    forward_chat_stream,
     list_chat_models,
     validate_messages,
 )
@@ -81,7 +82,7 @@ def _connection_error_code(error: ChatUpstreamError) -> str:
     return 'upstream_error'
 
 
-def register_chat_routes(app, services, dispatch, *, settings_store=None):
+def register_chat_routes(app, services, dispatch, *, dispatch_stream=None, settings_store=None):
     store = settings_store or ChatSettingsStore()
 
     def read_public(*, headers, path):
@@ -96,6 +97,11 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
         del headers, path
         settings = store.read()
         return forward_chat(settings, messages, model=model, reasoning_effort=reasoning_effort)
+
+    def complete_stream(*, headers, path, messages, model, reasoning_effort):
+        del headers, path
+        settings = store.read()
+        return forward_chat_stream(settings, messages, model=model, reasoning_effort=reasoning_effort)
 
     def models(*, headers, path):
         del headers, path
@@ -208,7 +214,7 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
             return denied
         try:
             payload = await _read_json(request)
-            if set(payload) - {'messages', 'model', 'reasoning_effort'} or 'model' not in payload:
+            if set(payload) - {'messages', 'model', 'reasoning_effort', 'stream'} or 'model' not in payload:
                 raise ChatSettingsError('invalid request')
             messages = validate_messages(payload['messages'])
             model = payload['model']
@@ -217,11 +223,40 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
             reasoning_effort = payload.get('reasoning_effort', 'auto')
             if not isinstance(reasoning_effort, str) or reasoning_effort not in ('auto', 'low', 'medium', 'high'):
                 raise ChatSettingsError('reasoning_effort is invalid')
+            stream = payload.get('stream', False)
+            if not isinstance(stream, bool):
+                raise ChatSettingsError('stream is invalid')
         except ChatSettingsError as exc:
             too_large = 'large' in str(exc)
             return _json_error(
                 'request_too_large' if too_large else 'validation_error',
                 status=413 if too_large else 422,
+            )
+        if stream:
+            if dispatch_stream is None:
+                return _json_error('streaming_unavailable', status=503)
+            try:
+                result = await dispatch_stream(
+                    partial(
+                        complete_stream,
+                        messages=messages,
+                        model=model.strip(),
+                        reasoning_effort=reasoning_effort,
+                    ),
+                    request,
+                )
+            except ChatSettingsError as exc:
+                code = _settings_error_code(exc)
+                return _json_error(code, status=503 if code == 'settings_unavailable' else 422)
+            if isinstance(result, JSONResponse):
+                return result
+            return StreamingResponse(
+                result,
+                media_type='text/event-stream',
+                headers={
+                    'Cache-Control': 'no-store',
+                    'X-Accel-Buffering': 'no',
+                },
             )
         try:
             result = await dispatch(partial(complete, messages=messages, model=model.strip(), reasoning_effort=reasoning_effort), request)
