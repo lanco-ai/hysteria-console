@@ -7,7 +7,6 @@ unknown path is deliberately left as a 404 instead of becoming an SPA page.
 
 import html
 import re
-from functools import partial
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -20,14 +19,16 @@ from .services import LoginRequired, StateUnavailable, UserAccessDenied
 _BODY_RE = re.compile(r'<body(?:\s+class="[^"]*")?>')
 _TITLE_RE = re.compile(r'<title>[^<]*</title>')
 _ROOT_RE = re.compile(r'<div id="root" data-public-host="[^"]*"')
+_SAFE_LOGIN_QUERY_KEYS = frozenset({'msg', 'tab', 'range', 'window', 'page', 'filter'})
 
 # Keep this list deliberately exact.  Compatibility documents such as
 # ``/admin/daily`` and subscription/CSV/evidence downloads stay on their
 # established handlers until their own cutover contracts are approved.
 REACT_DOCUMENTS = {
-    '/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site', None),
-    '/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login', None),
-    '/user/login': ('用户登录 · Hysteria', 'page-auth page-admin-login page-user-login', None),
+    '/': ('Hysteria 工作台', 'has-shell page-workbench', None),
+    '/auth': ('Hysteria 工作台', 'has-shell page-workbench', None),
+    '/login': ('Hysteria 工作台', 'has-shell page-workbench', None),
+    '/user/login': ('Hysteria 工作台', 'has-shell page-workbench', None),
     '/logout': ('确认退出', '', 'admin'),
     '/user/logout': ('确认退出', '', 'user'),
     '/user/change-password': ('修改面板密码', 'page-auth', 'user-password'),
@@ -41,8 +42,8 @@ REACT_DOCUMENTS = {
     '/admin/config': ('模板配置', 'has-shell', 'admin'),
     '/admin/rules': ('路由规则', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
+    '/admin/chat': ('AI 对话', 'has-shell page-workbench', 'admin'),
 }
-
 
 def _public_host(request: Request, services) -> str:
     raw = request.headers.get('host', '127.0.0.1')
@@ -63,43 +64,40 @@ async def _guard(request: Request, services, dispatch, guard: str):
         return None
     try:
         if guard == 'admin':
-            token = request.query_params.get('token', '')
-            if token:
-                exchange = await dispatch(
-                    partial(services.exchange_admin_token, token=token),
-                    request,
-                )
-                if exchange is not None:
-                    query = [
-                        (key, value)
-                        for key, value in request.query_params.multi_items()
-                        if key != 'token'
-                    ]
-                    target = request.url.path
-                    encoded = urlencode(query, doseq=True)
-                    if encoded:
-                        target += f'?{encoded}'
-                    return RedirectResponse(
-                        target,
-                        status_code=303,
-                        headers={'Set-Cookie': exchange.cookie},
-                    )
+            # React administration documents require the normal authenticated
+            # session.  The legacy ``?token=`` exchange is intentionally not
+            # accepted here: a copied URL must not silently create an admin
+            # browser session.  Subscription tokens remain handled by their
+            # established, separate download endpoints.
             payload = await dispatch(services.read_session, request)
             if not isinstance(payload, dict) or payload.get('role') != 'admin':
-                return RedirectResponse('/login', status_code=303)
+                return RedirectResponse(_login_location(request), status_code=303)
         elif guard == 'user':
             payload = await dispatch(services.read_user_identity, request)
             if not isinstance(payload, dict) or payload.get('role') != 'user':
-                return RedirectResponse('/login', status_code=303)
+                return RedirectResponse(_login_location(request), status_code=303)
         elif guard == 'user-password':
             await dispatch(services.read_user_password, request)
         else:
             raise ValueError('invalid React document guard')
     except (LoginRequired, UserAccessDenied):
-        return RedirectResponse('/login', status_code=303)
+        return RedirectResponse(_login_location(request), status_code=303)
     except StateUnavailable:
         return HTMLResponse('服务状态暂不可用，请稍后重试。', status_code=503)
     return None
+
+
+def _login_location(request: Request) -> str:
+    query = [
+        (key, value)
+        for key, value in request.query_params.multi_items()
+        if key in _SAFE_LOGIN_QUERY_KEYS
+    ]
+    target = request.url.path
+    encoded = urlencode(query, doseq=True)
+    if encoded:
+        target += f'?{encoded}'
+    return '/login?' + urlencode({'next': target})
 
 
 def _render_document(
@@ -164,7 +162,7 @@ def register_react_document_routes(app, services, dispatch, react_dist):
             return denied
         service = getattr(services, 'service_module', None)
         password_max = None
-        if path in ('/login', '/user/login'):
+        if path in ('/', '/auth', '/login', '/user/login'):
             password_max = getattr(service, 'PASSWORD_MAX_LENGTH', 256)
             if (
                 isinstance(password_max, bool)

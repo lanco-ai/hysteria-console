@@ -8,8 +8,9 @@ export type NavigationItem = {
 };
 
 export type NavigationGroup = {
-  label: string;
+  label?: string;
   items: NavigationItem[];
+  placement?: 'bottom';
 };
 
 export const navigationGroups: NavigationGroup[] = [
@@ -26,7 +27,6 @@ export const navigationGroups: NavigationGroup[] = [
       { key: 'health', href: '/admin/health', label: '健康状态', icon: 'pulse' },
       { key: 'incidents', href: '/admin/incidents', label: '事故处理', icon: 'pulse' },
       { key: 'logs', href: '/admin/logs', label: '清零日志', icon: 'logs' },
-      { key: 'settings', href: '/admin/settings', label: '设置', icon: 'lock' },
     ],
   },
   {
@@ -35,6 +35,13 @@ export const navigationGroups: NavigationGroup[] = [
       { key: 'config', href: '/admin/config', label: '模板配置', icon: 'config' },
       { key: 'rules', href: '/admin/rules', label: '路由规则', icon: 'rules' },
       { key: 'landing-egresses', href: '/admin/landing-egresses', label: '家宽出口', icon: 'rules' },
+    ],
+  },
+  {
+    placement: 'bottom',
+    items: [
+      { key: 'settings', href: '/admin/settings', label: '设置', icon: 'lock' },
+      { key: 'chat', href: '/admin/chat', label: 'AI 对话', icon: 'chat' },
     ],
   },
 ];

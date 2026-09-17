@@ -20,6 +20,8 @@ WEB_API_MODULES = (
     'account_models.py',
     'account_routes.py',
     'app.py',
+    'chat_routes.py',
+    'chat_service.py',
     'compat_routes.py',
     'config_models.py',
     'document_routes.py',

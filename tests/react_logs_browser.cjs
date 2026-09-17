@@ -8,7 +8,7 @@ const adminCookie = process.env.REACT_PREVIEW_ADMIN_COOKIE || 'missing-admin-ses
 const userCookie = process.env.REACT_PREVIEW_USER_COOKIE || 'missing-user-session';
 const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
 
-const columns = ['时间', '操作人', 'IP', '操作', '目标', '月份', '流量变化'];
+const columns = ['时间', '操作人', 'IP', '操作', '目标', '日期', '流量变化'];
 const navigation = [
   ['概览与用量', null],
   ['总览', '/admin'],
@@ -17,11 +17,12 @@ const navigation = [
   ['健康状态', '/admin/health'],
   ['事故处理', '/admin/incidents'],
   ['清零日志', '/admin/logs'],
-  ['设置', '/admin/settings'],
   ['网络配置', null],
   ['模板配置', '/admin/config'],
   ['路由规则', '/admin/rules'],
   ['家宽出口', '/admin/landing-egresses'],
+  ['设置', '/admin/settings'],
+  ['AI 对话', '/admin/chat'],
 ];
 
 function routeOf(url) {
@@ -85,8 +86,12 @@ async function verifyAuthenticatedLogs(browser) {
   assert.equal(await page.title(), '清零日志');
   assert.equal(await page.locator('.page-title').innerText(), '清零日志');
   assert.equal(await page.locator('.badge').innerText(), 'preview.invalid');
+  assert.equal(await page.locator('.app').count(), 1, 'the page must have one shell frame');
+  assert.equal(await page.locator('.sidebar').count(), 1, 'the page must have one sidebar');
+  assert.equal(await page.locator('.main').count(), 1, 'the page must have one main region');
   assert.deepEqual(await page.locator('.sidebar-section').allTextContents(), navigation.filter(([, href]) => !href).map(([label]) => label));
   assert.deepEqual(await page.locator('.sidebar-link').evaluateAll(links => links.map(link => [link.textContent.trim(), new URL(link.href).pathname])), navigation.filter(([, href]) => href));
+  assert.equal(await page.locator('.sidebar-link[aria-current="page"]').count(), 1);
   assert.equal(await page.locator('.sidebar-link[aria-current="page"]').innerText(), '清零日志');
   assert.deepEqual(await page.locator('.data-table th').allTextContents(), columns);
   assert.deepEqual(await page.locator('.data-table tbody tr').first().locator('td').allTextContents(), [
@@ -95,7 +100,7 @@ async function verifyAuthenticatedLogs(browser) {
     '192.0.2.10',
     'reset_user',
     'demo_alex',
-    '2026-07',
+    '2026.7.18',
     '1.00 GB → 0.00 B',
   ]);
   const stylesheet = await page.locator('link[rel="stylesheet"]').getAttribute('href');
@@ -131,7 +136,10 @@ async function verifyAuthenticationBoundaries(browser) {
     allowedResponses: ['GET /api/v1/session 401'],
   });
   await gotoReact(anonymous);
-  await anonymous.getByRole('link', { name: '前往登录' }).waitFor();
+  await anonymous.getByRole('dialog', { name: '登录控制台' }).waitFor();
+  assert.equal(await anonymous.locator('.app').count(), 1, 'anonymous admin routes remain inside the shared workbench shell');
+  assert.equal(await anonymous.locator('.sidebar').count(), 1, 'anonymous admin routes retain the shared workbench sidebar');
+  assert.equal(await anonymous.locator('.main').count(), 1, 'anonymous admin routes retain the shared workbench main region');
   assert.equal(await anonymous.locator('text=preview-admin').count(), 0);
   assert.equal(await anonymous.locator('.data-table').count(), 0);
   assertClean(anonymousFailures);
@@ -142,7 +150,8 @@ async function verifyAuthenticationBoundaries(browser) {
   const userPage = await userContext.newPage();
   const userFailures = collectFailures(userPage, 'user-session logs');
   await gotoReact(userPage);
-  await userPage.getByRole('link', { name: '管理员登录' }).waitFor();
+  await userPage.getByRole('dialog', { name: '登录控制台' }).waitFor();
+  assert.equal(await userPage.locator('.app').count(), 1, 'a non-admin session remains inside the shared workbench shell');
   assert.equal(await userPage.locator('text=preview-admin').count(), 0);
   assert.equal(await userPage.locator('.data-table').count(), 0);
   assertClean(userFailures);

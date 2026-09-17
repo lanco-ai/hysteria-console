@@ -26,7 +26,10 @@ from tests import workspace_preview_server as legacy_preview
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
     '/__react/admin': ('总览', 'has-shell'),
-    '/__react/': ('Hysteria · 连接网络，掌控全局', 'page-home page-site'),
+    '/__react/': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/__react/auth': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/auth': ('Hysteria 工作台', 'has-shell page-workbench'),
     '/__react/admin/logs': ('清零日志', 'has-shell'),
     '/__react/admin/settings': ('设置', 'has-shell'),
     '/__react/admin/usage': ('流量分析', 'has-shell'),
@@ -36,20 +39,16 @@ REACT_PAGES = {
     '/__react/admin/rules': ('路由规则', 'has-shell'),
     '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
     '/__react/admin/user/demo_alex': ('demo_alex · 用量画像', 'has-shell'),
-    '/__react/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
-    '/login': ('管理员登录 · Hysteria', 'page-auth page-admin-login'),
-    '/__react/user/login': (
-        '用户登录 · Hysteria',
-        'page-auth page-admin-login page-user-login',
-    ),
-    '/user/login': (
-        '用户登录 · Hysteria',
-        'page-auth page-admin-login page-user-login',
-    ),
+    '/__react/login': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/login': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/__react/user/login': ('Hysteria 工作台', 'has-shell page-workbench'),
+    '/user/login': ('Hysteria 工作台', 'has-shell page-workbench'),
     '/__react/logout': ('确认退出', ''),
     '/__react/user/logout': ('确认退出', ''),
     '/__react/user/change-password': ('修改面板密码', 'page-auth'),
     '/__react/user/panel': ('用户面板 · Hysteria', ''),
+    '/__react/admin/chat': ('AI 对话', 'has-shell'),
+    '/admin/chat': ('AI 对话', 'has-shell'),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'
@@ -164,6 +163,41 @@ def _handler(api_client, allowed_assets):
                 response.headers.multi_items(),
             )
 
+        def _json_api(self):
+            try:
+                raw_length = self.headers.get('Content-Length', '')
+                length = int(raw_length)
+                if length < 0 or length > 128 * 1024:
+                    raise ValueError
+            except (TypeError, ValueError):
+                self._json_error(400, 'bad_request')
+                return
+            try:
+                payload = _read_request_body(
+                    self.rfile,
+                    self.connection,
+                    length,
+                    timeout=RECEIPT_TIMEOUT,
+                )
+            except socket.timeout:
+                self._json_error(408, 'request_timeout')
+                return
+            headers = list(self.headers.raw_items())
+            if not any(name.lower() == 'cookie' for name, _ in headers):
+                headers.append(('Cookie', ''))
+            response = api_client.request(
+                self.command,
+                self.path,
+                headers=headers,
+                content=payload,
+            )
+            self._write(
+                response.status_code,
+                response.content,
+                response.headers.get('content-type', 'application/json'),
+                response.headers.multi_items(),
+            )
+
         def _react_asset(self, path):
             if path not in allowed_assets:
                 self.send_error(404)
@@ -201,7 +235,7 @@ def _handler(api_client, allowed_assets):
                 if payload.count(marker) != 1:
                     raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
                 payload = payload.replace(marker, replacement, 1)
-            if path in ('/__react/login', '/__react/user/login', '/login', '/user/login'):
+            if path in ('/__react/', '/__react/auth', '/__react/login', '/__react/user/login', '/login', '/user/login'):
                 marker = f'data-public-host="{escaped_public_host}"'
                 replacement = (
                     marker + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'
@@ -254,7 +288,16 @@ def _handler(api_client, allowed_assets):
             }:
                 self._form_api()
                 return
+            if urlsplit(self.path).path == '/api/chat/completions':
+                self._json_api()
+                return
             super().do_POST()
+
+        def do_PUT(self):
+            if urlsplit(self.path).path == '/api/chat/settings':
+                self._json_api()
+                return
+            super().do_PUT()
 
     return ReactPreview
 

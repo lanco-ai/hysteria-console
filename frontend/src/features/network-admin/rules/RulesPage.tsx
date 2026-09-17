@@ -122,12 +122,6 @@ export function RulesPage({ publicHost }: { publicHost: string }) {
     {rules.status === 'loading' ? <LoadingState label="正在加载规则…"/> : null}
     {rules.status === 'success' ? <div className="admin-page">
       {message ? <div className="flash" role="status">{message}</div> : null}
-      <section className="form-section">
-        <div className="form-section-title">规则说明</div>
-        <div className="form-section-desc">自定义规则优先级高于规则集，从上到下依次匹配。灰色行为内置规则，不可删除。</div>
-        <div className="small">当前版本：<code>{revision}</code></div>
-      </section>
-
       <div className="rules-ops-grid">
         <section className="op-panel">
           <div className="op-panel-title">规则包</div>
@@ -137,7 +131,7 @@ export function RulesPage({ publicHost }: { publicHost: string }) {
             <div className="op-form-grid">
               <div className="field"><label htmlFor="rule-pack">规则包</label><select id="rule-pack" name="pack" className="select" value={pack} onChange={event => setPack(event.target.value)} disabled={!rules.data.packs.length || formAction.busy}>{rules.data.packs.length ? rules.data.packs.map((item: AdminRulePack) => <option key={item.key} value={item.key}>{item.label} · {item.description}</option>) : <option value="">暂无规则包</option>}</select></div>
               <div className="field"><label htmlFor="rule-pack-scope">应用范围</label><select id="rule-pack-scope" name="scope" className="select" value={scope} onChange={event => { const next = event.target.value as 'global' | 'user'; setScope(next); if (next === 'global') setUser(''); }} disabled={formAction.busy}><option value="global">全局模板</option><option value="user">单个用户</option></select></div>
-              <div className="field"><label htmlFor="rule-pack-user">用户</label><select id="rule-pack-user" name="user" className="select" value={user} onChange={event => setUser(event.target.value)} disabled={scope !== 'user' || formAction.busy}><option value="">选择用户</option>{rules.data.users.map(name => <option key={name} value={name}>{name}</option>)}</select></div>
+              <div className="field"><label htmlFor="rule-pack-user">用户</label><select id="rule-pack-user" name="user" className="select" value={user} onChange={event => setUser(event.target.value)} disabled={scope !== 'user' || formAction.busy} aria-describedby="rule-pack-user-help"><option value="">选择用户</option>{rules.data.users.map(name => <option key={name} value={name}>{name}</option>)}</select><span id="rule-pack-user-help" className="field-help" role="status">{scope === 'user' ? `${rules.data.users.length} 位用户可选` : '选择“单个用户”后可选择用户'}</span></div>
             </div>
             <div className="op-form-footer"><span className="op-footer-hint">应用后更新所选范围</span><button className="btn btn-secondary" type="submit" disabled={formAction.busy || !pack || (scope === 'user' && !user)}>应用规则包</button></div>
           </form>

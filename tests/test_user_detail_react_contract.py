@@ -18,6 +18,6 @@ def test_user_detail_route_supports_preview_and_direct_paths():
     main = (ROOT / 'frontend/src/main.tsx').read_text()
     documents = (ROOT / 'hysteria/web_api/document_routes.py').read_text()
     preview = (ROOT / 'tests/react_preview_server.py').read_text()
-    assert '/__react/admin/user/' in main
+    assert r'^\/admin\/user\/[^/]+$' in main
     assert "'/admin/user/{uid}'" in documents
     assert '/__react/admin/user/' in preview

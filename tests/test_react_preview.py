@@ -121,13 +121,13 @@ def test_react_preview_serves_exact_public_entry_with_public_document_shell(runn
     with urlopen(base_url + '/__react/', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>Hysteria · 连接网络，掌控全局</title>' in page
-        assert '<body class="page-home page-site">' in page
+        assert '<title>Hysteria 工作台</title>' in page
+        assert '<body class="has-shell page-workbench">' in page
         assert '/static/react/assets/' in page
 
     with urlopen(base_url + '/', timeout=5) as response:
         assert response.status == 200
-        assert '界面示意 · 非实时数据' in response.read().decode()
+        assert '<title>Hysteria 工作台</title>' in response.read().decode()
 
     _assert_head_matches_get(base_url + '/__react/')
 
@@ -137,8 +137,8 @@ def test_react_preview_serves_exact_login_entry_with_password_limit(running_prev
     with urlopen(base_url + '/__react/login', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>管理员登录 · Hysteria</title>' in page
-        assert '<body class="page-auth page-admin-login">' in page
+        assert '<title>Hysteria 工作台</title>' in page
+        assert '<body class="has-shell page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/login')
 
@@ -148,10 +148,23 @@ def test_react_preview_serves_user_login_entry_with_password_limit(running_previ
     with urlopen(base_url + '/__react/user/login', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>用户登录 · Hysteria</title>' in page
-        assert '<body class="page-auth page-admin-login page-user-login">' in page
+        assert '<title>Hysteria 工作台</title>' in page
+        assert '<body class="has-shell page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/user/login')
+
+
+def test_react_preview_serves_auth_alias_with_workbench_bootstrap(running_preview):
+    _, base_url = running_preview
+    with urlopen(base_url + '/__react/auth', timeout=5) as response:
+        page = response.read().decode()
+        assert response.headers.get_content_type() == 'text/html'
+        assert '<title>Hysteria 工作台</title>' in page
+        assert '<body class="has-shell page-workbench">' in page
+        assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
+    _assert_head_matches_get(base_url + '/__react/auth')
+    with urlopen(base_url + '/auth', timeout=5) as response:
+        assert '<title>Hysteria 工作台</title>' in response.read().decode()
 
 
 @pytest.mark.parametrize(
@@ -283,6 +296,7 @@ def test_react_preview_allows_exact_form_posts_and_preserves_cookie_isolation(ru
 
     for route in (
         '/__react/',
+        '/__react/auth',
         '/__react/login',
         '/__react/logout',
         '/__react/user/logout',

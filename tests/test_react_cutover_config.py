@@ -10,6 +10,7 @@ TEMPLATES = (
 REACT_DOCUMENTS = (
     '/',
     '/login',
+    '/auth',
     '/user/login',
     '/logout',
     '/user/logout',
@@ -24,6 +25,7 @@ REACT_DOCUMENTS = (
     '/admin/config',
     '/admin/rules',
     '/admin/landing-egresses',
+    '/admin/chat',
 )
 
 
@@ -44,13 +46,23 @@ def test_templates_are_explicitly_staged_and_preserve_listener_placeholders():
 def test_react_documents_and_api_use_8083():
     for path in TEMPLATES:
         text = path.read_text(encoding='utf-8')
-        for document in REACT_DOCUMENTS:
+        if path.name.endswith('-https.conf'):
+            assert 'location = / {\n        return 302 https://lancoai.site/admin/chat;\n    }' in text
+        else:
+            assert 'location = / {\n        proxy_pass http://127.0.0.1:8083;' in text
+        for document in REACT_DOCUMENTS[1:]:
             assert f'location = {document} {{\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location = /api/v1 {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location ^~ /api/v1/ {\n        proxy_pass http://127.0.0.1:8083;' in text
+        assert 'location ^~ /api/chat/ {\n        proxy_pass http://127.0.0.1:8083;' in text
+        assert 'location = /api/chat/completions {' in text
+        assert 'proxy_buffering off;' in text
+        assert 'proxy_read_timeout 660s;' in text
         assert (
             'location ^~ /static/react/assets/ {\n        proxy_pass http://127.0.0.1:8083;' in text
         )
+        assert 'location = /chat {\n        return 404;\n    }' in text
+        assert 'location = /chat {\n        proxy_pass' not in text
 
 
 def test_all_documents_and_downloads_use_unified_fastapi():

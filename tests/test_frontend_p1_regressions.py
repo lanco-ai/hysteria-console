@@ -107,7 +107,7 @@ def _blend(foreground, background, opacity):
 
 def test_mobile_sidebar_contains_focus_and_removes_background_skip_target():
     page = ss.render_admin_shell("dashboard", "总览", "<p>content</p>")
-    shell_source = (ROOT / "frontend" / "src" / "shared" / "AdminShell.tsx").read_text(encoding="utf-8")
+    shell_source = (ROOT / "frontend" / "src" / "shared" / "CodexShell.tsx").read_text(encoding="utf-8")
 
     assert '<a class="skip-link" href="#main-content">' in page
     assert 'inert={mobile && open ? true : undefined}' in shell_source
