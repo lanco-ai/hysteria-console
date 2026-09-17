@@ -5,6 +5,7 @@ request bodies, upstream headers, or upstream response bodies.
 """
 
 import asyncio
+import codecs
 import json
 import math
 import urllib.error
@@ -226,26 +227,54 @@ class SSEDecoder:
 
     def __init__(self):
         self._buffer = ''
+        self._event_lines: list[str] = []
+        self._utf8_decoder = codecs.getincrementaldecoder('utf-8')('replace')
 
     def feed(self, chunk: bytes | str) -> list[dict[str, object]]:
         if isinstance(chunk, bytes):
-            chunk = chunk.decode('utf-8', 'replace')
+            chunk = self._utf8_decoder.decode(chunk, final=False)
         self._buffer += chunk
-        self._buffer = self._buffer.replace('\r\n', '\n').replace('\r', '\n')
-        events: list[dict[str, object]] = []
-        while '\n\n' in self._buffer:
-            raw_event, self._buffer = self._buffer.split('\n\n', 1)
-            event = _decode_sse_event(raw_event)
+        return self._consume_lines(final=False)
+
+    def finish(self) -> list[dict[str, object]]:
+        self._buffer += self._utf8_decoder.decode(b'', final=True)
+        events = self._consume_lines(final=True)
+        if self._buffer:
+            self._event_lines.append(self._buffer)
+            self._buffer = ''
+        if self._event_lines:
+            event = _decode_sse_event('\n'.join(self._event_lines))
+            self._event_lines = []
             if event is not None:
                 events.append(event)
         return events
 
-    def finish(self) -> list[dict[str, object]]:
-        if not self._buffer.strip():
-            return []
-        event = _decode_sse_event(self._buffer)
-        self._buffer = ''
-        return [event] if event is not None else []
+    def _consume_lines(self, *, final: bool) -> list[dict[str, object]]:
+        events: list[dict[str, object]] = []
+        while self._buffer:
+            newline_positions = [position for position in (
+                self._buffer.find('\n'),
+                self._buffer.find('\r'),
+            ) if position >= 0]
+            if not newline_positions:
+                break
+            position = min(newline_positions)
+            newline_length = 1
+            if self._buffer[position] == '\r':
+                if position + 1 >= len(self._buffer) and not final:
+                    break
+                if self._buffer[position:position + 2] == '\r\n':
+                    newline_length = 2
+            line = self._buffer[:position]
+            self._buffer = self._buffer[position + newline_length:]
+            if line:
+                self._event_lines.append(line)
+                continue
+            event = _decode_sse_event('\n'.join(self._event_lines))
+            self._event_lines = []
+            if event is not None:
+                events.append(event)
+        return events
 
 
 def _decode_sse_event(raw_event: str) -> dict[str, object] | None:
@@ -293,6 +322,28 @@ def _decode_sse_event(raw_event: str) -> dict[str, object] | None:
                 if text:
                     return {'type': 'delta', 'text': text}
     error = payload.get('error')
+    if isinstance(error, dict):
+        upstream_status = error.get('upstream_status')
+        safe_status = (
+            upstream_status
+            if isinstance(upstream_status, int) and not isinstance(upstream_status, bool)
+            and 100 <= upstream_status <= 599
+            else None
+        )
+        if safe_status in (401, 403):
+            code = 'authentication_failed'
+        elif safe_status == 404:
+            code = 'model_not_found'
+        elif safe_status == 429:
+            code = 'rate_limited'
+        elif safe_status is not None and safe_status >= 500:
+            code = 'upstream_unavailable'
+        else:
+            code = 'upstream_error'
+        result: dict[str, object] = {'type': 'error', 'error': code}
+        if safe_status is not None:
+            result['upstream_status'] = safe_status
+        return result
     if error is not None:
         return {'type': 'error', 'error': 'upstream_error'}
     return None
@@ -406,7 +457,7 @@ def _stream_error_event(error: ChatUpstreamError) -> dict[str, object]:
     if error.status in (401, 403):
         code = 'authentication_failed'
     elif error.status == 404:
-        code = 'models_endpoint_unavailable'
+        code = 'model_not_found'
     elif error.status == 429:
         code = 'rate_limited'
     elif isinstance(error.status, int) and error.status >= 500:
@@ -512,7 +563,7 @@ def forward_chat_stream(
                                 decoder = SSEDecoder()
                                 saw_done = False
                                 try:
-                                    async for chunk in response.aiter_bytes(8192):
+                                    async for chunk in response.aiter_bytes():
                                         for event in decoder.feed(chunk):
                                             if event.get('type') == 'done':
                                                 saw_done = True

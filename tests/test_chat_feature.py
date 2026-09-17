@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import urllib.error
 
 from fastapi.testclient import TestClient
@@ -424,6 +425,77 @@ def test_sse_decoder_handles_split_delta_usage_and_done_events():
     ]
 
 
+def test_sse_decoder_preserves_utf8_when_codepoint_is_split_across_chunks():
+    decoder = chat_service.SSEDecoder()
+    payload = 'data: {"choices":[{"delta":{"content":"你好"}}]}\n\n'.encode('utf-8')
+    split_at = payload.index('你'.encode('utf-8')) + 1
+
+    events = decoder.feed(payload[:split_at])
+    events.extend(decoder.feed(payload[split_at:]))
+
+    assert events == [{'type': 'delta', 'text': '你好'}]
+
+
+def test_sse_decoder_exposes_sanitized_model_not_found_status():
+    decoder = chat_service.SSEDecoder()
+    events = decoder.feed(
+        b'data: {"error":{"type":"api_error","upstream_status":404,"message":"model details omitted"}}\n\n'
+    )
+
+    assert events == [{'type': 'error', 'error': 'model_not_found', 'upstream_status': 404}]
+
+
+def test_forward_chat_stream_delivers_each_native_upstream_chunk_promptly(monkeypatch):
+    class Response:
+        status_code = 200
+        headers = {'content-type': 'text/event-stream'}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def aiter_bytes(self):
+            yield b'data: {"choices":[{"delta":{"content":"first"}}]}\n\n'
+            await asyncio.sleep(0.03)
+            yield b'data: {"choices":[{"delta":{"content":"second"}}]}\n\n'
+            yield b'data: [DONE]\n\n'
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(chat_service.httpx, 'AsyncClient', Client)
+
+    async def collect():
+        times = []
+        events = []
+        started = time.monotonic()
+        async for chunk in chat_service.forward_chat_stream(
+            ChatSettings('https://example.test/v1', 'sk-secret', 0.7),
+            [{'role': 'user', 'content': 'hello'}],
+            model='model-x',
+        ):
+            times.append(time.monotonic() - started)
+            events.append(chunk)
+        return times, b''.join(events)
+
+    times, body = asyncio.run(collect())
+    assert body.count(b'"type":"delta"') == 2
+    assert times[0] < 0.02
+    assert times[1] >= 0.025
+
+
 def test_forward_chat_stream_returns_sanitized_incremental_events(monkeypatch):
     seen = {}
 
@@ -437,7 +509,7 @@ def test_forward_chat_stream_returns_sanitized_incremental_events(monkeypatch):
         async def __aexit__(self, *_args):
             return False
 
-        async def aiter_bytes(self, _size):
+        async def aiter_bytes(self, _size=None):
             yield b'data: {"choices":[{"delta":{"content":"hel'
             yield b'lo"},"finish_reason":null}]}\n\n'
             yield b'data: {"choices":[],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}\n\n'
@@ -491,7 +563,7 @@ def test_forward_chat_stream_falls_back_to_normal_json_response(monkeypatch):
         async def __aexit__(self, *_args):
             return False
 
-        async def aiter_bytes(self, _size):
+        async def aiter_bytes(self, _size=None):
             yield b'{"choices":[{"message":{"content":"ok"}}],"usage":{"total_tokens":4}}'
 
     class Client:
@@ -571,7 +643,7 @@ def test_forward_chat_stream_retries_reasoning_before_first_delta(monkeypatch):
         async def __aexit__(self, *_args):
             return False
 
-        async def aiter_bytes(self, _size):
+        async def aiter_bytes(self, _size=None):
             yield b'{"error":{"message":"unsupported parameter reasoning_effort"}}'
 
     class SuccessResponse:
@@ -584,7 +656,7 @@ def test_forward_chat_stream_retries_reasoning_before_first_delta(monkeypatch):
         async def __aexit__(self, *_args):
             return False
 
-        async def aiter_bytes(self, _size):
+        async def aiter_bytes(self, _size=None):
             yield b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
             yield b'data: [DONE]\n\n'
 
@@ -636,7 +708,7 @@ def test_forward_chat_stream_falls_back_without_usage_option(monkeypatch):
         async def __aexit__(self, *_args):
             return False
 
-        async def aiter_bytes(self, _size):
+        async def aiter_bytes(self, _size=None):
             yield b'{"error":{"message":"unknown field stream_options"}}'
 
     class SuccessResponse:
@@ -649,7 +721,7 @@ def test_forward_chat_stream_falls_back_without_usage_option(monkeypatch):
         async def __aexit__(self, *_args):
             return False
 
-        async def aiter_bytes(self, _size):
+        async def aiter_bytes(self, _size=None):
             yield b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'
             yield b'data: [DONE]\n\n'
 
@@ -695,7 +767,7 @@ def test_forward_chat_stream_sanitizes_error_event(monkeypatch):
         async def __aexit__(self, *_args):
             return False
 
-        async def aiter_bytes(self, _size):
+        async def aiter_bytes(self, _size=None):
             yield b'{"error":{"message":"secret provider details"}}'
 
     class Client:
