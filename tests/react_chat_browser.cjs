@@ -31,8 +31,8 @@ async function main() {
   await anonymousPage.goto(`${baseUrl}/__react/admin/chat`);
   assert.equal((await anonymousSession).status(), 401);
   await expect(anonymousPage.locator('.chat-composer textarea')).toBeDisabled();
-  await expect(anonymousPage.getByRole('button', { name: '新对话' })).toBeDisabled();
-  await expect(anonymousPage.getByPlaceholder('搜索对话')).toBeDisabled();
+  await expect(anonymousPage.locator('.chat-history-panel')).toHaveCount(0);
+  await expect(anonymousPage.getByRole('button', { name: '打开历史记录' })).toBeVisible();
   await expect(anonymousPage.locator('button[aria-label="设置"]')).toBeDisabled();
   assert.equal(anonymousChatRequests, 0);
   const anonymousStorageCalls = await anonymousPage.evaluate(() => window.__chatStorageCalls);
@@ -94,6 +94,9 @@ async function main() {
   await page.goto(`${baseUrl}/__react/admin/chat`);
   await expect(page).toHaveTitle('AI 对话');
   await expect(page.getByRole('heading', { name: 'Lanco AI' })).toBeVisible();
+  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '打开历史记录' })).toContainText('历史');
+  await expect(page.locator('.chat-history-count')).toHaveText('0');
   await expect(page.getByLabel('当前模型')).toBeEnabled();
   await expect(page.getByLabel('当前模型')).toHaveValue('');
   await page.getByLabel('当前模型').selectOption('model-a');
@@ -118,6 +121,7 @@ async function main() {
   await composer.fill('hello');
   await composer.press('Enter');
   await expect(page.locator('.chat-message-assistant .chat-message-content')).toContainText('HELLO');
+  await expect(page.locator('.chat-history-count')).toHaveText('1');
   await page.locator('select[aria-label="思考强度"]').selectOption('high');
   expectedReasoning = 'high';
   await composer.fill('second');
@@ -138,18 +142,24 @@ async function main() {
 
   await page.reload();
   await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SECOND');
+  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button', { name: '清空' }).click();
   await expect(page.getByRole('heading', { name: 'Lanco AI' })).toBeVisible();
   await expect(page.locator('.chat-empty-state')).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await expect(page.locator('.sidebar-toggle')).toBeVisible();
-  await page.locator('.sidebar-toggle').click();
-  await expect(page.locator('.sidebar.open')).toBeVisible();
+  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
+  await page.getByRole('button', { name: '打开历史记录' }).click();
+  await expect(page.locator('.chat-history-panel')).toBeVisible();
   await expect(page.locator('.chat-history')).toHaveCSS('display', 'flex');
   await expect(page.locator('.chat-session-list')).toHaveCSS('overflow-y', 'auto');
   await expect(page.locator('.chat-new-button')).toBeVisible();
+  await page.locator('.chat-session').first().click();
+  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
+  await expect(page.locator('.sidebar-toggle')).toBeVisible();
+  await page.locator('.sidebar-toggle').click();
+  await expect(page.locator('.sidebar.open')).toBeVisible();
   await page.getByRole('button', { name: '关闭导航' }).click();
 
   await context.close();

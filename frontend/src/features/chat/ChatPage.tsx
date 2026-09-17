@@ -164,7 +164,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
-  const [historyOpen, setHistoryOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [usage, setUsage] = useState<ChatUsage>(() => ({ day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }));
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -340,6 +340,10 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
       setActiveId(next?.id || '');
     }
   };
+  const selectSession = (id: string) => {
+    setActiveId(id);
+    if (window.matchMedia('(max-width: 880px)').matches) setHistoryOpen(false);
+  };
 
   const send = async () => {
     const content = message.trim();
@@ -473,7 +477,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
 
   const toolbarModels = models;
   const toolbar = <div className="chat-topbar-controls">
-    <button className="btn btn-ghost btn-sm chat-history-toggle" type="button" onClick={() => setHistoryOpen(current => !current)} aria-expanded={historyOpen} aria-controls="chat-history-panel">{historyOpen ? '隐藏历史' : '显示历史'}</button>
+    <button className={`btn btn-ghost btn-sm chat-history-toggle${historyOpen ? ' is-open' : ''}`} type="button" onClick={() => setHistoryOpen(current => !current)} aria-label={historyOpen ? '关闭历史记录' : '打开历史记录'} aria-expanded={historyOpen} aria-controls="chat-history-panel"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.4 5.2h11.2M4.4 10h11.2M4.4 14.8h7.2" /></svg><span>历史</span><span className="chat-history-count">{sessions.length}</span></button>
     <label className="chat-toolbar-field"><span className="sr-only">模型</span>{toolbarModels.length ? <select className="chat-toolbar-select" aria-label="当前模型" value={selectedModel} onChange={event => selectModel(event.target.value)} disabled={!authenticated || !settings || modelsBusy}><option value="">选择模型</option>{toolbarModels.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <input className="chat-toolbar-select chat-toolbar-model-input" aria-label="当前模型" value={selectedModel} onChange={event => selectModel(event.target.value)} placeholder="输入模型标识" disabled={!authenticated || !settings}/>}</label>
     <label className="chat-toolbar-field"><span className="sr-only">思考强度</span><select className="chat-toolbar-select chat-toolbar-select-small" aria-label="思考强度" value={reasoningEffort} onChange={event => selectReasoning(event.target.value as ReasoningEffort)} disabled={!authenticated || !settings}>{reasoningOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
     <span className="chat-context-status" aria-label="上下文状态">上下文：{formatTokens(contextUsed)} / {formatTokens(contextMax)}</span>
@@ -492,7 +496,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
           usage={usage}
           onSearch={setSearch}
           onNew={createSession}
-          onSelect={setActiveId}
+          onSelect={selectSession}
           onRename={renameSession}
           onDelete={deleteSession}
           onOpenSettings={() => setDrawer('settings')}

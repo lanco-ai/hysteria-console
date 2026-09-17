@@ -96,6 +96,7 @@ body.page-workbench .chat-layout {
 
 body.page-workbench .chat-layout.history-collapsed {
   grid-template-columns: minmax(0, 1fr);
+  width: min(100%, 980px);
 }
 
 body.page-workbench .chat-history-panel {
@@ -104,7 +105,9 @@ body.page-workbench .chat-history-panel {
   min-height: 0;
   overflow: hidden;
   border-color: #e7e7e3;
+  border-radius: 14px;
   background: #fbfbfa;
+  box-shadow: 0 10px 30px rgba(28, 32, 27, .045);
 }
 
 body.page-workbench .chat-history-panel .chat-history {
@@ -130,6 +133,43 @@ body.page-workbench .chat-thread-heading {
 
 body.page-workbench .chat-history-toggle {
   flex: 0 0 auto;
+  gap: 6px;
+  min-height: 34px;
+  padding-inline: 10px 8px;
+  color: #535850;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  transition: color 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+body.page-workbench .chat-history-toggle:hover,
+body.page-workbench .chat-history-toggle:focus-visible,
+body.page-workbench .chat-history-toggle.is-open {
+  color: #293126;
+  border-color: #dfe3da;
+  background: #f0f2ed;
+}
+
+body.page-workbench .chat-history-toggle svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+body.page-workbench .chat-history-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding-inline: 5px;
+  color: #6b7167;
+  border-radius: 999px;
+  background: rgba(112, 124, 105, .1);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 
 body.page-workbench .chat-messages {
@@ -140,6 +180,10 @@ body.page-workbench .chat-messages {
 body.page-workbench .chat-empty-state {
   min-height: 0;
   padding-bottom: clamp(24px, 9vh, 88px);
+}
+
+body.page-workbench .history-collapsed .chat-empty-state {
+  padding-inline: clamp(12px, 4vw, 48px);
 }
 
 body.page-workbench .chat-composer {
