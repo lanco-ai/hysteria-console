@@ -61,6 +61,9 @@ function normaliseSession(value: unknown): ChatSession | null {
     updatedAt: typeof item.updatedAt === 'number' && Number.isFinite(item.updatedAt) ? item.updatedAt : Date.now(),
   };
   if (typeof item.title === 'string') session.title = item.title;
+  if (typeof item.model === 'string') session.model = item.model;
+  if (item.reasoningEffort === 'auto' || item.reasoningEffort === 'low' || item.reasoningEffort === 'medium' || item.reasoningEffort === 'high') session.reasoningEffort = item.reasoningEffort;
+  if (typeof item.draft === 'string') session.draft = item.draft;
   return session;
 }
 
@@ -161,6 +164,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
+  const [historyOpen, setHistoryOpen] = useState(true);
   const [drawer, setDrawer] = useState<Drawer>(null);
   const [usage, setUsage] = useState<ChatUsage>(() => ({ day: usageDay(), today: 0, total: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0 }));
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -209,6 +213,12 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     if (!authenticated || !localStateReady) return;
     try { localStorage.setItem(USAGE_KEY, JSON.stringify(usage)); } catch { /* Storage is optional. */ }
   }, [authenticated, localStateReady, usage]);
+
+  useEffect(() => {
+    if (!authenticated || !localStateReady) return;
+    setMessage(active?.draft || '');
+    setReasoningEffort(active?.reasoningEffort || 'auto');
+  }, [activeId, authenticated, localStateReady]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -276,8 +286,11 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
       setContextMax(null);
       return;
     }
-    setSelectedModel(current => models.some(item => item.id === current) ? current : (models.length === 1 ? models[0]?.id || '' : ''));
-  }, [models]);
+    setSelectedModel(current => {
+      const preferred = active?.model || current;
+      return models.some(item => item.id === preferred) ? preferred : (models.length === 1 ? models[0]?.id || '' : '');
+    });
+  }, [activeId, models]);
 
   useEffect(() => {
     const model = models.find(item => item.id === selectedModel);
@@ -299,7 +312,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   };
   const createSession = () => {
     if (!authenticated) return;
-    const session: ChatSession = { id: newId(), title: '新对话', messages: [], updatedAt: Date.now() };
+    const session: ChatSession = { id: newId(), title: '新对话', messages: [], updatedAt: Date.now(), ...(selectedModel ? { model: selectedModel } : {}), reasoningEffort };
     setSessions(current => [session, ...current]);
     setActiveId(session.id);
     setError('');
@@ -335,11 +348,14 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
       setError('请先在聊天顶部选择模型，或在设置中测试连接获取模型列表。');
       return;
     }
-    const current: ChatSession = active || { id: newId(), title: '新对话', messages: [], updatedAt: Date.now() };
+    const current: ChatSession = active || { id: newId(), title: '新对话', messages: [], updatedAt: Date.now(), ...(selectedModel ? { model: selectedModel } : {}), reasoningEffort };
     const userMessage: ChatMessageData = { role: 'user', content };
     const nextMessages = [...current.messages, userMessage];
     const nextSession: ChatSession = {
       ...current,
+      model: selectedModel,
+      reasoningEffort,
+      draft: '',
       title: current.messages.length ? sessionTitle(current) : content.slice(0, 28),
       messages: nextMessages,
       updatedAt: Date.now(),
@@ -414,6 +430,11 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     setContextUsed(null);
     const selected = models.find(item => item.id === model);
     setContextMax(selected?.context_window ?? null);
+    setSessions(current => current.map(session => session.id === activeId ? { ...session, model, updatedAt: Date.now() } : session));
+  };
+  const selectReasoning = (value: ReasoningEffort) => {
+    setReasoningEffort(value);
+    setSessions(current => current.map(session => session.id === activeId ? { ...session, reasoningEffort: value, updatedAt: Date.now() } : session));
   };
   const testConnection = async () => {
     if (!authenticated) return;
@@ -452,36 +473,41 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
 
   const toolbarModels = models;
   const toolbar = <div className="chat-topbar-controls">
+    <button className="btn btn-ghost btn-sm chat-history-toggle" type="button" onClick={() => setHistoryOpen(current => !current)} aria-expanded={historyOpen} aria-controls="chat-history-panel">{historyOpen ? '隐藏历史' : '显示历史'}</button>
     <label className="chat-toolbar-field"><span className="sr-only">模型</span>{toolbarModels.length ? <select className="chat-toolbar-select" aria-label="当前模型" value={selectedModel} onChange={event => selectModel(event.target.value)} disabled={!authenticated || !settings || modelsBusy}><option value="">选择模型</option>{toolbarModels.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select> : <input className="chat-toolbar-select chat-toolbar-model-input" aria-label="当前模型" value={selectedModel} onChange={event => selectModel(event.target.value)} placeholder="输入模型标识" disabled={!authenticated || !settings}/>}</label>
-    <label className="chat-toolbar-field"><span className="sr-only">思考强度</span><select className="chat-toolbar-select chat-toolbar-select-small" aria-label="思考强度" value={reasoningEffort} onChange={event => setReasoningEffort(event.target.value as ReasoningEffort)} disabled={!authenticated || !settings}>{reasoningOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+    <label className="chat-toolbar-field"><span className="sr-only">思考强度</span><select className="chat-toolbar-select chat-toolbar-select-small" aria-label="思考强度" value={reasoningEffort} onChange={event => selectReasoning(event.target.value as ReasoningEffort)} disabled={!authenticated || !settings}>{reasoningOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
     <span className="chat-context-status" aria-label="上下文状态">上下文：{formatTokens(contextUsed)} / {formatTokens(contextMax)}</span>
     <button className="btn btn-ghost btn-icon" type="button" aria-label="AI 用量" title="AI 用量" onClick={() => setDrawer('usage')} disabled={!authenticated}>⌁</button>
     <button className="btn btn-ghost btn-icon" type="button" aria-label="设置" title="设置" onClick={() => setDrawer('settings')} disabled={!authenticated}>⚙</button>
   </div>;
 
-  return <CodexShell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar} sidebarTop={<ChatSidebar
-    sessions={sessions}
-    activeId={activeId}
-    search={search}
-    usage={usage}
-    onSearch={setSearch}
-    onNew={createSession}
-    onSelect={setActiveId}
-    onRename={renameSession}
-    onDelete={deleteSession}
-    onOpenSettings={() => setDrawer('settings')}
-    onOpenUsage={() => setDrawer('usage')}
-    disabled={!authenticated}
-  />}>
+  return <CodexShell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar}>
     <section className="chat-page">
       {settingsError ? <div className="err" role="alert">{settingsError}</div> : null}
-      <section className="chat-thread card">
+      <div className={`chat-layout${historyOpen ? '' : ' history-collapsed'}`}>
+        {historyOpen ? <aside className="chat-history-panel card" id="chat-history-panel"><ChatSidebar
+          sessions={sessions}
+          activeId={activeId}
+          search={search}
+          usage={usage}
+          onSearch={setSearch}
+          onNew={createSession}
+          onSelect={setActiveId}
+          onRename={renameSession}
+          onDelete={deleteSession}
+          onOpenSettings={() => setDrawer('settings')}
+          onOpenUsage={() => setDrawer('usage')}
+          onClose={() => setHistoryOpen(false)}
+          disabled={!authenticated}
+        /></aside> : null}
+        <section className="chat-thread card">
           <header className="chat-thread-heading"><div className="chat-thread-title"><div><strong>{active ? sessionTitle(active) : '新对话'}</strong><span>{selectedModel || '尚未选择模型'}</span></div></div>{active ? <button className="btn btn-ghost btn-sm" type="button" onClick={clearSession} disabled={!authenticated}>清空</button> : null}</header>
           <div className="chat-messages" role="log" aria-live="polite">
             {active?.messages.length ? active.messages.map((item, index) => <ChatMessage key={`${active.id}-${index}`} message={item} />) : <div className="chat-empty-state"><div className="chat-empty-mark">✦</div><h2>Lanco AI</h2><p>有什么可以帮你？</p><div className="chat-quick-prompts"><button type="button" onClick={() => choosePrompt('翻译一段文字：')} disabled={!authenticated}>翻译一段文字</button><button type="button" onClick={() => choosePrompt('请润色以下学术表达：')} disabled={!authenticated}>润色学术表达</button><button type="button" onClick={() => choosePrompt('请解释这段代码：')} disabled={!authenticated}>解释一段代码</button><button type="button" onClick={() => choosePrompt('')} disabled={!authenticated}>自由对话</button></div></div>}
           </div>
-          <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { setMessage(event.target.value); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={!authenticated || busy} /><div className="chat-composer-footer"><span>{busy ? '正在等待回复…' : 'Enter 发送 · Shift + Enter 换行'}</span><button className="btn btn-primary" type="button" onClick={() => void send()} disabled={!authenticated || busy || !message.trim()}>{busy ? '发送中…' : '发送 ↑'}</button></div></div>
-      </section>
+          <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { const next = event.target.value; setMessage(next); setSessions(current => current.map(session => session.id === activeId ? { ...session, draft: next } : session)); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={!authenticated || busy} /><div className="chat-composer-footer"><span>{busy ? '正在等待回复…' : 'Enter 发送 · Shift + Enter 换行'}</span><button className="btn btn-primary" type="button" onClick={() => void send()} disabled={!authenticated || busy || !message.trim()}>{busy ? '发送中…' : '发送 ↑'}</button></div></div>
+        </section>
+      </div>
       {notice ? <div className="chat-notice" role="status">{notice}</div> : null}
       {error ? <div className="err" role="alert">{error}</div> : null}
     </section>

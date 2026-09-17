@@ -4,12 +4,13 @@
 
 body.has-shell {
   background: var(--bg-page);
+  font-family: var(--font-sans);
 }
 
 /* App Layout */
 .app {
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -261,7 +262,7 @@ html.sidebar-pre-collapsed .sidebar-logout {
   position: sticky;
   top: 0;
   z-index: 8;
-  height: 64px;
+  height: 60px;
   display: flex;
   align-items: center;
   background: rgba(248,247,243,.88);
@@ -395,4 +396,3 @@ body.has-shell .btn-ghost:hover {
   background: var(--bg-subtle);
   color: var(--text-primary);
 }
-

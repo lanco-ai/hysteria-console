@@ -153,7 +153,7 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
             code = _settings_error_code(exc)
             return _json_error(code, status=503 if code == 'settings_unavailable' else 422)
         except ChatUpstreamError as exc:
-            content = {'error': 'upstream_error'}
+            content = {'error': _connection_error_code(exc)}
             if isinstance(exc.status, int):
                 content['upstream_status'] = exc.status
             return JSONResponse(status_code=502, content=content)
@@ -229,7 +229,7 @@ def register_chat_routes(app, services, dispatch, *, settings_store=None):
             code = _settings_error_code(exc)
             return _json_error(code, status=503 if code == 'settings_unavailable' else 422)
         except ChatUpstreamError as exc:
-            content = {'error': 'upstream_error'}
+            content = {'error': _connection_error_code(exc)}
             if isinstance(exc.status, int):
                 content['upstream_status'] = exc.status
             return JSONResponse(status_code=502, content=content)

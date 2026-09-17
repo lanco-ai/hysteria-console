@@ -44,7 +44,7 @@ function errorMessage(status: number, payload: unknown): string {
     if (code === 'authentication_failed') return '第三方 API 认证失败，请检查 API Key。';
     if (code === 'models_endpoint_unavailable') return '模型列表接口不可用，可手动填写模型标识。';
     if (code === 'rate_limited') return '第三方 API 请求过于频繁，请稍后重试。';
-    if (code === 'upstream_unavailable') return '第三方 API 当前不可用，请稍后重试。';
+    if (code === 'upstream_unavailable') return '模型服务当前没有可用容量，请稍后重试或切换模型。';
     if (code === 'timeout') return '连接第三方 API 超时，请稍后重试。';
     if (code === 'login_required') return '登录已失效，请重新登录。';
   }

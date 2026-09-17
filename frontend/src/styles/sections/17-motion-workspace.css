@@ -179,7 +179,7 @@ body.has-shell :is(.health-section,.settings-section) { margin-bottom: 24px; }
 .wrap.user-panel .section-head { flex-wrap: wrap; gap: 8px; }
 @media (min-width: 881px) {
   .wrap.user-panel .usage-kpis { grid-template-columns: repeat(3,minmax(0,1fr)); }
-  body.has-shell .app:not(.sidebar-collapsed) { grid-template-columns: 224px minmax(0,1fr); }
+  body.has-shell .app:not(.sidebar-collapsed) { grid-template-columns: 240px minmax(0,1fr); }
   html.sidebar-pre-collapsed body.has-shell .app:not(.sidebar-collapsed) { grid-template-columns: 64px minmax(0,1fr); }
   body.has-shell .sidebar.collapsed .sidebar-link { padding-left: 0; padding-right: 0; }
 }

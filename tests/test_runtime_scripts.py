@@ -515,7 +515,7 @@ def test_https_templates_preserve_acme_and_use_dedicated_port():
     assert 'https://__HY_SERVER_HOST__:__HY_HTTPS_PORT__$request_uri' in redirect
     assert 'listen __HY_HTTPS_PORT__ ssl;' in tls
     assert 'proxy_set_header X-Forwarded-Proto https;' in tls
-    assert 'proxy_set_header X-Forwarded-Port $server_port;' in tls
+    assert 'proxy_set_header X-Forwarded-Port $hy2_https_external_port;' in tls
     assert 'Strict-Transport-Security "max-age=31536000" always;' in tls
     assert 'gzip on;' in plain
     assert 'gzip on;' in tls

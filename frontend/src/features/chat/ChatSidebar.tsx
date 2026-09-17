@@ -5,6 +5,9 @@ export type ChatSession = {
   title?: string;
   messages: ChatMessageData[];
   updatedAt: number;
+  model?: string;
+  reasoningEffort?: 'auto' | 'low' | 'medium' | 'high';
+  draft?: string;
 };
 
 export type ChatUsage = {
@@ -28,6 +31,7 @@ export type ChatSidebarProps = {
   onDelete: (session: ChatSession) => void;
   onOpenSettings: () => void;
   onOpenUsage: () => void;
+  onClose?: () => void;
   disabled?: boolean;
 };
 
@@ -56,7 +60,7 @@ function formatTime(value: number) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function ChatSidebar({ sessions, activeId, search, usage, onSearch, onNew, onSelect, onRename, onDelete, onOpenSettings, onOpenUsage, disabled = false }: ChatSidebarProps) {
+export function ChatSidebar({ sessions, activeId, search, usage, onSearch, onNew, onSelect, onRename, onDelete, onOpenSettings, onOpenUsage, onClose, disabled = false }: ChatSidebarProps) {
   const needle = search.trim().toLocaleLowerCase();
   const visibleSessions = needle ? sessions.filter(session => sessionTitle(session).toLocaleLowerCase().includes(needle)) : sessions;
   const groups = new Map<string, ChatSession[]>();
@@ -71,6 +75,7 @@ export function ChatSidebar({ sessions, activeId, search, usage, onSearch, onNew
     .filter(group => group.items.length > 0);
 
   return <div className="chat-history" aria-label="对话历史">
+    <header className="chat-sidebar-header"><div><strong>对话历史</strong><span>只在此页面显示</span></div>{onClose ? <button className="btn btn-ghost btn-sm chat-sidebar-close" type="button" onClick={onClose}>隐藏</button> : null}</header>
     <button className="btn btn-primary chat-new-button" type="button" onClick={onNew} disabled={disabled}>＋ 新对话</button>
     <label className="chat-search"><span className="sr-only">搜索对话</span><span aria-hidden="true">⌕</span><input type="search" value={search} onChange={event => onSearch(event.target.value)} placeholder="搜索对话" disabled={disabled} /></label>
     <div className="chat-session-list">

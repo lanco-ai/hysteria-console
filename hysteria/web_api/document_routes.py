@@ -7,7 +7,6 @@ unknown path is deliberately left as a 404 instead of becoming an SPA page.
 
 import html
 import re
-from functools import partial
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -43,7 +42,7 @@ REACT_DOCUMENTS = {
     '/admin/config': ('模板配置', 'has-shell', 'admin'),
     '/admin/rules': ('路由规则', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
-    '/admin/chat': ('AI 对话', 'has-shell', 'admin'),
+    '/admin/chat': ('AI 对话', 'has-shell page-workbench', 'admin'),
 }
 
 def _public_host(request: Request, services) -> str:
@@ -65,27 +64,11 @@ async def _guard(request: Request, services, dispatch, guard: str):
         return None
     try:
         if guard == 'admin':
-            token = request.query_params.get('token', '')
-            if token:
-                exchange = await dispatch(
-                    partial(services.exchange_admin_token, token=token),
-                    request,
-                )
-                if exchange is not None:
-                    query = [
-                        (key, value)
-                        for key, value in request.query_params.multi_items()
-                        if key != 'token'
-                    ]
-                    target = request.url.path
-                    encoded = urlencode(query, doseq=True)
-                    if encoded:
-                        target += f'?{encoded}'
-                    return RedirectResponse(
-                        target,
-                        status_code=303,
-                        headers={'Set-Cookie': exchange.cookie},
-                    )
+            # React administration documents require the normal authenticated
+            # session.  The legacy ``?token=`` exchange is intentionally not
+            # accepted here: a copied URL must not silently create an admin
+            # browser session.  Subscription tokens remain handled by their
+            # established, separate download endpoints.
             payload = await dispatch(services.read_session, request)
             if not isinstance(payload, dict) or payload.get('role') != 'admin':
                 return RedirectResponse(_login_location(request), status_code=303)

@@ -7,7 +7,7 @@
 body.page-workbench {
   overflow-x: hidden;
   background: #f7f7f5;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
 }
 
 body.has-shell.page-workbench .app:not(.sidebar-collapsed) {
@@ -81,14 +81,41 @@ body.page-workbench .chat-page {
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  padding: 0 clamp(16px, 4vw, 64px);
+  padding: 16px clamp(16px, 4vw, 64px) 0;
+}
+
+body.page-workbench .chat-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 256px) minmax(0, 1fr);
+  gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: min(100%, 1180px);
+  margin: 0 auto;
+}
+
+body.page-workbench .chat-layout.history-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.page-workbench .chat-history-panel {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-color: #e7e7e3;
+  background: #fbfbfa;
+}
+
+body.page-workbench .chat-history-panel .chat-history {
+  width: 100%;
 }
 
 body.page-workbench .chat-thread {
-  width: min(100%, 980px);
+  width: 100%;
   flex: 1 1 auto;
   min-height: 0;
-  margin: 0 auto;
+  margin: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -99,6 +126,10 @@ body.page-workbench .chat-thread-heading {
   min-height: 58px;
   padding-inline: 4px;
   border-bottom-color: #e7e7e3;
+}
+
+body.page-workbench .chat-history-toggle {
+  flex: 0 0 auto;
 }
 
 body.page-workbench .chat-messages {
@@ -245,11 +276,23 @@ body.page-workbench .login-form .auth-submit {
 
   body.page-workbench .chat-page {
     min-height: 0;
-    padding-inline: 12px;
+    padding: 12px;
+  }
+
+  body.page-workbench .chat-layout,
+  body.page-workbench .chat-layout.history-collapsed {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  body.page-workbench .chat-history-panel {
+    flex: 0 0 min(45dvh, 340px);
   }
 
   body.page-workbench .chat-thread {
     min-height: 0;
+    flex: 1 1 auto;
   }
 
   body.page-workbench .chat-messages {

@@ -65,7 +65,8 @@
   min-height: min(720px, calc(100dvh - 150px));
 }
 
-/* Chat history now occupies CodexShell's optional sidebar-top slot. */
+/* Kept for compatibility with other workbench consumers; ChatPage renders
+   history in its content area so the global navigation stays stable. */
 .sidebar-top {
   display: flex;
   flex: 0 1 380px;
@@ -126,10 +127,9 @@
   font-size: var(--text-small);
 }
 
-.chat-sidebar-close,
-.chat-sidebar-open {
-  display: none;
-}
+.chat-sidebar-close { display: inline-flex; }
+
+.chat-sidebar-open { display: none; }
 
 .chat-new-button {
   width: calc(100% - 24px);
@@ -447,6 +447,49 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.75;
+}
+
+.chat-markdown-block {
+  display: block;
+}
+
+.chat-message-content p,
+.chat-message-content ul,
+.chat-message-content h3,
+.chat-message-content h4 {
+  margin: 0 0 10px;
+}
+
+.chat-message-content p:last-child,
+.chat-message-content ul:last-child,
+.chat-message-content h3:last-child,
+.chat-message-content h4:last-child {
+  margin-bottom: 0;
+}
+
+.chat-message-content ul {
+  padding-left: 22px;
+}
+
+.chat-message-content h3,
+.chat-message-content h4 {
+  color: var(--text-primary);
+  font-weight: 650;
+}
+
+.chat-message-content a {
+  color: var(--data);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-message-content code {
+  padding: 1px 4px;
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: .92em;
 }
 
 .chat-message-content pre {

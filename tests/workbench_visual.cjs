@@ -66,6 +66,21 @@ async function assertNoOverflow(page, label) {
     await page.locator('#login-modal-password').fill(fixturePassword);
     await page.getByRole('button', {name: '登录', exact: true}).click();
     await page.locator('.login-modal').waitFor({state: 'detached'});
+
+    // Every authenticated workbench route must keep the same 240px rail.
+    await page.setViewportSize({width: 1440, height: 960});
+    for (const route of ['/__react/admin/chat', '/__react/admin/config', '/__react/admin']) {
+      await page.goto(`${baseUrl}${route}`, {waitUntil: 'domcontentloaded'});
+      await page.locator('.app').waitFor();
+      assert.equal(
+        await page.locator('.app').evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ')[0]),
+        '240px',
+        `${route} keeps the unified 240px rail`,
+      );
+    }
+    await page.setViewportSize({width: 800, height: 900});
+    await page.goto(`${baseUrl}/__react/admin/chat`, {waitUntil: 'domcontentloaded'});
+    await page.reload({waitUntil: 'domcontentloaded'});
     await page.locator('#sidebar-toggle').click();
     await page.locator('.sidebar.open').waitFor();
     assert.equal(await page.locator('.scrim').evaluate(node => getComputedStyle(node).display), 'block', '800px drawer has a scrim');

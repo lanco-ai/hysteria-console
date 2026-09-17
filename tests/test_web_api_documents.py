@@ -134,10 +134,14 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         assert '<body class="has-shell page-workbench">' in user_login.text
         assert 'data-password-max-length="128"' in user_login.text
 
-        exchanged = client.get('/admin?token=admin-token&msg=from-link', follow_redirects=False)
-        assert exchanged.status_code == 303
-        assert exchanged.headers['location'] == '/admin?msg=from-link'
-        assert exchanged.headers['set-cookie'].startswith('sid=session-id;')
+        auth_login = client.get('/auth')
+        assert auth_login.status_code == 200
+        assert '<body class="has-shell page-workbench">' in auth_login.text
+
+        token_login = client.get('/admin?token=admin-token&msg=from-link', follow_redirects=False)
+        assert token_login.status_code == 303
+        assert token_login.headers['location'] == '/login?next=%2Fadmin%3Fmsg%3Dfrom-link'
+        assert 'set-cookie' not in token_login.headers
 
         invalid_exchange = client.get('/admin?token=wrong', follow_redirects=False)
         assert invalid_exchange.status_code == 303

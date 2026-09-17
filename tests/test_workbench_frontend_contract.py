@@ -136,7 +136,9 @@ def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authent
     assert "onUnauthenticated?: () => void" in page
     assert "import { CodexShell }" in page
     assert "import { ChatSidebar," in page
-    assert "sidebarTop={<ChatSidebar" in page
+    assert "<ChatSidebar" in page
+    assert "chat-history-panel" in page
+    assert "historyOpen" in page
     assert "<AdminShell" not in page
     assert "chat-sidebar" not in page
     assert "if (!authenticated) return;" in page
@@ -152,6 +154,13 @@ def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authent
     assert "onRename: (session: ChatSession) => void" in sidebar
     assert "onDelete: (session: ChatSession) => void" in sidebar
     assert "reasoning_unsupported" in page
+    assert "draft?: string" in sidebar
+    assert "model?: string" in sidebar
+    assert "onClose?: () => void" in sidebar
+    message = source("frontend/src/features/chat/ChatMessage.tsx")
+    assert "safeHref" in message
+    assert "dangerouslySetInnerHTML" not in message
+    assert "没有可用容量" in api
     assert "reasoning_effort !== 'auto'" in api
     assert "ChatApiError" in api
     assert ".sidebar-top" in styles

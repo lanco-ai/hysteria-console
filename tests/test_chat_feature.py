@@ -365,3 +365,26 @@ def test_chat_connection_test_maps_upstream_errors_without_body(tmp_path, monkey
     assert response.status_code == 502
     assert response.json() == {'ok': False, 'error': 'authentication_failed'}
     assert 'sk-secret' not in response.text
+
+
+def test_chat_completion_maps_capacity_failures_to_actionable_error(tmp_path, monkeypatch):
+    store = ChatSettingsStore(tmp_path / 'settings.json')
+    store.update(base_url='https://example.test/v1', api_key='sk-secret', temperature=0.7)
+    monkeypatch.setattr(chat_routes, 'ChatSettingsStore', lambda: store)
+    monkeypatch.setattr(
+        chat_routes,
+        'forward_chat',
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ChatUpstreamError(503)),
+    )
+    with TestClient(create_app(_Services())) as client:
+        response = client.post(
+            '/api/chat/completions',
+            headers={'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'same-origin'},
+            json={
+                'model': 'model-x',
+                'messages': [{'role': 'user', 'content': 'hello'}],
+            },
+        )
+    assert response.status_code == 502
+    assert response.json() == {'error': 'upstream_unavailable', 'upstream_status': 503}
+    assert 'sk-secret' not in response.text

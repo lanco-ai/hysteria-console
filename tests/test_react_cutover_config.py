@@ -10,6 +10,7 @@ TEMPLATES = (
 REACT_DOCUMENTS = (
     '/',
     '/login',
+    '/auth',
     '/user/login',
     '/logout',
     '/user/logout',
@@ -45,7 +46,11 @@ def test_templates_are_explicitly_staged_and_preserve_listener_placeholders():
 def test_react_documents_and_api_use_8083():
     for path in TEMPLATES:
         text = path.read_text(encoding='utf-8')
-        for document in REACT_DOCUMENTS:
+        if path.name.endswith('-https.conf'):
+            assert 'location = / {\n        return 302 https://lancoai.site/admin/chat;\n    }' in text
+        else:
+            assert 'location = / {\n        proxy_pass http://127.0.0.1:8083;' in text
+        for document in REACT_DOCUMENTS[1:]:
             assert f'location = {document} {{\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location = /api/v1 {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location ^~ /api/v1/ {\n        proxy_pass http://127.0.0.1:8083;' in text
