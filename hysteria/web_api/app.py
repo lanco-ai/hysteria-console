@@ -430,7 +430,6 @@ def create_app(services, *, max_requests=32, react_dist=None, lifespan=None):
         return response_builder(reply)
 
     register_account_routes(app, services, dispatch_form_write)
-    register_auth_routes(app)
     register_compatibility_routes(app, services, dispatch)
     register_user_detail_routes(app, services, dispatch)
     register_operation_routes(app, services, dispatch_form_write, dispatch)
@@ -441,6 +440,10 @@ def create_app(services, *, max_requests=32, react_dist=None, lifespan=None):
     register_chat_routes(app, services, dispatch, dispatch_stream=dispatch_stream)
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
+    # Register the loopback auth transport after React documents so the
+    # GET/HEAD `/auth` document is selected while POST `/auth` remains owned by
+    # the auth service route.
+    register_auth_routes(app)
 
     @app.post('/api/v1/login')
     async def login(request: Request):
