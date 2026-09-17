@@ -150,6 +150,8 @@ async function main() {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
   await expect(page.locator('.chat-history-panel')).toHaveCount(0);
+  await expect(page.locator('.chat-history-toggle > span').first()).toBeHidden();
+  await expect(page.locator('.chat-history-count')).toBeHidden();
   await page.getByRole('button', { name: '打开历史记录' }).click();
   await expect(page.locator('.chat-history-panel')).toBeVisible();
   await expect(page.locator('.chat-history')).toHaveCSS('display', 'flex');

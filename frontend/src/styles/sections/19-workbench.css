@@ -354,6 +354,17 @@ body.page-workbench .login-form .auth-submit {
     gap: 8px;
   }
 
+  body.page-workbench .chat-history-toggle {
+    width: 34px;
+    padding-inline: 0;
+    justify-content: center;
+    gap: 0;
+  }
+
+  body.page-workbench .chat-history-toggle > span {
+    display: none;
+  }
+
   body.page-workbench .page-title {
     font-size: 15px;
   }
