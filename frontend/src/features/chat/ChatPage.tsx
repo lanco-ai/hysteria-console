@@ -5,15 +5,16 @@ import { ChatSettings } from './ChatSettings';
 import { ChatSidebar, type ChatSession, type ChatUsage } from './ChatSidebar';
 import {
   ChatApiError,
-  completeChat,
   loadChatModels,
   loadChatSettings,
   saveChatSettings,
+  streamChat,
   testChatConnection,
   type ChatMessageData,
   type ChatModel,
   type ChatSettings as ChatSettingsData,
   type ReasoningEffort,
+  type ChatStreamEvent,
   type SettingsUpdate,
 } from './chatApi';
 
@@ -125,23 +126,6 @@ function formatTokens(value: number | null): string {
   return value === null ? '未知' : value.toLocaleString();
 }
 
-function assistantText(payload: Record<string, unknown>): string {
-  const choices = payload.choices;
-  if (!Array.isArray(choices)) return '';
-  const first = choices[0];
-  if (!first || typeof first !== 'object') return '';
-  const message = (first as Record<string, unknown>).message;
-  if (!message || typeof message !== 'object') return '';
-  const content = (message as Record<string, unknown>).content;
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content.filter(item => item && typeof item === 'object' && typeof (item as Record<string, unknown>).text === 'string')
-      .map(item => (item as Record<string, string>).text)
-      .join('');
-  }
-  return '';
-}
-
 export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnauthenticated }: ChatPageProps) {
   const [fallbackAuthenticated, setFallbackAuthenticated] = useState<boolean | null>(() => authenticatedProp === undefined ? null : authenticatedProp);
   const authenticated = authenticatedProp ?? fallbackAuthenticated === true;
@@ -170,6 +154,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [localStateReady, setLocalStateReady] = useState(false);
   const authenticatedRef = useRef(authenticated);
+  const streamAbortRef = useRef<AbortController | null>(null);
 
   const active = useMemo(() => sessions.find(session => session.id === activeId) || null, [sessions, activeId]);
 
@@ -379,17 +364,32 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
       outputTokens: currentUsage.day === usageDay() ? currentUsage.outputTokens : 0,
       totalTokens: currentUsage.day === usageDay() ? currentUsage.totalTokens : 0,
     }));
-    try {
-      const response = await completeChat(nextMessages, selectedModel, reasoningEffort);
-      if (!authenticatedRef.current) return;
-      const reply = assistantText(response);
-      if (!reply) throw new Error('第三方 API 没有返回文本。');
-      const assistantMessage: ChatMessageData = { role: 'assistant', content: reply };
-      setSessions(existing => existing.map(session => session.id === current.id ? { ...session, messages: [...nextMessages, assistantMessage], updatedAt: Date.now() } : session));
-      const tokenUsage = responseUsage(response);
+    const assistantMessage: ChatMessageData = { role: 'assistant', content: '' };
+    setSessions(existing => existing.map(session => session.id === current.id ? { ...session, messages: [...nextMessages, assistantMessage], updatedAt: Date.now() } : session));
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+    let reply = '';
+    let streamError = '';
+    let usageReceived = false;
+    let flushFrame: number | null = null;
+    const flushReply = () => {
+      flushFrame = null;
+      setSessions(existing => existing.map(session => session.id === current.id ? {
+        ...session,
+        messages: [...nextMessages, { role: 'assistant', content: reply }],
+        updatedAt: Date.now(),
+      } : session));
+    };
+    const appendReply = (text: string) => {
+      reply += text;
+      if (flushFrame === null) flushFrame = window.requestAnimationFrame(flushReply);
+    };
+    const applyUsage = (event: ChatStreamEvent) => {
+      if (event.type !== 'usage' || usageReceived) return;
+      usageReceived = true;
+      const tokenUsage = responseUsage({ usage: event.usage });
       setContextUsed(tokenUsage.inputTokens || tokenUsage.totalTokens ? tokenUsage.inputTokens || tokenUsage.totalTokens : null);
       if (tokenUsage.contextMax !== null) setContextMax(tokenUsage.contextMax);
-      if (response.chat_notice === 'reasoning_unsupported') setNotice('当前 API 不支持思考强度，已按普通模式发送。');
       if (tokenUsage.totalTokens || tokenUsage.inputTokens || tokenUsage.outputTokens) {
         setUsage(currentUsage => ({
           ...currentUsage,
@@ -398,10 +398,49 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
           totalTokens: currentUsage.totalTokens + tokenUsage.totalTokens,
         }));
       }
+    };
+    const streamErrorMessage = (code: string) => {
+      if (code === 'authentication_failed') return '第三方 API 认证失败，请检查 API Key。';
+      if (code === 'rate_limited') return '第三方 API 请求过于频繁，请稍后重试。';
+      if (code === 'upstream_unavailable') return '模型服务当前没有可用容量，请稍后重试或切换模型。';
+      if (code === 'timeout') return '连接第三方 API 超时，请稍后重试。';
+      if (code === 'streaming_unavailable') return '当前 API 未返回可解析的流式或普通回复。';
+      return '第三方 API 暂时不可用，请稍后重试。';
+    };
+    try {
+      await streamChat(nextMessages, selectedModel, reasoningEffort, abortController.signal, event => {
+        if (event.type === 'delta') appendReply(event.text);
+        else if (event.type === 'usage') applyUsage(event);
+        else if (event.type === 'notice' && event.notice === 'reasoning_unsupported') setNotice('当前 API 不支持思考强度，已按普通模式发送。');
+        else if (event.type === 'error') {
+          streamError = streamErrorMessage(event.error);
+          setError(streamError);
+        }
+      });
+      if (flushFrame !== null) {
+        window.cancelAnimationFrame(flushFrame);
+        flushReply();
+      }
+      if (!reply && !streamError && !abortController.signal.aborted) throw new Error('第三方 API 没有返回文本。');
+      if (abortController.signal.aborted) setNotice('已停止生成。');
+      if (!reply && (streamError || abortController.signal.aborted)) {
+        setSessions(existing => existing.map(session => session.id === current.id ? { ...session, messages: nextMessages, updatedAt: Date.now() } : session));
+      }
     } catch (errorValue) {
-      if (errorValue instanceof ChatApiError && errorValue.status === 401) onUnauthenticated?.();
-      else setError(errorValue instanceof Error ? errorValue.message : '发送失败');
+      if (abortController.signal.aborted || (errorValue instanceof DOMException && errorValue.name === 'AbortError')) {
+        if (flushFrame !== null) {
+          window.cancelAnimationFrame(flushFrame);
+          flushReply();
+        }
+        setNotice('已停止生成。');
+        if (!reply) setSessions(existing => existing.map(session => session.id === current.id ? { ...session, messages: nextMessages, updatedAt: Date.now() } : session));
+      } else {
+        if (errorValue instanceof ChatApiError && errorValue.status === 401) onUnauthenticated?.();
+        else setError(errorValue instanceof Error ? errorValue.message : '发送失败');
+      }
     } finally {
+      if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
+      if (streamAbortRef.current === abortController) streamAbortRef.current = null;
       if (authenticatedRef.current) {
         setBusy(false);
         focusComposer();
@@ -509,7 +548,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
           <div className="chat-messages" role="log" aria-live="polite">
             {active?.messages.length ? active.messages.map((item, index) => <ChatMessage key={`${active.id}-${index}`} message={item} />) : <div className="chat-empty-state"><div className="chat-empty-mark">✦</div><h2>Lanco AI</h2><p>有什么可以帮你？</p><div className="chat-quick-prompts"><button type="button" onClick={() => choosePrompt('翻译一段文字：')} disabled={!authenticated}>翻译一段文字</button><button type="button" onClick={() => choosePrompt('请润色以下学术表达：')} disabled={!authenticated}>润色学术表达</button><button type="button" onClick={() => choosePrompt('请解释这段代码：')} disabled={!authenticated}>解释一段代码</button><button type="button" onClick={() => choosePrompt('')} disabled={!authenticated}>自由对话</button></div></div>}
           </div>
-          <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { const next = event.target.value; setMessage(next); setSessions(current => current.map(session => session.id === activeId ? { ...session, draft: next } : session)); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={!authenticated || busy} /><div className="chat-composer-footer"><span>{busy ? '正在等待回复…' : 'Enter 发送 · Shift + Enter 换行'}</span><button className="btn btn-primary" type="button" onClick={() => void send()} disabled={!authenticated || busy || !message.trim()}>{busy ? '发送中…' : '发送 ↑'}</button></div></div>
+          <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { const next = event.target.value; setMessage(next); setSessions(current => current.map(session => session.id === activeId ? { ...session, draft: next } : session)); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={!authenticated || busy} /><div className="chat-composer-footer"><span>{busy ? '正在生成回复…' : 'Enter 发送 · Shift + Enter 换行'}</span>{busy ? <button className="btn btn-secondary" type="button" onClick={() => streamAbortRef.current?.abort()}>停止</button> : <button className="btn btn-primary" type="button" onClick={() => void send()} disabled={!authenticated || !message.trim()}>发送 ↑</button>}</div></div>
         </section>
       </div>
       {notice ? <div className="chat-notice" role="status">{notice}</div> : null}

@@ -20,6 +20,12 @@ export type SettingsUpdate = {
 
 export type ChatModel = { id: string; name: string; context_window?: number };
 export type ChatConnectionResult = { ok: true; message: string; models_count: number };
+export type ChatStreamEvent =
+  | { type: 'delta'; text: string }
+  | { type: 'usage'; usage: Record<string, unknown> }
+  | { type: 'done' }
+  | { type: 'notice'; notice: string }
+  | { type: 'error'; error: string; upstream_status?: number; retry_after?: string };
 
 export class ChatApiError extends Error {
   constructor(readonly status: number, message: string) {
@@ -99,4 +105,84 @@ export function completeChat(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+function decodeStreamEvent(rawEvent: string): ChatStreamEvent | null {
+  const data = rawEvent.split('\n')
+    .filter(line => line.startsWith('data:'))
+    .map(line => line.slice(5).replace(/^ /, ''))
+    .join('\n')
+    .trim();
+  if (!data) return null;
+  if (data === '[DONE]') return { type: 'done' };
+  try {
+    const value: unknown = JSON.parse(data);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const event = value as Record<string, unknown>;
+    if (event.type === 'delta' && typeof event.text === 'string') return { type: 'delta', text: event.text };
+    if (event.type === 'usage' && event.usage && typeof event.usage === 'object' && !Array.isArray(event.usage)) {
+      return { type: 'usage', usage: event.usage as Record<string, unknown> };
+    }
+    if (event.type === 'done') return { type: 'done' };
+    if (event.type === 'notice' && typeof event.notice === 'string') return { type: 'notice', notice: event.notice };
+    if (event.type === 'error' && typeof event.error === 'string') {
+      return {
+        type: 'error',
+        error: event.error,
+        ...(typeof event.upstream_status === 'number' ? { upstream_status: event.upstream_status } : {}),
+        ...(typeof event.retry_after === 'string' ? { retry_after: event.retry_after } : {}),
+      };
+    }
+  } catch {
+    // Ignore comments and malformed partial records; the next chunk may complete them.
+  }
+  return null;
+}
+
+export async function streamChat(
+  messages: ChatMessageData[],
+  model: string,
+  reasoning_effort: ReasoningEffort = 'auto',
+  signal?: AbortSignal,
+  onEvent?: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  const body: { messages: ChatMessageData[]; model: string; stream: true; reasoning_effort?: ReasoningEffort } = { messages, model, stream: true };
+  if (reasoning_effort !== 'auto') body.reasoning_effort = reasoning_effort;
+  const response = await fetch('/api/chat/completions', {
+    method: 'POST',
+    credentials: 'same-origin',
+    cache: 'no-store',
+    ...(signal ? { signal } : {}),
+    headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await readJson(response);
+    throw new ChatApiError(response.status, errorMessage(response.status, payload));
+  }
+  if (!response.body) throw new ChatApiError(502, '第三方 API 没有返回流式响应。');
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const emitRecords = () => {
+    const events: ChatStreamEvent[] = [];
+    while (buffer.includes('\n\n')) {
+      const index = buffer.indexOf('\n\n');
+      const event = decodeStreamEvent(buffer.slice(0, index));
+      buffer = buffer.slice(index + 2);
+      if (event) events.push(event);
+    }
+    events.forEach(event => onEvent?.(event));
+  };
+  while (true) {
+    const result = await reader.read();
+    buffer += decoder.decode(result.value || new Uint8Array(), { stream: !result.done });
+    buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    emitRecords();
+    if (result.done) break;
+  }
+  if (buffer.trim()) {
+    const event = decodeStreamEvent(buffer);
+    if (event) onEvent?.(event);
+  }
 }

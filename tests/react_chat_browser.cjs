@@ -85,10 +85,20 @@ async function main() {
   await page.route('**/api/chat/completions', async route => {
     const body = JSON.parse(route.request().postData() || '{}');
     assert.equal(body.model, 'model-a');
+    assert.equal(body.stream, true);
     if (expectedReasoning === undefined) assert.equal(Object.hasOwn(body, 'reasoning_effort'), false);
     else assert.equal(body.reasoning_effort, expectedReasoning);
     const last = body.messages?.at(-1)?.content || '';
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: last.toUpperCase() } }] }) });
+    if (last === 'slow') {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      try { await route.fulfill({ contentType: 'text/event-stream', body: 'data: {"type":"done"}\n\n' }); } catch { /* The browser may have cancelled the request. */ }
+      return;
+    }
+    const text = last.toUpperCase();
+    await route.fulfill({
+      contentType: 'text/event-stream',
+      body: `data: ${JSON.stringify({ type: 'delta', text })}\n\ndata: ${JSON.stringify({ type: 'done' })}\n\n`,
+    });
   });
 
   await page.goto(`${baseUrl}/__react/admin/chat`);
@@ -129,6 +139,11 @@ async function main() {
   await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SECOND');
   await page.getByRole('button', { name: '复制' }).last().click();
   await expect(page.getByRole('button', { name: '已复制' })).toBeVisible();
+  await composer.fill('slow');
+  await composer.press('Enter');
+  await expect(page.getByRole('button', { name: '停止' })).toBeVisible();
+  await page.getByRole('button', { name: '停止' }).click();
+  await expect(page.getByRole('status')).toContainText('已停止生成');
   const stored = await page.evaluate(key => localStorage.getItem(key), 'hy2.chat.sessions.v1');
   assert(stored && !stored.includes('sk-…1234'));
   const [html, localStorageValues, responseBodies] = await Promise.all([
