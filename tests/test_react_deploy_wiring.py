@@ -41,6 +41,10 @@ WEB_API_MODULES = (
     'user_detail_models.py',
     'user_detail_routes.py',
     'user_models.py',
+    'video_models.py',
+    'video_provider.py',
+    'video_routes.py',
+    'video_service.py',
 )
 
 

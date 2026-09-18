@@ -147,6 +147,10 @@ declare -a REACT_WEB_API_MODULES=(
   user_detail_models.py
   user_detail_routes.py
   user_models.py
+  video_models.py
+  video_provider.py
+  video_routes.py
+  video_service.py
 )
 declare -a PREVIOUSLY_ACTIVE_UNITS=()
 declare -A PREVIOUS_ENABLE_STATE=()
@@ -2087,6 +2091,10 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/user_detail_models.py" "$HY_DIR/web_api/user_detail_models.py"
   render "$REPO_DIR/hysteria/web_api/user_detail_routes.py" "$HY_DIR/web_api/user_detail_routes.py"
   render "$REPO_DIR/hysteria/web_api/user_models.py" "$HY_DIR/web_api/user_models.py"
+  render "$REPO_DIR/hysteria/web_api/video_models.py" "$HY_DIR/web_api/video_models.py"
+  render "$REPO_DIR/hysteria/web_api/video_provider.py" "$HY_DIR/web_api/video_provider.py"
+  render "$REPO_DIR/hysteria/web_api/video_routes.py" "$HY_DIR/web_api/video_routes.py"
+  render "$REPO_DIR/hysteria/web_api/video_service.py" "$HY_DIR/web_api/video_service.py"
 fi
 
 chmod 700 \
