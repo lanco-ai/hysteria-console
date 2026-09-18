@@ -42,6 +42,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { key: 'settings', href: '/admin/settings', label: '设置', icon: 'lock' },
       { key: 'chat', href: '/admin/chat', label: 'AI 对话', icon: 'chat' },
+      { key: 'video', href: '/admin/video', label: 'AI 视频', icon: 'video' },
     ],
   },
 ];
