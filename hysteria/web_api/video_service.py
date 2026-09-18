@@ -1,12 +1,14 @@
 """Durable, secret-safe state for the administrator video workflow."""
 
 import math
+import json
+import uuid
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import state_store
 
-from .video_models import VideoSettings
+from .video_models import ValidatedWorkflow, VideoSettings
 
 DEFAULT_VIDEO_SETTINGS_PATH = Path('/root/hysteria/state/video/settings.json')
 _MISSING = object()
@@ -14,6 +16,21 @@ _MISSING = object()
 
 class VideoSettingsError(ValueError):
     pass
+
+
+class VideoValidationError(ValueError):
+    pass
+
+
+NODE_REGISTRY = {
+    'prompt': {'inputs': set(), 'outputs': {'text'}},
+    'image_asset': {'inputs': set(), 'outputs': {'image'}},
+    'text_to_image': {'inputs': {'prompt'}, 'outputs': {'image'}},
+    'image_to_video': {'inputs': {'image'}, 'outputs': {'video'}},
+    'first_last_frame_video': {'inputs': {'first_frame', 'last_frame'}, 'outputs': {'video'}},
+    'preview': {'inputs': {'media'}, 'outputs': set()},
+}
+DEFAULT_WORKFLOWS_PATH = Path('/root/hysteria/state/video/workflows.json')
 
 
 def mask_video_key(value: str) -> str:
@@ -91,3 +108,120 @@ class VideoSettingsStore:
             raise VideoSettingsError('settings unavailable') from exc
         return self.public()
 
+
+def _contains_secret(value: object) -> bool:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if str(key).lower().replace('-', '_') in {'api_key', 'authorization', 'access_token', 'secret'}:
+                return True
+            if _contains_secret(item):
+                return True
+    elif isinstance(value, list):
+        return any(_contains_secret(item) for item in value)
+    return False
+
+
+def validate_workflow(nodes, edges) -> ValidatedWorkflow:
+    if not isinstance(nodes, list) or not isinstance(edges, list) or len(nodes) > 100 or len(edges) > 300:
+        raise VideoValidationError('invalid workflow shape')
+    node_map = {}
+    for raw in nodes:
+        if not isinstance(raw, dict) or not isinstance(raw.get('id'), str) or not raw['id']:
+            raise VideoValidationError('invalid node')
+        node_id = raw['id']
+        node_type = raw.get('type')
+        if node_id in node_map or node_type not in NODE_REGISTRY:
+            raise VideoValidationError('unknown node type')
+        node_map[node_id] = raw
+    adjacency = {node_id: [] for node_id in node_map}
+    indegree = {node_id: 0 for node_id in node_map}
+    normalized_edges = []
+    for raw in edges:
+        if not isinstance(raw, dict):
+            raise VideoValidationError('invalid edge')
+        source, target = raw.get('source'), raw.get('target')
+        source_port = raw.get('sourceHandle') or raw.get('source_port')
+        target_port = raw.get('targetHandle') or raw.get('target_port')
+        if source not in node_map or target not in node_map:
+            raise VideoValidationError('edge references unknown node')
+        adjacency[source].append(target)
+        indegree[target] += 1
+        normalized_edges.append(raw)
+    queue = [node_id for node_id in node_map if indegree[node_id] == 0]
+    order = []
+    while queue:
+        current = queue.pop(0)
+        order.append(current)
+        for target in adjacency[current]:
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                queue.append(target)
+    if len(order) != len(node_map):
+        raise VideoValidationError('workflow contains cycle')
+    for raw in normalized_edges:
+        source, target = raw.get('source'), raw.get('target')
+        source_port = raw.get('sourceHandle') or raw.get('source_port')
+        target_port = raw.get('targetHandle') or raw.get('target_port')
+        if source_port not in NODE_REGISTRY[node_map[source]['type']]['outputs']:
+            raise VideoValidationError('invalid source port')
+        if target_port not in NODE_REGISTRY[node_map[target]['type']]['inputs']:
+            raise VideoValidationError('invalid target port')
+    connected = {(edge.get('target'), edge.get('targetHandle') or edge.get('target_port')) for edge in normalized_edges}
+    for node_id, raw in node_map.items():
+        required = NODE_REGISTRY[raw['type']]['inputs']
+        data = raw.get('data') if isinstance(raw.get('data'), dict) else {}
+        for port in required:
+            if (node_id, port) not in connected and not data.get(port):
+                raise VideoValidationError(f'missing required input: {port}')
+    return ValidatedWorkflow(list(node_map.values()), normalized_edges, order)
+
+
+class WorkflowStore:
+    def __init__(self, path: str | Path = DEFAULT_WORKFLOWS_PATH):
+        self.path = Path(path)
+
+    def _read_all(self):
+        try:
+            value = state_store.load_json_strict(self.path, [])
+        except state_store.StateStoreError as exc:
+            raise VideoValidationError('workflow storage unavailable') from exc
+        if not isinstance(value, list):
+            raise VideoValidationError('invalid workflow storage')
+        return value
+
+    def list(self):
+        return self._read_all()
+
+    def get(self, workflow_id):
+        return next((item for item in self._read_all() if item.get('id') == workflow_id), None)
+
+    def save(self, workflow):
+        if not isinstance(workflow, dict) or _contains_secret(workflow):
+            raise VideoValidationError('workflow contains secret data')
+        validated = validate_workflow(workflow.get('nodes', []), workflow.get('edges', []))
+        candidate = dict(workflow)
+        candidate['id'] = str(workflow.get('id') or uuid.uuid4().hex)
+        candidate['version'] = int(workflow.get('version') or 1)
+        candidate['nodes'] = validated.nodes
+        candidate['edges'] = validated.edges
+        if len(json.dumps(candidate, ensure_ascii=False)) > 512 * 1024:
+            raise VideoValidationError('workflow is too large')
+        lock_path = self.path.with_name(self.path.name + '.lock')
+        with state_store.file_lock(lock_path):
+            records = self._read_all()
+            records = [item for item in records if item.get('id') != candidate['id']]
+            records.insert(0, candidate)
+            state_store.save_json(self.path, records)
+            self.path.chmod(0o600)
+        return candidate
+
+    def delete(self, workflow_id):
+        lock_path = self.path.with_name(self.path.name + '.lock')
+        with state_store.file_lock(lock_path):
+            records = self._read_all()
+            next_records = [item for item in records if item.get('id') != workflow_id]
+            changed = len(next_records) != len(records)
+            if changed:
+                state_store.save_json(self.path, next_records)
+                self.path.chmod(0o600)
+            return changed

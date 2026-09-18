@@ -64,3 +64,9 @@ class Capabilities:
 class CancelResult:
     status: str
 
+
+@dataclass(frozen=True, slots=True)
+class ValidatedWorkflow:
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
+    order: list[str]

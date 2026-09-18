@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .video_provider import GrokVideoProvider, ProviderError
-from .video_service import VideoSettingsError, VideoSettingsStore
+from .video_service import VideoSettingsError, VideoSettingsStore, VideoValidationError, WorkflowStore
 
 
 def _error(code: str, status: int = 400):
@@ -43,8 +43,9 @@ def _provider_error(exc: ProviderError):
     return _error(code, status)
 
 
-def register_video_routes(app, services, dispatch, *, settings_store=None, provider_factory=None):
+def register_video_routes(app, services, dispatch, *, settings_store=None, provider_factory=None, workflow_store=None):
     store = settings_store or VideoSettingsStore()
+    workflows = workflow_store or WorkflowStore()
     factory = provider_factory or (lambda: GrokVideoProvider())
 
     def read_settings(*, headers, path):
@@ -134,3 +135,52 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
             return result
         models = list(dict.fromkeys(result['image_models'] + result['video_models']))
         return JSONResponse({'ok': True, 'models_count': len(models)})
+
+    @app.get('/api/video/workflows')
+    async def list_workflows(request: Request):
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        try:
+            result = await dispatch(lambda **_kwargs: workflows.list(), request)
+        except VideoValidationError:
+            return _error('storage_unavailable', 503)
+        return result if isinstance(result, JSONResponse) else JSONResponse({'workflows': result})
+
+    @app.post('/api/video/workflows')
+    async def save_workflow(request: Request):
+        if not _same_origin(request):
+            return _error('cross_site_request', 403)
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        try:
+            payload = json.loads((await request.body()).decode('utf-8'))
+            result = await dispatch(lambda **_kwargs: workflows.save(payload), request)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return _error('bad_request')
+        except VideoValidationError as exc:
+            return _error('invalid_workflow', 422)
+        return result if isinstance(result, JSONResponse) else JSONResponse(result)
+
+    @app.get('/api/video/workflows/{workflow_id}')
+    async def get_workflow(request: Request, workflow_id: str):
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        result = await dispatch(lambda **_kwargs: workflows.get(workflow_id), request)
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(result or {'error': 'not_found'}, status_code=200 if result else 404)
+
+    @app.delete('/api/video/workflows/{workflow_id}')
+    async def delete_workflow(request: Request, workflow_id: str):
+        if not _same_origin(request):
+            return _error('cross_site_request', 403)
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        result = await dispatch(lambda **_kwargs: workflows.delete(workflow_id), request)
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse({'deleted': bool(result)})
