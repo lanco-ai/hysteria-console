@@ -306,6 +306,7 @@ export function LancoAgent() {
             </div>
             <div className="lanco-agent-actions"><button className="btn btn-primary btn-sm" type="button" onClick={() => void apply()} disabled={status !== 'preview'}>应用修改</button><button className="btn btn-ghost btn-sm" type="button" onClick={clearConversation}>取消</button></div>
           </> : null}
+          {result.plan && status === 'error' && lastChangeId ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => void apply()}>重试保存</button> : null}
           {result.plan && status === 'saved' ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => void undo()}>撤销这次修改</button> : null}
         </section> : null}
         {error ? <div className="err" role="alert">{error}</div> : null}

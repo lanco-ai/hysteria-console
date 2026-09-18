@@ -121,7 +121,13 @@ async function main() {
       },
     }) });
   });
+  let agentApplyAttempts = 0;
   await page.route('**/api/v1/admin/agent/apply', async route => {
+    agentApplyAttempts += 1;
+    if (agentApplyAttempts === 2) {
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'upstream_unavailable' }) });
+      return;
+    }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, result: { username: 'alice', revision: 'b'.repeat(64) } }) });
   });
   await page.route('**/api/v1/admin/agent/undo', async route => {
@@ -190,6 +196,9 @@ async function main() {
   await page.getByLabel('自动执行本用户规则').check();
   await page.locator('.lanco-agent-input').fill('给 alice 添加 example.com 直连');
   await page.getByRole('button', { name: '发送', exact: true }).last().click();
+  await expect(page.getByText('模型服务暂时不可用，请稍后重试')).toBeVisible();
+  await expect(page.getByRole('button', { name: '重试保存' })).toBeVisible();
+  await page.getByRole('button', { name: '重试保存' }).click();
   await expect(page.getByText(/已保存，用户下次拉取订阅时生效/)).toBeVisible();
   await expect(page.getByRole('button', { name: '撤销这次修改' })).toBeVisible();
   await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
