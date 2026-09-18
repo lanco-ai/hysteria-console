@@ -53,6 +53,7 @@ from .usage_models import (
 )
 from .user_detail_routes import register_user_detail_routes
 from .user_models import UserPanelResponse
+from .video_routes import register_video_routes
 
 _API_SECURITY_HEADERS = {
     'Cache-Control': 'no-store',
@@ -249,7 +250,14 @@ def _read_error_response(exc):
     raise exc
 
 
-def create_app(services, *, max_requests=32, react_dist=None):
+def create_app(
+    services,
+    *,
+    max_requests=32,
+    react_dist=None,
+    video_settings_store=None,
+    video_provider_factory=None,
+):
     if isinstance(max_requests, bool) or not isinstance(max_requests, int) or max_requests <= 0:
         raise ValueError('max_requests must be a positive integer')
 
@@ -398,6 +406,13 @@ def create_app(services, *, max_requests=32, react_dist=None):
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
     register_chat_routes(app, services, dispatch, dispatch_stream=dispatch_stream)
+    register_video_routes(
+        app,
+        services,
+        dispatch,
+        settings_store=video_settings_store,
+        provider_factory=video_provider_factory,
+    )
     register_agent_routes(app, services, dispatch)
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
