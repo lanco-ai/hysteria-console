@@ -82,6 +82,40 @@ def test_agent_rule_service_rejects_stale_revision(tmp_path):
         raise AssertionError('stale revision must be rejected')
 
 
+def test_agent_rule_service_supports_scoped_custom_add_and_delete(tmp_path):
+    state = _State(tmp_path)
+    service = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    add = service.preview_rule('alice', 'add', 'DOMAIN,internal.example,DIRECT')
+    assert add['operation'] == 'add'
+    assert add['additions'] == ['DOMAIN,internal.example,DIRECT']
+    service.apply_change(add['change_id'])
+    assert 'DOMAIN,internal.example,DIRECT' in service.get_user_rules('alice')['rules']
+    delete = service.preview_rule('alice', 'delete', 'DOMAIN,internal.example,DIRECT')
+    assert delete['removals'] == ['DOMAIN,internal.example,DIRECT']
+    service.apply_change(delete['change_id'])
+    assert 'DOMAIN,internal.example,DIRECT' not in service.get_user_rules('alice')['rules']
+
+
+def test_agent_orchestrator_routes_custom_rule_intent_to_preview(tmp_path):
+    from web_api.agent_service import AgentOrchestrator
+
+    state = _State(tmp_path)
+    rule_service = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    agent = AgentOrchestrator(
+        state,
+        rule_service=rule_service,
+        completion=lambda *_args, **_kwargs: {
+            'action': 'add_rule',
+            'rule': 'PROCESS-NAME,Example.exe,DIRECT',
+            'pack': '',
+            'explanation': '为该用户增加进程直连规则',
+        },
+    )
+    result = agent.plan(message='让 Example.exe 直连', target_user='alice')
+    assert result['action'] == 'add_rule'
+    assert result['plan']['additions'] == ['PROCESS-NAME,Example.exe,DIRECT']
+
+
 def test_agent_apply_recovers_when_audit_finalize_fails(tmp_path):
     state = _State(tmp_path)
 

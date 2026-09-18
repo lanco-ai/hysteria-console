@@ -28,6 +28,11 @@ RULE_KEYS = (
 PENDING_TTL_SECONDS = 24 * 60 * 60
 HISTORY_TTL_SECONDS = 30 * 24 * 60 * 60
 MAX_CHANGE_RECORDS = 100
+ALLOWED_RULE_TYPES = frozenset({
+    'DOMAIN-SUFFIX', 'DOMAIN-KEYWORD', 'DOMAIN', 'IP-CIDR', 'IP-CIDR6', 'PROCESS-NAME',
+})
+ALLOWED_RULE_ACTIONS = frozenset({'DIRECT', 'REJECT', '🚀 节点选择'})
+ALLOWED_RULE_EXTRAS = frozenset({'', 'no-resolve'})
 
 
 class AgentServiceError(RuntimeError):
@@ -112,6 +117,75 @@ class AgentRuleService:
             else:
                 cfg.pop(key, None)
 
+    def _validate_custom_rule(self, rule: str) -> str:
+        value = str(rule or '').strip()
+        if not value or len(value) > 512 or any(ord(char) < 32 for char in value):
+            raise AgentServiceError('invalid_rule')
+        parts = [part.strip() for part in value.split(',')]
+        if len(parts) not in (3, 4) or parts[0] not in ALLOWED_RULE_TYPES:
+            raise AgentServiceError('invalid_rule')
+        if not parts[1] or len(parts[1]) > 256 or parts[-1] == '':
+            raise AgentServiceError('invalid_rule')
+        if len(parts) >= 3 and parts[2] not in ALLOWED_RULE_ACTIONS:
+            raise AgentServiceError('invalid_rule')
+        if len(parts) == 4 and parts[3] not in ALLOWED_RULE_EXTRAS:
+            raise AgentServiceError('invalid_rule')
+        validator = getattr(self.service, 'validate_clash_rule', None)
+        if callable(validator) and not validator(value):
+            raise AgentServiceError('invalid_rule')
+        return ','.join(parts)
+
+    def _store_pending_plan(
+        self,
+        *,
+        username,
+        operation,
+        pack,
+        label,
+        description,
+        rule,
+        additions,
+        removals,
+        before_revision,
+        after_revision,
+        before,
+        after,
+        operator,
+        source_ip,
+    ):
+        change_id = secrets.token_urlsafe(24)
+        with state_store.file_lock(self.changes_path.with_name(self.changes_path.name + '.lock')):
+            changes = self._load_changes()
+            changes[change_id] = {
+                'status': 'pending',
+                'created_at': _now(),
+                'operator': str(operator or 'admin')[:128],
+                'source_ip': str(source_ip or '')[:128],
+                'username': username,
+                'operation': operation,
+                'pack': pack,
+                'rule': rule,
+                'before_revision': before_revision,
+                'after_revision': after_revision,
+                'before': before,
+                'after': after,
+            }
+            self._save_changes(changes)
+        return {
+            'change_id': change_id,
+            'target_user': username,
+            'operation': operation,
+            'pack': pack,
+            'rule': rule,
+            'label': label,
+            'description': description,
+            'before_revision': before_revision,
+            'after_revision': after_revision,
+            'additions': additions,
+            'removals': removals,
+            'requires_confirmation': True,
+        }
+
     def get_user_rules(self, username: str):
         username = self._validate_username(username)
         with _context_for_users(self.service):
@@ -179,33 +253,77 @@ class AgentRuleService:
         for key in RULE_KEYS:
             old = before[key]['value']
             additions.extend(item for item in after[key]['value'] if item not in old)
-        change_id = secrets.token_urlsafe(24)
-        with state_store.file_lock(self.changes_path.with_name(self.changes_path.name + '.lock')):
-            changes = self._load_changes()
-            changes[change_id] = {
-                'status': 'pending',
-                'created_at': _now(),
-                'operator': str(operator or 'admin')[:128],
-                'source_ip': str(source_ip or '')[:128],
-                'username': username,
-                'pack': pack_key,
-                'before_revision': before_revision,
-                'after_revision': after_revision,
-                'before': before,
-                'after': after,
-            }
-            self._save_changes(changes)
-        return {
-            'change_id': change_id,
-            'target_user': username,
-            'pack': pack_key,
-            'label': str(pack.get('label') or pack_key),
-            'description': str(pack.get('desc') or ''),
-            'before_revision': before_revision,
-            'after_revision': after_revision,
-            'additions': additions,
-            'requires_confirmation': True,
-        }
+        return self._store_pending_plan(
+            username=username,
+            operation='pack',
+            pack=pack_key,
+            label=str(pack.get('label') or pack_key),
+            description=str(pack.get('desc') or ''),
+            rule='',
+            additions=additions,
+            removals=[],
+            before_revision=before_revision,
+            after_revision=after_revision,
+            before=before,
+            after=after,
+            operator=operator,
+            source_ip=source_ip,
+        )
+
+    def preview_rule(
+        self,
+        username: str,
+        operation: str,
+        rule: str,
+        *,
+        expected_revision: str = '',
+        operator: str = 'admin',
+        source_ip: str = '',
+    ):
+        if operation not in ('add', 'delete'):
+            raise AgentServiceError('invalid_operation')
+        username = self._validate_username(username)
+        rule = self._validate_custom_rule(rule)
+        with _context_for_users(self.service):
+            users = self._load_users()
+            cfg = self._get_cfg(users, username)
+            before_revision = str(getattr(self.service, 'user_config_revision', _revision)(cfg))
+            if expected_revision and expected_revision != before_revision:
+                raise AgentServiceError('revision_conflict')
+            before = self._rule_snapshot(cfg)
+            changed = copy.deepcopy(cfg)
+            rules = list(changed.get(subscription_profiles.USER_CLASH_RULES_KEY) or [])
+            if operation == 'add':
+                if rule not in rules:
+                    changed[subscription_profiles.USER_CLASH_RULES_KEY] = [rule] + rules
+                    additions = [rule]
+                else:
+                    additions = []
+                removals = []
+            else:
+                if rule not in rules:
+                    raise AgentServiceError('rule_not_found')
+                changed[subscription_profiles.USER_CLASH_RULES_KEY] = [item for item in rules if item != rule]
+                additions = []
+                removals = [rule]
+            after = self._rule_snapshot(changed)
+            after_revision = str(getattr(self.service, 'user_config_revision', _revision)(changed))
+        return self._store_pending_plan(
+            username=username,
+            operation=operation,
+            pack='',
+            label='添加自定义规则' if operation == 'add' else '删除自定义规则',
+            description='仅影响所选用户的个人 Clash 规则覆盖项',
+            rule=rule,
+            additions=additions,
+            removals=removals,
+            before_revision=before_revision,
+            after_revision=after_revision,
+            before=before,
+            after=after,
+            operator=operator,
+            source_ip=source_ip,
+        )
 
     def apply_change(self, change_id: str, *, operator: str = 'admin', source_ip: str = ''):
         change_id = str(change_id or '').strip()

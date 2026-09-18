@@ -57,6 +57,7 @@ def _status(exc):
         'invalid_change': 422,
         'change_not_pending': 409,
         'change_not_undoable': 409,
+        'rule_not_found': 404,
     }.get(exc.code, 422)
 
 

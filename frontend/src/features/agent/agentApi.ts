@@ -9,18 +9,21 @@ export type AgentUserRules = {
 export type AgentPlan = {
   change_id: string;
   target_user: string;
+  operation: 'pack' | 'add' | 'delete';
   pack: string;
+  rule: string;
   label: string;
   description: string;
   before_revision: string;
   after_revision: string;
   additions: string[];
+  removals: string[];
   requires_confirmation: boolean;
 };
 
 export type AgentPlanResponse = {
   ok: true;
-  action: 'inspect' | 'apply_pack';
+  action: 'inspect' | 'apply_pack' | 'add_rule' | 'delete_rule';
   target_user: string;
   explanation: string;
   snapshot?: AgentUserRules;
