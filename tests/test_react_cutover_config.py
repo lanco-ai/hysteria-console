@@ -26,6 +26,7 @@ REACT_DOCUMENTS = (
     '/admin/rules',
     '/admin/landing-egresses',
     '/admin/chat',
+    '/admin/video',
 )
 
 
@@ -55,6 +56,7 @@ def test_react_documents_and_api_use_8083():
         assert 'location = /api/v1 {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location ^~ /api/v1/ {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location ^~ /api/chat/ {\n        proxy_pass http://127.0.0.1:8083;' in text
+        assert 'location ^~ /api/video/ {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location = /api/chat/completions {' in text
         assert 'proxy_buffering off;' in text
         assert 'proxy_read_timeout 660s;' in text
