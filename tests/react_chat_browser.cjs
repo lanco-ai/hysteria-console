@@ -88,11 +88,13 @@ async function main() {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ users: ['alice'], rules: [], revision: 'a'.repeat(64), packs: [] }) });
   });
   await page.route('**/api/v1/admin/agent/plan', async route => {
+    const requestBody = JSON.parse(route.request().postData() || '{}');
+    const directRule = String(requestBody.message || '').includes('添加');
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
       ok: true,
-      action: 'apply_pack',
+      action: directRule ? 'add_rule' : 'apply_pack',
       target_user: 'alice',
-      explanation: '已生成规则预览。',
+      explanation: directRule ? '已生成用户规则预览。' : '已生成规则预览。',
       snapshot: {
         username: 'alice',
         revision: 'a'.repeat(64),
@@ -106,14 +108,14 @@ async function main() {
       plan: {
         change_id: 'agent-browser-change',
         target_user: 'alice',
-        operation: 'pack',
-        pack: 'overleaf',
-        rule: '',
-        label: 'Overleaf 加速',
+        operation: directRule ? 'add' : 'pack',
+        pack: directRule ? '' : 'overleaf',
+        rule: directRule ? 'DOMAIN,example.com,DIRECT' : '',
+        label: directRule ? '添加自定义规则' : 'Overleaf 加速',
         description: '仅影响 alice',
         before_revision: 'a'.repeat(64),
         after_revision: 'b'.repeat(64),
-        additions: ['DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'],
+        additions: [directRule ? 'DOMAIN,example.com,DIRECT' : 'DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'],
         removals: [],
         requires_confirmation: true,
       },
@@ -168,6 +170,7 @@ async function main() {
   assert(afterDrag && (afterDrag.x !== beforeDrag.x || afterDrag.y !== beforeDrag.y), 'agent panel should be draggable');
   await page.getByRole('button', { name: '重置位置' }).click();
   await page.locator('#lanco-agent-user').selectOption('alice');
+  await expect(page.getByLabel('自动执行本用户规则')).toBeVisible();
   await page.locator('.lanco-agent-input').fill('给 alice 启用 Overleaf 加速');
   await page.getByRole('button', { name: '发送', exact: true }).last().click();
   await expect(page.locator('.lanco-agent-result')).toBeVisible();
@@ -180,6 +183,15 @@ async function main() {
   await expect(page.getByText(/已保存，用户下次拉取订阅时生效/)).toBeVisible();
   await page.getByRole('button', { name: '撤销这次修改' }).click();
   await expect(page.getByText('变更已撤销，规则恢复到修改前版本。')).toBeVisible();
+  await page.getByRole('button', { name: '结束对话' }).click();
+  await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
+  await expect(page.locator('.lanco-agent-input')).toHaveValue('');
+
+  await page.getByLabel('自动执行本用户规则').check();
+  await page.locator('.lanco-agent-input').fill('给 alice 添加 example.com 直连');
+  await page.getByRole('button', { name: '发送', exact: true }).last().click();
+  await expect(page.getByText(/已保存，用户下次拉取订阅时生效/)).toBeVisible();
+  await expect(page.getByRole('button', { name: '撤销这次修改' })).toBeVisible();
   await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
   await expect(launcher).toBeVisible();
   const launcherBefore = await launcher.boundingBox();
@@ -192,6 +204,8 @@ async function main() {
   assert(launcherAfter && (launcherAfter.x !== launcherBefore.x || launcherAfter.y !== launcherBefore.y), 'agent launcher should be draggable');
   await launcher.click();
   await expect(page.locator('.lanco-agent')).toBeVisible();
+  await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
+  await expect(page.locator('.lanco-agent-input')).toHaveValue('');
   await page.getByRole('button', { name: '重置位置' }).click();
   await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
   await expect(page.getByRole('button', { name: '打开 Lanco Agent' })).toBeVisible();

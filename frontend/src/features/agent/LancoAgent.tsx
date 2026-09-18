@@ -86,6 +86,7 @@ export function LancoAgent() {
   const [result, setResult] = useState<AgentPlanResponse | null>(null);
   const [error, setError] = useState('');
   const [lastChangeId, setLastChangeId] = useState('');
+  const [autoApply, setAutoApply] = useState(false);
   const [panelPosition, setPanelPosition] = useState<FloatingPosition | null>(() => readPosition(PANEL_POSITION_KEY));
   const [launcherPosition, setLauncherPosition] = useState<FloatingPosition | null>(() => readPosition(LAUNCHER_POSITION_KEY));
   const [draggingTarget, setDraggingTarget] = useState<DragTarget | null>(null);
@@ -175,17 +176,57 @@ export function LancoAgent() {
     return () => controller.abort();
   }, [open, users.length]);
 
+  const clearConversation = () => {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    setMessage('');
+    setStatus('idle');
+    setResult(null);
+    setError('');
+    setLastChangeId('');
+  };
+
+  const closeAgent = () => {
+    if (status === 'read' || status === 'saved' || status === 'undone') clearConversation();
+    setOpen(false);
+  };
+
+  const applyChange = async (changeId: string) => {
+    if (!changeId) return;
+    setError(''); setStatus('applying');
+    try {
+      const response = await applyAgentChange(changeId);
+      setStatus('saved');
+      setResult(current => current ? {
+        ...current,
+        ...(response.result.snapshot ? { snapshot: response.result.snapshot } : {}),
+        explanation: `${current.explanation} 已保存，用户下次拉取订阅时生效。`,
+      } : current);
+    } catch (errorValue) {
+      setError(errorValue instanceof AgentApiError ? errorValue.message : '保存失败，请刷新后核对');
+      setStatus('error');
+    }
+  };
+
   const run = async () => {
     if (!message.trim() || !targetUser || status === 'reading' || status === 'applying') return;
+    const submittedMessage = message.trim();
     requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
     setError(''); setResult(null); setStatus('reading');
     try {
-      const response = await planAgent(message.trim(), targetUser, controller.signal);
+      const response = await planAgent(submittedMessage, targetUser, controller.signal);
+      setMessage('');
       setResult(response);
       setLastChangeId(response.plan?.change_id || '');
-      setStatus(response.plan ? 'preview' : 'read');
+      const isDirectRuleChange = response.action === 'add_rule' || response.action === 'delete_rule';
+      if (response.plan && autoApply && isDirectRuleChange && (response.plan.additions.length || response.plan.removals.length)) {
+        setStatus('preview');
+        void applyChange(response.plan.change_id);
+      } else {
+        setStatus(response.plan ? 'preview' : 'read');
+      }
     } catch (errorValue) {
       if (errorValue instanceof DOMException && errorValue.name === 'AbortError') return;
       setError(errorValue instanceof AgentApiError ? errorValue.message : 'Agent 请求失败');
@@ -194,22 +235,21 @@ export function LancoAgent() {
   };
 
   const apply = async () => {
-    if (!lastChangeId) return;
-    setError(''); setStatus('applying');
-    try {
-      await applyAgentChange(lastChangeId);
-      setStatus('saved');
-      setResult(current => current ? { ...current, explanation: `${current.explanation} 已保存，用户下次拉取订阅时生效。` } : current);
-    } catch (errorValue) {
-      setError(errorValue instanceof AgentApiError ? errorValue.message : '保存失败，请刷新后核对');
-      setStatus('error');
-    }
+    await applyChange(lastChangeId);
   };
 
   const undo = async () => {
     if (!lastChangeId || status !== 'saved') return;
     setError(''); setStatus('applying');
-    try { await undoAgentChange(lastChangeId); setLastChangeId(''); setStatus('undone'); setResult(current => current ? { ...current, explanation: '变更已撤销，规则恢复到修改前版本。' } : current); }
+    try {
+      const response = await undoAgentChange(lastChangeId);
+      setLastChangeId(''); setStatus('undone');
+      setResult(current => current ? {
+        ...current,
+        ...(response.result.snapshot ? { snapshot: response.result.snapshot } : {}),
+        explanation: '变更已撤销，规则恢复到修改前版本。',
+      } : current);
+    }
     catch (errorValue) { setError(errorValue instanceof AgentApiError ? errorValue.message : '撤销失败，请刷新后核对'); setStatus('error'); }
   };
 
@@ -246,9 +286,9 @@ export function LancoAgent() {
   return <>
     {!open ? <button ref={launcherRef} className={`lanco-agent-launcher${draggingTarget === 'launcher' ? ' is-dragging' : ''}`} style={launcherStyle} type="button" aria-label="打开 Lanco Agent" title="Lanco 助手" onPointerDown={event => beginDrag('launcher', event)} onClick={() => { if (suppressLauncherClickRef.current) { suppressLauncherClickRef.current = false; return; } setOpen(true); }}><RobotAvatar small /></button> : null}
     {open ? <aside ref={panelRef} className={`lanco-agent${draggingTarget === 'panel' ? ' is-dragging' : ''}`} style={panelStyle} role="dialog" aria-modal="false" aria-labelledby="lanco-agent-title">
-      <header className="lanco-agent-header" onPointerDown={event => beginDrag('panel', event)}><div className="lanco-agent-heading"><RobotAvatar small /><div><strong id="lanco-agent-title">Lanco Agent</strong><span>规则助手 · {statusLabel(status)}</span></div></div><div className="lanco-agent-header-actions"><button type="button" className="lanco-agent-reset" aria-label="重置位置" title="恢复机器人和面板到右下角" onPointerDown={event => event.stopPropagation()} onClick={resetPosition}>⌖</button><button type="button" className="lanco-agent-close" aria-label="收起 Lanco Agent" onPointerDown={event => event.stopPropagation()} onClick={() => setOpen(false)}>×</button></div></header>
+      <header className="lanco-agent-header" onPointerDown={event => beginDrag('panel', event)}><div className="lanco-agent-heading"><RobotAvatar small /><div><strong id="lanco-agent-title">Lanco Agent</strong><span>规则助手 · {statusLabel(status)}</span></div></div><div className="lanco-agent-header-actions"><button type="button" className="lanco-agent-reset" aria-label="重置位置" title="恢复机器人和面板到右下角" onPointerDown={event => event.stopPropagation()} onClick={resetPosition}>⌖</button><button type="button" className="lanco-agent-close" aria-label="收起 Lanco Agent" onPointerDown={event => event.stopPropagation()} onClick={closeAgent}>×</button></div></header>
       <div className="lanco-agent-body">
-        <div className="lanco-agent-field"><label htmlFor="lanco-agent-user">目标用户</label><select id="lanco-agent-user" value={targetUser} onChange={event => setTargetUser(event.target.value)} disabled={status === 'reading' || status === 'applying'}><option value="">选择用户</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></div>
+        <div className="lanco-agent-field"><label htmlFor="lanco-agent-user">目标用户</label><select id="lanco-agent-user" value={targetUser} onChange={event => { clearConversation(); setAutoApply(false); setTargetUser(event.target.value); }} disabled={status === 'reading' || status === 'applying'}><option value="">选择用户</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select><label className="lanco-agent-auto"><input type="checkbox" checked={autoApply} onChange={event => setAutoApply(event.target.checked)} disabled={status === 'reading' || status === 'applying'} /> 自动执行本用户规则 <span>明确的添加或删除指令会直接保存</span></label></div>
         {isIdle ? <section className="lanco-agent-welcome"><p>你好，我可以帮你整理指定用户的网络规则。</p><span>用户规则会排在全局规则之前，先选择一个操作或直接输入要求。</span><div className="lanco-agent-quick-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('查看当前用户规则和继承的全局规则')}>查看合并规则</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('给当前用户添加规则：')}>添加用户规则</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('给当前用户应用规则包：')}>应用规则包</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('检查当前用户规则并生成预览')}>检查冲突</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('给当前用户启用 Overleaf 加速')}>Overleaf 加速</button></div></section> : null}
         {!isIdle ? <div className="lanco-agent-timeline" aria-live="polite"><span className={status === 'read' || status === 'preview' || status === 'applying' || status === 'saved' || status === 'undone' ? 'is-active' : ''}>读取用户规则</span><span className={status === 'preview' || status === 'applying' || status === 'saved' || status === 'undone' ? 'is-active' : ''}>检查冲突并生成预览</span><span className={status === 'saved' || status === 'undone' ? 'is-active' : ''}>{status === 'undone' ? '已撤销修改' : '保存结果'}</span></div> : null}
         {result ? <section className="lanco-agent-result">
@@ -264,14 +304,14 @@ export function LancoAgent() {
               {result.plan.removals.length ? <><span>删除规则</span><ul>{result.plan.removals.map(rule => <li key={`remove-${rule}`}><code>{rule}</code></li>)}</ul></> : null}
               {!result.plan.additions.length && !result.plan.removals.length ? <span>没有实际变化，重复项已跳过。</span> : null}
             </div>
-            <div className="lanco-agent-actions"><button className="btn btn-primary btn-sm" type="button" onClick={() => void apply()} disabled={status !== 'preview'}>应用修改</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => { setResult(null); setLastChangeId(''); setStatus('idle'); }}>取消</button></div>
+            <div className="lanco-agent-actions"><button className="btn btn-primary btn-sm" type="button" onClick={() => void apply()} disabled={status !== 'preview'}>应用修改</button><button className="btn btn-ghost btn-sm" type="button" onClick={clearConversation}>取消</button></div>
           </> : null}
           {result.plan && status === 'saved' ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => void undo()}>撤销这次修改</button> : null}
         </section> : null}
         {error ? <div className="err" role="alert">{error}</div> : null}
         <textarea className="lanco-agent-input" value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} placeholder="例如：给 lhz 启用 Overleaf 加速" rows={2} disabled={status === 'reading' || status === 'applying'} />
       </div>
-      <footer className="lanco-agent-footer"><span>Gemini 3.8 Flash High</span><button className="btn btn-primary btn-sm" type="button" onClick={() => void run()} disabled={!targetUser || !message.trim() || status === 'reading' || status === 'applying'}>{status === 'reading' ? '处理中…' : '发送'}</button></footer>
+      <footer className="lanco-agent-footer"><button className="lanco-agent-end" type="button" onClick={clearConversation}>结束对话</button><span>Gemini 3.8 Flash High</span><button className="btn btn-primary btn-sm" type="button" onClick={() => void run()} disabled={!targetUser || !message.trim() || status === 'reading' || status === 'applying'}>{status === 'reading' ? '处理中…' : '发送'}</button></footer>
     </aside> : null}
   </>;
 }

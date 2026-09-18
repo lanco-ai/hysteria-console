@@ -217,9 +217,12 @@ class AgentRuleService:
         username = self._validate_username(username)
         with _context_for_users(self.service):
             cfg = self._get_cfg(self._load_users(), username)
-            revision_fn = getattr(self.service, 'user_config_revision', None)
-            revision = revision_fn(cfg) if callable(revision_fn) else _revision(cfg)
-            snapshot = self._rule_snapshot(cfg)
+            return self._snapshot_from_cfg(username, cfg)
+
+    def _snapshot_from_cfg(self, username, cfg):
+        revision_fn = getattr(self.service, 'user_config_revision', None)
+        revision = revision_fn(cfg) if callable(revision_fn) else _revision(cfg)
+        snapshot = self._rule_snapshot(cfg)
         global_rules, global_revision = self._global_rules_snapshot()
         user_rules = list(snapshot[subscription_profiles.USER_CLASH_RULES_KEY]['value'])
         return {
@@ -342,6 +345,8 @@ class AgentRuleService:
                 removals = []
             else:
                 if rule not in rules:
+                    if rule in _global_rules:
+                        raise AgentServiceError('global_rule_inherited')
                     raise AgentServiceError('rule_not_found')
                 changed[subscription_profiles.USER_CLASH_RULES_KEY] = [item for item in rules if item != rule]
                 additions = []
@@ -391,7 +396,13 @@ class AgentRuleService:
                     record['applied_revision'] = current_revision
                     changes[change_id] = record
                     self._save_changes(changes)
-                    return {'ok': True, 'change_id': change_id, 'username': username, 'revision': current_revision}
+                    return {
+                        'ok': True,
+                        'change_id': change_id,
+                        'username': username,
+                        'revision': current_revision,
+                        'snapshot': self._snapshot_from_cfg(username, cfg),
+                    }
                 if record.get('status') == 'applying' and current_revision != str(record.get('before_revision') or ''):
                     raise AgentServiceError('revision_conflict')
                 if current_revision != str(record.get('before_revision') or ''):
@@ -405,12 +416,19 @@ class AgentRuleService:
                 users[username] = cfg
                 self.service.save_json(self.users_path, users)
                 applied_revision = str(getattr(self.service, 'user_config_revision', _revision)(cfg))
+                applied_snapshot = self._snapshot_from_cfg(username, cfg)
             record['status'] = 'applied'
             record['applied_at'] = _now()
             record['applied_revision'] = applied_revision
             changes[change_id] = record
             self._save_changes(changes)
-        return {'ok': True, 'change_id': change_id, 'username': username, 'revision': applied_revision}
+        return {
+            'ok': True,
+            'change_id': change_id,
+            'username': username,
+            'revision': applied_revision,
+            'snapshot': applied_snapshot,
+        }
 
     def undo_change(self, change_id: str, *, operator: str = 'admin', source_ip: str = ''):
         change_id = str(change_id or '').strip()
@@ -430,7 +448,13 @@ class AgentRuleService:
                     record['undone_revision'] = current_revision
                     changes[change_id] = record
                     self._save_changes(changes)
-                    return {'ok': True, 'change_id': change_id, 'username': username, 'revision': current_revision}
+                    return {
+                        'ok': True,
+                        'change_id': change_id,
+                        'username': username,
+                        'revision': current_revision,
+                        'snapshot': self._snapshot_from_cfg(username, cfg),
+                    }
                 if record.get('status') == 'undoing' and current_revision != str(record.get('applied_revision') or ''):
                     raise AgentServiceError('revision_conflict')
                 if current_revision != str(record.get('applied_revision') or ''):
@@ -445,9 +469,16 @@ class AgentRuleService:
                 users[username] = cfg
                 self.service.save_json(self.users_path, users)
                 revision = str(getattr(self.service, 'user_config_revision', _revision)(cfg))
+                undone_snapshot = self._snapshot_from_cfg(username, cfg)
             record['status'] = 'undone'
             record['undone_at'] = _now()
             record['undone_revision'] = revision
             changes[change_id] = record
             self._save_changes(changes)
-        return {'ok': True, 'change_id': change_id, 'username': username, 'revision': revision}
+        return {
+            'ok': True,
+            'change_id': change_id,
+            'username': username,
+            'revision': revision,
+            'snapshot': undone_snapshot,
+        }

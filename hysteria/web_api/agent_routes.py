@@ -59,6 +59,7 @@ def _status(exc):
         'change_not_pending': 409,
         'change_not_undoable': 409,
         'rule_not_found': 404,
+        'global_rule_inherited': 409,
     }.get(exc.code, 422)
 
 

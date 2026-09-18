@@ -56,11 +56,13 @@ async function parse<T>(response: Response): Promise<T> {
       ? '管理员登录已失效'
       : code === 'revision_conflict'
         ? '目标用户规则已变化，请重新读取并生成预览'
-        : code === 'settings_unavailable'
+      : code === 'settings_unavailable'
           ? 'Agent 配置未就绪，请检查 API 地址和密钥'
-          : code === 'upstream_unavailable'
-            ? '模型服务暂时不可用，请稍后重试'
-        : `请求失败（${response.status}）`;
+        : code === 'upstream_unavailable'
+          ? '模型服务暂时不可用，请稍后重试'
+          : code === 'global_rule_inherited'
+            ? '这条规则来自全局模板，不能直接删除；请为该用户添加覆盖规则'
+            : `请求失败（${response.status}）`;
     throw new AgentApiError(message, response.status, code);
   }
   return value as T;
@@ -81,7 +83,7 @@ export async function planAgent(message: string, targetUser: string, signal?: Ab
   return parse<AgentPlanResponse>(response);
 }
 
-export async function applyAgentChange(changeId: string, signal?: AbortSignal): Promise<{ ok: true; result: { username: string; revision: string } }> {
+export async function applyAgentChange(changeId: string, signal?: AbortSignal): Promise<{ ok: true; result: { username: string; revision: string; snapshot?: AgentUserRules } }> {
   const response = await fetch('/api/v1/admin/agent/apply', {
     method: 'POST', credentials: 'same-origin', ...(signal ? { signal } : {}),
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -90,7 +92,7 @@ export async function applyAgentChange(changeId: string, signal?: AbortSignal): 
   return parse(response);
 }
 
-export async function undoAgentChange(changeId: string, signal?: AbortSignal): Promise<{ ok: true; result: { username: string; revision: string } }> {
+export async function undoAgentChange(changeId: string, signal?: AbortSignal): Promise<{ ok: true; result: { username: string; revision: string; snapshot?: AgentUserRules } }> {
   const response = await fetch('/api/v1/admin/agent/undo', {
     method: 'POST', credentials: 'same-origin', ...(signal ? { signal } : {}),
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },

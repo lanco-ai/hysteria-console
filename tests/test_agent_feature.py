@@ -88,12 +88,29 @@ def test_agent_rule_service_supports_scoped_custom_add_and_delete(tmp_path):
     add = service.preview_rule('alice', 'add', 'DOMAIN,internal.example,DIRECT')
     assert add['operation'] == 'add'
     assert add['additions'] == ['DOMAIN,internal.example,DIRECT']
-    service.apply_change(add['change_id'])
+    applied = service.apply_change(add['change_id'])
+    assert applied['snapshot']['rules'][0] == 'DOMAIN,internal.example,DIRECT'
+    assert applied['snapshot']['merged_rules'][0] == 'DOMAIN,internal.example,DIRECT'
     assert 'DOMAIN,internal.example,DIRECT' in service.get_user_rules('alice')['rules']
     delete = service.preview_rule('alice', 'delete', 'DOMAIN,internal.example,DIRECT')
     assert delete['removals'] == ['DOMAIN,internal.example,DIRECT']
     service.apply_change(delete['change_id'])
     assert 'DOMAIN,internal.example,DIRECT' not in service.get_user_rules('alice')['rules']
+
+
+def test_agent_rule_service_does_not_delete_inherited_global_rule(tmp_path):
+    state = _State(tmp_path)
+    state.load_template_rules_snapshot = lambda: (
+        ['DOMAIN-SUFFIX,global.example,DIRECT'],
+        'global-revision-1',
+    )
+    service = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    try:
+        service.preview_rule('alice', 'delete', 'DOMAIN-SUFFIX,global.example,DIRECT')
+    except AgentServiceError as exc:
+        assert exc.code == 'global_rule_inherited'
+    else:
+        raise AssertionError('inherited global rule must not be deleted as a user override')
 
 
 def test_agent_snapshot_includes_user_global_and_merged_rules(tmp_path):
