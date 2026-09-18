@@ -89,10 +89,11 @@ async function main() {
   });
   await page.route('**/api/v1/admin/agent/plan', async route => {
     const requestBody = JSON.parse(route.request().postData() || '{}');
-    const directRule = String(requestBody.message || '').includes('添加');
+    const deleteRule = String(requestBody.message || '').includes('删除');
+    const directRule = deleteRule || String(requestBody.message || '').includes('添加');
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
       ok: true,
-      action: directRule ? 'add_rule' : 'apply_pack',
+      action: deleteRule ? 'delete_rule' : directRule ? 'add_rule' : 'apply_pack',
       target_user: 'alice',
       explanation: directRule ? '已生成用户规则预览。' : '已生成规则预览。',
       snapshot: {
@@ -108,27 +109,32 @@ async function main() {
       plan: {
         change_id: 'agent-browser-change',
         target_user: 'alice',
-        operation: directRule ? 'add' : 'pack',
+        operation: deleteRule ? 'delete' : directRule ? 'add' : 'pack',
         pack: directRule ? '' : 'overleaf',
         rule: directRule ? 'DOMAIN,example.com,DIRECT' : '',
         label: directRule ? '添加自定义规则' : 'Overleaf 加速',
         description: '仅影响 alice',
         before_revision: 'a'.repeat(64),
         after_revision: 'b'.repeat(64),
-        additions: [directRule ? 'DOMAIN,example.com,DIRECT' : 'DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'],
-        removals: [],
+        additions: deleteRule ? [] : [directRule ? 'DOMAIN,example.com,DIRECT' : 'DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'],
+        removals: deleteRule ? ['DOMAIN,example.com,DIRECT'] : [],
         requires_confirmation: true,
       },
     }) });
   });
   let agentApplyAttempts = 0;
+  let delayAgentSave = false;
+  let releaseAgentSave;
+  let agentSaveFinished;
   await page.route('**/api/v1/admin/agent/apply', async route => {
     agentApplyAttempts += 1;
+    if (delayAgentSave) await new Promise(resolve => { releaseAgentSave = resolve; });
     if (agentApplyAttempts === 2) {
       await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'upstream_unavailable' }) });
       return;
     }
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, result: { username: 'alice', revision: 'b'.repeat(64) } }) });
+    agentSaveFinished?.();
   });
   await page.route('**/api/v1/admin/agent/undo', async route => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, result: { username: 'alice', revision: 'c'.repeat(64) } }) });
@@ -176,7 +182,8 @@ async function main() {
   assert(afterDrag && (afterDrag.x !== beforeDrag.x || afterDrag.y !== beforeDrag.y), 'agent panel should be draggable');
   await page.getByRole('button', { name: '重置位置' }).click();
   await page.locator('#lanco-agent-user').selectOption('alice');
-  await expect(page.getByLabel('自动执行本用户规则')).toBeVisible();
+  await expect(page.getByLabel('自动执行本用户规则')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '结束对话' })).toHaveCount(0);
   await page.locator('.lanco-agent-input').fill('给 alice 启用 Overleaf 加速');
   await page.getByRole('button', { name: '发送', exact: true }).last().click();
   await expect(page.locator('.lanco-agent-result')).toBeVisible();
@@ -185,15 +192,21 @@ async function main() {
   await expect(page.getByText('合并后订阅规则', { exact: true })).toBeVisible();
   await expect(page.getByText('用户覆盖规则', { exact: true }).locator('..').getByText('0 条', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '应用修改' })).toBeEnabled();
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  await launcher.click();
+  await expect(page.locator('.lanco-agent-result')).toHaveCount(0);
+  await expect(page.locator('.lanco-agent-input')).toHaveValue('');
+  await page.locator('.lanco-agent-input').fill('给 alice 启用 Overleaf 加速');
+  await page.getByRole('button', { name: '发送', exact: true }).last().click();
   await page.getByRole('button', { name: '应用修改' }).click();
   await expect(page.getByText(/已保存，用户下次拉取订阅时生效/)).toBeVisible();
   await page.getByRole('button', { name: '撤销这次修改' }).click();
   await expect(page.getByText('变更已撤销，规则恢复到修改前版本。')).toBeVisible();
-  await page.getByRole('button', { name: '结束对话' }).click();
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  await launcher.click();
   await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
   await expect(page.locator('.lanco-agent-input')).toHaveValue('');
 
-  await page.getByLabel('自动执行本用户规则').check();
   await page.locator('.lanco-agent-input').fill('给 alice 添加 example.com 直连');
   await page.getByRole('button', { name: '发送', exact: true }).last().click();
   await expect(page.getByText('模型服务暂时不可用，请稍后重试')).toBeVisible();
@@ -214,6 +227,25 @@ async function main() {
   await launcher.click();
   await expect(page.locator('.lanco-agent')).toBeVisible();
   await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
+  await expect(page.locator('.lanco-agent-input')).toHaveValue('');
+  // Closing during a submitted save clears the UI; late responses cannot
+  // overwrite the new conversation. The already-submitted write may finish.
+  delayAgentSave = true;
+  const finishedSave = new Promise(resolve => { agentSaveFinished = resolve; });
+  await page.locator('.lanco-agent-input').fill('删除 alice 的 example.com 直连规则');
+  await page.getByRole('button', { name: '发送', exact: true }).last().click();
+  await expect.poll(() => typeof releaseAgentSave).toBe('function');
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  await launcher.click();
+  await page.locator('.lanco-agent-input').fill('新对话草稿');
+  releaseAgentSave();
+  await finishedSave;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.locator('.lanco-agent-result')).toHaveCount(0);
+  await expect(page.locator('.lanco-agent-input')).toHaveValue('新对话草稿');
+  await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  await launcher.click();
   await expect(page.locator('.lanco-agent-input')).toHaveValue('');
   await page.getByRole('button', { name: '重置位置' }).click();
   await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
