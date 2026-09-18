@@ -60,6 +60,7 @@ async function main() {
   };
   const putBodies = [];
   let expectedReasoning = undefined;
+  let expectedModel = 'gemini-3.8-flash-high';
   let modelLoads = 0;
   await page.route('**/api/chat/settings', async route => {
     if (route.request().method() === 'GET') {
@@ -75,6 +76,7 @@ async function main() {
   await page.route('**/api/chat/models', async route => {
     modelLoads += 1;
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify([
+      { id: 'gemini-3.8-flash-high', name: 'Gemini 3.8 Flash High' },
       { id: 'model-a', name: 'Model A', ...(modelLoads === 1 ? { context_window: 8192 } : {}) },
       { id: 'model-b', name: 'Model B' },
     ]) });
@@ -84,7 +86,7 @@ async function main() {
   });
   await page.route('**/api/chat/completions', async route => {
     const body = JSON.parse(route.request().postData() || '{}');
-    assert.equal(body.model, 'model-a');
+    assert.equal(body.model, expectedModel);
     assert.equal(body.stream, true);
     if (expectedReasoning === undefined) assert.equal(Object.hasOwn(body, 'reasoning_effort'), false);
     else assert.equal(body.reasoning_effort, expectedReasoning);
@@ -108,10 +110,7 @@ async function main() {
   await expect(page.getByRole('button', { name: '打开历史记录' })).toContainText('历史');
   await expect(page.locator('.chat-history-count')).toHaveText('0');
   await expect(page.getByLabel('当前模型')).toBeEnabled();
-  await expect(page.getByLabel('当前模型')).toHaveValue('');
-  await page.getByLabel('当前模型').selectOption('model-a');
-  await expect(page.getByLabel('当前模型')).toHaveValue('model-a');
-  await expect(page.getByLabel('上下文状态')).toContainText('未知 / 8,192');
+  await expect(page.getByLabel('当前模型')).toHaveValue('gemini-3.8-flash-high');
 
   await page.locator('button[aria-label="设置"]').click();
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
@@ -152,6 +151,7 @@ async function main() {
       reasoningEffort: 'high',
     }]));
   }, seededMessages);
+  expectedModel = 'model-a';
   await page.reload();
   await expect(page.locator('.chat-history-count')).toHaveText('1');
   await expect(page.getByLabel('当前模型')).toHaveValue('model-a');
@@ -168,6 +168,7 @@ async function main() {
   await composer.fill('slow');
   await composer.press('Enter');
   await expect(page.getByRole('button', { name: '停止' })).toBeVisible();
+  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('模型正在思考');
   await page.getByRole('button', { name: '停止' }).click();
   await expect(page.getByRole('status')).toContainText('已停止生成');
   const stored = await page.evaluate(key => localStorage.getItem(key), 'hy2.chat.sessions.v1');

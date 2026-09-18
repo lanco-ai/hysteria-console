@@ -28,6 +28,7 @@ export type ChatPageProps = {
 
 const STORAGE_KEY = 'hy2.chat.sessions.v1';
 const USAGE_KEY = 'hy2.chat.usage.v1';
+const DEFAULT_CHAT_MODEL = 'gemini-3.8-flash-high';
 const reasoningOptions: Array<{ value: ReasoningEffort; label: string }> = [
   { value: 'auto', label: '自动' },
   { value: 'low', label: 'Low' },
@@ -145,6 +146,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   const [testBusy, setTestBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [streamStarted, setStreamStarted] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
@@ -279,7 +281,9 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     }
     setSelectedModel(current => {
       const preferred = active?.model || current;
-      return models.some(item => item.id === preferred) ? preferred : (models.length === 1 ? models[0]?.id || '' : '');
+      if (models.some(item => item.id === preferred)) return preferred;
+      if (models.some(item => item.id === DEFAULT_CHAT_MODEL)) return DEFAULT_CHAT_MODEL;
+      return models.length === 1 ? models[0]?.id || '' : '';
     });
   }, [activeId, models]);
 
@@ -393,6 +397,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     setActiveId(current.id);
     setMessage('');
     setBusy(true);
+    setStreamStarted(false);
     setError('');
     setNotice('');
     setUsage(currentUsage => ({
@@ -450,7 +455,10 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     };
     try {
       await streamChat(nextMessages, selectedModel, reasoningEffort, abortController.signal, event => {
-        if (event.type === 'delta') appendReply(event.text);
+        if (event.type === 'delta') {
+          if (event.text) setStreamStarted(true);
+          appendReply(event.text);
+        }
         else if (event.type === 'usage') applyUsage(event);
         else if (event.type === 'notice' && event.notice === 'reasoning_unsupported') setNotice('当前 API 不支持思考强度，已按普通模式发送。');
         else if (event.type === 'error') {
@@ -482,6 +490,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     } finally {
       if (flushFrame !== null) window.cancelAnimationFrame(flushFrame);
       if (streamAbortRef.current === abortController) streamAbortRef.current = null;
+      setStreamStarted(false);
       if (authenticatedRef.current) {
         setBusy(false);
       }
@@ -591,9 +600,9 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
             const element = event.currentTarget;
             followMessagesRef.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 48;
           }} onWheel={() => { userScrollIntentRef.current = true; }} onTouchMove={() => { userScrollIntentRef.current = true; }} onPointerDown={() => { userScrollIntentRef.current = true; }}>
-            {active?.messages.length ? active.messages.map((item, index) => <ChatMessage key={`${active.id}-${index}`} message={item} />) : <div className="chat-empty-state"><div className="chat-empty-mark">✦</div><h2>Lanco AI</h2><p>有什么可以帮你？</p><div className="chat-quick-prompts"><button type="button" onClick={() => choosePrompt('翻译一段文字：')} disabled={!authenticated}>翻译一段文字</button><button type="button" onClick={() => choosePrompt('请润色以下学术表达：')} disabled={!authenticated}>润色学术表达</button><button type="button" onClick={() => choosePrompt('请解释这段代码：')} disabled={!authenticated}>解释一段代码</button><button type="button" onClick={() => choosePrompt('')} disabled={!authenticated}>自由对话</button></div></div>}
+            {active?.messages.length ? active.messages.map((item, index) => <ChatMessage key={`${active.id}-${index}`} message={item} pending={busy && !streamStarted && item.role === 'assistant' && index === active.messages.length - 1 && !item.content} />) : <div className="chat-empty-state"><div className="chat-empty-mark">✦</div><h2>Lanco AI</h2><p>有什么可以帮你？</p><div className="chat-quick-prompts"><button type="button" onClick={() => choosePrompt('翻译一段文字：')} disabled={!authenticated}>翻译一段文字</button><button type="button" onClick={() => choosePrompt('请润色以下学术表达：')} disabled={!authenticated}>润色学术表达</button><button type="button" onClick={() => choosePrompt('请解释这段代码：')} disabled={!authenticated}>解释一段代码</button><button type="button" onClick={() => choosePrompt('')} disabled={!authenticated}>自由对话</button></div></div>}
           </div>
-          <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { const next = event.target.value; setMessage(next); setSessions(current => current.map(session => session.id === activeId ? { ...session, draft: next } : session)); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={!authenticated || busy} /><div className="chat-composer-footer"><span>{busy ? '正在生成回复…' : 'Enter 发送 · Shift + Enter 换行'}</span>{busy ? <button className="btn btn-secondary" type="button" onClick={() => streamAbortRef.current?.abort()}>停止</button> : <button className="btn btn-primary" type="button" onClick={() => void send()} disabled={!authenticated || !message.trim()}>发送 ↑</button>}</div></div>
+          <div className="chat-composer"><textarea ref={composerRef} value={message} onChange={event => { const next = event.target.value; setMessage(next); setSessions(current => current.map(session => session.id === activeId ? { ...session, draft: next } : session)); resizeComposer(event.currentTarget); }} onKeyDown={event => { if (event.nativeEvent.isComposing) return; if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} placeholder="给 Lanco AI 发消息…" rows={1} disabled={!authenticated || busy} /><div className="chat-composer-footer"><span>{busy ? (streamStarted ? '正在接收流式回复…' : '模型正在思考，等待首个内容块…') : 'Enter 发送 · Shift + Enter 换行'}</span>{busy ? <button className="btn btn-secondary" type="button" onClick={() => streamAbortRef.current?.abort()}>停止</button> : <button className="btn btn-primary" type="button" onClick={() => void send()} disabled={!authenticated || !message.trim()}>发送 ↑</button>}</div></div>
         </section>
       </div>
       {notice ? <div className="chat-notice" role="status">{notice}</div> : null}
