@@ -5,6 +5,7 @@ import json
 import uuid
 import os
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -286,3 +287,206 @@ class AssetStore:
         if len(matches) != 1:
             return None, None
         return metadata, matches[0]
+
+
+DEFAULT_RUNS_PATH = Path('/root/hysteria/state/video/runs.json')
+
+
+class RunService:
+    """Low-concurrency persisted DAG executor.
+
+    ``tick`` is deliberately bounded and synchronous so a request or a safe
+    existing lifecycle hook can drive it without introducing another worker
+    service. A node is marked ``running`` before the paid request is made;
+    ambiguous transport failures therefore cannot cause an automatic retry.
+    """
+
+    def __init__(self, workflows: WorkflowStore, settings: VideoSettings, provider, path: str | Path = DEFAULT_RUNS_PATH):
+        self.workflows = workflows
+        self.settings = settings
+        self.provider = provider
+        self.path = Path(path)
+
+    def _records(self):
+        value = state_store.load_json_strict(self.path, [])
+        if not isinstance(value, list):
+            raise VideoValidationError('invalid run storage')
+        return value
+
+    def _write(self, records):
+        state_store.save_json(self.path, records)
+        self.path.chmod(0o600)
+
+    def _replace(self, run):
+        records = self._records()
+        records = [item for item in records if item.get('id') != run['id']]
+        records.insert(0, run)
+        lock_path = self.path.with_name(self.path.name + '.lock')
+        with state_store.file_lock(lock_path):
+            self._write(records)
+
+    def get(self, run_id):
+        return next((item for item in self._records() if item.get('id') == run_id), None)
+
+    def list(self):
+        return self._records()
+
+    def submit(self, workflow_id, request_snapshot=None):
+        workflow = self.workflows.get(workflow_id)
+        if workflow is None:
+            raise VideoValidationError('workflow not found')
+        validated = validate_workflow(workflow.get('nodes', []), workflow.get('edges', []))
+        node_status = {
+            node['id']: {'state': 'queued'} for node in validated.nodes
+        }
+        run = {
+            'id': uuid.uuid4().hex,
+            'workflow_id': workflow_id,
+            'state': 'queued',
+            'created_at': int(time.time()),
+            'order': validated.order,
+            'workflow': {'nodes': validated.nodes, 'edges': validated.edges},
+            'request': request_snapshot if isinstance(request_snapshot, dict) else {},
+            'node_status': node_status,
+            'provider_jobs': {},
+            'assets': {},
+        }
+        if _contains_secret(run):
+            raise VideoValidationError('run contains secret data')
+        self._replace(run)
+        return run
+
+    @staticmethod
+    def _node(run, node_id):
+        return next(node for node in run['workflow']['nodes'] if node['id'] == node_id)
+
+    @staticmethod
+    def _source_value(run, node_id, target_port):
+        for edge in run['workflow']['edges']:
+            if edge.get('target') == node_id and (edge.get('targetHandle') or edge.get('target_port')) == target_port:
+                source = edge.get('source')
+                if source in run['assets']:
+                    return run['assets'][source]
+                source_node = next((node for node in run['workflow']['nodes'] if node['id'] == source), None)
+                data = source_node.get('data') if isinstance(source_node, dict) else {}
+                if isinstance(data, dict):
+                    return data.get('text') or data.get('prompt') or data.get('asset_url')
+                return None
+        return None
+
+    def _mark_ready_sources(self, run):
+        for node_id in run['order']:
+            node = self._node(run, node_id)
+            status = run['node_status'][node_id]
+            if status['state'] != 'queued':
+                continue
+            node_type = node['type']
+            if node_type == 'prompt':
+                status['state'] = 'succeeded'
+            elif node_type == 'image_asset':
+                value = (node.get('data') or {}).get('asset_url')
+                if value:
+                    status['state'] = 'succeeded'
+                    run['assets'][node_id] = value
+            elif node_type == 'preview':
+                value = self._source_value(run, node_id, 'media')
+                if value:
+                    status['state'] = 'succeeded'
+                    run['assets'][node_id] = value
+
+    def tick(self, run_id):
+        run = self.get(run_id)
+        if run is None:
+            raise VideoValidationError('run not found')
+        if run['state'] in {'succeeded', 'failed', 'cancelled', 'cancel_unsupported'}:
+            return run
+        run['state'] = 'running'
+        self._mark_ready_sources(run)
+        for node_id in run['order']:
+            node = self._node(run, node_id)
+            status = run['node_status'][node_id]
+            node_type = node['type']
+            if status['state'] == 'running':
+                job_id = run['provider_jobs'].get(node_id)
+                if not job_id or status.get('submission_pending'):
+                    continue
+                try:
+                    update = self.provider.get_job(job_id, self.settings)
+                except Exception:
+                    continue
+                if update.state == 'succeeded':
+                    status['state'] = 'succeeded'
+                    if update.asset_url:
+                        run['assets'][node_id] = update.asset_url
+                elif update.state == 'failed':
+                    status['state'] = 'failed'
+                    run['error'] = update.error_code or 'provider_failed'
+                    run['state'] = 'failed'
+                    break
+                continue
+            if status['state'] != 'queued':
+                continue
+            if node_type not in {'text_to_image', 'image_to_video', 'first_last_frame_video'}:
+                continue
+            data = node.get('data') if isinstance(node.get('data'), dict) else {}
+            if node_type == 'text_to_image':
+                prompt = self._source_value(run, node_id, 'prompt') or data.get('prompt')
+                if not prompt:
+                    status['state'] = 'failed'; run['error'] = 'missing_prompt'; run['state'] = 'failed'; break
+                from .video_models import ImageRequest
+                request = ImageRequest(str(prompt), str(data.get('model') or 'grok-imagine-image'))
+                status['state'] = 'running'
+                try:
+                    job = self.provider.generate_image(request, self.settings)
+                except Exception as exc:
+                    if isinstance(exc, Exception):
+                        status['submission_pending'] = True
+                        continue
+                run['provider_jobs'][node_id] = job.provider_job_id
+                if job.asset_url:
+                    run['assets'][node_id] = job.asset_url
+                continue
+            image_url = self._source_value(run, node_id, 'image')
+            if node_type == 'first_last_frame_video':
+                first = self._source_value(run, node_id, 'first_frame')
+                last = self._source_value(run, node_id, 'last_frame')
+                if not first or not last:
+                    continue
+                image_url = first
+                from .video_models import VideoRequest
+                request = VideoRequest(str(data.get('prompt') or ''), str(data.get('model') or 'grok-imagine-video'), first_frame_url=first, last_frame_url=last)
+            else:
+                if not image_url:
+                    continue
+                from .video_models import VideoRequest
+                request = VideoRequest(str(data.get('prompt') or ''), str(data.get('model') or 'grok-imagine-video'), image_url=str(image_url))
+            status['state'] = 'running'
+            try:
+                job = self.provider.generate_video(request, self.settings)
+            except Exception:
+                status['submission_pending'] = True
+                continue
+            run['provider_jobs'][node_id] = job.provider_job_id
+            if job.asset_url:
+                run['assets'][node_id] = job.asset_url
+        if run['state'] != 'failed' and all(item['state'] == 'succeeded' for item in run['node_status'].values()):
+            run['state'] = 'succeeded'
+        self._replace(run)
+        return run
+
+    def cancel(self, run_id):
+        run = self.get(run_id)
+        if run is None:
+            raise VideoValidationError('run not found')
+        job_id = next(iter(run['provider_jobs'].values()), None)
+        if not job_id:
+            run['state'] = 'cancel_unsupported'
+            self._replace(run)
+            return run
+        result = self.provider.cancel_job(job_id, self.settings)
+        run['state'] = 'cancelled' if result.status == 'cancelled' else 'cancel_unsupported'
+        self._replace(run)
+        return run
+
+    def resume_pending(self):
+        return [run for run in self._records() if run.get('state') in {'queued', 'running'}]

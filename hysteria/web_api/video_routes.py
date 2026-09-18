@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .video_provider import GrokVideoProvider, ProviderError
-from .video_service import AssetStore, VideoSettingsError, VideoSettingsStore, VideoValidationError, WorkflowStore
+from .video_service import AssetStore, RunService, VideoSettingsError, VideoSettingsStore, VideoValidationError, WorkflowStore
 
 
 def _error(code: str, status: int = 400):
@@ -44,10 +44,15 @@ def _provider_error(exc: ProviderError):
     return _error(code, status)
 
 
-def register_video_routes(app, services, dispatch, *, settings_store=None, provider_factory=None, workflow_store=None, asset_store=None):
+def register_video_routes(app, services, dispatch, *, settings_store=None, provider_factory=None, workflow_store=None, asset_store=None, run_service=None):
     store = settings_store or VideoSettingsStore()
     workflows = workflow_store or WorkflowStore()
     assets = asset_store or AssetStore()
+
+    def get_run_service():
+        if run_service is not None:
+            return run_service
+        return RunService(workflows, store.read(), factory())
     factory = provider_factory or (lambda: GrokVideoProvider())
 
     def read_settings(*, headers, path):
@@ -215,3 +220,48 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
         if metadata is None or path is None:
             return _error('not_found', 404)
         return FileResponse(path, media_type=metadata['content_type'], filename=metadata['filename'])
+
+    @app.post('/api/video/runs')
+    async def create_run(request: Request):
+        if not _same_origin(request):
+            return _error('cross_site_request', 403)
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        try:
+            payload = json.loads((await request.body()).decode('utf-8'))
+            workflow_id = payload.get('workflow_id') if isinstance(payload, dict) else None
+            result = await dispatch(lambda **_kwargs: get_run_service().submit(workflow_id), request)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return _error('bad_request')
+        except VideoValidationError:
+            return _error('invalid_workflow', 422)
+        return result if isinstance(result, JSONResponse) else JSONResponse(result, status_code=202)
+
+    @app.get('/api/video/runs')
+    async def list_runs(request: Request):
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        result = await dispatch(lambda **_kwargs: get_run_service().list(), request)
+        return result if isinstance(result, JSONResponse) else JSONResponse({'runs': result})
+
+    @app.get('/api/video/runs/{run_id}')
+    async def get_run(request: Request, run_id: str):
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        result = await dispatch(lambda **_kwargs: get_run_service().tick(run_id), request)
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(result)
+
+    @app.post('/api/video/runs/{run_id}/cancel')
+    async def cancel_run(request: Request, run_id: str):
+        if not _same_origin(request):
+            return _error('cross_site_request', 403)
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        result = await dispatch(lambda **_kwargs: get_run_service().cancel(run_id), request)
+        return result if isinstance(result, JSONResponse) else JSONResponse(result)
