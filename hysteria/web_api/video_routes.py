@@ -7,10 +7,11 @@ from types import SimpleNamespace
 import http_utils
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .video_provider import GrokVideoProvider, ProviderError
-from .video_service import VideoSettingsError, VideoSettingsStore, VideoValidationError, WorkflowStore
+from .video_service import AssetStore, VideoSettingsError, VideoSettingsStore, VideoValidationError, WorkflowStore
 
 
 def _error(code: str, status: int = 400):
@@ -43,9 +44,10 @@ def _provider_error(exc: ProviderError):
     return _error(code, status)
 
 
-def register_video_routes(app, services, dispatch, *, settings_store=None, provider_factory=None, workflow_store=None):
+def register_video_routes(app, services, dispatch, *, settings_store=None, provider_factory=None, workflow_store=None, asset_store=None):
     store = settings_store or VideoSettingsStore()
     workflows = workflow_store or WorkflowStore()
+    assets = asset_store or AssetStore()
     factory = provider_factory or (lambda: GrokVideoProvider())
 
     def read_settings(*, headers, path):
@@ -184,3 +186,32 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
         if isinstance(result, JSONResponse):
             return result
         return JSONResponse({'deleted': bool(result)})
+
+    @app.post('/api/video/assets')
+    async def upload_asset(request: Request):
+        if not _same_origin(request):
+            return _error('cross_site_request', 403)
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        filename = request.headers.get('x-file-name', '')
+        content_type = request.headers.get('content-type', '').split(';', 1)[0].strip().lower()
+        body = await request.body()
+        try:
+            result = await dispatch(lambda **_kwargs: assets.save_upload(filename, content_type, body), request)
+        except VideoValidationError:
+            return _error('invalid_asset', 422)
+        return result if isinstance(result, JSONResponse) else JSONResponse(result)
+
+    @app.get('/api/video/assets/{asset_id}/content')
+    async def asset_content(request: Request, asset_id: str):
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        result = await dispatch(lambda **_kwargs: assets.open(asset_id), request)
+        if isinstance(result, JSONResponse):
+            return result
+        metadata, path = result
+        if metadata is None or path is None:
+            return _error('not_found', 404)
+        return FileResponse(path, media_type=metadata['content_type'], filename=metadata['filename'])

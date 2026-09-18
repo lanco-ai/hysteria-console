@@ -3,6 +3,8 @@
 import math
 import json
 import uuid
+import os
+import tempfile
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -31,6 +33,8 @@ NODE_REGISTRY = {
     'preview': {'inputs': {'media'}, 'outputs': set()},
 }
 DEFAULT_WORKFLOWS_PATH = Path('/root/hysteria/state/video/workflows.json')
+DEFAULT_ASSETS_PATH = Path('/root/hysteria/state/video/assets')
+ALLOWED_ASSET_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/webm'}
 
 
 def mask_video_key(value: str) -> str:
@@ -225,3 +229,60 @@ class WorkflowStore:
                 state_store.save_json(self.path, next_records)
                 self.path.chmod(0o600)
             return changed
+
+
+class AssetStore:
+    def __init__(self, root: str | Path = DEFAULT_ASSETS_PATH, *, max_bytes: int = 20 * 1024 * 1024):
+        self.root = Path(root)
+        self.max_bytes = int(max_bytes)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self.root.chmod(0o700)
+        self.metadata_path = self.root / 'index.json'
+
+    def _metadata(self):
+        value = state_store.load_json_strict(self.metadata_path, [])
+        if not isinstance(value, list):
+            raise VideoValidationError('invalid asset storage')
+        return value
+
+    def save_upload(self, filename: str, content_type: str, body: bytes):
+        name = Path(str(filename or '')).name
+        if not name or name != str(filename) or '..' in name or content_type not in ALLOWED_ASSET_TYPES:
+            raise VideoValidationError('unsupported asset')
+        if not isinstance(body, bytes) or len(body) > self.max_bytes:
+            raise VideoValidationError('asset is too large')
+        asset_id = uuid.uuid4().hex
+        suffix = Path(name).suffix.lower()
+        target = self.root / f'{asset_id}{suffix}'
+        fd, temp_name = tempfile.mkstemp(prefix=asset_id + '.', dir=self.root)
+        try:
+            with os.fdopen(fd, 'wb') as handle:
+                handle.write(body)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, target)
+        finally:
+            if os.path.exists(temp_name):
+                os.unlink(temp_name)
+        metadata = {'id': asset_id, 'filename': name, 'content_type': content_type, 'size': len(body)}
+        lock_path = self.metadata_path.with_name(self.metadata_path.name + '.lock')
+        with state_store.file_lock(lock_path):
+            records = self._metadata()
+            records.insert(0, metadata)
+            state_store.save_json(self.metadata_path, records)
+            self.metadata_path.chmod(0o600)
+        return metadata
+
+    def get(self, asset_id: str):
+        if not isinstance(asset_id, str) or not asset_id.isalnum():
+            return None
+        return next((item for item in self._metadata() if item.get('id') == asset_id), None)
+
+    def open(self, asset_id: str):
+        metadata = self.get(asset_id)
+        if metadata is None:
+            return None, None
+        matches = list(self.root.glob(f'{asset_id}.*'))
+        if len(matches) != 1:
+            return None, None
+        return metadata, matches[0]

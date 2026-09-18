@@ -258,6 +258,7 @@ def create_app(
     video_settings_store=None,
     video_provider_factory=None,
     video_workflow_store=None,
+    video_asset_store=None,
 ):
     if isinstance(max_requests, bool) or not isinstance(max_requests, int) or max_requests <= 0:
         raise ValueError('max_requests must be a positive integer')
@@ -414,6 +415,7 @@ def create_app(
         settings_store=video_settings_store,
         provider_factory=video_provider_factory,
         workflow_store=video_workflow_store,
+        asset_store=video_asset_store,
     )
     register_agent_routes(app, services, dispatch)
     if react_dist is not None:
