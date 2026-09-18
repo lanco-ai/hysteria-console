@@ -52,6 +52,10 @@ async function parse<T>(response: Response): Promise<T> {
       ? '管理员登录已失效'
       : code === 'revision_conflict'
         ? '目标用户规则已变化，请重新读取并生成预览'
+        : code === 'settings_unavailable'
+          ? 'Agent 配置未就绪，请检查 API 地址和密钥'
+          : code === 'upstream_unavailable'
+            ? '模型服务暂时不可用，请稍后重试'
         : `请求失败（${response.status}）`;
     throw new AgentApiError(message, response.status, code);
   }

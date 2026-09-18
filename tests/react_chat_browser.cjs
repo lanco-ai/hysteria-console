@@ -143,7 +143,8 @@ async function main() {
   await expect(agent).toBeVisible();
   assert.equal(await agent.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
   await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
-  await expect(page.getByRole('button', { name: '恢复到右下角' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '重置位置' })).toBeVisible();
+  const launcher = page.getByRole('button', { name: '打开 Lanco Agent' });
   const beforeDrag = await agent.boundingBox();
   assert(beforeDrag, 'agent panel should have a bounding box');
   const header = page.locator('.lanco-agent-header');
@@ -155,7 +156,7 @@ async function main() {
   await page.mouse.up();
   const afterDrag = await agent.boundingBox();
   assert(afterDrag && (afterDrag.x !== beforeDrag.x || afterDrag.y !== beforeDrag.y), 'agent panel should be draggable');
-  await page.getByRole('button', { name: '恢复到右下角' }).click();
+  await page.getByRole('button', { name: '重置位置' }).click();
   await page.locator('#lanco-agent-user').selectOption('alice');
   await page.locator('.lanco-agent-input').fill('给 alice 启用 Overleaf 加速');
   await page.getByRole('button', { name: '发送', exact: true }).last().click();
@@ -165,6 +166,19 @@ async function main() {
   await expect(page.getByText(/已保存，用户下次拉取订阅时生效/)).toBeVisible();
   await page.getByRole('button', { name: '撤销这次修改' }).click();
   await expect(page.getByText('变更已撤销，规则恢复到修改前版本。')).toBeVisible();
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  await expect(launcher).toBeVisible();
+  const launcherBefore = await launcher.boundingBox();
+  assert(launcherBefore, 'agent launcher should have a bounding box');
+  await page.mouse.move(launcherBefore.x + 28, launcherBefore.y + 28);
+  await page.mouse.down();
+  await page.mouse.move(launcherBefore.x - 120, launcherBefore.y - 90, { steps: 8 });
+  await page.mouse.up();
+  const launcherAfter = await launcher.boundingBox();
+  assert(launcherAfter && (launcherAfter.x !== launcherBefore.x || launcherAfter.y !== launcherBefore.y), 'agent launcher should be draggable');
+  await launcher.click();
+  await expect(page.locator('.lanco-agent')).toBeVisible();
+  await page.getByRole('button', { name: '重置位置' }).click();
   await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
   await expect(page.getByRole('button', { name: '打开 Lanco Agent' })).toBeVisible();
   await expect(page.locator('.chat-history-panel')).toHaveCount(0);

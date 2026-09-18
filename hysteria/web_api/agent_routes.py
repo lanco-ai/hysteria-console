@@ -53,6 +53,7 @@ def _status(exc):
         'user_not_found': 404,
         'revision_conflict': 409,
         'upstream_unavailable': 502,
+        'settings_unavailable': 503,
         'state_unavailable': 503,
         'invalid_change': 422,
         'change_not_pending': 409,

@@ -116,6 +116,36 @@ def test_agent_orchestrator_routes_custom_rule_intent_to_preview(tmp_path):
     assert result['plan']['additions'] == ['PROCESS-NAME,Example.exe,DIRECT']
 
 
+def test_complete_agent_intent_reads_chat_settings_store_before_forwarding(tmp_path, monkeypatch):
+    from web_api import agent_service
+    from web_api.chat_service import ChatSettingsStore
+
+    settings_path = Path(tmp_path) / 'chat-settings.json'
+    settings_path.write_text(json.dumps({
+        'base_url': 'https://chat.example.test/v1',
+        'api_key': 'test-key',
+        'temperature': 0.2,
+    }), encoding='utf-8')
+    seen = {}
+
+    def fake_forward(settings, messages, **kwargs):
+        seen['settings'] = settings
+        seen['messages'] = messages
+        seen['kwargs'] = kwargs
+        assert settings.api_key == 'test-key'
+        return {'choices': [{'message': {'content': '{"action":"inspect","explanation":"已读取"}'}}]}
+
+    monkeypatch.setattr(agent_service, 'forward_chat', fake_forward)
+    result = agent_service.complete_agent_intent(
+        ChatSettingsStore(settings_path),
+        message='查看当前用户规则',
+        target_user='alice',
+        context={'packs': (), 'rules': []},
+    )
+    assert result['action'] == 'inspect'
+    assert seen['kwargs']['model'] == 'gemini-3.8-flash-high'
+
+
 def test_agent_apply_recovers_when_audit_finalize_fails(tmp_path):
     state = _State(tmp_path)
 
