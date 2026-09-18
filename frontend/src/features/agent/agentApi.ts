@@ -4,6 +4,9 @@ export type AgentUserRules = {
   rules: string[];
   fake_ip_filter: string[];
   tun_route_exclude_address: string[];
+  global_revision: string;
+  global_rules: string[];
+  merged_rules: string[];
 };
 
 export type AgentPlan = {
@@ -16,6 +19,7 @@ export type AgentPlan = {
   description: string;
   before_revision: string;
   after_revision: string;
+  before_global_revision: string;
   additions: string[];
   removals: string[];
   requires_confirmation: boolean;

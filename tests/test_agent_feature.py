@@ -96,6 +96,53 @@ def test_agent_rule_service_supports_scoped_custom_add_and_delete(tmp_path):
     assert 'DOMAIN,internal.example,DIRECT' not in service.get_user_rules('alice')['rules']
 
 
+def test_agent_snapshot_includes_user_global_and_merged_rules(tmp_path):
+    state = _State(tmp_path)
+    state.load_template_rules_snapshot = lambda: (
+        ['DOMAIN-SUFFIX,global.example,DIRECT', 'MATCH,🚀 节点选择'],
+        'global-revision-1',
+    )
+    service = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    snapshot = service.get_user_rules('alice')
+    assert snapshot['rules'] == ['MATCH,DIRECT']
+    assert snapshot['global_rules'] == [
+        'DOMAIN-SUFFIX,global.example,DIRECT',
+        'MATCH,🚀 节点选择',
+    ]
+    assert snapshot['global_revision'] == 'global-revision-1'
+    assert snapshot['merged_rules'] == [
+        'MATCH,DIRECT',
+        'DOMAIN-SUFFIX,global.example,DIRECT',
+        'MATCH,🚀 节点选择',
+    ]
+
+
+def test_agent_plan_rejects_changed_global_template_revision(tmp_path):
+    from web_api.agent_service import AgentOrchestrator
+
+    state = _State(tmp_path)
+    state.load_template_rules_snapshot = lambda: (['MATCH,DIRECT'], 'global-revision-1')
+    rule_service = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    agent = AgentOrchestrator(
+        state,
+        rule_service=rule_service,
+        completion=lambda *_args, **_kwargs: {
+            'action': 'add_rule',
+            'rule': 'DOMAIN,internal.example,DIRECT',
+            'pack': '',
+            'explanation': '新增规则',
+        },
+    )
+    plan = agent.plan(message='增加规则', target_user='alice')
+    state.load_template_rules_snapshot = lambda: (['MATCH,DIRECT'], 'global-revision-2')
+    try:
+        rule_service.apply_change(plan['plan']['change_id'])
+    except AgentServiceError as exc:
+        assert exc.code == 'revision_conflict'
+    else:
+        raise AssertionError('changed global template must invalidate pending plan')
+
+
 def test_agent_orchestrator_routes_custom_rule_intent_to_preview(tmp_path):
     from web_api.agent_service import AgentOrchestrator
 

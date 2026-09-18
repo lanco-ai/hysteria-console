@@ -5,6 +5,7 @@ import {
   loadAgentUsers,
   planAgent,
   undoAgentChange,
+  type AgentUserRules,
   type AgentPlanResponse,
 } from './agentApi';
 
@@ -54,6 +55,26 @@ function RobotAvatar({ small = false }: { small?: boolean }) {
 
 function statusLabel(status: AgentStatus): string {
   return ({ idle: '等待你的指令', reading: '正在读取用户规则', read: '已读取规则', preview: '已生成变更预览', applying: '正在保存变更', saved: '已保存', undone: '已撤销', error: '执行失败' })[status];
+}
+
+function RuleSummary({ snapshot }: { snapshot: AgentUserRules }) {
+  const userRules = snapshot.rules || [];
+  const globalRules = snapshot.global_rules || [];
+  const mergedRules = snapshot.merged_rules || [];
+  return <section className="lanco-agent-rule-summary" aria-label="规则来源统计">
+    <div className="lanco-agent-rule-cards">
+      <div><strong>用户覆盖规则</strong><b>{userRules.length} 条</b><span>优先匹配</span></div>
+      <div><strong>继承全局规则</strong><b>{globalRules.length} 条</b><span>模板自动继承</span></div>
+      <div><strong>合并后订阅规则</strong><b>{mergedRules.length} 条</b><span>去重后统计</span></div>
+    </div>
+    <details className="lanco-agent-rule-details">
+      <summary>查看合并顺序</summary>
+      <div className="lanco-agent-rule-lists">
+        <div><strong>用户专属规则 · 优先匹配</strong>{userRules.length ? userRules.map((rule, index) => <code key={`user-${index}-${rule}`}>{rule}</code>) : <span>暂无用户覆盖规则</span>}</div>
+        <div><strong>全局模板规则 · 自动继承</strong>{globalRules.length ? globalRules.map((rule, index) => <code key={`global-${index}-${rule}`}>{rule}</code>) : <span>暂无全局模板规则</span>}</div>
+      </div>
+    </details>
+  </section>;
 }
 
 export function LancoAgent() {
@@ -230,7 +251,23 @@ export function LancoAgent() {
         <div className="lanco-agent-field"><label htmlFor="lanco-agent-user">目标用户</label><select id="lanco-agent-user" value={targetUser} onChange={event => setTargetUser(event.target.value)} disabled={status === 'reading' || status === 'applying'}><option value="">选择用户</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></div>
         {isIdle ? <section className="lanco-agent-welcome"><p>你好，我可以帮你整理指定用户的网络规则。</p><span>先选择一个操作，或直接输入你的要求。</span><div className="lanco-agent-quick-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('查看当前用户规则')}>查看规则</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('检查当前用户规则并生成预览')}>检查冲突</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('给当前用户启用 Overleaf 加速')}>Overleaf 加速</button></div></section> : null}
         {!isIdle ? <div className="lanco-agent-timeline" aria-live="polite"><span className={status === 'read' || status === 'preview' || status === 'applying' || status === 'saved' || status === 'undone' ? 'is-active' : ''}>读取用户规则</span><span className={status === 'preview' || status === 'applying' || status === 'saved' || status === 'undone' ? 'is-active' : ''}>检查冲突并生成预览</span><span className={status === 'saved' || status === 'undone' ? 'is-active' : ''}>{status === 'undone' ? '已撤销修改' : '保存结果'}</span></div> : null}
-        {result ? <section className="lanco-agent-result"><p>{result.explanation}</p>{result.snapshot ? <p className="small">当前有 {result.snapshot.rules.length} 条用户规则，版本 {result.snapshot.revision.slice(0, 8)}…</p> : null}{result.plan ? <><div className="lanco-agent-plan"><strong>{result.plan.label}</strong><span>{result.plan.description}</span>{result.plan.rule ? <code>{result.plan.rule}</code> : null}{result.plan.additions.length ? <><span>新增规则</span><ul>{result.plan.additions.map(rule => <li key={`add-${rule}`}><code>{rule}</code></li>)}</ul></> : null}{result.plan.removals.length ? <><span>删除规则</span><ul>{result.plan.removals.map(rule => <li key={`remove-${rule}`}><code>{rule}</code></li>)}</ul></> : null}{!result.plan.additions.length && !result.plan.removals.length ? <span>没有实际变化，重复项已跳过。</span> : null}</div><div className="lanco-agent-actions"><button className="btn btn-primary btn-sm" type="button" onClick={() => void apply()} disabled={status !== 'preview'}>应用修改</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => { setResult(null); setLastChangeId(''); setStatus('idle'); }}>取消</button></div></> : null}{result.plan && status === 'saved' ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => void undo()}>撤销这次修改</button> : null}</section> : null}
+        {result ? <section className="lanco-agent-result">
+          <p>{result.explanation}</p>
+          {result.snapshot ? <RuleSummary snapshot={result.snapshot} /> : null}
+          {result.plan ? <>
+            <div className="lanco-agent-plan">
+              <strong>{result.plan.label}</strong>
+              <span>{result.plan.description}</span>
+              <span>规则位置：全局规则之前 · 全局模板保持不变</span>
+              {result.plan.rule ? <code>{result.plan.rule}</code> : null}
+              {result.plan.additions.length ? <><span>新增规则</span><ul>{result.plan.additions.map(rule => <li key={`add-${rule}`}><code>{rule}</code></li>)}</ul></> : null}
+              {result.plan.removals.length ? <><span>删除规则</span><ul>{result.plan.removals.map(rule => <li key={`remove-${rule}`}><code>{rule}</code></li>)}</ul></> : null}
+              {!result.plan.additions.length && !result.plan.removals.length ? <span>没有实际变化，重复项已跳过。</span> : null}
+            </div>
+            <div className="lanco-agent-actions"><button className="btn btn-primary btn-sm" type="button" onClick={() => void apply()} disabled={status !== 'preview'}>应用修改</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => { setResult(null); setLastChangeId(''); setStatus('idle'); }}>取消</button></div>
+          </> : null}
+          {result.plan && status === 'saved' ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => void undo()}>撤销这次修改</button> : null}
+        </section> : null}
         {error ? <div className="err" role="alert">{error}</div> : null}
         <textarea className="lanco-agent-input" value={message} onChange={event => setMessage(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void run(); } }} placeholder="例如：给 lhz 启用 Overleaf 加速" rows={2} disabled={status === 'reading' || status === 'applying'} />
       </div>

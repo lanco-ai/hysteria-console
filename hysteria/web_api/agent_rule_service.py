@@ -62,6 +62,18 @@ def _context_for_users(service):
     return lock() if callable(lock) else nullcontext()
 
 
+def _merge_unique_rules(*groups):
+    merged = []
+    seen = set()
+    for group in groups:
+        for rule in group:
+            value = str(rule).strip()
+            if value and value not in seen:
+                seen.add(value)
+                merged.append(value)
+    return merged
+
+
 class AgentRuleService:
     """Read, preview, apply and undo only the supported user rule fields."""
 
@@ -97,6 +109,18 @@ class AgentRuleService:
         if not isinstance(cfg, dict):
             raise AgentServiceError('user_not_found')
         return cfg
+
+    def _global_rules_snapshot(self):
+        loader = getattr(self.service, 'load_template_rules_snapshot', None)
+        if not callable(loader):
+            return [], ''
+        try:
+            rules, revision = loader()
+        except Exception as exc:
+            raise AgentServiceError('state_unavailable') from exc
+        if not isinstance(rules, (list, tuple)):
+            raise AgentServiceError('state_unavailable')
+        return [str(rule).strip() for rule in rules if str(rule).strip()], str(revision or '')
 
     @staticmethod
     def _rule_snapshot(cfg):
@@ -148,6 +172,7 @@ class AgentRuleService:
         removals,
         before_revision,
         after_revision,
+        before_global_revision='',
         before,
         after,
         operator,
@@ -167,6 +192,7 @@ class AgentRuleService:
                 'rule': rule,
                 'before_revision': before_revision,
                 'after_revision': after_revision,
+                'before_global_revision': before_global_revision,
                 'before': before,
                 'after': after,
             }
@@ -181,6 +207,7 @@ class AgentRuleService:
             'description': description,
             'before_revision': before_revision,
             'after_revision': after_revision,
+            'before_global_revision': before_global_revision,
             'additions': additions,
             'removals': removals,
             'requires_confirmation': True,
@@ -193,12 +220,17 @@ class AgentRuleService:
             revision_fn = getattr(self.service, 'user_config_revision', None)
             revision = revision_fn(cfg) if callable(revision_fn) else _revision(cfg)
             snapshot = self._rule_snapshot(cfg)
+        global_rules, global_revision = self._global_rules_snapshot()
+        user_rules = list(snapshot[subscription_profiles.USER_CLASH_RULES_KEY]['value'])
         return {
             'username': username,
             'revision': str(revision),
-            'rules': list(snapshot[subscription_profiles.USER_CLASH_RULES_KEY]['value']),
+            'rules': user_rules,
             'fake_ip_filter': list(snapshot[subscription_profiles.USER_FAKE_IP_FILTER_KEY]['value']),
             'tun_route_exclude_address': list(snapshot[subscription_profiles.USER_TUN_ROUTE_EXCLUDE_ADDRESS_KEY]['value']),
+            'global_rules': global_rules,
+            'global_revision': global_revision,
+            'merged_rules': _merge_unique_rules(user_rules, global_rules),
         }
 
     def _save_changes(self, data):
@@ -230,7 +262,7 @@ class AgentRuleService:
             kept = dict(ordered[:MAX_CHANGE_RECORDS])
         return kept
 
-    def preview_rule_pack(self, username: str, pack_key: str, *, expected_revision: str = '', operator: str = 'admin', source_ip: str = ''):
+    def preview_rule_pack(self, username: str, pack_key: str, *, expected_revision: str = '', expected_global_revision: str = '', operator: str = 'admin', source_ip: str = ''):
         username = self._validate_username(username)
         pack_key = str(pack_key or '').strip()
         packs = getattr(self.service, 'RULE_PACKS', subscription_profiles.RULE_PACKS)
@@ -242,6 +274,9 @@ class AgentRuleService:
             cfg = self._get_cfg(users, username)
             before_revision = str(getattr(self.service, 'user_config_revision', _revision)(cfg))
             if expected_revision and expected_revision != before_revision:
+                raise AgentServiceError('revision_conflict')
+            _global_rules, before_global_revision = self._global_rules_snapshot()
+            if expected_global_revision and expected_global_revision != before_global_revision:
                 raise AgentServiceError('revision_conflict')
             before = self._rule_snapshot(cfg)
             changed = copy.deepcopy(cfg)
@@ -264,6 +299,7 @@ class AgentRuleService:
             removals=[],
             before_revision=before_revision,
             after_revision=after_revision,
+            before_global_revision=before_global_revision,
             before=before,
             after=after,
             operator=operator,
@@ -279,6 +315,7 @@ class AgentRuleService:
         expected_revision: str = '',
         operator: str = 'admin',
         source_ip: str = '',
+        expected_global_revision: str = '',
     ):
         if operation not in ('add', 'delete'):
             raise AgentServiceError('invalid_operation')
@@ -289,6 +326,9 @@ class AgentRuleService:
             cfg = self._get_cfg(users, username)
             before_revision = str(getattr(self.service, 'user_config_revision', _revision)(cfg))
             if expected_revision and expected_revision != before_revision:
+                raise AgentServiceError('revision_conflict')
+            _global_rules, before_global_revision = self._global_rules_snapshot()
+            if expected_global_revision and expected_global_revision != before_global_revision:
                 raise AgentServiceError('revision_conflict')
             before = self._rule_snapshot(cfg)
             changed = copy.deepcopy(cfg)
@@ -319,6 +359,7 @@ class AgentRuleService:
             removals=removals,
             before_revision=before_revision,
             after_revision=after_revision,
+            before_global_revision=before_global_revision,
             before=before,
             after=after,
             operator=operator,
@@ -339,6 +380,11 @@ class AgentRuleService:
                 users = self._load_users()
                 cfg = self._get_cfg(users, username)
                 current_revision = str(getattr(self.service, 'user_config_revision', _revision)(cfg))
+                before_global_revision = str(record.get('before_global_revision') or '')
+                if before_global_revision:
+                    _global_rules, current_global_revision = self._global_rules_snapshot()
+                    if current_global_revision != before_global_revision:
+                        raise AgentServiceError('revision_conflict')
                 if record.get('status') == 'applying' and current_revision == str(record.get('after_revision') or ''):
                     record['status'] = 'applied'
                     record['applied_at'] = _now()

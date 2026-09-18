@@ -117,6 +117,19 @@
 .lanco-agent-timeline span.is-active::before { content: '✓'; color: #6f9a73; }
 .lanco-agent-result { display: grid; gap: 10px; padding: 12px; border: 1px solid #dfe8dc; border-radius: 12px; background: #f8faf6; }
 .lanco-agent-result p { margin: 0; line-height: 1.55; }
+.lanco-agent-rule-summary { display: grid; gap: 10px; }
+.lanco-agent-rule-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.lanco-agent-rule-cards > div { display: grid; gap: 2px; min-width: 0; padding: 8px; border: 1px solid #e0e8dd; border-radius: 9px; background: #fff; }
+.lanco-agent-rule-cards strong { color: #526056; font-size: 11px; font-weight: 600; }
+.lanco-agent-rule-cards b { color: #2f4936; font-size: 16px; }
+.lanco-agent-rule-cards span { color: #8a958d; font-size: 10px; }
+.lanco-agent-rule-details { border-top: 1px solid #e0e8dd; padding-top: 8px; }
+.lanco-agent-rule-details summary { color: #54715a; cursor: pointer; font-size: 12px; font-weight: 600; }
+.lanco-agent-rule-lists { display: grid; gap: 10px; max-height: 220px; margin-top: 8px; overflow: auto; }
+.lanco-agent-rule-lists > div { display: grid; gap: 4px; }
+.lanco-agent-rule-lists strong { color: #526056; font-size: 11px; }
+.lanco-agent-rule-lists code { overflow-wrap: anywhere; padding: 3px 5px; border-radius: 5px; background: #f1f5ef; color: #47584b; font-size: 10px; }
+.lanco-agent-rule-lists span { color: #8a958d; font-size: 11px; }
 .lanco-agent-plan { display: grid; gap: 4px; }
 .lanco-agent-plan > span { color: #718077; font-size: 12px; }
 .lanco-agent-plan ul { display: grid; gap: 5px; max-height: 150px; overflow: auto; margin: 5px 0 0; padding-left: 18px; }
@@ -140,6 +153,7 @@
   /* A saved desktop coordinate must not strand the panel behind the mobile keyboard. */
   .lanco-agent { left: 12px !important; right: 12px !important; top: auto !important; bottom: calc(12px + env(safe-area-inset-bottom)) !important; width: calc(100vw - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-bottom)); border-radius: 16px; }
   .lanco-agent-header { min-height: 64px; }
+  .lanco-agent-rule-cards { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
   .lanco-agent-launcher, .lanco-agent-launcher::after { transition: none; }

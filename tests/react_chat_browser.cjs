@@ -93,6 +93,16 @@ async function main() {
       action: 'apply_pack',
       target_user: 'alice',
       explanation: '已生成规则预览。',
+      snapshot: {
+        username: 'alice',
+        revision: 'a'.repeat(64),
+        rules: [],
+        fake_ip_filter: [],
+        tun_route_exclude_address: [],
+        global_revision: 'g'.repeat(64),
+        global_rules: ['DOMAIN-SUFFIX,global.example,DIRECT', 'MATCH,🚀 节点选择'],
+        merged_rules: ['DOMAIN-SUFFIX,global.example,DIRECT', 'MATCH,🚀 节点选择'],
+      },
       plan: {
         change_id: 'agent-browser-change',
         target_user: 'alice',
@@ -161,6 +171,10 @@ async function main() {
   await page.locator('.lanco-agent-input').fill('给 alice 启用 Overleaf 加速');
   await page.getByRole('button', { name: '发送', exact: true }).last().click();
   await expect(page.locator('.lanco-agent-result')).toBeVisible();
+  await expect(page.getByText('用户覆盖规则', { exact: true })).toBeVisible();
+  await expect(page.getByText('继承全局规则', { exact: true })).toBeVisible();
+  await expect(page.getByText('合并后订阅规则', { exact: true })).toBeVisible();
+  await expect(page.getByText('用户覆盖规则', { exact: true }).locator('..').getByText('0 条', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '应用修改' })).toBeEnabled();
   await page.getByRole('button', { name: '应用修改' }).click();
   await expect(page.getByText(/已保存，用户下次拉取订阅时生效/)).toBeVisible();
