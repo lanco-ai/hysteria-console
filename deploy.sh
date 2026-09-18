@@ -122,6 +122,9 @@ declare -a REACT_WEB_API_MODULES=(
   __init__.py
   account_models.py
   account_routes.py
+  agent_routes.py
+  agent_rule_service.py
+  agent_service.py
   app.py
   chat_routes.py
   chat_service.py
@@ -342,6 +345,9 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/__init__.py"
   add_durable_artifact "$HY_DIR/web_api/account_models.py"
   add_durable_artifact "$HY_DIR/web_api/account_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/agent_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/agent_rule_service.py"
+  add_durable_artifact "$HY_DIR/web_api/agent_service.py"
   add_durable_artifact "$HY_DIR/web_api/app.py"
   add_durable_artifact "$HY_DIR/web_api/chat_routes.py"
   add_durable_artifact "$HY_DIR/web_api/chat_service.py"
@@ -2056,6 +2062,9 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/__init__.py" "$HY_DIR/web_api/__init__.py"
   render "$REPO_DIR/hysteria/web_api/account_models.py" "$HY_DIR/web_api/account_models.py"
   render "$REPO_DIR/hysteria/web_api/account_routes.py" "$HY_DIR/web_api/account_routes.py"
+  render "$REPO_DIR/hysteria/web_api/agent_routes.py" "$HY_DIR/web_api/agent_routes.py"
+  render "$REPO_DIR/hysteria/web_api/agent_rule_service.py" "$HY_DIR/web_api/agent_rule_service.py"
+  render "$REPO_DIR/hysteria/web_api/agent_service.py" "$HY_DIR/web_api/agent_service.py"
   render "$REPO_DIR/hysteria/web_api/app.py" "$HY_DIR/web_api/app.py"
   render "$REPO_DIR/hysteria/web_api/chat_routes.py" "$HY_DIR/web_api/chat_routes.py"
   render "$REPO_DIR/hysteria/web_api/chat_service.py" "$HY_DIR/web_api/chat_service.py"

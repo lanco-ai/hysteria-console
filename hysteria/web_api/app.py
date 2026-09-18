@@ -13,6 +13,7 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 
 from .account_routes import register_account_routes
+from .agent_routes import register_agent_routes
 from .compat_routes import register_compatibility_routes
 from .chat_routes import register_chat_routes
 from .config_models import (
@@ -397,6 +398,7 @@ def create_app(services, *, max_requests=32, react_dist=None):
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
     register_chat_routes(app, services, dispatch, dispatch_stream=dispatch_stream)
+    register_agent_routes(app, services, dispatch)
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
 

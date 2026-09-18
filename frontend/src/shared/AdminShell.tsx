@@ -12,5 +12,6 @@ export function AdminShell({ active, badge, pageTitle, children, subtitle, topba
     {...(badge === undefined ? {} : { badge })}
     {...(subtitle === undefined ? {} : { subtitle })}
     {...(topbarExtra === undefined ? {} : { topbarExtra })}
+    agentEnabled
   >{children}</CodexShell>;
 }

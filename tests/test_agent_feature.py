@@ -1,0 +1,146 @@
+import json
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from web_api import create_app
+from web_api.agent_rule_service import AgentRuleService, AgentServiceError
+
+
+class _SessionServices:
+    def __init__(self, state):
+        self.service_module = state
+
+    def read_session(self, *, headers, path):
+        del path
+        if headers.get('cookie') == 'sid=admin':
+            return {'role': 'admin'}
+        from web_api.services import LoginRequired
+        raise LoginRequired
+
+
+class _State:
+    RULE_PACKS = {
+        'overleaf': {
+            'label': 'Overleaf 加速',
+            'desc': 'Overleaf 代理',
+            'rules': ['DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'],
+        },
+    }
+    RULE_PACK_ORDER = ('overleaf',)
+
+    def __init__(self, tmp_path):
+        self.USERS_FILE = Path(tmp_path) / 'users.json'
+        self.USERS_FILE.write_text(
+            json.dumps({'alice': {'clash_rules': ['MATCH,DIRECT']}}),
+            encoding='utf-8',
+        )
+
+    @staticmethod
+    def load_json(path, default):
+        try:
+            return json.loads(Path(path).read_text(encoding='utf-8'))
+        except FileNotFoundError:
+            return default
+
+    @staticmethod
+    def save_json(path, data):
+        Path(path).write_text(json.dumps(data), encoding='utf-8')
+
+    @staticmethod
+    def user_config_revision(cfg):
+        import hashlib
+        return hashlib.sha256(json.dumps(cfg, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def test_agent_rule_service_preview_apply_and_undo(tmp_path):
+    state = _State(tmp_path)
+    service = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    snapshot = service.get_user_rules('alice')
+    plan = service.preview_rule_pack('alice', 'overleaf', expected_revision=snapshot['revision'])
+    assert plan['additions'] == [
+        'DOMAIN-SUFFIX,overleaf.com,🚀 节点选择',
+        'DOMAIN-SUFFIX,overleafusercontent.com,🚀 节点选择',
+        'DOMAIN-SUFFIX,sharelatex.com,🚀 节点选择',
+    ]
+    applied = service.apply_change(plan['change_id'])
+    assert applied['ok'] is True
+    assert service.get_user_rules('alice')['rules'][0].startswith('DOMAIN-SUFFIX,overleaf.com')
+    undone = service.undo_change(plan['change_id'])
+    assert undone['ok'] is True
+    assert service.get_user_rules('alice')['rules'] == ['MATCH,DIRECT']
+
+
+def test_agent_rule_service_rejects_stale_revision(tmp_path):
+    state = _State(tmp_path)
+    service = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    try:
+        service.preview_rule_pack('alice', 'overleaf', expected_revision='0' * 64)
+    except AgentServiceError as exc:
+        assert exc.code == 'revision_conflict'
+    else:
+        raise AssertionError('stale revision must be rejected')
+
+
+def test_agent_apply_recovers_when_audit_finalize_fails(tmp_path):
+    state = _State(tmp_path)
+
+    class FlakyAudit(AgentRuleService):
+        saves = 0
+
+        def _save_changes(self, data):
+            self.saves += 1
+            if self.saves == 3:
+                raise AgentServiceError('state_unavailable')
+            return super()._save_changes(data)
+
+    service = FlakyAudit(state, changes_path=Path(tmp_path) / 'changes.json')
+    plan = service.preview_rule_pack('alice', 'overleaf')
+    try:
+        service.apply_change(plan['change_id'])
+    except AgentServiceError as exc:
+        assert exc.code == 'state_unavailable'
+    else:
+        raise AssertionError('final audit failure should be surfaced')
+    recovered = AgentRuleService(state, changes_path=Path(tmp_path) / 'changes.json')
+    result = recovered.apply_change(plan['change_id'])
+    assert result['ok'] is True
+
+
+def test_agent_routes_require_admin_and_expose_model_and_apply_contract(tmp_path, monkeypatch):
+    state = _State(tmp_path)
+    services = _SessionServices(state)
+    from web_api import agent_routes
+
+    monkeypatch.setattr(
+        agent_routes,
+        'complete_agent_intent',
+        lambda *_args, **_kwargs: {
+            'action': 'apply_pack',
+            'pack': 'overleaf',
+            'explanation': '为 Overleaf 启用代理',
+        },
+    )
+    with TestClient(create_app(services)) as client:
+        denied = client.post(
+            '/api/v1/admin/agent/plan',
+            headers={'Origin': 'http://testserver', 'Content-Type': 'application/json'},
+            json={'message': '启用 Overleaf', 'target_user': 'alice'},
+        )
+        assert denied.status_code == 401
+        planned = client.post(
+            '/api/v1/admin/agent/plan',
+            headers={'Origin': 'http://testserver', 'Cookie': 'sid=admin'},
+            json={'message': '启用 Overleaf', 'target_user': 'alice'},
+        )
+        assert planned.status_code == 200
+        payload = planned.json()
+        assert payload['plan']['target_user'] == 'alice'
+        assert payload['plan']['requires_confirmation'] is True
+        applied = client.post(
+            '/api/v1/admin/agent/apply',
+            headers={'Origin': 'http://testserver', 'Cookie': 'sid=admin'},
+            json={'change_id': payload['plan']['change_id']},
+        )
+        assert applied.status_code == 200
+        assert applied.json()['result']['ok'] is True

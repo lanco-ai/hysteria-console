@@ -1,0 +1,61 @@
+.lanco-agent-launcher {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 45;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 12px 36px rgba(33, 44, 39, .16);
+  cursor: pointer;
+  font-weight: 700;
+}
+.lanco-agent-launcher span:first-child { color: var(--accent); font-size: 18px; }
+.lanco-agent {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: min(410px, calc(100vw - 32px));
+  max-height: min(680px, calc(100dvh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-strong);
+  box-shadow: 0 18px 60px rgba(22, 35, 29, .2);
+}
+.lanco-agent-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--border); background: var(--surface-soft); }
+.lanco-agent-header div { display: grid; gap: 3px; }
+.lanco-agent-header strong { font-size: 16px; }
+.lanco-agent-header span, .lanco-agent-footer span { color: var(--muted); font-size: 12px; }
+.lanco-agent-close { border: 0; background: transparent; color: var(--muted); font-size: 24px; cursor: pointer; }
+.lanco-agent-body { display: grid; gap: 14px; overflow: auto; padding: 16px 18px; }
+.lanco-agent-field { display: grid; gap: 6px; }
+.lanco-agent-field label { color: var(--muted); font-size: 12px; font-weight: 700; }
+.lanco-agent-field select, .lanco-agent-input { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; }
+.lanco-agent-field select { min-height: 36px; padding: 0 10px; }
+.lanco-agent-input { min-height: 72px; padding: 10px; resize: vertical; }
+.lanco-agent-timeline { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.lanco-agent-timeline span::before { content: '○'; display: inline-block; width: 20px; color: var(--border-strong); }
+.lanco-agent-timeline span.is-active { color: var(--text); }
+.lanco-agent-timeline span.is-active::before { content: '✓'; color: var(--accent); }
+.lanco-agent-result { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-soft); }
+.lanco-agent-result p { margin: 0; line-height: 1.55; }
+.lanco-agent-plan { display: grid; gap: 4px; }
+.lanco-agent-plan > span { color: var(--muted); font-size: 12px; }
+.lanco-agent-plan ul { display: grid; gap: 5px; max-height: 150px; overflow: auto; margin: 5px 0 0; padding-left: 18px; }
+.lanco-agent-plan code { overflow-wrap: anywhere; font-size: 11px; }
+.lanco-agent-actions { display: flex; gap: 8px; }
+.lanco-agent-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border); }
+@media (max-width: 620px) {
+  .lanco-agent-launcher, .lanco-agent { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .lanco-agent { width: calc(100vw - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-bottom)); }
+}

@@ -573,7 +573,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     <button className="btn btn-ghost btn-icon" type="button" aria-label="设置" title="设置" onClick={() => setDrawer('settings')} disabled={!authenticated}>⚙</button>
   </div>;
 
-  return <CodexShell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar}>
+  return <CodexShell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar} agentEnabled={authenticated}>
     <section className="chat-page">
       {settingsError ? <div className="err" role="alert">{settingsError}</div> : null}
       <div className={`chat-layout${historyOpen ? '' : ' history-collapsed'}`}>
