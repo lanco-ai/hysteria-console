@@ -84,6 +84,37 @@ async function main() {
   await page.route('**/api/chat/test', async route => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, message: 'Connected', models_count: 2 }) });
   });
+  await page.route('**/api/v1/admin/rules', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ users: ['alice'], rules: [], revision: 'a'.repeat(64), packs: [] }) });
+  });
+  await page.route('**/api/v1/admin/agent/plan', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      ok: true,
+      action: 'apply_pack',
+      target_user: 'alice',
+      explanation: '已生成规则预览。',
+      plan: {
+        change_id: 'agent-browser-change',
+        target_user: 'alice',
+        operation: 'pack',
+        pack: 'overleaf',
+        rule: '',
+        label: 'Overleaf 加速',
+        description: '仅影响 alice',
+        before_revision: 'a'.repeat(64),
+        after_revision: 'b'.repeat(64),
+        additions: ['DOMAIN-SUFFIX,overleaf.com,🚀 节点选择'],
+        removals: [],
+        requires_confirmation: true,
+      },
+    }) });
+  });
+  await page.route('**/api/v1/admin/agent/apply', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, result: { username: 'alice', revision: 'b'.repeat(64) } }) });
+  });
+  await page.route('**/api/v1/admin/agent/undo', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, result: { username: 'alice', revision: 'c'.repeat(64) } }) });
+  });
   await page.route('**/api/chat/completions', async route => {
     const body = JSON.parse(route.request().postData() || '{}');
     assert.equal(body.model, expectedModel);
@@ -106,6 +137,36 @@ async function main() {
   await page.goto(`${baseUrl}/__react/admin/chat`);
   await expect(page).toHaveTitle('AI 对话');
   await expect(page.getByRole('heading', { name: 'Lanco AI' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '打开 Lanco Agent' })).toBeVisible();
+  await page.getByRole('button', { name: '打开 Lanco Agent' }).click();
+  const agent = page.locator('.lanco-agent');
+  await expect(agent).toBeVisible();
+  assert.equal(await agent.evaluate(node => getComputedStyle(node).backgroundColor), 'rgb(255, 255, 255)');
+  await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
+  await expect(page.getByRole('button', { name: '恢复到右下角' })).toBeVisible();
+  const beforeDrag = await agent.boundingBox();
+  assert(beforeDrag, 'agent panel should have a bounding box');
+  const header = page.locator('.lanco-agent-header');
+  const headerBox = await header.boundingBox();
+  assert(headerBox, 'agent header should have a bounding box');
+  await page.mouse.move(headerBox.x + 80, headerBox.y + 20);
+  await page.mouse.down();
+  await page.mouse.move(headerBox.x - 100, headerBox.y - 40);
+  await page.mouse.up();
+  const afterDrag = await agent.boundingBox();
+  assert(afterDrag && (afterDrag.x !== beforeDrag.x || afterDrag.y !== beforeDrag.y), 'agent panel should be draggable');
+  await page.getByRole('button', { name: '恢复到右下角' }).click();
+  await page.locator('#lanco-agent-user').selectOption('alice');
+  await page.locator('.lanco-agent-input').fill('给 alice 启用 Overleaf 加速');
+  await page.getByRole('button', { name: '发送', exact: true }).last().click();
+  await expect(page.locator('.lanco-agent-result')).toBeVisible();
+  await expect(page.getByRole('button', { name: '应用修改' })).toBeEnabled();
+  await page.getByRole('button', { name: '应用修改' }).click();
+  await expect(page.getByText(/已保存，用户下次拉取订阅时生效/)).toBeVisible();
+  await page.getByRole('button', { name: '撤销这次修改' }).click();
+  await expect(page.getByText('变更已撤销，规则恢复到修改前版本。')).toBeVisible();
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  await expect(page.getByRole('button', { name: '打开 Lanco Agent' })).toBeVisible();
   await expect(page.locator('.chat-history-panel')).toHaveCount(0);
   await expect(page.getByRole('button', { name: '打开历史记录' })).toContainText('历史');
   await expect(page.locator('.chat-history-count')).toHaveText('0');

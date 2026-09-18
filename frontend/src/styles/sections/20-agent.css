@@ -2,60 +2,144 @@
   position: fixed;
   right: 24px;
   bottom: 24px;
-  z-index: 45;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 46px;
-  padding: 0 16px;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
-  border-radius: 999px;
-  background: var(--surface-strong);
-  color: var(--text);
-  box-shadow: 0 12px 36px rgba(33, 44, 39, .16);
-  cursor: pointer;
-  font-weight: 700;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid #bfd0bd;
+  border-radius: 50%;
+  background: #fff;
+  color: #27352c;
+  box-shadow: 0 12px 36px rgba(33, 44, 39, .18);
+  cursor: grab;
+  touch-action: none;
+  transition: transform .16s ease, box-shadow .16s ease;
 }
-.lanco-agent-launcher span:first-child { color: var(--accent); font-size: 18px; }
+.lanco-agent-launcher:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(33, 44, 39, .22); }
+.lanco-agent-launcher:active, .lanco-agent-launcher.is-dragging { cursor: grabbing; transform: scale(.98); }
+.lanco-agent-launcher::after {
+  content: 'Lanco 助手';
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  padding: 6px 9px;
+  border: 1px solid #dfe7dc;
+  border-radius: 8px;
+  background: #fff;
+  color: #526056;
+  box-shadow: 0 8px 20px rgba(33, 44, 39, .12);
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity .16s ease, transform .16s ease;
+  white-space: nowrap;
+}
+.lanco-agent-launcher:hover::after, .lanco-agent-launcher:focus-visible::after { opacity: 1; transform: translateY(0); }
+
 .lanco-agent {
   position: fixed;
   right: 24px;
   bottom: 24px;
-  z-index: 45;
+  z-index: 60;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
   width: min(410px, calc(100vw - 32px));
   max-height: min(680px, calc(100dvh - 48px));
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid #d7dfd5;
   border-radius: 18px;
-  background: var(--surface-strong);
+  background: #fff;
+  color: #27312b;
   box-shadow: 0 18px 60px rgba(22, 35, 29, .2);
+  isolation: isolate;
 }
-.lanco-agent-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--border); background: var(--surface-soft); }
-.lanco-agent-header div { display: grid; gap: 3px; }
-.lanco-agent-header strong { font-size: 16px; }
-.lanco-agent-header span, .lanco-agent-footer span { color: var(--muted); font-size: 12px; }
-.lanco-agent-close { border: 0; background: transparent; color: var(--muted); font-size: 24px; cursor: pointer; }
-.lanco-agent-body { display: grid; gap: 14px; overflow: auto; padding: 16px 18px; }
+.lanco-agent.is-dragging { user-select: none; }
+.lanco-agent-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 72px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e1e7df;
+  background: #f3f5ef;
+  cursor: grab;
+  touch-action: none;
+}
+.lanco-agent.is-dragging .lanco-agent-header { cursor: grabbing; }
+.lanco-agent-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.lanco-agent-heading > div { display: grid; gap: 3px; min-width: 0; }
+.lanco-agent-heading strong { color: #26322a; font-size: 16px; }
+.lanco-agent-heading span, .lanco-agent-footer span { color: #718077; font-size: 12px; }
+.lanco-agent-header-actions { display: flex; align-items: center; gap: 2px; }
+.lanco-agent-reset, .lanco-agent-close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #718077;
+  cursor: pointer;
+}
+.lanco-agent-reset { font-size: 19px; }
+.lanco-agent-close { font-size: 24px; }
+.lanco-agent-reset:hover, .lanco-agent-close:hover { background: #e7eee4; color: #26322a; }
+.lanco-agent-body { display: grid; gap: 14px; overflow: auto; padding: 16px 18px; background: #fff; }
 .lanco-agent-field { display: grid; gap: 6px; }
-.lanco-agent-field label { color: var(--muted); font-size: 12px; font-weight: 700; }
-.lanco-agent-field select, .lanco-agent-input { width: 100%; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); font: inherit; }
-.lanco-agent-field select { min-height: 36px; padding: 0 10px; }
-.lanco-agent-input { min-height: 72px; padding: 10px; resize: vertical; }
-.lanco-agent-timeline { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
-.lanco-agent-timeline span::before { content: '○'; display: inline-block; width: 20px; color: var(--border-strong); }
-.lanco-agent-timeline span.is-active { color: var(--text); }
-.lanco-agent-timeline span.is-active::before { content: '✓'; color: var(--accent); }
-.lanco-agent-result { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-soft); }
+.lanco-agent-field label { color: #59675e; font-size: 12px; font-weight: 700; }
+.lanco-agent-field select, .lanco-agent-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #cfd9cf;
+  border-radius: 10px;
+  background: #fff;
+  color: #27312b;
+  font: inherit;
+}
+.lanco-agent-field select { min-height: 40px; padding: 0 10px; }
+.lanco-agent-field select:focus, .lanco-agent-input:focus { border-color: #789b7c; outline: 2px solid #dbe8d9; outline-offset: 1px; }
+.lanco-agent-input { min-height: 76px; padding: 10px; resize: vertical; }
+.lanco-agent-welcome { display: grid; gap: 6px; padding: 14px; border: 1px solid #e0e8dd; border-radius: 12px; background: #fbfcf9; }
+.lanco-agent-welcome p { margin: 0; color: #344238; line-height: 1.55; }
+.lanco-agent-welcome > span { color: #718077; font-size: 12px; }
+.lanco-agent-quick-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.lanco-agent-quick-actions .btn { color: #54715a; border-color: #cfe0cd; background: #fff; }
+.lanco-agent-timeline { display: grid; gap: 7px; color: #8a958d; font-size: 12px; }
+.lanco-agent-timeline span::before { content: '○'; display: inline-block; width: 20px; color: #c4cec3; }
+.lanco-agent-timeline span.is-active { color: #344238; }
+.lanco-agent-timeline span.is-active::before { content: '✓'; color: #6f9a73; }
+.lanco-agent-result { display: grid; gap: 10px; padding: 12px; border: 1px solid #dfe8dc; border-radius: 12px; background: #f8faf6; }
 .lanco-agent-result p { margin: 0; line-height: 1.55; }
 .lanco-agent-plan { display: grid; gap: 4px; }
-.lanco-agent-plan > span { color: var(--muted); font-size: 12px; }
+.lanco-agent-plan > span { color: #718077; font-size: 12px; }
 .lanco-agent-plan ul { display: grid; gap: 5px; max-height: 150px; overflow: auto; margin: 5px 0 0; padding-left: 18px; }
-.lanco-agent-plan code { overflow-wrap: anywhere; font-size: 11px; }
+.lanco-agent-plan code { overflow-wrap: anywhere; color: #47584b; font-size: 11px; }
 .lanco-agent-actions { display: flex; gap: 8px; }
-.lanco-agent-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border); }
+.lanco-agent-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 18px; border-top: 1px solid #e1e7df; background: #fff; }
+
+.lanco-agent-avatar { flex: 0 0 auto; width: 38px; height: 38px; overflow: visible; }
+.lanco-agent-avatar.is-small { width: 34px; height: 34px; }
+.lanco-agent-antenna, .lanco-agent-mouth, .lanco-agent-body-detail { fill: none; stroke: #55745d; stroke-linecap: round; stroke-width: 2.5; }
+.lanco-agent-antenna-dot { fill: #82a785; }
+.lanco-agent-head { fill: #dcebd8; stroke: #6e9674; stroke-width: 2; }
+.lanco-agent-eye { fill: #2d3b31; }
+.lanco-agent-mouth { stroke-width: 2; }
+.lanco-agent-blush { fill: #edaaa0; opacity: .7; }
+.lanco-agent-body { fill: #8fb792; stroke: #6e9674; stroke-width: 2; }
+.lanco-agent-body-detail { stroke: #f6fff3; stroke-width: 2; }
+
 @media (max-width: 620px) {
-  .lanco-agent-launcher, .lanco-agent { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
-  .lanco-agent { width: calc(100vw - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-bottom)); }
+  .lanco-agent-launcher { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
+  .lanco-agent { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); width: calc(100vw - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-bottom)); border-radius: 16px; }
+  .lanco-agent-header { min-height: 64px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lanco-agent-launcher, .lanco-agent-launcher::after { transition: none; }
 }
