@@ -157,11 +157,12 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
 };
 
 function AdminPlaceholder({ route, status }: { route: string; status: 'loading' | 'anonymous' | 'unavailable' }) {
+  if (status === 'loading') return null;
   const detail = route.match(/^\/admin\/user\/([^/]+)$/);
   const metadata = detail
     ? { active: 'dashboard', title: `${decodeRouteSegment(detail[1] || '')} · 用量画像` }
     : ADMIN_ROUTE_DETAILS[route] || { active: 'dashboard', title: 'Hysteria 工作台' };
-  const label = status === 'loading' ? '正在确认登录状态…' : status === 'unavailable' ? '暂时无法确认登录状态。' : '请登录后继续访问此页面。';
+  const label = status === 'unavailable' ? '暂时无法确认登录状态。' : '请登录后继续访问此页面。';
   return <CodexShell active={metadata.active} pageTitle={metadata.title} authStatus={status}><section className="card"><p>{label}</p></section></CodexShell>;
 }
 
