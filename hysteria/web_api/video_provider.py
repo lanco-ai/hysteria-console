@@ -30,15 +30,20 @@ REQUEST_TIMEOUT = 60
 MEDIA_CHUNK_BYTES = 64 * 1024
 MAX_MEDIA_BYTES = 128 * 1024 * 1024
 _MEDIA_RANGE_RE = re.compile(r'bytes=(?:\d{0,16})-(?:\d{0,16})$')
+_UNSATISFIED_CONTENT_RANGE_RE = re.compile(r'^bytes \*/\d{1,20}$')
 
 
 class ProviderError(RuntimeError):
     """A safe, body-free provider error."""
 
-    def __init__(self, code: str, *, status: int | None = None, retry_after: str | None = None):
+    def __init__(
+        self, code: str, *, status: int | None = None,
+        retry_after: str | None = None, content_range: str | None = None,
+    ):
         self.code = code
         self.status = status
         self.retry_after = retry_after
+        self.content_range = content_range
         super().__init__(code)
 
 
@@ -255,13 +260,32 @@ class GrokVideoProvider:
                 redirect_handler = _ProviderMediaRedirectHandler(expected_origin, media_path_re)
                 response = urllib.request.build_opener(redirect_handler).open(request, timeout=REQUEST_TIMEOUT)
         except urllib.error.HTTPError as exc:
+            content_range = exc.headers.get('Content-Range') if exc.headers else None
             exc.close()
+            if exc.code == 416:
+                if not isinstance(content_range, str) or not _UNSATISFIED_CONTENT_RANGE_RE.fullmatch(content_range.strip()):
+                    content_range = None
+                else:
+                    content_range = content_range.strip()
+                raise ProviderError(
+                    'range_not_satisfiable', status=416, content_range=content_range,
+                ) from None
             raise _error_for_status(exc.code, exc.headers.get('Retry-After')) from None
         except (urllib.error.URLError, TimeoutError, socket.timeout, OSError):
             raise ProviderError('timeout') from None
         status = int(getattr(response, 'status', 200))
         if status not in (200, 206):
+            response_headers = response.headers
             response.close()
+            if status == 416:
+                content_range = response_headers.get('Content-Range')
+                if not isinstance(content_range, str) or not _UNSATISFIED_CONTENT_RANGE_RE.fullmatch(content_range.strip()):
+                    content_range = None
+                else:
+                    content_range = content_range.strip()
+                raise ProviderError(
+                    'range_not_satisfiable', status=416, content_range=content_range,
+                )
             raise _error_for_status(status, response.headers.get('Retry-After'))
         response_headers = response.headers
         content_type = response_headers.get_content_type().lower()

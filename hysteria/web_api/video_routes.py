@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 import http_utils
 from fastapi import Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
@@ -39,6 +39,9 @@ def _same_origin(request: Request) -> bool:
 
 
 def _provider_error(exc: ProviderError):
+    if exc.code == 'range_not_satisfiable':
+        headers = {'Content-Range': exc.content_range} if exc.content_range else {}
+        return Response(status_code=416, headers=headers)
     status = 502
     code = exc.code
     if code == 'authentication_failed':

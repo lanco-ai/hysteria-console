@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 import web_api.video_routes as video_routes
 from web_api import create_app
+from web_api.video_provider import ProviderError
 from web_api.video_service import VideoSettingsStore
 from web_api.services import LoginRequired
 
@@ -181,3 +182,28 @@ def test_generated_media_proxy_requires_admin_and_streams_same_origin_content(tm
         'api_key': 'secret', 'range': 'bytes=0-3',
     }
     assert media.closed is True
+
+
+def test_generated_media_proxy_preserves_unsatisfied_range_response(tmp_path):
+    settings = VideoSettingsStore(tmp_path / 'settings.json')
+    settings.update(base_url='http://provider.test/v1', api_key='secret')
+
+    class Provider:
+        def open_asset(self, url, provider_settings, *, range_header=None):
+            del url, provider_settings, range_header
+            raise ProviderError(
+                'range_not_satisfiable', status=416,
+                content_range='bytes */4096',
+            )
+
+    app = create_app(
+        _Services(), video_settings_store=settings,
+        video_provider_factory=Provider,
+        video_run_service=_RunService(_completed_run()),
+    )
+    path = '/api/video/runs/run-1/assets/video-node/content'
+    with TestClient(app) as client:
+        response = client.get(path, headers={**_admin_headers(), 'Range': 'bytes=9000-'})
+    assert response.status_code == 416
+    assert response.headers['content-range'] == 'bytes */4096'
+    assert response.content == b''

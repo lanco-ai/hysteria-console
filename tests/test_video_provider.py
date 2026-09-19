@@ -268,3 +268,27 @@ def test_provider_media_proxy_never_redirects_authorized_request_to_other_origin
     assert handler.redirect_request(
         request, None, 302, 'Found', {}, 'https://provider.test/v1/media/videos/asset_123',
     ) is not None
+
+
+def test_provider_media_proxy_preserves_unsatisfied_range_metadata():
+    headers = {'Content-Range': 'bytes */4096'}
+
+    def range_error(*_args, **_kwargs):
+        raise urllib.error.HTTPError(
+            'https://provider.test/v1/media/videos/asset_123',
+            416,
+            'Range Not Satisfiable',
+            headers,
+            None,
+        )
+
+    provider = GrokVideoProvider(opener=range_error)
+    with pytest.raises(ProviderError) as error:
+        provider.open_asset(
+            'https://provider.test/v1/media/videos/asset_123',
+            VideoSettings('https://provider.test/v1', 'secret'),
+            range_header='bytes=9000-',
+        )
+    assert error.value.code == 'range_not_satisfiable'
+    assert error.value.status == 416
+    assert error.value.content_range == 'bytes */4096'
