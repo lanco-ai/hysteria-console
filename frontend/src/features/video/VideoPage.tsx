@@ -79,6 +79,11 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   const [runId, setRunId] = useState<string | null>(null);
   const [message, setMessage] = useState('先整理故事和分镜，再生成素材');
 
+  const refreshCapabilities = useCallback(async () => {
+    try { setCapabilities(await loadVideoCapabilities()); }
+    catch { setCapabilities(null); }
+  }, []);
+
   useEffect(() => {
     void Promise.allSettled([loadWorkflows(), loadVideoCapabilities()]).then(([workflowResult, capabilityResult]) => {
       if (workflowResult.status === 'fulfilled') {
@@ -153,14 +158,45 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   }, [storyboard, updateStoryboard]);
 
   const handleRunUpdate = useCallback((run: VideoRun) => {
-    if (!run.shot_id) return;
-    const shot = storyboard.shots.find(item => item.id === run.shot_id);
-    if (!shot) return;
-    const nextState: VideoStoryboardShot['image_state'] = run.state === 'succeeded' ? 'succeeded' : run.state === 'failed' ? 'failed' : run.state === 'running' ? 'running' : 'queued';
     const assets = run.assets || {};
-    const next = { ...shot, image_state: nextState, video_state: nextState, ...(assets[`${shot.id}:image`] ? { image_url: assets[`${shot.id}:image`] } : {}), ...(assets[`${shot.id}:video`] ? { video_url: assets[`${shot.id}:video`] } : {}) };
-    if (next.image_state === shot.image_state && next.video_state === shot.video_state && next.image_url === shot.image_url && next.video_url === shot.video_url) return;
-    updateStoryboard({ ...storyboard, shots: storyboard.shots.map(item => item.id === shot.id ? next : item) });
+    const nodeStatus = run.node_status || {};
+    const stateFor = (nodeId: string | undefined, fallback: VideoStoryboardShot['image_state']): VideoStoryboardShot['image_state'] => {
+      const state = nodeId ? nodeStatus[nodeId]?.state : undefined;
+      if (state === 'succeeded') return 'succeeded';
+      if (state === 'failed') return 'failed';
+      if (state === 'running') return 'running';
+      if (state === 'queued') return 'queued';
+      return fallback;
+    };
+    const targets = run.shot_id
+      ? [{ shotId: run.shot_id, nodes: run.workflow?.nodes || [] }]
+      : storyboard.shots.map(shot => ({ shotId: shot.id, nodes: run.workflow?.nodes || [] }));
+    let changed = false;
+    const shots = storyboard.shots.map(shot => {
+      const target = targets.find(item => item.shotId === shot.id);
+      if (!target) return shot;
+      const nodes = target.nodes.filter(node => {
+        const data = node.data;
+        return Boolean(data && typeof data === 'object' && (data as Record<string, unknown>).shot_id === shot.id);
+      });
+      if (!nodes.length && !run.shot_id) return shot;
+      const imageNode = nodes.find(node => node.type === 'text_to_image');
+      const videoNode = nodes.find(node => node.type === 'image_to_video' || node.type === 'first_last_frame_video');
+      const imageId = imageNode?.id as string | undefined;
+      const videoId = videoNode?.id as string | undefined;
+      const imageUrl = imageId ? assets[imageId] : assets[`${shot.id}:image`];
+      const videoUrl = videoId ? assets[videoId] : assets[`${shot.id}:video`];
+      const next = {
+        ...shot,
+        image_state: stateFor(imageId, run.state === 'failed' ? 'failed' : shot.image_state),
+        video_state: stateFor(videoId, run.state === 'failed' ? 'failed' : shot.video_state),
+        ...(imageUrl ? { image_url: imageUrl } : {}),
+        ...(videoUrl ? { video_url: videoUrl } : {}),
+      };
+      if (next.image_state !== shot.image_state || next.video_state !== shot.video_state || next.image_url !== shot.image_url || next.video_url !== shot.video_url) changed = true;
+      return next;
+    });
+    if (changed) updateStoryboard({ ...storyboard, shots });
   }, [storyboard, updateStoryboard]);
 
   const selectWorkflow = (workflow: VideoWorkflow) => {
@@ -182,6 +218,6 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
       <footer className="video-run-status"><span>编辑分镜不会自动产生费用；提交后可在任务面板查看状态。</span></footer>
     </section>
     {canvasOpen ? <div className="video-canvas-layer" role="dialog" aria-modal="true"><div className="video-canvas-dialog"><header><strong>工作流画布</strong><button type="button" className="button ghost" onClick={() => setCanvasOpen(false)}>关闭</button></header><Suspense fallback={<div className="video-canvas-loading">正在加载画布…</div>}><VideoCanvas nodes={nodes} edges={edges} onNodesChange={next => { setNodes(next); setSaveState('dirty'); }} onEdgesChange={next => { setEdges(next); setSaveState('dirty'); }} onConnect={connect} /></Suspense></div></div> : null}
-    <VideoSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    <VideoSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => { void refreshCapabilities(); }} />
   </CodexShell>;
 }

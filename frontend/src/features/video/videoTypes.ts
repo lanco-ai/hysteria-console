@@ -57,6 +57,7 @@ export type VideoRun = {
   node_status: Record<string, { state: string }>;
   assets?: Record<string, string>;
   error?: string;
+  workflow?: VideoWorkflow;
 };
 
 export type VideoAsset = { id: string; filename: string; content_type: string; size: number };

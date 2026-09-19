@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { loadVideoSettings, saveVideoSettings, testVideoConnection } from './videoApi';
 import type { VideoSettings } from './videoTypes';
 
-export function VideoSettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }): ReactElement | null {
+export function VideoSettingsDrawer({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved?: () => void }): ReactElement | null {
   const [settings, setSettings] = useState<VideoSettings | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -12,7 +12,7 @@ export function VideoSettingsDrawer({ open, onClose }: { open: boolean; onClose:
   if (!open) return null;
   const save = async () => {
     setBusy(true); setMessage('');
-    try { const result = await saveVideoSettings({ baseUrl, ...(apiKey ? { apiKey } : {}) }); setSettings(result); setApiKey(''); setMessage('已保存'); }
+    try { const result = await saveVideoSettings({ baseUrl, ...(apiKey ? { apiKey } : {}) }); setSettings(result); setApiKey(''); setMessage('已保存'); onSaved?.(); }
     catch (error) { setMessage(error instanceof Error ? error.message : '保存失败'); }
     finally { setBusy(false); }
   };
