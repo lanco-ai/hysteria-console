@@ -92,7 +92,7 @@ export function ServiceEditor({ draft, existing, busy, error, onChange, onSubmit
         <div className="services-probe-actions"><button className="btn service-secondary" type="button" disabled={locked || !draft.api_base.trim() || !key.trim()} onClick={() => void probe('models')}>{probing === 'models' ? '正在检测…' : '检测模型列表'}</button><small>密钥仅发送给填写的 API 服务，不写入收藏。</small></div>
         {probeError ? <p className="err" role="alert">{probeError}</p> : null}
         {models ? resultLine(models, '模型列表') : null}
-        {models?.status === 'verified' || models?.status === 'empty_models' ? <small>模型列表已更新，点击“保存网站”后显示到卡片。额度数据需另行接入。</small> : null}
+        {models?.status === 'verified' || models?.status === 'empty_models' ? <small>模型列表已更新，点击“保存网站”后显示到卡片。</small> : null}
         {models?.status === 'verified' ? <><div className="services-probe-model"><label>测试模型<select value={model} disabled={locked} onChange={event => { setModel(event.target.value); setChat(null); setApplied(false); }}>{models.models.map(id => <option key={id} value={id}>{id}</option>)}</select></label><button className="btn service-secondary" type="button" disabled={locked || !model} onClick={() => void probe('chat')}>{probing === 'chat' ? '正在测试…' : '测试对话'}</button></div><small>发送一条极短对话，会消耗少量额度。图片、视频与流式输出暂不测试。</small></> : null}
         {chat ? resultLine(chat, '对话接口') : null}
         {models?.status === 'verified' ? <button className="btn service-secondary" type="button" disabled={locked || applied} onClick={applyResults}>{applied ? '已填入，下方保存后生效' : '将已验证结果写入说明'}</button> : null}

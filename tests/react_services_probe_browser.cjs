@@ -42,7 +42,7 @@ const { expect } = require('@playwright/test');
     await expect(cpa.locator('summary')).toContainText('提供的模型');
     await expect(cpa.locator('.service-count')).toHaveText('5');
     await expect(cpa.locator('.service-model-group')).toHaveCount(4);
-    await expect(cpa.locator('.service-quota-unknown')).toHaveCount(8);
+    await expect(cpa.locator('.service-quota')).toHaveCount(0);
     await expect(cpa.getByText('100%', { exact: true })).toHaveCount(0);
     await page.screenshot({ path: '/tmp/services-models-mobile.png', fullPage: true });
     await page.setViewportSize({ width: 1280, height: 1000 });

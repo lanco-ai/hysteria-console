@@ -151,10 +151,6 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .service-model-heading > span { color: #9b9e95; font-size: 11px; text-align: right; flex-shrink: 0; }
 .service-model-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 13px; }
 .service-model-tags > span { padding: 3px 6px; color: #56725c; background: #edf2e9; border: 1px solid #e1e8dc; border-radius: 5px; font-size: 11px; overflow-wrap: anywhere; max-width: 100%; }
-.service-quota { margin-top: 10px; }
-.service-quota > div:first-child { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 6px; color: #777c73; font-size: 12px; }
-.service-quota .service-quota-unknown { color: #a6aba1; font-size: 11px; }
-.service-quota-track { height: 6px; border-radius: 6px; background: repeating-linear-gradient(120deg, #e6e9e2, #e6e9e2 6px, #eef0ea 6px, #eef0ea 12px); }
 .service-model-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid #e3e7df; color: #8b9587; font-size: 10px; line-height: 1.8; }
 .service-model-note .btn { font-size: 11px; min-height: 32px; padding: 6px 8px; }
 .service-model-empty { display: grid; justify-items: start; gap: 12px; padding: 16px; color: #8b9587; line-height: 1.7; background: #f7f9f5; border-radius: 10px; font-size: 12px; }
