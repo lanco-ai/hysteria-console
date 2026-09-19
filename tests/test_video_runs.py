@@ -200,3 +200,20 @@ def test_uploaded_image_over_provider_limit_fails_without_request(tmp_path):
     assert result['state'] == 'failed'
     assert result['error'] == 'input_asset_unavailable'
     assert provider.video_calls == 0
+
+
+def test_empty_image_asset_fails_instead_of_staying_running(tmp_path):
+    workflows = workflow_store(tmp_path)
+    saved = workflows.save({'title': 'missing asset', 'nodes': [
+        {'id': 'source', 'type': 'image_asset', 'data': {'label': '首帧'}},
+        {'id': 'video', 'type': 'image_to_video', 'data': {'model': 'video'}},
+    ], 'edges': [
+        {'source': 'source', 'sourceHandle': 'image', 'target': 'video', 'targetHandle': 'image'},
+    ]})
+    service = RunService(
+        workflows, VideoSettings('https://provider.test/v1', 'secret'), FakeProvider(),
+        tmp_path / 'runs.json', asset_store=AssetStore(tmp_path / 'assets'),
+    )
+    result = service.tick(service.submit(saved['id'])['id'])
+    assert result['state'] == 'failed'
+    assert result['error'] == 'missing_asset'

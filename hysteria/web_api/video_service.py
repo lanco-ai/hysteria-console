@@ -448,6 +448,10 @@ class RunService:
                 if value:
                     status['state'] = 'succeeded'
                     run['assets'][node_id] = value
+                else:
+                    status['state'] = 'failed'
+                    run['error'] = 'missing_asset'
+                    run['state'] = 'failed'
             elif node_type == 'preview':
                 value = self._source_value(run, node_id, 'media')
                 if value:
