@@ -48,6 +48,20 @@ def test_video_provider_builds_image_request_without_exposing_key():
     assert job.provider_job_id == 'asset-1'
 
 
+def test_video_provider_passes_storyboard_dimensions_to_upstream():
+    seen = {}
+    provider = GrokVideoProvider(opener=_opener(_Response({'request_id': 'asset-1'}), seen))
+    provider.generate_image(
+        ImageRequest(prompt='portrait', model='grok-imagine-image', aspect_ratio='9:16'),
+        VideoSettings('https://provider.test/v1', 'secret'),
+    )
+    assert seen['body'] == {
+        'model': 'grok-imagine-image',
+        'prompt': 'portrait',
+        'aspect_ratio': '9:16',
+    }
+
+
 def test_video_provider_maps_quota_error_without_upstream_body():
     def opener(_request, **_kwargs):
         raise urllib.error.HTTPError(
@@ -106,6 +120,25 @@ def test_video_provider_uses_current_media_object_for_image_to_video():
         'model': 'grok-imagine-video',
         'prompt': 'camera moves',
         'image': {'url': 'https://cdn.test/frame.png'},
+    }
+
+
+def test_video_provider_passes_video_duration_and_ratio():
+    seen = {}
+    provider = GrokVideoProvider(opener=_opener(_Response({'request_id': 'job-2'}), seen))
+    provider.generate_video(
+        VideoRequest(
+            prompt='camera moves', model='grok-imagine-video',
+            image_url='https://cdn.test/frame.png', duration=7, aspect_ratio='16:9',
+        ),
+        VideoSettings('https://provider.test/v1', 'secret'),
+    )
+    assert seen['body'] == {
+        'model': 'grok-imagine-video',
+        'prompt': 'camera moves',
+        'image': {'url': 'https://cdn.test/frame.png'},
+        'duration': 7,
+        'aspect_ratio': '16:9',
     }
 
 

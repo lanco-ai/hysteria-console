@@ -2,6 +2,7 @@
 
 import math
 import json
+import base64
 import uuid
 import os
 import tempfile
@@ -42,6 +43,7 @@ NODE_REGISTRY = {
 DEFAULT_WORKFLOWS_PATH = Path('/root/hysteria/state/video/workflows.json')
 DEFAULT_ASSETS_PATH = Path('/root/hysteria/state/video/assets')
 ALLOWED_ASSET_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/webm'}
+MAX_PROVIDER_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 def mask_video_key(value: str) -> str:
@@ -294,6 +296,22 @@ class AssetStore:
             return None, None
         return metadata, matches[0]
 
+    def data_url(self, asset_id: str) -> str:
+        metadata, path = self.open(asset_id)
+        if metadata is None or path is None or not str(metadata.get('content_type', '')).startswith('image/'):
+            raise VideoValidationError('asset unavailable')
+        size = int(metadata.get('size') or 0)
+        if size <= 0 or size > MAX_PROVIDER_IMAGE_BYTES:
+            raise VideoValidationError('asset is too large for provider')
+        try:
+            body = path.read_bytes()
+        except OSError as exc:
+            raise VideoValidationError('asset unavailable') from exc
+        if len(body) != size or len(body) > MAX_PROVIDER_IMAGE_BYTES:
+            raise VideoValidationError('asset is too large for provider')
+        encoded = base64.b64encode(body).decode('ascii')
+        return f"data:{metadata['content_type']};base64,{encoded}"
+
 
 DEFAULT_RUNS_PATH = Path('/root/hysteria/state/video/runs.json')
 
@@ -307,11 +325,12 @@ class RunService:
     ambiguous transport failures therefore cannot cause an automatic retry.
     """
 
-    def __init__(self, workflows: WorkflowStore, settings: VideoSettings, provider, path: str | Path = DEFAULT_RUNS_PATH):
+    def __init__(self, workflows: WorkflowStore, settings: VideoSettings, provider, path: str | Path = DEFAULT_RUNS_PATH, asset_store: AssetStore | None = None):
         self.workflows = workflows
         self.settings = settings
         self.provider = provider
         self.path = Path(path)
+        self.asset_store = asset_store
 
     def _records(self):
         value = state_store.load_json_strict(self.path, [])
@@ -407,6 +426,13 @@ class RunService:
                 return None
         return None
 
+    def _provider_image(self, value):
+        if isinstance(value, str) and value.startswith('asset://'):
+            if self.asset_store is None:
+                raise VideoValidationError('asset unavailable')
+            return self.asset_store.data_url(value[len('asset://'):])
+        return value
+
     def _mark_ready_sources(self, run):
         for node_id in run['order']:
             node = self._node(run, node_id)
@@ -417,7 +443,8 @@ class RunService:
             if node_type == 'prompt':
                 status['state'] = 'succeeded'
             elif node_type == 'image_asset':
-                value = (node.get('data') or {}).get('asset_url')
+                data = node.get('data') if isinstance(node.get('data'), dict) else {}
+                value = data.get('asset_ref') or data.get('asset_url')
                 if value:
                     status['state'] = 'succeeded'
                     run['assets'][node_id] = value
@@ -473,7 +500,7 @@ class RunService:
                 if not prompt:
                     status['state'] = 'failed'; run['error'] = 'missing_prompt'; run['state'] = 'failed'; break
                 from .video_models import ImageRequest
-                request = ImageRequest(str(prompt), str(data.get('model') or 'grok-imagine-image'))
+                request = ImageRequest(str(prompt), str(data.get('model') or 'grok-imagine-image'), aspect_ratio=str(data.get('aspect_ratio') or '') or None)
                 status['state'] = 'running'
                 try:
                     job = self.provider.generate_image(request, self.settings)
@@ -504,12 +531,21 @@ class RunService:
                     continue
                 image_url = first
                 from .video_models import VideoRequest
-                request = VideoRequest(str(data.get('prompt') or ''), str(data.get('model') or 'grok-imagine-video'), first_frame_url=first, last_frame_url=last)
+                try:
+                    first = self._provider_image(first)
+                    last = self._provider_image(last)
+                except VideoValidationError:
+                    status['state'] = 'failed'; run['error'] = 'input_asset_unavailable'; run['state'] = 'failed'; break
+                request = VideoRequest(str(data.get('prompt') or ''), str(data.get('model') or 'grok-imagine-video'), first_frame_url=first, last_frame_url=last, duration=int(data.get('duration') or 0) or None, aspect_ratio=str(data.get('aspect_ratio') or '') or None)
             else:
                 if not image_url:
                     continue
+                try:
+                    image_url = self._provider_image(image_url)
+                except VideoValidationError:
+                    status['state'] = 'failed'; run['error'] = 'input_asset_unavailable'; run['state'] = 'failed'; break
                 from .video_models import VideoRequest
-                request = VideoRequest(str(data.get('prompt') or ''), str(data.get('model') or 'grok-imagine-video'), image_url=str(image_url))
+                request = VideoRequest(str(data.get('prompt') or ''), str(data.get('model') or 'grok-imagine-video'), image_url=str(image_url), duration=int(data.get('duration') or 0) or None, aspect_ratio=str(data.get('aspect_ratio') or '') or None)
             status['state'] = 'running'
             try:
                 job = self.provider.generate_video(request, self.settings)

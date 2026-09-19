@@ -34,6 +34,7 @@ export type VideoStoryboardShot = {
   dialogue: string;
   image_model: string;
   video_model: string;
+  image_asset_id?: string;
   image_url?: string;
   video_url?: string;
   image_state: 'idle' | 'queued' | 'running' | 'succeeded' | 'failed' | 'stale';

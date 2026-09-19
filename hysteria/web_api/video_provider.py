@@ -171,6 +171,8 @@ class GrokVideoProvider:
             payload['width'] = request.width
         if request.height is not None:
             payload['height'] = request.height
+        if request.aspect_ratio:
+            payload['aspect_ratio'] = request.aspect_ratio
         result = self._request('POST', _url(settings, 'images/generations'), settings, payload)
         asset_url = _asset_url(result)
         # Grok2API follows the OpenAI image response shape and returns the

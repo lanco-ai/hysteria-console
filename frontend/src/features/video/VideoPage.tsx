@@ -17,12 +17,14 @@ function storyboardGraph(storyboard: Storyboard): { nodes: Node[]; edges: Edge[]
     const prefix = shot.id;
     nodes.push(
       { id: `${prefix}:prompt`, type: 'prompt', position: { x: 40, y }, data: { text: shot.image_prompt, shot_id: prefix, label: shot.title } },
-      { id: `${prefix}:image`, type: 'text_to_image', position: { x: 320, y }, data: { model: shot.image_model, prompt: shot.image_prompt, shot_id: prefix } },
-      { id: `${prefix}:video`, type: 'image_to_video', position: { x: 620, y }, data: { model: shot.video_model, prompt: shot.motion_prompt, shot_id: prefix } },
+      { id: `${prefix}:image`, type: shot.image_asset_id ? 'image_asset' : 'text_to_image', position: { x: 320, y }, data: shot.image_asset_id ? { asset_ref: `asset://${shot.image_asset_id}`, shot_id: prefix } : { model: shot.image_model, prompt: shot.image_prompt, aspect_ratio: storyboard.aspect_ratio, shot_id: prefix } },
+      { id: `${prefix}:video`, type: 'image_to_video', position: { x: 620, y }, data: { model: shot.video_model, prompt: shot.motion_prompt, duration: shot.duration, aspect_ratio: storyboard.aspect_ratio, shot_id: prefix } },
       { id: `${prefix}:preview`, type: 'preview', position: { x: 920, y }, data: { shot_id: prefix } },
     );
+    if (!shot.image_asset_id) {
+      edges.push({ id: `${prefix}:prompt-image`, source: `${prefix}:prompt`, sourceHandle: 'text', target: `${prefix}:image`, targetHandle: 'prompt' });
+    }
     edges.push(
-      { id: `${prefix}:prompt-image`, source: `${prefix}:prompt`, sourceHandle: 'text', target: `${prefix}:image`, targetHandle: 'prompt' },
       { id: `${prefix}:image-video`, source: `${prefix}:image`, sourceHandle: 'image', target: `${prefix}:video`, targetHandle: 'image' },
       { id: `${prefix}:video-preview`, source: `${prefix}:video`, sourceHandle: 'video', target: `${prefix}:preview`, targetHandle: 'media' },
     );
@@ -129,7 +131,7 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   }, [save, saveState, workflowId]);
 
   const runAll = useCallback(async () => {
-    if (storyboard.shots.some(shot => !shot.image_prompt.trim())) { setMessage('请先为每个分镜填写图片提示词'); return; }
+    if (storyboard.shots.some(shot => !shot.image_prompt.trim() && !shot.image_asset_id)) { setMessage('请先为每个分镜填写图片提示词或上传图片'); return; }
     const id = await ensureSaved();
     if (!id) return;
     setBusy(true);
@@ -151,7 +153,7 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
     setBusy(true); setMessage(`${shot.title} 图片上传中…`);
     try {
       const asset = await uploadAsset(file, file.name || `${shot.id}.png`);
-      updateStoryboard({ ...storyboard, shots: storyboard.shots.map(item => item.id === shot.id ? { ...item, image_url: `/api/video/assets/${encodeURIComponent(asset.id)}/content`, image_state: 'succeeded' } : item) });
+      updateStoryboard({ ...storyboard, shots: storyboard.shots.map(item => item.id === shot.id ? { ...item, image_asset_id: asset.id, image_url: `/api/video/assets/${encodeURIComponent(asset.id)}/content`, image_state: 'succeeded' } : item) });
       setMessage(`${shot.title} 图片已加入`);
     } catch (error) { setMessage(error instanceof Error ? error.message : '图片上传失败'); }
     finally { setBusy(false); }
@@ -180,7 +182,7 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
         return Boolean(data && typeof data === 'object' && (data as Record<string, unknown>).shot_id === shot.id);
       });
       if (!nodes.length && !run.shot_id) return shot;
-      const imageNode = nodes.find(node => node.type === 'text_to_image');
+      const imageNode = nodes.find(node => node.type === 'text_to_image' || node.type === 'image_asset');
       const videoNode = nodes.find(node => node.type === 'image_to_video' || node.type === 'first_last_frame_video');
       const imageId = imageNode?.id as string | undefined;
       const videoId = videoNode?.id as string | undefined;

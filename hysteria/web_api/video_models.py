@@ -17,6 +17,7 @@ class ImageRequest:
     model: str
     width: int | None = None
     height: int | None = None
+    aspect_ratio: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

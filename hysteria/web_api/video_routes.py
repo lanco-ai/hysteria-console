@@ -52,7 +52,7 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
     def get_run_service():
         if run_service is not None:
             return run_service
-        return RunService(workflows, store.read(), factory())
+        return RunService(workflows, store.read(), factory(), asset_store=assets)
     factory = provider_factory or (lambda: GrokVideoProvider())
 
     def read_settings(*, headers, path):

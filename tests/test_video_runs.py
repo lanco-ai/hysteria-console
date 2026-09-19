@@ -1,24 +1,28 @@
 from web_api.video_models import ProviderJob, ProviderJobStatus, VideoSettings
 from web_api.video_provider import ProviderError
-from web_api.video_service import RunService, VideoValidationError, WorkflowStore
+from web_api.video_service import AssetStore, RunService, VideoValidationError, WorkflowStore
 
 
 class FakeProvider:
     def __init__(self):
         self.image_calls = 0
         self.video_calls = 0
+        self.image_requests = []
+        self.video_requests = []
         self.create_then_timeout = False
         self.image_done = False
 
     def generate_image(self, request, settings):
-        del request, settings
+        del settings
+        self.image_requests.append(request)
         self.image_calls += 1
         if self.create_then_timeout:
             raise TimeoutError('transport timeout')
         return ProviderJob('image-job')
 
     def generate_video(self, request, settings):
-        del request, settings
+        del settings
+        self.video_requests.append(request)
         self.video_calls += 1
         return ProviderJob('video-job')
 
@@ -150,3 +154,49 @@ def test_submit_can_limit_run_to_one_storyboard_shot(tmp_path):
     service = RunService(workflows, VideoSettings('https://provider.test/v1', 'secret'), FakeProvider(), tmp_path / 'runs.json')
     run = service.submit(saved['id'], shot_id='shot-2')
     assert {node['id'] for node in run['workflow']['nodes']} == {'prompt-2', 'image-2'}
+
+
+def test_uploaded_image_is_materialized_for_provider_and_video_parameters_are_kept(tmp_path):
+    workflows = workflow_store(tmp_path)
+    assets = AssetStore(tmp_path / 'assets')
+    asset = assets.save_upload('frame.png', 'image/png', b'\x89PNG\r\n')
+    saved = workflows.save({'title': 'uploaded', 'nodes': [
+        {'id': 'source', 'type': 'image_asset', 'data': {'asset_ref': f"asset://{asset['id']}"}},
+        {'id': 'video', 'type': 'image_to_video', 'data': {'model': 'video', 'duration': 7, 'aspect_ratio': '9:16'}},
+    ], 'edges': [
+        {'source': 'source', 'sourceHandle': 'image', 'target': 'video', 'targetHandle': 'image'},
+    ]})
+    provider = FakeProvider()
+    service = RunService(
+        workflows, VideoSettings('https://provider.test/v1', 'secret'), provider,
+        tmp_path / 'runs.json', asset_store=assets,
+    )
+    run = service.submit(saved['id'])
+    result = service.tick(run['id'])
+    assert provider.video_calls == 1
+    request = provider.video_requests[0]
+    assert request.image_url.startswith('data:image/png;base64,')
+    assert request.duration == 7
+    assert request.aspect_ratio == '9:16'
+    assert result['assets']['source'] == f"asset://{asset['id']}"
+
+
+def test_uploaded_image_over_provider_limit_fails_without_request(tmp_path):
+    workflows = workflow_store(tmp_path)
+    assets = AssetStore(tmp_path / 'assets')
+    asset = assets.save_upload('frame.png', 'image/png', b'X' * (8 * 1024 * 1024 + 1))
+    saved = workflows.save({'title': 'too large', 'nodes': [
+        {'id': 'source', 'type': 'image_asset', 'data': {'asset_ref': f"asset://{asset['id']}"}},
+        {'id': 'video', 'type': 'image_to_video', 'data': {'model': 'video'}},
+    ], 'edges': [
+        {'source': 'source', 'sourceHandle': 'image', 'target': 'video', 'targetHandle': 'image'},
+    ]})
+    provider = FakeProvider()
+    service = RunService(
+        workflows, VideoSettings('https://provider.test/v1', 'secret'), provider,
+        tmp_path / 'runs.json', asset_store=assets,
+    )
+    result = service.tick(service.submit(saved['id'])['id'])
+    assert result['state'] == 'failed'
+    assert result['error'] == 'input_asset_unavailable'
+    assert provider.video_calls == 0
