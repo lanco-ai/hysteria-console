@@ -253,6 +253,51 @@ async function main() {
     && panelAfterResize.y + panelAfterResize.height <= 600,
   'agent panel should remain fully inside the viewport after resizing');
   await page.setViewportSize({ width: 1280, height: 900 });
+  for (const [left, top] of [[12, 12], [1212, 12], [12, 832], [1212, 832]]) {
+    await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+    const cornerLauncher = await launcher.boundingBox();
+    assert(cornerLauncher, 'agent launcher should remain visible while checking viewport corners');
+    await page.mouse.move(cornerLauncher.x + 28, cornerLauncher.y + 28);
+    await page.mouse.down();
+    await page.mouse.move(left + 28, top + 28, { steps: 5 });
+    await page.mouse.up();
+    await launcher.click();
+    const cornerPanel = await page.locator('.lanco-agent').boundingBox();
+    assert(cornerPanel && cornerPanel.x >= 0 && cornerPanel.y >= 0
+      && cornerPanel.x + cornerPanel.width <= 1280
+      && cornerPanel.y + cornerPanel.height <= 900,
+    `agent panel should remain inside the viewport near launcher corner ${left},${top}`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobilePanel = await page.locator('.lanco-agent').boundingBox();
+  assert(mobilePanel && mobilePanel.x >= 0 && mobilePanel.y >= 0
+    && mobilePanel.x + mobilePanel.width <= 390
+    && mobilePanel.y + mobilePanel.height <= 844,
+  'mobile agent panel should remain inside the viewport');
+  assert.equal(await page.locator('.lanco-agent-header').evaluate(node => getComputedStyle(node).cursor), 'default');
+  const mobileHeader = await page.locator('.lanco-agent-header').boundingBox();
+  assert(mobileHeader, 'mobile agent header should have a bounding box');
+  await page.mouse.move(mobileHeader.x + 120, mobileHeader.y + 24);
+  await page.mouse.down();
+  await page.mouse.move(mobileHeader.x + 200, mobileHeader.y + 100, { steps: 4 });
+  await page.mouse.up();
+  const mobilePanelAfterHeaderDrag = await page.locator('.lanco-agent').boundingBox();
+  assert(mobilePanelAfterHeaderDrag && Math.abs(mobilePanelAfterHeaderDrag.x - mobilePanel.x) < 2
+    && Math.abs(mobilePanelAfterHeaderDrag.y - mobilePanel.y) < 2,
+  'mobile panel header should stay bottom-fixed instead of pretending to drag');
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  const mobileLauncher = await launcher.boundingBox();
+  assert(mobileLauncher, 'mobile launcher should remain visible');
+  await page.mouse.move(mobileLauncher.x + 28, mobileLauncher.y + 28);
+  await page.mouse.down();
+  await page.mouse.move(80, 100, { steps: 5 });
+  await page.mouse.up();
+  const mobileLauncherAfterDrag = await launcher.boundingBox();
+  assert(mobileLauncherAfterDrag && mobileLauncherAfterDrag.x < 120 && mobileLauncherAfterDrag.y < 140,
+    'mobile launcher should remain draggable');
+  await launcher.click();
+  await expect(page.locator('.lanco-agent')).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
   await expect(page.locator('.lanco-agent-input')).toHaveValue('');
   // Closing during a submitted save clears the UI; late responses cannot
