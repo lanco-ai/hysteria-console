@@ -25,6 +25,12 @@ class VideoValidationError(ValueError):
     pass
 
 
+def _classified_provider_error(exc: Exception) -> str | None:
+    """Return the adapter's sanitized error code, if this is not retryable."""
+    code = getattr(exc, 'code', None)
+    return code if isinstance(code, str) and code and len(code) <= 80 else None
+
+
 NODE_REGISTRY = {
     'prompt': {'inputs': set(), 'outputs': {'text'}},
     'image_asset': {'inputs': set(), 'outputs': {'image'}},
@@ -439,7 +445,13 @@ class RunService:
                     continue
                 try:
                     update = self.provider.get_job(job_id, self.settings)
-                except Exception:
+                except Exception as exc:
+                    code = _classified_provider_error(exc)
+                    if code is not None:
+                        status['state'] = 'failed'
+                        run['error'] = code
+                        run['state'] = 'failed'
+                        break
                     continue
                 if update.state == 'succeeded':
                     status['state'] = 'succeeded'
@@ -466,9 +478,18 @@ class RunService:
                 try:
                     job = self.provider.generate_image(request, self.settings)
                 except Exception as exc:
-                    if isinstance(exc, Exception):
-                        status['submission_pending'] = True
-                        continue
+                    code = _classified_provider_error(exc)
+                    if code is not None:
+                        status['state'] = 'failed'
+                        run['error'] = code
+                        run['state'] = 'failed'
+                        break
+                    # An unknown transport failure may happen after the
+                    # provider accepted a paid request. Keep it pending so a
+                    # later tick can reconcile the job instead of duplicating
+                    # the submission.
+                    status['submission_pending'] = True
+                    continue
                 run['provider_jobs'][node_id] = job.provider_job_id
                 if job.asset_url:
                     run['assets'][node_id] = job.asset_url
@@ -490,7 +511,13 @@ class RunService:
             status['state'] = 'running'
             try:
                 job = self.provider.generate_video(request, self.settings)
-            except Exception:
+            except Exception as exc:
+                code = _classified_provider_error(exc)
+                if code is not None:
+                    status['state'] = 'failed'
+                    run['error'] = code
+                    run['state'] = 'failed'
+                    break
                 status['submission_pending'] = True
                 continue
             run['provider_jobs'][node_id] = job.provider_job_id

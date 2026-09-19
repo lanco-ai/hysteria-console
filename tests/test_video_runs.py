@@ -1,4 +1,5 @@
 from web_api.video_models import ProviderJob, ProviderJobStatus, VideoSettings
+from web_api.video_provider import ProviderError
 from web_api.video_service import RunService, VideoValidationError, WorkflowStore
 
 
@@ -30,6 +31,12 @@ class FakeProvider:
     def cancel_job(self, job_id, settings):
         del job_id, settings
         return type('Cancel', (), {'status': 'unsupported'})()
+
+
+class ProviderErrorOnImage(FakeProvider):
+    def generate_image(self, request, settings):
+        del request, settings
+        raise ProviderError('rate_limited', status=429, retry_after='8')
 
 
 def workflow_store(tmp_path):
@@ -72,6 +79,22 @@ def test_submit_timeout_does_not_duplicate_paid_request(tmp_path):
     service.tick(run['id'])
     assert provider.image_calls == 1
     assert service.get(run['id'])['node_status']['image']['state'] == 'running'
+
+
+def test_classified_provider_error_fails_run_without_retrying(tmp_path):
+    workflows = workflow_store(tmp_path)
+    saved = workflows.save({'title': 'demo', 'nodes': [
+        {'id': 'prompt', 'type': 'prompt', 'data': {'text': 'a lake'}},
+        {'id': 'image', 'type': 'text_to_image', 'data': {'model': 'image'}},
+    ], 'edges': [{'source': 'prompt', 'sourceHandle': 'text', 'target': 'image', 'targetHandle': 'prompt'}]})
+    provider = ProviderErrorOnImage()
+    service = RunService(workflows, VideoSettings('https://provider.test/v1', 'secret'), provider, tmp_path / 'runs.json')
+    run = service.submit(saved['id'])
+    service.tick(run['id'])
+    result = service.get(run['id'])
+    assert result['state'] == 'failed'
+    assert result['error'] == 'rate_limited'
+    assert result['node_status']['image']['state'] == 'failed'
 
 
 def test_cancel_reports_unsupported_instead_of_faking_success(tmp_path):
