@@ -9,7 +9,6 @@ import {
   loadChatSettings,
   saveChatSettings,
   streamChat,
-  testChatConnection,
   type ChatMessageData,
   type ChatModel,
   type ChatSettings as ChatSettingsData,
@@ -143,7 +142,6 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('auto');
   const [contextUsed, setContextUsed] = useState<number | null>(null);
   const [contextMax, setContextMax] = useState<number | null>(null);
-  const [testBusy, setTestBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [streamStarted, setStreamStarted] = useState(false);
@@ -240,7 +238,6 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     setModelsBusy(false);
     setModelsError('');
     setSettingsBusy(false);
-    setTestBusy(false);
     setContextUsed(null);
     setContextMax(null);
     setError('');
@@ -249,9 +246,9 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
 
   const refreshModels = useCallback(async () => {
     if (!authenticated) return;
-    if (!settings?.api_key_configured || !settings.base_url.trim()) {
+    if (!settings?.api_key_configured) {
       setModels([]);
-      setModelsError('先配置 API Base URL 和 API Key 后再获取模型。');
+      setModelsError('请先到服务中心配置并绑定聊天模型服务。');
       return;
     }
     setModelsBusy(true);
@@ -265,13 +262,13 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     } finally {
       setModelsBusy(false);
     }
-  }, [authenticated, onUnauthenticated, settings]);
+  }, [authenticated, onUnauthenticated, settings?.api_key_configured]);
 
   useEffect(() => {
     if (!authenticated) return;
-    if (settings?.api_key_configured && settings.base_url.trim()) void refreshModels();
+    if (settings?.api_key_configured) void refreshModels();
     else setModels([]);
-  }, [authenticated, refreshModels, settings?.api_key_configured, settings?.base_url]);
+  }, [authenticated, refreshModels, settings?.api_key_configured]);
 
   useEffect(() => {
     if (!models.length) {
@@ -377,7 +374,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     const content = message.trim();
     if (!authenticated || !content || busy) return;
     if (!selectedModel) {
-      setError('请先在聊天顶部选择模型，或在设置中测试连接获取模型列表。');
+      setError('请先在聊天顶部选择模型，或前往服务中心检查聊天模型服务。');
       return;
     }
     const current: ChatSession = active || { id: newId(), title: '新对话', messages: [], updatedAt: Date.now(), ...(selectedModel ? { model: selectedModel } : {}), reasoningEffort };
@@ -528,22 +525,6 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
     setReasoningEffort(value);
     setSessions(current => current.map(session => session.id === activeId ? { ...session, reasoningEffort: value, updatedAt: Date.now() } : session));
   };
-  const testConnection = async () => {
-    if (!authenticated) return;
-    setTestBusy(true);
-    setSettingsFeedback('');
-    try {
-      const result = await testChatConnection();
-      if (!authenticatedRef.current) return;
-      setSettingsFeedback(`连接成功 · 发现 ${result.models_count} 个模型`);
-      await refreshModels();
-    } catch (errorValue) {
-      if (errorValue instanceof ChatApiError && errorValue.status === 401) onUnauthenticated?.();
-      else setSettingsFeedback(errorValue instanceof Error ? errorValue.message : '连接测试失败');
-    } finally {
-      setTestBusy(false);
-    }
-  };
   const clearLocalData = () => {
     if (!authenticated) return;
     if (!window.confirm('清空全部本地聊天记录和请求计数？此操作不可撤销。')) return;
@@ -576,6 +557,7 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
   return <CodexShell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar} agentEnabled={authenticated}>
     <section className="chat-page">
       {settingsError ? <div className="err" role="alert">{settingsError}</div> : null}
+      {modelsError ? <div className="err" role="status">{modelsError}</div> : null}
       <div className={`chat-layout${historyOpen ? '' : ' history-collapsed'}`}>
         {historyOpen ? <aside className="chat-history-panel card" id="chat-history-panel"><ChatSidebar
           sessions={sessions}
@@ -587,7 +569,6 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
           onSelect={selectSession}
           onRename={renameSession}
           onDelete={deleteSession}
-          onOpenSettings={() => setDrawer('settings')}
           onOpenUsage={() => setDrawer('usage')}
           onClose={() => setHistoryOpen(false)}
           disabled={!authenticated}
@@ -609,6 +590,6 @@ export function ChatPage({ publicHost, authenticated: authenticatedProp, onUnaut
       {error ? <div className="err" role="alert">{error}</div> : null}
     </section>
 
-    {drawer ? <div className="chat-drawer-layer"><button className="chat-drawer-backdrop" type="button" aria-label="关闭抽屉" onClick={() => setDrawer(null)} /><aside className="chat-drawer" role="dialog" aria-modal="true" aria-labelledby="chat-drawer-title"><header className="chat-drawer-header"><div><h2 id="chat-drawer-title">{drawer === 'settings' ? '设置' : 'AI 用量'}</h2><p>{drawer === 'settings' ? '低频配置集中在这里' : '只记录本地请求次数，不估算 Token'}</p></div><button className="btn btn-ghost btn-icon" type="button" aria-label="关闭设置" onClick={() => setDrawer(null)}>×</button></header>{drawer === 'settings' ? <ChatSettings settings={settings} models={models} modelsBusy={modelsBusy} modelsError={modelsError} busy={settingsBusy} testBusy={testBusy} feedback={settingsFeedback || (settingsError && !settings ? settingsError : '')} onSave={saveSettings} onRefreshModels={refreshModels} onTest={testConnection} onClearData={clearLocalData} /> : <div className="chat-usage"><div className="chat-usage-grid"><div><span>今日请求</span><strong>{usage.today}</strong></div><div><span>总请求</span><strong>{usage.total}</strong></div></div>{usage.inputTokens || usage.outputTokens ? <div className="chat-usage-grid"><div><span>今日输入 tokens</span><strong>{usage.inputTokens}</strong></div><div><span>今日输出 tokens</span><strong>{usage.outputTokens}</strong></div><div><span>今日总 tokens</span><strong>{usage.totalTokens}</strong></div></div> : <div className="chat-usage-empty"><strong>暂无 Token 数据</strong><p>第三方 API 未返回 usage 时不会估算或伪造统计。</p></div>}</div>}</aside></div> : null}
+    {drawer ? <div className="chat-drawer-layer"><button className="chat-drawer-backdrop" type="button" aria-label="关闭抽屉" onClick={() => setDrawer(null)} /><aside className="chat-drawer" role="dialog" aria-modal="true" aria-labelledby="chat-drawer-title"><header className="chat-drawer-header"><div><h2 id="chat-drawer-title">{drawer === 'settings' ? '设置' : 'AI 用量'}</h2><p>{drawer === 'settings' ? '聊天参数与本地数据' : '只记录本地请求次数，不估算 Token'}</p></div><button className="btn btn-ghost btn-icon" type="button" aria-label="关闭设置" onClick={() => setDrawer(null)}>×</button></header>{drawer === 'settings' ? <ChatSettings settings={settings} busy={settingsBusy} feedback={settingsFeedback || (settingsError && !settings ? settingsError : '')} onSave={saveSettings} onClearData={clearLocalData} /> : <div className="chat-usage"><div className="chat-usage-grid"><div><span>今日请求</span><strong>{usage.today}</strong></div><div><span>总请求</span><strong>{usage.total}</strong></div></div>{usage.inputTokens || usage.outputTokens ? <div className="chat-usage-grid"><div><span>今日输入 tokens</span><strong>{usage.inputTokens}</strong></div><div><span>今日输出 tokens</span><strong>{usage.outputTokens}</strong></div><div><span>今日总 tokens</span><strong>{usage.totalTokens}</strong></div></div> : <div className="chat-usage-empty"><strong>暂无 Token 数据</strong><p>第三方 API 未返回 usage 时不会估算或伪造统计。</p></div>}</div>}</aside></div> : null}
   </CodexShell>;
 }

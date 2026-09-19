@@ -3,7 +3,6 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { expect } = require('@playwright/test');
 
 const baseUrl = process.env.PREVIEW_BASE_URL;
-const secretSentinel = 'sk-workbench-browser-sentinel-9f7e';
 
 async function main() {
   const browser = await chromium.launch({ headless: true, args: ['--disable-gpu', '--num-raster-threads=1', '--renderer-process-limit=2'] });
@@ -46,6 +45,9 @@ async function main() {
   await context.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: baseUrl }]);
   const page = await context.newPage();
   const browserResponseBodies = [];
+  await page.route('**/api/plans/reminders', async route => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
+  });
   page.on('response', response => {
     const path = new URL(response.url()).pathname;
     if (path === '/__react/admin/chat' || path.startsWith('/api/chat/') || path.startsWith('/static/react/')) {
@@ -53,15 +55,18 @@ async function main() {
     }
   });
   let settings = {
-    base_url: 'https://api.example.test/v1',
+    // Native Gemini profiles do not have an OpenAI-compatible base URL. The
+    // chat model gate must use the server-side configured status, not base_url.
+    base_url: '',
+    protocol: 'gemini_native',
     temperature: 0.7,
     api_key_configured: true,
-    api_key_masked: 'sk-…1234',
   };
   const putBodies = [];
   let expectedReasoning = undefined;
   let expectedModel = 'gemini-3.8-flash-high';
   let modelLoads = 0;
+  let legacyChatTestCalls = 0;
   await page.route('**/api/chat/settings', async route => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify(settings) });
@@ -82,6 +87,7 @@ async function main() {
     ]) });
   });
   await page.route('**/api/chat/test', async route => {
+    legacyChatTestCalls += 1;
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ok: true, message: 'Connected', models_count: 2 }) });
   });
   await page.route('**/api/v1/admin/rules', async route => {
@@ -340,16 +346,19 @@ async function main() {
 
   await page.locator('button[aria-label="设置"]').click();
   await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
-  await expect(page.locator('#chat-api-key')).toHaveValue('');
-  await expect(page.locator('#chat-api-key')).toHaveAttribute('placeholder', 'sk-…1234');
-  await page.getByRole('button', { name: '刷新模型' }).click();
-  await expect(page.getByText('模型连接成功后会保存在当前会话的可用列表中')).toBeVisible();
+  await expect(page.locator('#chat-api-key, #chat-base-url')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '测试连接' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '刷新模型' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /服务中心.*API/ })).toHaveAttribute('href', '/admin/services?tab=ai');
+  await expect(page.getByRole('button', { name: '保存聊天参数' })).toBeVisible();
   await expect(page.getByLabel('上下文状态')).toContainText('未知 / 未知');
-  await page.locator('#chat-api-key').fill(secretSentinel);
-  await page.getByRole('button', { name: '保存设置' }).click();
+  await page.locator('#chat-temperature').fill('0.4');
+  await page.getByRole('button', { name: '保存聊天参数' }).click();
   await expect(page.getByText('设置已保存')).toBeVisible();
-  assert(putBodies.some(body => body.api_key === secretSentinel));
+  assert(putBodies.some(body => body.temperature === 0.4));
+  assert(putBodies.every(body => !Object.hasOwn(body, 'api_key') && !Object.hasOwn(body, 'base_url')));
   assert(putBodies.every(body => !Object.hasOwn(body, 'model') && !Object.hasOwn(body, 'reasoning_effort')));
+  assert.equal(legacyChatTestCalls, 0, 'API connection tests belong in Service Center');
   await page.locator('button[aria-label="关闭设置"]').click();
 
   const composer = page.locator('.chat-composer textarea');
@@ -396,17 +405,18 @@ async function main() {
   await expect(page.getByRole('button', { name: '停止' })).toBeVisible();
   await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('模型正在思考');
   await page.getByRole('button', { name: '停止' }).click();
-  await expect(page.getByRole('status')).toContainText('已停止生成');
+  await expect(page.locator('.chat-notice')).toContainText('已停止生成');
   const stored = await page.evaluate(key => localStorage.getItem(key), 'hy2.chat.sessions.v1');
-  assert(stored && !stored.includes('sk-…1234'));
+  assert(stored);
   const [html, localStorageValues, responseBodies] = await Promise.all([
     page.content(),
     page.evaluate(() => Object.keys(localStorage).map(key => localStorage.getItem(key))),
     Promise.all(browserResponseBodies),
   ]);
-  assert.equal(html.includes(secretSentinel), false);
-  assert.equal(JSON.stringify(localStorageValues).includes(secretSentinel), false);
-  assert.equal(responseBodies.join('\n').includes(secretSentinel), false);
+  assert.equal(html.includes('api_key_masked'), false);
+  assert.equal(JSON.stringify(localStorageValues).includes('Authorization'), false);
+  assert.equal(JSON.stringify(localStorageValues).includes('api_key'), false);
+  assert.equal(responseBodies.join('\n').includes('"api_key":'), false);
 
   await page.reload();
   await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SCROLL-CHECK');

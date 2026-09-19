@@ -43,11 +43,13 @@ class ChatUpstreamError(RuntimeError):
         status: int | None = None,
         *,
         retry_after: str | None = None,
+        code: str | None = None,
         reasoning_unsupported: bool = False,
         stream_options_unsupported: bool = False,
     ):
         self.status = status
         self.retry_after = retry_after
+        self.code = code
         self.reasoning_unsupported = reasoning_unsupported
         self.stream_options_unsupported = stream_options_unsupported
         super().__init__('chat upstream request failed')
@@ -454,7 +456,12 @@ def _normal_response_events(raw: bytes | None) -> list[dict[str, object]]:
 
 
 def _stream_error_event(error: ChatUpstreamError) -> dict[str, object]:
-    if error.status in (401, 403):
+    if error.code in {
+        'authentication_failed', 'permission_denied', 'model_not_found',
+        'rate_limited', 'timeout', 'upstream_unavailable', 'streaming_unavailable',
+    }:
+        code = error.code
+    elif error.status in (401, 403):
         code = 'authentication_failed'
     elif error.status == 404:
         code = 'model_not_found'

@@ -4,6 +4,7 @@ import { Icon } from './icons';
 import { navigationGroups } from './navigation';
 import type { SessionStatus } from './session';
 import { LancoAgent } from '../features/agent/LancoAgent';
+import { PlanReminderCenter } from '../features/plans/PlanReminderCenter';
 
 export type CodexShellProps = {
   active: string;
@@ -147,6 +148,7 @@ export function CodexShell({ active, pageTitle, badge, children, subtitle, topba
         </main>
       </div>
     </div>
+    {authStatus === 'anonymous' || authStatus === 'unavailable' ? null : <PlanReminderCenter/>}
     {agentEnabled ? <LancoAgent /> : null}
   </>;
 }

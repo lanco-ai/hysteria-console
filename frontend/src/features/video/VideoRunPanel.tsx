@@ -13,5 +13,5 @@ export function VideoRunPanel({ runId, onRunChange }: { runId: string | null; on
     return () => { active = false; window.clearInterval(timer); };
   }, [runId, run?.state, onRunChange]);
   const stop = async () => { if (!runId) return; try { setRun(await cancelRun(runId)); } catch { /* preserve current state */ } };
-  return <section className="video-run-panel" aria-live="polite"><div><strong>当前任务</strong><span>{run?.state || '未运行'}</span></div>{run ? <button type="button" className="button danger" onClick={stop} disabled={run.state !== 'running'}>停止</button> : null}{run?.error ? <small>{run.error}</small> : null}</section>;
+  return <section className="video-run-panel" aria-live="polite"><div><strong>当前任务</strong><span>{run?.state || '未运行'}</span></div>{run ? <button type="button" className="btn btn-danger" onClick={stop} disabled={run.state !== 'running'}>停止</button> : null}{run?.error ? <small>{run.error}</small> : null}</section>;
 }

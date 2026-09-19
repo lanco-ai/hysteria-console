@@ -1,15 +1,30 @@
-export type VideoSettings = {
-  provider: string;
-  base_url: string;
-  api_key_configured: boolean;
-  api_key_masked: string;
-};
-
 export type VideoCapabilities = {
   image_models: string[];
   video_models: string[];
   first_last_frame: { supported: boolean; reason?: string | null };
   video_composition: { supported: boolean; reason?: string | null };
+};
+
+export type VideoAssistantShotDraft = {
+  title: string;
+  script: string;
+  shot_type: string;
+  character: string;
+  scene: string;
+  duration: number;
+  image_prompt: string;
+  motion_prompt: string;
+  dialogue: string;
+};
+
+export type VideoAssistantDraft = {
+  model: string;
+  service_name: string;
+  title: string;
+  rewritten_text: string;
+  style_prompt: string;
+  aspect_ratio: '16:9' | '9:16' | '1:1';
+  shots: VideoAssistantShotDraft[];
 };
 
 export type VideoWorkflow = {

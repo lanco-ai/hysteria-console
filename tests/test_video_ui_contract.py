@@ -11,7 +11,11 @@ def test_video_css_uses_existing_tokens_and_mobile_drawers():
     assert '--' in css
 
 
-def test_video_settings_never_renders_raw_key_or_local_storage():
-    source = (ROOT / 'frontend/src/features/video/VideoSettingsDrawer.tsx').read_text()
-    assert 'api_key_masked' in source
-    assert 'localStorage' not in source
+def test_video_provider_configuration_lives_in_service_center_and_assistant_only_drafts():
+    page = (ROOT / 'frontend/src/features/video/VideoPage.tsx').read_text()
+    assistant = (ROOT / 'frontend/src/features/video/VideoCreativeAssistant.tsx').read_text()
+    assert 'VideoSettingsDrawer' not in page
+    assert 'href="/admin/services?tab=ai"' in page
+    assert '不会自动生成图片或视频' in assistant
+    assert '应用到当前工作流' in assistant
+    assert 'localStorage' not in assistant

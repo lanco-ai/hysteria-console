@@ -1,6 +1,7 @@
 from web_api.video_models import ProviderJob, ProviderJobStatus, VideoSettings
 from web_api.video_provider import ProviderError
 from web_api.video_service import AssetStore, RunService, VideoValidationError, WorkflowStore
+import web_api.video_service as video_service
 
 
 class FakeProvider:
@@ -11,6 +12,7 @@ class FakeProvider:
         self.video_requests = []
         self.create_then_timeout = False
         self.image_done = False
+        self.job_poll_calls = 0
 
     def generate_image(self, request, settings):
         del settings
@@ -28,6 +30,7 @@ class FakeProvider:
 
     def get_job(self, job_id, settings):
         del settings
+        self.job_poll_calls += 1
         if job_id == 'image-job' and not self.image_done:
             return ProviderJobStatus(job_id, 'running')
         return ProviderJobStatus(job_id, 'succeeded', asset_url=f'https://cdn.test/{job_id}.mp4')
@@ -107,6 +110,58 @@ def test_submit_timeout_does_not_duplicate_paid_request(tmp_path):
     service.tick(run['id'])
     assert provider.image_calls == 1
     assert service.get(run['id'])['node_status']['image']['state'] == 'running'
+
+
+def test_run_expires_after_bounded_total_duration_without_another_provider_poll(tmp_path):
+    workflows = workflow_store(tmp_path)
+    saved = workflows.save({'title': 'bounded', 'nodes': [
+        {'id': 'prompt', 'type': 'prompt', 'data': {'text': 'a lake'}},
+        {'id': 'image', 'type': 'text_to_image', 'data': {'model': 'image'}},
+    ], 'edges': [
+        {'source': 'prompt', 'sourceHandle': 'text', 'target': 'image', 'targetHandle': 'prompt'},
+    ]})
+    provider = FakeProvider()
+    service = RunService(
+        workflows, VideoSettings('https://provider.test/v1', 'secret'),
+        provider, tmp_path / 'runs.json',
+    )
+    run = service.submit(saved['id'])
+    service.tick(run['id'])
+    assert provider.job_poll_calls == 0
+    run['created_at'] -= 24 * 60 * 60
+    service._replace(run)
+
+    result = service.tick(run['id'])
+    assert result['state'] == 'failed'
+    assert result['error'] == 'run_timeout'
+    assert provider.job_poll_calls == 0
+
+
+def test_run_update_reads_latest_records_inside_the_file_lock(tmp_path, monkeypatch):
+    path = tmp_path / 'runs.json'
+    existing = {'id': 'existing-run', 'state': 'queued'}
+    concurrent = {'id': 'concurrent-run', 'state': 'queued'}
+    video_service.state_store.save_json(path, [existing])
+
+    class ConcurrentWriter:
+        def __enter__(self):
+            video_service.state_store.save_json(path, [existing, concurrent])
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(video_service.state_store, 'file_lock', lambda _path: ConcurrentWriter())
+    service = RunService(
+        workflow_store(tmp_path), VideoSettings('https://provider.test/v1', 'secret'),
+        FakeProvider(), path,
+    )
+
+    service._replace({'id': 'new-run', 'state': 'queued'})
+
+    assert {record['id'] for record in service._records()} == {
+        'existing-run', 'concurrent-run', 'new-run',
+    }
 
 
 def test_classified_provider_error_fails_run_without_retrying(tmp_path):

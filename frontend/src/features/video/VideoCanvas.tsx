@@ -6,7 +6,7 @@ import { VideoNode } from './VideoNode';
 export type VideoCanvasProps = {
   nodes: Node[];
   edges: Edge[];
-  onNodesChange: (nodes: Node[]) => void;
+  onNodesChange: (nodes: Node[], changes: NodeChange[]) => void;
   onEdgesChange: (edges: Edge[]) => void;
   onConnect: (connection: Connection) => void;
   onSelect?: (node: Node | null) => void;
@@ -27,7 +27,7 @@ const palette = [
 export function VideoCanvas({ nodes, edges, onNodesChange, onEdgesChange, onConnect, onSelect, onDropNode, isValidConnection, disabledNodeTypes = [] }: VideoCanvasProps) {
   const nodeTypes = { prompt: VideoNode, image_asset: VideoNode, text_to_image: VideoNode, image_to_video: VideoNode, first_last_frame_video: VideoNode, preview: VideoNode };
   const flow = useRef<ReactFlowInstance | null>(null);
-  const handleNodes = useCallback((changes: NodeChange[]) => onNodesChange(applyNodeChanges(changes, nodes)), [nodes, onNodesChange]);
+  const handleNodes = useCallback((changes: NodeChange[]) => onNodesChange(applyNodeChanges(changes, nodes), changes), [nodes, onNodesChange]);
   const handleEdges = useCallback((changes: EdgeChange[]) => onEdgesChange(applyEdgeChanges(changes, edges)), [edges, onEdgesChange]);
   const handleConnect = useCallback((connection: Connection) => onConnect(connection), [onConnect]);
   const handleDragOver = useCallback((event: React.DragEvent) => {

@@ -9,6 +9,10 @@ from web_api.services import LoginRequired
 
 class _Module:
     PASSWORD_MAX_LENGTH = 128
+    # Agent routes are registered by create_app and only need the configured
+    # users-file path at construction time. These document tests do not invoke
+    # the agent API or access this inert path.
+    USERS_FILE = '/tmp/hy2-document-test-users.json'
 
     @staticmethod
     def configured_public_host(_raw):

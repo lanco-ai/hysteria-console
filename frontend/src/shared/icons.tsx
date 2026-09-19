@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 
-export type IconName = 'dashboard' | 'traffic' | 'pulse' | 'logs' | 'lock' | 'config' | 'rules' | 'logout' | 'copy' | 'open' | 'chat' | 'video';
+export type IconName = 'dashboard' | 'traffic' | 'pulse' | 'logs' | 'lock' | 'config' | 'rules' | 'logout' | 'copy' | 'open' | 'chat' | 'video' | 'calendar';
 
 const shared = {
   viewBox: '0 0 24 24',
@@ -18,6 +18,7 @@ export function Icon({ name }: { name: IconName }): ReactElement {
   if (name === 'open') return <svg {...shared}><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>;
   if (name === 'chat') return <svg {...shared}><path d="M20 11.5a7.5 7.5 0 0 1-8 7.5 8.7 8.7 0 0 1-3.2-.6L4 20l1.3-3.5A7.1 7.1 0 0 1 4.5 12 7.5 7.5 0 0 1 12 4.5a7.5 7.5 0 0 1 8 7z"/><path d="M8 11h.01M12 11h.01M16 11h.01"/></svg>;
   if (name === 'video') return <svg {...shared}><rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3z"/></svg>;
+  if (name === 'calendar') return <svg {...shared}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/><path d="m8 15 2 2 5-5"/></svg>;
   if (name === 'dashboard') {
     return <svg {...shared}><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>;
   }

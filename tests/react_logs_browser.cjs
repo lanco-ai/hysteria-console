@@ -10,19 +10,23 @@ const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
 
 const columns = ['时间', '操作人', 'IP', '操作', '目标', '日期', '流量变化'];
 const navigation = [
-  ['概览与用量', null],
+  ['工作台', null],
   ['总览', '/admin'],
+  ['今日计划', '/admin/plans'],
+  ['AI 对话', '/admin/chat'],
+  ['AI 视频', '/admin/video'],
+  ['网络管理', null],
   ['流量分析', '/admin/usage'],
-  ['运行维护', null],
-  ['健康状态', '/admin/health'],
-  ['事故处理', '/admin/incidents'],
-  ['清零日志', '/admin/logs'],
-  ['网络配置', null],
   ['模板配置', '/admin/config'],
   ['路由规则', '/admin/rules'],
   ['家宽出口', '/admin/landing-egresses'],
+  ['运维管理', null],
+  ['健康状态', '/admin/health'],
+  ['事故处理', '/admin/incidents'],
+  ['清零日志', '/admin/logs'],
+  ['服务接入', null],
+  ['服务中心', '/admin/services'],
   ['设置', '/admin/settings'],
-  ['AI 对话', '/admin/chat'],
 ];
 
 function routeOf(url) {

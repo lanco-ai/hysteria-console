@@ -113,12 +113,13 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     assert 'className="main"' not in adapter
     assert "navigationGroups" in navigation
     assert "placement: 'bottom'" in navigation
-    for label in ("概览与用量", "运行维护", "网络配置"):
+    for label in ("工作台", "网络管理", "运维管理", "服务接入"):
         assert label in navigation
     for href in (
         "/admin", "/admin/usage", "/admin/health", "/admin/incidents",
         "/admin/logs", "/admin/settings", "/admin/config", "/admin/rules",
-        "/admin/landing-egresses", "/admin/chat",
+        "/admin/landing-egresses", "/admin/chat", "/admin/plans",
+        "/admin/video", "/admin/services",
     ):
         assert href in navigation
 

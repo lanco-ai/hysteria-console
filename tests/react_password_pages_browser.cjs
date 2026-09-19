@@ -367,7 +367,11 @@ async function verifyAdminValidationAndStrictAccessCodes(browser) {
   await goto(page, '/__react/admin/settings?msg=err:%3Cimg%20src=x%20onerror=alert(1)%3E');
   await page.getByText('admin', { exact: true }).waitFor();
   assert.equal(await page.getByText('<img src=x onerror=alert(1)>', { exact: true }).count(), 1);
-  assert.equal(await page.locator('img').count(), 0, 'unknown query text is escaped by React');
+  assert.equal(
+    await page.locator('img[src="x"], img[onerror]').count(),
+    0,
+    'unknown query text is escaped without creating the injected image',
+  );
   for (const [name, value] of [['current', 'wrong-current'], ['new', 'too-long-password'], ['confirm', 'too-long-password']]) await page.locator(`[name="${name}"]`).fill(value);
   await page.getByRole('button', { name: '更新密码' }).click();
   await page.getByText('密码不能超过 256 位', { exact: true }).waitFor();

@@ -54,6 +54,7 @@ def test_react_server_uses_authoritative_service_and_build_assets():
     source = (ROOT / 'hysteria/react_server.py').read_text(encoding='utf-8')
     assert 'LegacyPanelServices(subscription_service)' in source
     assert 'react_dist=REACT_DIST' in source
+    assert 'video_scheduler_enabled=True' in source
     assert '_REACT_DIST_CANDIDATES' in source
     assert 'ThreadingHTTPServer' not in source
     assert "'panel' / 'current'" in source

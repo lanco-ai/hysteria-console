@@ -3,6 +3,7 @@ import { AdminShell } from '../../shared/AdminShell';
 import { Icon } from '../../shared/icons';
 import { ServiceEditor, type Bookmark } from './ServiceEditor';
 import { ServiceModels } from './ServiceModels';
+import { AIServiceSettings } from './AIServiceSettings';
 import './services.css';
 
 type Catalog = { items: Bookmark[]; revision: string };
@@ -10,9 +11,9 @@ const endpoint = '/api/v1/admin/services';
 const groupOf = (item: Bookmark) => item.category || '常用网站';
 const originOf = (url: string) => { try { return new URL(url).origin; } catch { return url; } };
 
-function ServiceGlyph({ name }: { name: 'search' | 'refresh' | 'delete' | 'clock' | 'cpu' | 'memory' }) {
+function ServiceGlyph({ name }: { name: 'search' | 'refresh' | 'delete' }) {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {name === 'search' ? <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></> : name === 'refresh' ? <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.1 8a8 8 0 0 1 13-3L20 7M4 17l1.9 2a8 8 0 0 0 13-3"/></> : name === 'delete' ? <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></> : name === 'clock' ? <><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></> : name === 'cpu' ? <><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/><rect x="10" y="10" width="4" height="4"/></> : <><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 4 16 4 16 0V5M4 12c0 4 16 4 16 0"/></>}
+    {name === 'search' ? <><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></> : name === 'refresh' ? <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.1 8a8 8 0 0 1 13-3L20 7M4 17l1.9 2a8 8 0 0 0 13-3"/></> : <><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7"/></>}
   </svg>;
 }
 
@@ -25,6 +26,8 @@ async function request(options?: RequestInit): Promise<Catalog> {
 }
 
 export function ServicesPage({ publicHost }: { publicHost: string }) {
+  const tabFromLocation = () => new URLSearchParams(window.location.search).get('tab') === 'websites' ? 'websites' : 'ai';
+  const [activeTab, setActiveTab] = useState<'ai' | 'websites'>(tabFromLocation);
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [draft, setDraft] = useState<Bookmark | null>(null);
   const [search, setSearch] = useState('');
@@ -49,6 +52,18 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
     window.addEventListener('keydown', focusSearch);
     return () => window.removeEventListener('keydown', focusSearch);
   }, []);
+  useEffect(() => {
+    const onPopState = () => setActiveTab(tabFromLocation());
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+  const selectTab = (tab: 'ai' | 'websites') => {
+    setActiveTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === 'ai') url.searchParams.set('tab', 'ai');
+    else url.searchParams.set('tab', 'websites');
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+  };
   const reload = async () => {
     setError(''); setBusy(true);
     try { setCatalog(await request()); setFeedback('收藏列表已刷新'); } catch (value) { setError(value instanceof Error ? value.message : '读取失败'); }
@@ -90,6 +105,12 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
 
   return <AdminShell active="services" pageTitle="服务中心" badge={publicHost}>
     <div className="services-page">
+      <div className="services-page-tabs" role="tablist" aria-label="服务中心分类">
+        <button type="button" role="tab" aria-selected={activeTab === 'ai'} onClick={() => selectTab('ai')}>API 接入</button>
+        <button type="button" role="tab" aria-selected={activeTab === 'websites'} onClick={() => selectTab('websites')}>网站收藏</button>
+      </div>
+      {activeTab === 'ai' ? <AIServiceSettings /> : null}
+      {activeTab === 'websites' ? <>
       {error && !draft ? <div className="err" role="alert">{error} <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void reload()}>刷新列表</button></div> : null}
       <p className="services-feedback" role="status">{feedback}</p>
       {draft ? <ServiceEditor key={draft.id} draft={draft} existing={!!catalog?.items.some(item => item.id === draft.id)} busy={busy} error={error} onChange={editField} onSubmit={event => void save(event)} onClose={() => { setDraft(null); setError(''); }}/>: null}
@@ -106,9 +127,8 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
         {deleting === item.id ? <div className="service-delete" role="group" aria-label={`删除 ${item.name}`}><span>从收藏中移除？</span><button className="btn btn-sm" type="button" disabled={busy} onClick={() => void remove(item.id)}>确认删除</button><button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => setDeleting('')}>取消</button></div> : null}
       </article>)}</div>
       {!catalog && !error ? <p>正在读取收藏…</p> : catalog && !items.length ? <div className="services-empty">{catalog.items.length ? '没有匹配的网站，试试其他搜索词或分组。' : '还没有收藏，添加第一个常用网站吧。'}</div> : null}
-      <section className="services-monitor"><div className="services-monitor-heading"><span className="service-monogram" aria-hidden="true"><Icon name="traffic"/></span><div><h3>服务器监控 <span>尚未接入</span></h3><p>已预留监控区域，接入后可查看服务器运行状态、响应时间与资源用量。</p></div></div><div className="services-metrics">{[{ label: '在线状态', icon: 'pulse' }, { label: '响应时间', icon: 'clock' }, { label: 'CPU 使用率', icon: 'cpu' }, { label: '内存使用率', icon: 'memory' }].map(metric => <div className="services-metric" key={metric.label}>{metric.icon === 'pulse' ? <Icon name="pulse"/> : <ServiceGlyph name={metric.icon as 'clock' | 'cpu' | 'memory'}/>}<div><span>{metric.label}</span><strong>—</strong><small>尚未接入</small></div></div>)}</div></section>
       <div className="services-footnote"><p>收藏保存在服务器，仅管理员可见。内网网址需要你的设备处于对应网络；各服务仍使用自己的登录方式。</p><span>共 {catalog?.items.length ?? 0} 个服务</span></div>
-
+      </> : null}
     </div>
   </AdminShell>;
 }

@@ -3,6 +3,7 @@
 import math
 import json
 import base64
+import ipaddress
 import uuid
 import os
 import tempfile
@@ -26,6 +27,10 @@ class VideoValidationError(ValueError):
     pass
 
 
+class VideoStorageFullError(VideoValidationError):
+    pass
+
+
 def _classified_provider_error(exc: Exception) -> str | None:
     """Return the adapter's sanitized error code, if this is not retryable."""
     code = getattr(exc, 'code', None)
@@ -44,6 +49,15 @@ DEFAULT_WORKFLOWS_PATH = Path('/root/hysteria/state/video/workflows.json')
 DEFAULT_ASSETS_PATH = Path('/root/hysteria/state/video/assets')
 ALLOWED_ASSET_TYPES = {'image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/webm'}
 MAX_PROVIDER_IMAGE_BYTES = 8 * 1024 * 1024
+MAX_RUN_DURATION_SECONDS = 60 * 60
+MAX_ASSET_STORAGE_BYTES = 256 * 1024 * 1024
+
+
+def _ensure_private_directory(path: str | Path) -> Path:
+    directory = Path(path)
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    directory.chmod(0o700)
+    return directory
 
 
 def mask_video_key(value: str) -> str:
@@ -62,6 +76,18 @@ def _validate(base_url: str, api_key: str, provider: str) -> None:
         raise VideoSettingsError('base_url must be an http(s) URL')
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise VideoSettingsError('base_url contains unsupported components')
+    try:
+        parsed.port
+    except ValueError as exc:
+        raise VideoSettingsError('base_url has an invalid port') from exc
+    if parsed.scheme == 'http':
+        hostname = parsed.hostname
+        try:
+            is_loopback = ipaddress.ip_address(hostname or '').is_loopback
+        except ValueError:
+            is_loopback = (hostname or '').lower().rstrip('.') == 'localhost'
+        if not is_loopback:
+            raise VideoSettingsError('base_url must use HTTPS or loopback HTTP')
     if provider != 'grok':
         raise VideoSettingsError('unsupported provider')
     if not api_key or len(api_key) > 2048:
@@ -85,6 +111,7 @@ def _coerce(raw: object) -> VideoSettings:
 class VideoSettingsStore:
     def __init__(self, path: str | Path = DEFAULT_VIDEO_SETTINGS_PATH):
         self.path = Path(path)
+        _ensure_private_directory(self.path.parent)
 
     def read(self) -> VideoSettings:
         try:
@@ -192,6 +219,7 @@ def validate_workflow(nodes, edges) -> ValidatedWorkflow:
 class WorkflowStore:
     def __init__(self, path: str | Path = DEFAULT_WORKFLOWS_PATH):
         self.path = Path(path)
+        _ensure_private_directory(self.path.parent)
 
     def _read_all(self):
         try:
@@ -241,11 +269,20 @@ class WorkflowStore:
 
 
 class AssetStore:
-    def __init__(self, root: str | Path = DEFAULT_ASSETS_PATH, *, max_bytes: int = 20 * 1024 * 1024):
+    def __init__(
+        self,
+        root: str | Path = DEFAULT_ASSETS_PATH,
+        *,
+        max_bytes: int = 20 * 1024 * 1024,
+        max_total_bytes: int = MAX_ASSET_STORAGE_BYTES,
+    ):
         self.root = Path(root)
         self.max_bytes = int(max_bytes)
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.root.chmod(0o700)
+        self.max_total_bytes = int(max_total_bytes)
+        if self.max_bytes <= 0 or self.max_total_bytes <= 0:
+            raise ValueError('asset storage limits must be positive')
+        _ensure_private_directory(self.root.parent)
+        _ensure_private_directory(self.root)
         self.metadata_path = self.root / 'index.json'
 
     def _metadata(self):
@@ -263,22 +300,36 @@ class AssetStore:
         asset_id = uuid.uuid4().hex
         suffix = Path(name).suffix.lower()
         target = self.root / f'{asset_id}{suffix}'
-        fd, temp_name = tempfile.mkstemp(prefix=asset_id + '.', dir=self.root)
-        try:
-            with os.fdopen(fd, 'wb') as handle:
-                handle.write(body)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temp_name, target)
-        finally:
-            if os.path.exists(temp_name):
-                os.unlink(temp_name)
         metadata = {'id': asset_id, 'filename': name, 'content_type': content_type, 'size': len(body)}
         lock_path = self.metadata_path.with_name(self.metadata_path.name + '.lock')
         with state_store.file_lock(lock_path):
             records = self._metadata()
+            used_bytes = 0
+            for record in records:
+                if not isinstance(record, dict):
+                    raise VideoValidationError('invalid asset storage')
+                size = record.get('size')
+                if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+                    raise VideoValidationError('invalid asset storage')
+                used_bytes += size
+            if used_bytes + len(body) > self.max_total_bytes:
+                raise VideoStorageFullError('asset storage is full')
+            fd, temp_name = tempfile.mkstemp(prefix=asset_id + '.', dir=self.root)
+            try:
+                with os.fdopen(fd, 'wb') as handle:
+                    handle.write(body)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temp_name, target)
+            finally:
+                if os.path.exists(temp_name):
+                    os.unlink(temp_name)
             records.insert(0, metadata)
-            state_store.save_json(self.metadata_path, records)
+            try:
+                state_store.save_json(self.metadata_path, records)
+            except Exception:
+                target.unlink(missing_ok=True)
+                raise
             self.metadata_path.chmod(0o600)
         return metadata
 
@@ -330,6 +381,7 @@ class RunService:
         self.settings = settings
         self.provider = provider
         self.path = Path(path)
+        _ensure_private_directory(self.path.parent)
         self.asset_store = asset_store
 
     def _records(self):
@@ -343,11 +395,11 @@ class RunService:
         self.path.chmod(0o600)
 
     def _replace(self, run):
-        records = self._records()
-        records = [item for item in records if item.get('id') != run['id']]
-        records.insert(0, run)
         lock_path = self.path.with_name(self.path.name + '.lock')
         with state_store.file_lock(lock_path):
+            records = self._records()
+            records = [item for item in records if item.get('id') != run['id']]
+            records.insert(0, run)
             self._write(records)
 
     def get(self, run_id):
@@ -463,6 +515,15 @@ class RunService:
         if run is None:
             raise VideoValidationError('run not found')
         if run['state'] in {'succeeded', 'failed', 'cancelled', 'cancel_unsupported'}:
+            return run
+        created_at = run.get('created_at')
+        if isinstance(created_at, (int, float)) and time.time() - created_at > MAX_RUN_DURATION_SECONDS:
+            for status in run.get('node_status', {}).values():
+                if isinstance(status, dict) and status.get('state') in {'queued', 'running'}:
+                    status['state'] = 'failed'
+            run['state'] = 'failed'
+            run['error'] = 'run_timeout'
+            self._replace(run)
             return run
         run['state'] = 'running'
         self._mark_ready_sources(run)

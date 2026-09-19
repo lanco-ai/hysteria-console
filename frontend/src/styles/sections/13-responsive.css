@@ -53,7 +53,22 @@
     min-height: 240px;
   }
 
-  /* Shell responsive */
+  .users-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .users-toolbar {
+    width: 100%;
+  }
+
+  .user-filter-input {
+    width: 100%;
+  }
+}
+
+/* Match CodexShell's mobile breakpoint on every administrator page. */
+@media (max-width: 880px) {
   .app {
     grid-template-columns: 1fr;
   }
@@ -88,18 +103,6 @@
     padding: 24px 16px 60px;
   }
 
-  .users-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .users-toolbar {
-    width: 100%;
-  }
-
-  .user-filter-input {
-    width: 100%;
-  }
 }
 
 @media (max-width: 480px) {

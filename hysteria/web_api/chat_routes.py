@@ -69,6 +69,12 @@ def _settings_error_code(error: ChatSettingsError) -> str:
 
 
 def _connection_error_code(error: ChatUpstreamError) -> str:
+    if error.code in {
+        'authentication_failed', 'permission_denied', 'model_not_found',
+        'models_endpoint_unavailable', 'rate_limited', 'timeout',
+        'upstream_unavailable', 'streaming_unavailable',
+    }:
+        return error.code
     if error.status in (401, 403):
         return 'authentication_failed'
     if error.status == 404:
@@ -95,16 +101,22 @@ def register_chat_routes(app, services, dispatch, *, dispatch_stream=None, setti
 
     def complete(*, headers, path, messages, model, reasoning_effort):
         del headers, path
+        if callable(getattr(store, 'complete', None)):
+            return store.complete(messages, model=model, reasoning_effort=reasoning_effort)
         settings = store.read()
         return forward_chat(settings, messages, model=model, reasoning_effort=reasoning_effort)
 
     def complete_stream(*, headers, path, messages, model, reasoning_effort):
         del headers, path
+        if callable(getattr(store, 'stream', None)):
+            return store.stream(messages, model=model, reasoning_effort=reasoning_effort)
         settings = store.read()
         return forward_chat_stream(settings, messages, model=model, reasoning_effort=reasoning_effort)
 
     def models(*, headers, path):
         del headers, path
+        if callable(getattr(store, 'models', None)):
+            return store.models()
         settings = store.read()
         return list_chat_models(settings)
 

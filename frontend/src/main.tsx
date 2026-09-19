@@ -18,6 +18,7 @@ import { OverviewPage } from './features/network-admin/overview/OverviewPage';
 import { ChatPage } from './features/chat/ChatPage';
 import { ServicesPage } from './features/services/ServicesPage';
 import { VideoPage } from './features/video/VideoPage';
+import { PlansPage } from './features/plans/PlansPage';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
@@ -32,6 +33,7 @@ const LOGIN_ROUTES = new Set(['/auth', '/login', '/user/login']);
 const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
   '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/video', '/admin/services',
+  '/admin/plans',
 ]);
 const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter']);
 const REACT_DOCUMENT_ROUTES = new Set([
@@ -55,7 +57,8 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
   '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
   '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
-  '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell page-workbench', shell: true },
+  '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell', shell: true },
+  '/admin/plans': { title: '今日计划', bodyClass: 'has-shell', shell: true },
   '/user/change-password': { title: '修改面板密码', bodyClass: 'page-auth' },
   '/user/panel': { title: '用户面板 · Hysteria', bodyClass: '' },
   '/logout': { title: '确认退出', bodyClass: '' },
@@ -153,6 +156,7 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
   '/admin/rules': { active: 'rules', title: '路由规则' },
   '/admin/landing-egresses': { active: 'landing-egresses', title: '家宽出口' },
   '/admin/services': { active: 'services', title: '服务中心' },
+  '/admin/plans': { active: 'plans', title: '今日计划' },
   '/admin/video': { active: 'video', title: 'AI 视频' },
 };
 
@@ -179,6 +183,7 @@ function AdminRoute({ route, publicHost, authenticated, status }: { route: strin
   if (route === '/admin/config') return <ConfigPage publicHost={publicHost}/>;
   if (route === '/admin/rules') return <RulesPage publicHost={publicHost}/>;
   if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
+  if (route === '/admin/plans') return <PlansPage/>;
   if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
   return <LandingPage publicHost={publicHost}/>;
 }

@@ -31,6 +31,7 @@ async function setup(browser, baseline, { clock = false } = {}) {
   let data = copy(baseline), reads = 0;
   await page.route(boot, route => { reads++; return reply(route, data); });
   await page.route(pollUrl, route => reply(route, counters(data)));
+  await page.route('**/api/plans/reminders', route => reply(route, { items: [] }));
   await page.route('**/api/v1/admin/reload-status', route => reply(route, { pending: false, xray: false, tuic: false }));
   await page.goto(`${baseUrl}/__react/admin`);
   await expect(row(page).getByRole('button', { name: '编辑套餐' })).toBeEnabled();

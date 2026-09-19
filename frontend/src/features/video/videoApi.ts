@@ -1,4 +1,4 @@
-import type { VideoAsset, VideoCapabilities, VideoRun, VideoSettings, VideoWorkflow } from './videoTypes';
+import type { VideoAsset, VideoAssistantDraft, VideoCapabilities, VideoRun, VideoWorkflow } from './videoTypes';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', ...init });
@@ -8,14 +8,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-export const loadVideoSettings = () => request<VideoSettings>('/api/video/settings');
-export const saveVideoSettings = (values: { baseUrl: string; apiKey?: string; provider?: string }) => request<VideoSettings>('/api/video/settings', {
-  method: 'PUT',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ base_url: values.baseUrl, ...(values.apiKey ? { api_key: values.apiKey } : {}), ...(values.provider ? { provider: values.provider } : {}) }),
-});
-export const testVideoConnection = () => request<{ ok: boolean; models_count: number }>('/api/video/connection/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
 export const loadVideoCapabilities = () => request<VideoCapabilities>('/api/video/capabilities');
+export const draftVideoStoryboard = (values: { idea: string; style_prompt: string; aspect_ratio: '9:16' | '16:9' | '1:1'; shot_count: number; shot_duration: number }) => request<VideoAssistantDraft>('/api/video/assistant/draft', {
+  method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values),
+});
 export const loadWorkflows = async () => (await request<{ workflows: VideoWorkflow[] }>('/api/video/workflows')).workflows;
 export const loadVideoRuns = async () => {
   const payload = await request<{ runs?: VideoRun[] }>('/api/video/runs');
