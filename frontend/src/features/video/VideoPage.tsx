@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactElement } from 'react';
 import type { Connection, Edge, Node } from '@xyflow/react';
 import { CodexShell } from '../../shared/CodexShell';
-import { createRun, loadVideoCapabilities, loadWorkflows, saveWorkflow, uploadAsset } from './videoApi';
+import { createRun, loadVideoCapabilities, loadVideoRuns, loadWorkflows, saveWorkflow, uploadAsset } from './videoApi';
 import { VideoRunPanel } from './VideoRunPanel';
 import { VideoSettingsDrawer } from './VideoSettingsDrawer';
 import { VIDEO_TEMPLATES, type VideoTemplate } from './VideoTemplates';
@@ -115,6 +115,8 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
+  const [runHistory, setRunHistory] = useState<VideoRun[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [message, setMessage] = useState('先整理故事和分镜，再生成素材');
 
@@ -125,8 +127,17 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
     catch { setCapabilities(null); }
   }, []);
 
+  const refreshRunHistory = useCallback(async () => {
+    try {
+      const runs = await loadVideoRuns();
+      setRunHistory([...runs].sort((left, right) => (right.created_at || 0) - (left.created_at || 0)).slice(0, 30));
+    } catch {
+      setRunHistory([]);
+    }
+  }, []);
+
   useEffect(() => {
-    void Promise.allSettled([loadWorkflows(), loadVideoCapabilities()]).then(([workflowResult, capabilityResult]) => {
+    void Promise.allSettled([loadWorkflows(), loadVideoCapabilities(), loadVideoRuns()]).then(([workflowResult, capabilityResult, historyResult]) => {
       if (workflowResult.status === 'fulfilled') {
         setWorkflows(workflowResult.value);
         const first = workflowResult.value[0];
@@ -137,8 +148,13 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
         }
       }
       if (capabilityResult.status === 'fulfilled') setCapabilities(capabilityResult.value);
+      if (historyResult.status === 'fulfilled') setRunHistory([...historyResult.value].sort((left, right) => (right.created_at || 0) - (left.created_at || 0)).slice(0, 30));
     });
   }, []);
+
+  useEffect(() => {
+    if (runId) void refreshRunHistory();
+  }, [refreshRunHistory, runId]);
 
   const updateStoryboard = useCallback((next: Storyboard) => {
     setStoryboard(next);
@@ -317,14 +333,17 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   const inspectorModelOptions = selectedNode?.type === 'text_to_image'
     ? [...new Set([String(inspectorData.model || ''), ...(capabilities?.image_models || [])].filter(Boolean))]
     : [...new Set([String(inspectorData.model || ''), ...(capabilities?.video_models || [])].filter(Boolean))];
+  const formatRunTime = (timestamp?: number) => timestamp ? new Date(timestamp * 1000).toLocaleString() : '时间未知';
+  const runLabel = (run: VideoRun) => run.shot_id ? `分镜 ${run.shot_id}` : '整条工作流';
 
   return <CodexShell active="video" pageTitle="AI 视频" authStatus="authenticated" subtitle="漫剧分镜工作台">
     <section className="video-workspace video-storyboard-workspace">
-      <header className="video-toolbar"><div><h2>AI 漫剧分镜</h2><p>{message}</p></div><div className="video-toolbar-actions"><label className="video-workflow-select">作品<select value={workflowId || ''} onChange={event => { const item = workflows.find(workflow => workflow.id === event.target.value); if (item) selectWorkflow(item); }}><option value="">新作品</option>{workflows.map(item => <option key={item.id} value={item.id}>{item.title || item.id.slice(0, 8)}</option>)}</select></label><button type="button" className="button ghost" onClick={() => setSettingsOpen(true)}>API 设置</button></div></header>
+      <header className="video-toolbar"><div><h2>AI 漫剧分镜</h2><p>{message}</p></div><div className="video-toolbar-actions"><label className="video-workflow-select">作品<select value={workflowId || ''} onChange={event => { const item = workflows.find(workflow => workflow.id === event.target.value); if (item) selectWorkflow(item); }}><option value="">新作品</option>{workflows.map(item => <option key={item.id} value={item.id}>{item.title || item.id.slice(0, 8)}</option>)}</select></label><button type="button" className="button ghost" onClick={() => setHistoryOpen(true)}>任务记录</button><button type="button" className="button ghost" onClick={() => setSettingsOpen(true)}>API 设置</button></div></header>
       <VideoStoryboard storyboard={storyboard} capabilities={capabilities} saveState={saveState} busy={busy} onChange={updateStoryboard} onSave={() => { void save(); }} onRunShot={shot => { void runShot(shot); }} onUploadImage={(shot, file) => { void uploadImage(shot, file); }} onRunAll={() => { void runAll(); }} onOpenCanvas={() => setCanvasOpen(true)} />
       <VideoRunPanel runId={runId} onRunChange={handleRunUpdate} />
       <footer className="video-run-status"><span>编辑分镜不会自动产生费用；提交后可在任务面板查看状态。</span></footer>
     </section>
+    {historyOpen ? <div className="video-history-layer" role="dialog" aria-modal="true" aria-label="任务记录" onClick={event => { if (event.target === event.currentTarget) setHistoryOpen(false); }}><aside className="video-run-history"><header><div><strong>任务记录</strong><small>最近提交的工作流运行</small></div><button type="button" className="button ghost" onClick={() => setHistoryOpen(false)}>关闭</button></header><div className="video-run-history-list">{runHistory.length ? runHistory.map(run => <button key={run.id} type="button" className="video-run-history-item" onClick={() => { setRunId(run.id); setHistoryOpen(false); }}><span><strong>{runLabel(run)}</strong><small>{formatRunTime(run.created_at)}</small></span><em data-state={run.state}>{run.state}</em></button>) : <p className="video-history-empty">暂无任务记录</p>}</div></aside></div> : null}
     {canvasOpen ? <div className="video-canvas-layer" role="dialog" aria-modal="true"><div className="video-canvas-dialog"><header><div><strong>工作流画布</strong><small>节点可拖动、连线，运行前请确认输入完整</small></div><div className="video-canvas-header-actions"><label className="video-template-select">模板<select defaultValue="" onChange={event => { const template = VIDEO_TEMPLATES.find(item => item.id === event.target.value); if (template) applyTemplate(template); }}><option value="">选择模板…</option>{VIDEO_TEMPLATES.map(template => <option key={template.id} value={template.id}>{template.title}</option>)}</select></label><button type="button" className="button secondary" onClick={() => { void runCanvas(); }} disabled={busy}>运行画布</button><button type="button" className="button ghost" onClick={() => setCanvasOpen(false)}>关闭</button></div></header><div className="video-canvas-editor"><Suspense fallback={<div className="video-canvas-loading">正在加载画布…</div>}><VideoCanvas nodes={nodes} edges={edges} onNodesChange={updateCanvasNodes} onEdgesChange={next => { setEdges(next); setSaveState('dirty'); }} onConnect={connect} isValidConnection={connection => validCanvasConnection(connection, nodes, edges)} onSelect={node => setSelectedNodeId(node?.id || null)} onDropNode={addCanvasNode} /></Suspense><aside className="video-node-inspector" aria-label="节点属性"><div className="video-canvas-panel-heading"><strong>节点属性</strong><small>{selectedNode ? selectedNode.type : '未选择节点'}</small></div>{selectedNode ? <><label>显示名称<input value={String(inspectorData.label || '')} onChange={event => updateSelectedNode({ label: event.target.value })} placeholder="节点名称" /></label>{selectedNode.type === 'prompt' ? <label>文本<textarea value={String(inspectorData.text || '')} onChange={event => updateSelectedNode({ text: event.target.value })} rows={7} placeholder="输入提示词…" /></label> : null}{selectedNode.type === 'image_asset' ? <p className="video-inspector-note">请在分镜卡片中上传图片，再将素材节点连接到视频节点。</p> : null}{selectedNode.type !== 'prompt' && selectedNode.type !== 'image_asset' && selectedNode.type !== 'preview' ? <><label>模型{inspectorModelOptions.length ? <select value={String(inspectorData.model || '')} onChange={event => updateSelectedNode({ model: event.target.value })}>{inspectorModelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select> : <input value={String(inspectorData.model || '')} onChange={event => updateSelectedNode({ model: event.target.value })} placeholder="模型 ID" />}</label><label>提示词<textarea value={String(inspectorData.prompt || '')} onChange={event => updateSelectedNode({ prompt: event.target.value })} rows={5} placeholder="描述画面或运动…" /></label><label>画幅<select value={String(inspectorData.aspect_ratio || storyboard.aspect_ratio)} onChange={event => updateSelectedNode({ aspect_ratio: event.target.value })}><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option></select></label><label>时长（秒）<input type="number" min={1} max={30} value={Number(inspectorData.duration || 5)} onChange={event => updateSelectedNode({ duration: Math.max(1, Math.min(30, Number(event.target.value) || 1)) })} /></label>{selectedNode.type === 'first_last_frame_video' && !capabilities?.first_last_frame.supported ? <p className="video-inspector-warning">当前供应商未验证独立首尾帧，运行会被安全拒绝。</p> : null}</> : null}{selectedNode.type === 'preview' ? <p className="video-inspector-note">该节点用于查看上游图片或视频结果。</p> : null}</> : <p className="video-inspector-note">从左侧节点库拖入节点，或点击画布中的节点查看属性。</p>}</aside></div></div></div> : null}
     <VideoSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => { void refreshCapabilities(); }} />
   </CodexShell>;

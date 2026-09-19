@@ -17,6 +17,7 @@ export const saveVideoSettings = (values: { baseUrl: string; apiKey?: string; pr
 export const testVideoConnection = () => request<{ ok: boolean; models_count: number }>('/api/video/connection/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
 export const loadVideoCapabilities = () => request<VideoCapabilities>('/api/video/capabilities');
 export const loadWorkflows = async () => (await request<{ workflows: VideoWorkflow[] }>('/api/video/workflows')).workflows;
+export const loadVideoRuns = async () => (await request<{ runs: VideoRun[] }>('/api/video/runs')).runs;
 export const saveWorkflow = (workflow: Omit<VideoWorkflow, 'id'> & Partial<Pick<VideoWorkflow, 'id'>>) => request<VideoWorkflow>('/api/video/workflows', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(workflow) });
 export const createRun = (workflowId: string, shotId?: string) => request<VideoRun>('/api/video/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workflow_id: workflowId, ...(shotId ? { shot_id: shotId } : {}) }) });
 export const loadRun = (runId: string) => request<VideoRun>(`/api/video/runs/${encodeURIComponent(runId)}`);

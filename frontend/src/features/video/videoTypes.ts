@@ -54,6 +54,7 @@ export type VideoRun = {
   id: string;
   workflow_id: string;
   shot_id?: string | null;
+  created_at?: number;
   state: string;
   node_status: Record<string, { state: string }>;
   assets?: Record<string, string>;

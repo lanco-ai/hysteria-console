@@ -31,4 +31,7 @@ assert.match(page, /VIDEO_TEMPLATES/);
 assert.match(page, /video-node-inspector/);
 assert.match(page, /selectedNode/);
 assert.match(page, /运行画布/);
+assert.match(page, /loadVideoRuns/);
+assert.match(page, /video-run-history/);
+assert.match(page, /任务记录/);
 console.log('video storyboard UI contract passed');
