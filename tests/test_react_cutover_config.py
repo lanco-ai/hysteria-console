@@ -54,6 +54,12 @@ def test_react_documents_and_api_use_8083():
             assert 'location = / {\n        proxy_pass http://127.0.0.1:8083;' in text
         for document in REACT_DOCUMENTS[1:]:
             assert f'location = {document} {{\n        proxy_pass http://127.0.0.1:8083;' in text
+        for api_location in (
+            'location = /api/plans {\n        proxy_pass http://127.0.0.1:8083;',
+            'location ^~ /api/plans/ {\n        proxy_pass http://127.0.0.1:8083;',
+            'location ^~ /api/ai/ {\n        proxy_pass http://127.0.0.1:8083;',
+        ):
+            assert api_location in text
         assert 'location = /api/v1 {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location ^~ /api/v1/ {\n        proxy_pass http://127.0.0.1:8083;' in text
         assert 'location ^~ /api/chat/ {\n        proxy_pass http://127.0.0.1:8083;' in text
