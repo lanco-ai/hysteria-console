@@ -81,6 +81,7 @@
 .video-palette-node { display: grid; width: 100%; gap: 4px; margin: 7px 0; padding: 10px; text-align: left; color: var(--text, #20262d); background: var(--surface, #fff); border: 1px solid var(--border, #dfe4e8); border-radius: 10px; cursor: grab; }
 .video-palette-node:active { cursor: grabbing; }
 .video-palette-node:hover { border-color: var(--accent, #0e9f91); box-shadow: 0 4px 14px #19212b10; }
+.video-palette-node:disabled { cursor: not-allowed; opacity: .58; }
 .video-palette-node small { color: var(--muted, #68717c); font-size: .72rem; }
 .video-node-inspector label { display: grid; gap: 6px; margin: 12px 0; color: var(--muted, #68717c); font-size: .75rem; font-weight: 600; }
 .video-node-inspector input, .video-node-inspector select, .video-node-inspector textarea { width: 100%; box-sizing: border-box; }

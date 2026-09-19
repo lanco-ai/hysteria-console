@@ -45,16 +45,41 @@ function validCanvasConnection(connection: Connection | Edge, nodes: Node[], edg
   return !wouldCreateCycle(connection, edges);
 }
 
+function promptParts(...parts: Array<string | null | undefined>): string {
+  return parts.map(part => part?.trim()).filter((part): part is string => Boolean(part)).join('\n');
+}
+
+function storyboardImagePrompt(storyboard: Storyboard, shot: VideoStoryboardShot): string {
+  return promptParts(
+    storyboard.style_prompt,
+    shot.scene ? `场景：${shot.scene}` : '',
+    shot.character ? `角色：${shot.character}` : '',
+    shot.shot_type ? `景别：${shot.shot_type}` : '',
+    shot.image_prompt,
+  );
+}
+
+function storyboardMotionPrompt(storyboard: Storyboard, shot: VideoStoryboardShot): string {
+  return promptParts(
+    storyboard.style_prompt,
+    shot.scene ? `场景：${shot.scene}` : '',
+    shot.character ? `角色：${shot.character}` : '',
+    shot.motion_prompt,
+  );
+}
+
 function storyboardGraph(storyboard: Storyboard): { nodes: Node[]; edges: Edge[] } {
   const nodes: Node[] = [];
   const edges: Edge[] = [];
   storyboard.shots.forEach((shot, index) => {
     const y = index * 360;
     const prefix = shot.id;
+    const imagePrompt = storyboardImagePrompt(storyboard, shot);
+    const motionPrompt = storyboardMotionPrompt(storyboard, shot);
     nodes.push(
-      { id: `${prefix}:prompt`, type: 'prompt', position: { x: 40, y }, data: { text: shot.image_prompt, shot_id: prefix, label: shot.title } },
-      { id: `${prefix}:image`, type: shot.image_asset_id ? 'image_asset' : 'text_to_image', position: { x: 320, y }, data: shot.image_asset_id ? { asset_ref: `asset://${shot.image_asset_id}`, shot_id: prefix } : { model: shot.image_model, prompt: shot.image_prompt, aspect_ratio: storyboard.aspect_ratio, shot_id: prefix } },
-      { id: `${prefix}:video`, type: 'image_to_video', position: { x: 620, y }, data: { model: shot.video_model, prompt: shot.motion_prompt, duration: shot.duration, aspect_ratio: storyboard.aspect_ratio, shot_id: prefix } },
+      { id: `${prefix}:prompt`, type: 'prompt', position: { x: 40, y }, data: { text: imagePrompt, shot_id: prefix, label: shot.title } },
+      { id: `${prefix}:image`, type: shot.image_asset_id ? 'image_asset' : 'text_to_image', position: { x: 320, y }, data: shot.image_asset_id ? { asset_ref: `asset://${shot.image_asset_id}`, shot_id: prefix } : { model: shot.image_model, prompt: imagePrompt, aspect_ratio: storyboard.aspect_ratio, shot_id: prefix } },
+      { id: `${prefix}:video`, type: 'image_to_video', position: { x: 620, y }, data: { model: shot.video_model, prompt: motionPrompt, duration: shot.duration, aspect_ratio: storyboard.aspect_ratio, shot_id: prefix } },
       { id: `${prefix}:preview`, type: 'preview', position: { x: 920, y }, data: { shot_id: prefix } },
     );
     if (!shot.image_asset_id) {
@@ -121,6 +146,8 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   const [message, setMessage] = useState('先整理故事和分镜，再生成素材');
 
   const selectedNode = nodes.find(node => node.id === selectedNodeId) || null;
+  const firstLastFrameSupported = Boolean(capabilities?.first_last_frame.supported);
+  const availableTemplates = VIDEO_TEMPLATES.filter(template => firstLastFrameSupported || !template.nodes.some(node => node.type === 'first_last_frame_video'));
 
   const refreshCapabilities = useCallback(async () => {
     try { setCapabilities(await loadVideoCapabilities()); }
@@ -164,6 +191,10 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   }, []);
 
   const addCanvasNode = useCallback((type: string, position: { x: number; y: number }) => {
+    if (type === 'first_last_frame_video' && !capabilities?.first_last_frame.supported) {
+      setMessage('当前供应商未验证独立首尾帧，暂不可添加该节点');
+      return;
+    }
     const id = `node-${type}-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     const imageModel = capabilities?.image_models[0] || 'grok-imagine-image';
     const videoModel = capabilities?.video_models[0] || 'grok-imagine-video';
@@ -190,6 +221,10 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   }, [selectedNodeId]);
 
   const applyTemplate = useCallback((template: VideoTemplate) => {
+    if (template.nodes.some(node => node.type === 'first_last_frame_video') && !capabilities?.first_last_frame.supported) {
+      setMessage('当前供应商未验证独立首尾帧，暂不可使用此模板');
+      return;
+    }
     const imageModel = capabilities?.image_models[0] || 'grok-imagine-image';
     const videoModel = capabilities?.video_models[0] || 'grok-imagine-video';
     const templateNodes = template.nodes.map(node => ({
@@ -250,13 +285,17 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   }, [ensureSaved]);
 
   const runCanvas = useCallback(async () => {
+    if (nodes.some(node => node.type === 'first_last_frame_video') && !capabilities?.first_last_frame.supported) {
+      setMessage('当前供应商不支持已验证的独立首尾帧，请移除该节点后再运行');
+      return;
+    }
     const id = await ensureSaved();
     if (!id) return;
     setBusy(true); setMessage('画布工作流已提交');
     try { const result = await createRun(id); setRunId(result.id); }
     catch (error) { setMessage(error instanceof Error ? error.message : '画布提交失败'); }
     finally { setBusy(false); }
-  }, [ensureSaved]);
+  }, [capabilities, ensureSaved, nodes]);
 
   const uploadImage = useCallback(async (shot: Storyboard['shots'][number], file: File) => {
     setBusy(true); setMessage(`${shot.title} 图片上传中…`);
@@ -344,7 +383,7 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
       <footer className="video-run-status"><span>编辑分镜不会自动产生费用；提交后可在任务面板查看状态。</span></footer>
     </section>
     {historyOpen ? <div className="video-history-layer" role="dialog" aria-modal="true" aria-label="任务记录" onClick={event => { if (event.target === event.currentTarget) setHistoryOpen(false); }}><aside className="video-run-history"><header><div><strong>任务记录</strong><small>最近提交的工作流运行</small></div><button type="button" className="button ghost" onClick={() => setHistoryOpen(false)}>关闭</button></header><div className="video-run-history-list">{runHistory.length ? runHistory.map(run => <button key={run.id} type="button" className="video-run-history-item" onClick={() => { setRunId(run.id); setHistoryOpen(false); }}><span><strong>{runLabel(run)}</strong><small>{formatRunTime(run.created_at)}</small></span><em data-state={run.state}>{run.state}</em></button>) : <p className="video-history-empty">暂无任务记录</p>}</div></aside></div> : null}
-    {canvasOpen ? <div className="video-canvas-layer" role="dialog" aria-modal="true"><div className="video-canvas-dialog"><header><div><strong>工作流画布</strong><small>节点可拖动、连线，运行前请确认输入完整</small></div><div className="video-canvas-header-actions"><label className="video-template-select">模板<select defaultValue="" onChange={event => { const template = VIDEO_TEMPLATES.find(item => item.id === event.target.value); if (template) applyTemplate(template); }}><option value="">选择模板…</option>{VIDEO_TEMPLATES.map(template => <option key={template.id} value={template.id}>{template.title}</option>)}</select></label><button type="button" className="button secondary" onClick={() => { void runCanvas(); }} disabled={busy}>运行画布</button><button type="button" className="button ghost" onClick={() => setCanvasOpen(false)}>关闭</button></div></header><div className="video-canvas-editor"><Suspense fallback={<div className="video-canvas-loading">正在加载画布…</div>}><VideoCanvas nodes={nodes} edges={edges} onNodesChange={updateCanvasNodes} onEdgesChange={next => { setEdges(next); setSaveState('dirty'); }} onConnect={connect} isValidConnection={connection => validCanvasConnection(connection, nodes, edges)} onSelect={node => setSelectedNodeId(node?.id || null)} onDropNode={addCanvasNode} /></Suspense><aside className="video-node-inspector" aria-label="节点属性"><div className="video-canvas-panel-heading"><strong>节点属性</strong><small>{selectedNode ? selectedNode.type : '未选择节点'}</small></div>{selectedNode ? <><label>显示名称<input value={String(inspectorData.label || '')} onChange={event => updateSelectedNode({ label: event.target.value })} placeholder="节点名称" /></label>{selectedNode.type === 'prompt' ? <label>文本<textarea value={String(inspectorData.text || '')} onChange={event => updateSelectedNode({ text: event.target.value })} rows={7} placeholder="输入提示词…" /></label> : null}{selectedNode.type === 'image_asset' ? <p className="video-inspector-note">请在分镜卡片中上传图片，再将素材节点连接到视频节点。</p> : null}{selectedNode.type !== 'prompt' && selectedNode.type !== 'image_asset' && selectedNode.type !== 'preview' ? <><label>模型{inspectorModelOptions.length ? <select value={String(inspectorData.model || '')} onChange={event => updateSelectedNode({ model: event.target.value })}>{inspectorModelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select> : <input value={String(inspectorData.model || '')} onChange={event => updateSelectedNode({ model: event.target.value })} placeholder="模型 ID" />}</label><label>提示词<textarea value={String(inspectorData.prompt || '')} onChange={event => updateSelectedNode({ prompt: event.target.value })} rows={5} placeholder="描述画面或运动…" /></label><label>画幅<select value={String(inspectorData.aspect_ratio || storyboard.aspect_ratio)} onChange={event => updateSelectedNode({ aspect_ratio: event.target.value })}><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option></select></label><label>时长（秒）<input type="number" min={1} max={30} value={Number(inspectorData.duration || 5)} onChange={event => updateSelectedNode({ duration: Math.max(1, Math.min(30, Number(event.target.value) || 1)) })} /></label>{selectedNode.type === 'first_last_frame_video' && !capabilities?.first_last_frame.supported ? <p className="video-inspector-warning">当前供应商未验证独立首尾帧，运行会被安全拒绝。</p> : null}</> : null}{selectedNode.type === 'preview' ? <p className="video-inspector-note">该节点用于查看上游图片或视频结果。</p> : null}</> : <p className="video-inspector-note">从左侧节点库拖入节点，或点击画布中的节点查看属性。</p>}</aside></div></div></div> : null}
+    {canvasOpen ? <div className="video-canvas-layer" role="dialog" aria-modal="true"><div className="video-canvas-dialog"><header><div><strong>工作流画布</strong><small>节点可拖动、连线，运行前请确认输入完整</small></div><div className="video-canvas-header-actions"><label className="video-template-select">模板<select defaultValue="" onChange={event => { const template = availableTemplates.find(item => item.id === event.target.value); if (template) applyTemplate(template); }}><option value="">选择模板…</option>{availableTemplates.map(template => <option key={template.id} value={template.id}>{template.title}</option>)}</select></label><button type="button" className="button secondary" onClick={() => { void runCanvas(); }} disabled={busy}>运行画布</button><button type="button" className="button ghost" onClick={() => setCanvasOpen(false)}>关闭</button></div></header><div className="video-canvas-editor"><Suspense fallback={<div className="video-canvas-loading">正在加载画布…</div>}><VideoCanvas nodes={nodes} edges={edges} onNodesChange={updateCanvasNodes} onEdgesChange={next => { setEdges(next); setSaveState('dirty'); }} onConnect={connect} isValidConnection={connection => validCanvasConnection(connection, nodes, edges)} onSelect={node => setSelectedNodeId(node?.id || null)} onDropNode={addCanvasNode} disabledNodeTypes={firstLastFrameSupported ? [] : ['first_last_frame_video']} /></Suspense><aside className="video-node-inspector" aria-label="节点属性"><div className="video-canvas-panel-heading"><strong>节点属性</strong><small>{selectedNode ? selectedNode.type : '未选择节点'}</small></div>{selectedNode ? <><label>显示名称<input value={String(inspectorData.label || '')} onChange={event => updateSelectedNode({ label: event.target.value })} placeholder="节点名称" /></label>{selectedNode.type === 'prompt' ? <label>文本<textarea value={String(inspectorData.text || '')} onChange={event => updateSelectedNode({ text: event.target.value })} rows={7} placeholder="输入提示词…" /></label> : null}{selectedNode.type === 'image_asset' ? <p className="video-inspector-note">请在分镜卡片中上传图片，再将素材节点连接到视频节点。</p> : null}{selectedNode.type !== 'prompt' && selectedNode.type !== 'image_asset' && selectedNode.type !== 'preview' ? <><label>模型{inspectorModelOptions.length ? <select value={String(inspectorData.model || '')} onChange={event => updateSelectedNode({ model: event.target.value })}>{inspectorModelOptions.map(model => <option key={model} value={model}>{model}</option>)}</select> : <input value={String(inspectorData.model || '')} onChange={event => updateSelectedNode({ model: event.target.value })} placeholder="模型 ID" />}</label><label>提示词<textarea value={String(inspectorData.prompt || '')} onChange={event => updateSelectedNode({ prompt: event.target.value })} rows={5} placeholder="描述画面或运动…" /></label><label>画幅<select value={String(inspectorData.aspect_ratio || storyboard.aspect_ratio)} onChange={event => updateSelectedNode({ aspect_ratio: event.target.value })}><option value="9:16">9:16</option><option value="16:9">16:9</option><option value="1:1">1:1</option></select></label><label>时长（秒）<input type="number" min={1} max={30} value={Number(inspectorData.duration || 5)} onChange={event => updateSelectedNode({ duration: Math.max(1, Math.min(30, Number(event.target.value) || 1)) })} /></label>{selectedNode.type === 'first_last_frame_video' && !capabilities?.first_last_frame.supported ? <p className="video-inspector-warning">当前供应商未验证独立首尾帧，运行会被安全拒绝。</p> : null}</> : null}{selectedNode.type === 'preview' ? <p className="video-inspector-note">该节点用于查看上游图片或视频结果。</p> : null}</> : <p className="video-inspector-note">从左侧节点库拖入节点，或点击画布中的节点查看属性。</p>}</aside></div></div></div> : null}
     <VideoSettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} onSaved={() => { void refreshCapabilities(); }} />
   </CodexShell>;
 }
