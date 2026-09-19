@@ -102,6 +102,9 @@ function RuleSummary({ snapshot }: { snapshot: AgentUserRules }) {
 
 export function LancoAgent() {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [positionNotice, setPositionNotice] = useState(false);
+  const motionRef = useRef<Animation | null>(null);
   const [users, setUsers] = useState<string[]>([]);
   const [targetUser, setTargetUser] = useState('');
   const [message, setMessage] = useState('');
@@ -122,6 +125,7 @@ export function LancoAgent() {
   useEffect(() => () => {
     conversationRef.current += 1;
     requestRef.current?.abort();
+    motionRef.current?.cancel();
   }, []);
 
   useEffect(() => {
@@ -146,6 +150,7 @@ export function LancoAgent() {
       const left = drag.startLeft + event.clientX - drag.startX;
       const top = drag.startTop + event.clientY - drag.startY;
       if (Math.abs(event.clientX - drag.startX) > 6 || Math.abs(event.clientY - drag.startY) > 6) drag.moved = true;
+      if (!drag.moved) return;
       const next = clampPosition({ left, top }, drag.width, drag.height);
       if (drag.target === 'panel') {
         setPanelPosition(current => samePosition(current, next) ? current : next);
@@ -170,8 +175,7 @@ export function LancoAgent() {
         return;
       }
       if (drag.target === 'launcher') {
-        if (!drag.moved) setOpen(true);
-        else suppressLauncherClickRef.current = true;
+        suppressLauncherClickRef.current = drag.moved;
       }
       dragRef.current = null;
       setDraggingTarget(null);
@@ -190,13 +194,14 @@ export function LancoAgent() {
   useLayoutEffect(() => {
     if (!open || !panelRef.current) return undefined;
     const positionPanel = () => {
-      const rect = panelRef.current?.getBoundingClientRect();
+      const rect = panelRef.current ? { width: panelRef.current.offsetWidth, height: panelRef.current.offsetHeight } : null;
       if (!rect) return;
       setPanelPosition(current => {
-        const anchor = launcherPosition || defaultLauncherPosition();
         const next = current
           ? clampPosition(current, rect.width, rect.height)
-          : panelPositionNearLauncher(anchor, rect.width, rect.height);
+          : launcherPosition
+            ? panelPositionNearLauncher(launcherPosition, rect.width, rect.height)
+            : clampPosition({ left: window.innerWidth - rect.width - 24, top: window.innerHeight - rect.height - 24 }, rect.width, rect.height);
         return samePosition(current, next) ? current : next;
       });
     };
@@ -205,9 +210,38 @@ export function LancoAgent() {
     return () => window.cancelAnimationFrame(frame);
   }, [open, launcherPosition]);
 
+  // Position is committed before the first animation frame. Only transforms
+  // animate; measuring offset sizes keeps collision handling independent.
+  useLayoutEffect(() => {
+    if (!open) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const panel = panelRef.current;
+      if (!panel || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const rect = panel.getBoundingClientRect();
+      const anchor = launcherRef.current?.getBoundingClientRect();
+      const parked = readPosition(LAUNCHER_POSITION_KEY) || defaultLauncherPosition();
+      const x = (anchor?.left ?? parked.left) + LAUNCHER_SIZE / 2 - rect.left;
+      const y = (anchor?.top ?? parked.top) + LAUNCHER_SIZE / 2 - rect.top;
+      panel.style.transformOrigin = `${Math.max(0, Math.min(rect.width, x))}px ${Math.max(0, Math.min(rect.height, y))}px`;
+      const mobile = window.innerWidth <= MOBILE_BREAKPOINT;
+      const offset = mobile || y > rect.height / 2 ? 10 : -10;
+      motionRef.current = panel.animate([
+        { opacity: 0, transform: `translateY(${offset}px) scale(${mobile ? 1 : 0.97})` },
+        { opacity: 1, transform: 'none' },
+      ], { duration: 200, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    });
+    return () => { window.cancelAnimationFrame(frame); motionRef.current?.cancel(); };
+  }, [open]);
+
+  useEffect(() => {
+    if (!positionNotice) return undefined;
+    const timer = window.setTimeout(() => setPositionNotice(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [positionNotice]);
+
   useEffect(() => {
     const onResize = () => {
-      const panelRect = panelRef.current?.getBoundingClientRect();
+      const panelRect = panelRef.current ? { width: panelRef.current.offsetWidth, height: panelRef.current.offsetHeight } : null;
       const panelWidth = panelRect?.width || Math.min(PANEL_WIDTH, Math.max(0, window.innerWidth - 32));
       const panelHeight = panelRect?.height || Math.min(PANEL_HEIGHT, Math.max(0, window.innerHeight - 48));
       setPanelPosition(current => {
@@ -229,7 +263,7 @@ export function LancoAgent() {
   useEffect(() => {
     if (!open || !panelRef.current || typeof ResizeObserver === 'undefined') return undefined;
     const observer = new ResizeObserver(() => {
-      const rect = panelRef.current?.getBoundingClientRect();
+      const rect = panelRef.current ? { width: panelRef.current.offsetWidth, height: panelRef.current.offsetHeight } : null;
       if (!rect) return;
       setPanelPosition(current => {
         if (!current) return current;
@@ -265,8 +299,28 @@ export function LancoAgent() {
   };
 
   const closeAgent = () => {
-    clearConversation();
-    setOpen(false);
+    if (closing) return;
+    // Invalidate requests immediately; retain the visible content during fade-out.
+    conversationRef.current += 1;
+    requestRef.current?.abort();
+    requestRef.current = null;
+    motionRef.current?.cancel();
+    const finish = () => {
+      clearConversation();
+      setClosing(false);
+      setPositionNotice(false);
+      setOpen(false);
+    };
+    const panel = panelRef.current;
+    if (!panel || window.matchMedia('(prefers-reduced-motion: reduce)').matches) { finish(); return; }
+    setClosing(true);
+    const mobile = window.innerWidth <= MOBILE_BREAKPOINT;
+    const animation = panel.animate([
+      { opacity: 1, transform: 'none' },
+      { opacity: 0, transform: mobile ? 'translateY(10px)' : 'scale(.97)' },
+    ], { duration: 150, easing: 'ease-in', fill: 'forwards' });
+    motionRef.current = animation;
+    animation.onfinish = finish;
   };
 
   const applyChange = async (changeId: string) => {
@@ -343,10 +397,12 @@ export function LancoAgent() {
   };
 
   const beginDrag = (target: DragTarget, event: ReactPointerEvent<HTMLElement>) => {
-    if (event.button !== 0 || (target === 'panel' && event.target instanceof Element && event.target.closest('button, a, input, select, textarea'))) return;
+    if (closing || !event.isPrimary || event.button !== 0 || (target === 'panel' && event.target instanceof Element && event.target.closest('button, a, input, select, textarea'))) return;
     // The mobile panel is intentionally bottom-fixed so it can follow the
     // keyboard. Only the launcher is draggable on narrow screens.
     if (target === 'panel' && window.innerWidth <= MOBILE_BREAKPOINT) return;
+    if (target === 'launcher') suppressLauncherClickRef.current = false;
+    motionRef.current?.cancel();
     const element = target === 'panel' ? panelRef.current : launcherRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
@@ -367,8 +423,14 @@ export function LancoAgent() {
   };
 
   const resetPosition = () => {
-    setPanelPosition(null);
+    motionRef.current?.cancel();
+    const panel = panelRef.current;
+    setPanelPosition(panel ? clampPosition({
+      left: window.innerWidth - panel.offsetWidth - 24,
+      top: window.innerHeight - panel.offsetHeight - 24,
+    }, panel.offsetWidth, panel.offsetHeight) : null);
     setLauncherPosition(null);
+    setPositionNotice(true);
   };
 
   const panelStyle = panelPosition ? { left: `${panelPosition.left}px`, top: `${panelPosition.top}px`, right: 'auto', bottom: 'auto' } : undefined;
@@ -376,9 +438,9 @@ export function LancoAgent() {
   const isIdle = status === 'idle' && !result && !error;
 
   return <>
-    {!open ? <button ref={launcherRef} className={`lanco-agent-launcher${draggingTarget === 'launcher' ? ' is-dragging' : ''}`} style={launcherStyle} type="button" aria-label="打开 Lanco Agent" title="Lanco 助手" onPointerDown={event => beginDrag('launcher', event)} onClick={() => { if (suppressLauncherClickRef.current) { suppressLauncherClickRef.current = false; return; } setOpen(true); }}><RobotAvatar small /></button> : null}
-    {open ? <aside ref={panelRef} className={`lanco-agent${draggingTarget === 'panel' ? ' is-dragging' : ''}`} style={panelStyle} role="dialog" aria-modal="false" aria-labelledby="lanco-agent-title">
-      <header className="lanco-agent-header" onPointerDown={event => beginDrag('panel', event)}><div className="lanco-agent-heading"><RobotAvatar small /><div><strong id="lanco-agent-title">Lanco Agent</strong><span>规则助手 · {statusLabel(status)}</span></div></div><div className="lanco-agent-header-actions"><button type="button" className="lanco-agent-reset" aria-label="重置位置" title="恢复机器人和面板到右下角" onPointerDown={event => event.stopPropagation()} onClick={resetPosition}>⌖</button><button type="button" className="lanco-agent-close" aria-label="收起 Lanco Agent" onPointerDown={event => event.stopPropagation()} onClick={closeAgent}>×</button></div></header>
+    {!open ? <button ref={launcherRef} className={`lanco-agent-launcher${draggingTarget === 'launcher' ? ' is-dragging' : ''}`} style={launcherStyle} type="button" aria-label="打开 Lanco Agent" title="Lanco 助手" onPointerDown={event => beginDrag('launcher', event)} onClick={event => { if (event.detail !== 0 && suppressLauncherClickRef.current) { suppressLauncherClickRef.current = false; return; } setOpen(true); }}><RobotAvatar small /></button> : null}
+    {open ? <aside ref={panelRef} className={`lanco-agent${draggingTarget === 'panel' ? ' is-dragging' : ''}`} style={panelStyle} inert={closing} role="dialog" aria-modal="false" aria-labelledby="lanco-agent-title">
+      <header className="lanco-agent-header" onPointerDown={event => beginDrag('panel', event)}><div className="lanco-agent-heading"><RobotAvatar small /><div><strong id="lanco-agent-title">Lanco Agent</strong><span>规则助手 · <span role="status">{positionNotice ? '位置已重置' : statusLabel(status)}</span></span></div></div><div className="lanco-agent-header-actions"><button type="button" className="lanco-agent-reset" aria-label="重置位置" title="恢复机器人和面板到右下角" onPointerDown={event => event.stopPropagation()} onClick={resetPosition}>⌖</button><button type="button" className="lanco-agent-close" aria-label="收起 Lanco Agent" onPointerDown={event => event.stopPropagation()} onClick={closeAgent}>×</button></div></header>
       <div className="lanco-agent-body">
         <div className="lanco-agent-field"><label htmlFor="lanco-agent-user">目标用户</label><select id="lanco-agent-user" value={targetUser} onChange={event => { clearConversation(); setTargetUser(event.target.value); }} disabled={status === 'reading' || status === 'applying'}><option value="">选择用户</option>{users.map(user => <option key={user} value={user}>{user}</option>)}</select></div>
         {isIdle ? <section className="lanco-agent-welcome"><p>你好，我可以帮你整理指定用户的网络规则。</p><span>用户规则会排在全局规则之前，先选择一个操作或直接输入要求。</span><div className="lanco-agent-quick-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('查看当前用户规则和继承的全局规则')}>查看合并规则</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('给当前用户添加规则：')}>添加用户规则</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('给当前用户应用规则包：')}>应用规则包</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('检查当前用户规则并生成预览')}>检查冲突</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setMessage('给当前用户启用 Overleaf 加速')}>Overleaf 加速</button></div></section> : null}

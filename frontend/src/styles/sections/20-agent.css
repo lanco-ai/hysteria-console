@@ -15,10 +15,10 @@
   box-shadow: 0 12px 36px rgba(33, 44, 39, .18);
   cursor: grab;
   touch-action: none;
-  transition: transform .16s ease, box-shadow .16s ease;
+  transition: box-shadow .16s ease;
 }
-.lanco-agent-launcher:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(33, 44, 39, .22); }
-.lanco-agent-launcher:active, .lanco-agent-launcher.is-dragging { cursor: grabbing; transform: scale(.98); }
+.lanco-agent-launcher:hover { box-shadow: 0 16px 40px rgba(33, 44, 39, .22); }
+.lanco-agent-launcher:active, .lanco-agent-launcher.is-dragging { cursor: grabbing; }
 .lanco-agent-launcher::after {
   content: 'Lanco 助手';
   position: absolute;
