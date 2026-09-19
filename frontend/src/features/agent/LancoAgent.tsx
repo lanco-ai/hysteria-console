@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import robotAvatar from '../../assets/lanco-agent-robot-hd.png';
 import {
   AgentApiError,
   applyAgentChange,
@@ -39,18 +40,7 @@ function readPosition(key: string): FloatingPosition | null {
 }
 
 function RobotAvatar({ small = false }: { small?: boolean }) {
-  return <svg className={`lanco-agent-avatar${small ? ' is-small' : ''}`} viewBox="0 0 64 64" role="img" aria-label="Lanco 助手">
-    <path className="lanco-agent-antenna" d="M32 11V6" />
-    <circle className="lanco-agent-antenna-dot" cx="32" cy="5" r="2.5" />
-    <rect className="lanco-agent-head" x="10" y="13" width="44" height="33" rx="13" />
-    <circle className="lanco-agent-eye" cx="24" cy="28" r="3" />
-    <circle className="lanco-agent-eye" cx="40" cy="28" r="3" />
-    <path className="lanco-agent-mouth" d="M27 36c3 3 7 3 10 0" />
-    <circle className="lanco-agent-blush" cx="17" cy="35" r="3" />
-    <circle className="lanco-agent-blush" cx="47" cy="35" r="3" />
-    <path className="lanco-agent-body" d="M21 48h22c4 0 7 3 7 7v3H14v-3c0-4 3-7 7-7Z" />
-    <path className="lanco-agent-body-detail" d="M29 54h6" />
-  </svg>;
+  return <img className={`lanco-agent-avatar${small ? ' is-small' : ''}`} src={robotAvatar} alt="Lanco 助手" width={48} height={48} draggable={false} />;
 }
 
 function statusLabel(status: AgentStatus): string {
