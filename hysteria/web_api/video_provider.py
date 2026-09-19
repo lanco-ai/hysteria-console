@@ -6,6 +6,7 @@ response bodies, which may contain account or provider details.
 """
 
 import json
+import re
 import socket
 import urllib.error
 import urllib.request
@@ -26,6 +27,9 @@ from .video_models import (
 
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 REQUEST_TIMEOUT = 60
+MEDIA_CHUNK_BYTES = 64 * 1024
+MAX_MEDIA_BYTES = 128 * 1024 * 1024
+_MEDIA_RANGE_RE = re.compile(r'bytes=(?:\d{0,16})-(?:\d{0,16})$')
 
 
 class ProviderError(RuntimeError):
@@ -36,6 +40,54 @@ class ProviderError(RuntimeError):
         self.status = status
         self.retry_after = retry_after
         super().__init__(code)
+
+
+@dataclass
+class ProviderMedia:
+    response: object
+    status_code: int
+    content_type: str
+    content_length: str | None
+    content_range: str | None
+
+    def iter_bytes(self):
+        total = 0
+        try:
+            while True:
+                chunk = self.response.read(MEDIA_CHUNK_BYTES)
+                if not chunk:
+                    return
+                total += len(chunk)
+                if total > MAX_MEDIA_BYTES:
+                    raise ProviderError('media_too_large')
+                yield chunk
+        finally:
+            self.close()
+
+    def close(self):
+        self.response.close()
+
+
+class _ProviderMediaRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, origin: tuple[str, str | None, int], media_path_re: re.Pattern):
+        super().__init__()
+        self.origin = origin
+        self.media_path_re = media_path_re
+
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        try:
+            target = urlsplit(new_url)
+            port = target.port or (443 if target.scheme.lower() == 'https' else 80)
+            origin = (target.scheme.lower(), target.hostname, port)
+        except (TypeError, ValueError):
+            return None
+        if (
+            origin != self.origin
+            or target.username or target.password or target.query or target.fragment
+            or not self.media_path_re.fullmatch(target.path)
+        ):
+            return None
+        return super().redirect_request(request, response, code, message, headers, new_url)
 
 
 def _base_url(value: str) -> str:
@@ -120,6 +172,7 @@ def _asset_url(payload: dict) -> str | None:
 
 class GrokVideoProvider:
     def __init__(self, *, opener: Callable | None = None):
+        self._custom_opener = opener is not None
         self.opener = opener or urllib.request.urlopen
 
     def _request(self, method: str, url: str, settings: VideoSettings, payload: dict | None = None) -> dict:
@@ -163,6 +216,72 @@ class GrokVideoProvider:
             video_models=video_models,
             first_last_frame=Capability(False, 'provider capability not verified'),
             video_composition=Capability(False, 'provider capability not verified'),
+        )
+
+    def open_asset(self, asset_url: str, settings: VideoSettings, *, range_header: str | None = None) -> ProviderMedia:
+        """Open only same-origin archived media routes and stream bounded bytes."""
+        try:
+            configured = urlsplit(settings.base_url.strip())
+            target = urlsplit(str(asset_url))
+            api_path = _base_url(settings.base_url)
+            api_path = urlsplit(api_path).path.rstrip('/')
+            if not api_path.endswith('/v1'):
+                api_path += '/v1'
+            media_path_re = re.compile(
+                rf'^{re.escape(api_path)}/media/(?:images|videos)/[A-Za-z0-9_-]{{1,128}}$'
+            )
+            expected_origin = (configured.scheme.lower(), configured.hostname, configured.port or (443 if configured.scheme == 'https' else 80))
+            target_origin = (target.scheme.lower(), target.hostname, target.port or (443 if target.scheme == 'https' else 80))
+        except (ValueError, TypeError):
+            raise ProviderError('invalid_media_url') from None
+        if (
+            target_origin != expected_origin
+            or target.username or target.password or target.query or target.fragment
+            or not media_path_re.fullmatch(target.path)
+            or (range_header and not _MEDIA_RANGE_RE.fullmatch(range_header.strip()))
+        ):
+            raise ProviderError('invalid_media_url')
+        headers = {
+            'Accept': 'image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm',
+            'Authorization': f'Bearer {settings.api_key}',
+        }
+        if range_header:
+            headers['Range'] = range_header.strip()
+        request = urllib.request.Request(str(asset_url), method='GET', headers=headers)
+        try:
+            if self._custom_opener:
+                response = self.opener(request, timeout=REQUEST_TIMEOUT)
+            else:
+                redirect_handler = _ProviderMediaRedirectHandler(expected_origin, media_path_re)
+                response = urllib.request.build_opener(redirect_handler).open(request, timeout=REQUEST_TIMEOUT)
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            raise _error_for_status(exc.code, exc.headers.get('Retry-After')) from None
+        except (urllib.error.URLError, TimeoutError, socket.timeout, OSError):
+            raise ProviderError('timeout') from None
+        status = int(getattr(response, 'status', 200))
+        if status not in (200, 206):
+            response.close()
+            raise _error_for_status(status, response.headers.get('Retry-After'))
+        response_headers = response.headers
+        content_type = response_headers.get_content_type().lower()
+        if content_type not in {'image/png', 'image/jpeg', 'image/webp', 'image/gif', 'video/mp4', 'video/webm'}:
+            response.close()
+            raise ProviderError('invalid_media_type')
+        content_length = response_headers.get('Content-Length')
+        try:
+            if content_length is not None and (int(content_length) < 0 or int(content_length) > MAX_MEDIA_BYTES):
+                response.close()
+                raise ProviderError('media_too_large')
+        except ValueError:
+            response.close()
+            raise ProviderError('invalid_provider_response') from None
+        return ProviderMedia(
+            response=response,
+            status_code=status,
+            content_type=content_type,
+            content_length=content_length,
+            content_range=response_headers.get('Content-Range'),
         )
 
     def generate_image(self, request: ImageRequest, settings: VideoSettings) -> ProviderJob:

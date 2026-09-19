@@ -1,10 +1,12 @@
 import json
+import re
 import urllib.error
+import urllib.request
 
 import pytest
 
 from web_api.video_models import ImageRequest, VideoRequest
-from web_api.video_provider import GrokVideoProvider, ProviderError, VideoSettings
+from web_api.video_provider import GrokVideoProvider, ProviderError, VideoSettings, _ProviderMediaRedirectHandler
 
 
 class _Response:
@@ -167,3 +169,102 @@ def test_video_provider_cancel_is_explicitly_unsupported():
     provider = GrokVideoProvider(opener=lambda *_args, **_kwargs: None)
     result = provider.cancel_job('job-1', VideoSettings('https://provider.test/v1', 'secret'))
     assert result.status == 'unsupported'
+
+
+def test_provider_media_proxy_only_fetches_same_origin_archived_media():
+    seen = {}
+
+    class Headers(dict):
+        def get_content_type(self):
+            return self.get('Content-Type', '').split(';', 1)[0]
+
+    class Response:
+        status = 206
+        headers = Headers({'Content-Type': 'video/mp4', 'Content-Length': '4', 'Content-Range': 'bytes 0-3/4'})
+
+        def __init__(self):
+            self.chunks = [b'mp4!', b'']
+            self.closed = False
+
+        def read(self, _size):
+            return self.chunks.pop(0)
+
+        def close(self):
+            self.closed = True
+
+    response = Response()
+
+    def opener(request, timeout):
+        seen['url'] = request.full_url
+        seen['range'] = request.get_header('Range')
+        seen['authorization'] = request.get_header('Authorization')
+        return response
+
+    provider = GrokVideoProvider(opener=opener)
+    media = provider.open_asset(
+        'http://provider.test/v1/media/videos/asset_123',
+        VideoSettings('http://provider.test/v1', 'secret'),
+        range_header='bytes=0-3',
+    )
+    assert seen == {
+        'url': 'http://provider.test/v1/media/videos/asset_123',
+        'range': 'bytes=0-3', 'authorization': 'Bearer secret',
+    }
+    assert media.status_code == 206
+    assert media.content_type == 'video/mp4'
+    assert media.content_range == 'bytes 0-3/4'
+    assert b''.join(media.iter_bytes()) == b'mp4!'
+    assert response.closed is True
+
+
+def test_provider_media_proxy_rejects_untrusted_asset_origins_before_fetch():
+    def unexpected_opener(*_args, **_kwargs):
+        raise AssertionError('must not fetch a different origin')
+
+    provider = GrokVideoProvider(opener=unexpected_opener)
+    with pytest.raises(ProviderError) as error:
+        provider.open_asset(
+            'https://untrusted.test/secret.mp4',
+            VideoSettings('http://provider.test/v1', 'secret'),
+        )
+    assert error.value.code == 'invalid_media_url'
+
+
+def test_provider_media_proxy_respects_configured_api_path_prefix():
+    class Headers(dict):
+        def get_content_type(self):
+            return 'image/png'
+
+    class Response:
+        status = 200
+        headers = Headers({'Content-Type': 'image/png', 'Content-Length': '1'})
+
+        def read(self, _size):
+            return b''
+
+        def close(self):
+            return None
+
+    provider = GrokVideoProvider(opener=lambda *_args, **_kwargs: Response())
+    media = provider.open_asset(
+        'https://provider.test/api/v1/media/images/asset_123',
+        VideoSettings('https://provider.test/api/v1', 'secret'),
+    )
+    assert media.content_type == 'image/png'
+
+
+def test_provider_media_proxy_never_redirects_authorized_request_to_other_origin():
+    handler = _ProviderMediaRedirectHandler(
+        ('https', 'provider.test', 443),
+        re.compile(r'^/v1/media/videos/[A-Za-z0-9_-]{1,128}$'),
+    )
+    request = urllib.request.Request(
+        'https://provider.test/v1/media/videos/asset_123',
+        headers={'Authorization': 'Bearer secret'},
+    )
+    assert handler.redirect_request(
+        request, None, 302, 'Found', {}, 'https://attacker.test/collect/asset_123',
+    ) is None
+    assert handler.redirect_request(
+        request, None, 302, 'Found', {}, 'https://provider.test/v1/media/videos/asset_123',
+    ) is not None

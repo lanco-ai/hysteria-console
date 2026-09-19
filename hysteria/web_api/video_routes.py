@@ -3,11 +3,13 @@
 import json
 from functools import partial
 from types import SimpleNamespace
+from urllib.parse import quote
 
 import http_utils
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .video_provider import GrokVideoProvider, ProviderError
@@ -54,6 +56,30 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
             return run_service
         return RunService(workflows, store.read(), factory(), asset_store=assets)
     factory = provider_factory or (lambda: GrokVideoProvider())
+
+    def present_run(run):
+        if not isinstance(run, dict):
+            return run
+        presented = dict(run)
+        public_assets = {}
+        for node_id, value in (run.get('assets') or {}).items():
+            if not isinstance(value, str):
+                continue
+            if value.startswith('asset://'):
+                asset_id = value[len('asset://'):]
+                public_assets[node_id] = f'/api/video/assets/{quote(asset_id, safe="")}/content'
+            else:
+                public_assets[node_id] = (
+                    f'/api/video/runs/{quote(str(run.get("id") or ""), safe="")}'
+                    f'/assets/{quote(str(node_id), safe="")}/content'
+                )
+        presented['assets'] = public_assets
+        return presented
+
+    def open_provider_media(*, headers, path, asset_url, range_header):
+        del headers, path
+        settings = store.read()
+        return factory().open_asset(asset_url, settings, range_header=range_header)
 
     def read_settings(*, headers, path):
         del headers, path
@@ -245,7 +271,51 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
         if denied is not None:
             return denied
         result = await dispatch(lambda **_kwargs: get_run_service().list(), request)
-        return result if isinstance(result, JSONResponse) else JSONResponse({'runs': result})
+        return result if isinstance(result, JSONResponse) else JSONResponse({'runs': [present_run(run) for run in result]})
+
+    @app.get('/api/video/runs/{run_id}/assets/{node_id}/content')
+    async def run_asset_content(request: Request, run_id: str, node_id: str):
+        denied = await _require_admin(request, services, dispatch)
+        if denied is not None:
+            return denied
+        run = await dispatch(lambda **_kwargs: get_run_service().get(run_id), request)
+        if isinstance(run, JSONResponse):
+            return run
+        source_url = run.get('assets', {}).get(node_id) if isinstance(run, dict) else None
+        if not isinstance(source_url, str) or not source_url.startswith(('http://', 'https://')):
+            return _error('not_found', 404)
+        try:
+            media = await dispatch(
+                partial(
+                    open_provider_media,
+                    asset_url=source_url,
+                    range_header=request.headers.get('range'),
+                ),
+                request,
+            )
+        except VideoSettingsError:
+            return _error('settings_unavailable', 503)
+        except ProviderError as exc:
+            return _provider_error(exc)
+        if isinstance(media, JSONResponse):
+            return media
+        headers = {
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'private, no-store',
+            'X-Content-Type-Options': 'nosniff',
+            'Content-Disposition': 'inline',
+        }
+        if media.content_length is not None:
+            headers['Content-Length'] = media.content_length
+        if media.content_range is not None:
+            headers['Content-Range'] = media.content_range
+        return StreamingResponse(
+            media.iter_bytes(),
+            status_code=media.status_code,
+            media_type=media.content_type,
+            headers=headers,
+            background=BackgroundTask(media.close),
+        )
 
     @app.get('/api/video/runs/{run_id}')
     async def get_run(request: Request, run_id: str):
@@ -255,7 +325,7 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
         result = await dispatch(lambda **_kwargs: get_run_service().tick(run_id), request)
         if isinstance(result, JSONResponse):
             return result
-        return JSONResponse(result)
+        return JSONResponse(present_run(result))
 
     @app.post('/api/video/runs/{run_id}/cancel')
     async def cancel_run(request: Request, run_id: str):
@@ -265,4 +335,4 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
         if denied is not None:
             return denied
         result = await dispatch(lambda **_kwargs: get_run_service().cancel(run_id), request)
-        return result if isinstance(result, JSONResponse) else JSONResponse(result)
+        return result if isinstance(result, JSONResponse) else JSONResponse(present_run(result))
