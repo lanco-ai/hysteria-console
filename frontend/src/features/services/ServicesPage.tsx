@@ -32,6 +32,12 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [copiedId, setCopiedId] = useState('');
+  useEffect(() => {
+    if (!copiedId) return;
+    const timer = window.setTimeout(() => setCopiedId(''), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copiedId]);
   const [deleting, setDeleting] = useState('');
   const nameRef = useRef<HTMLInputElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -77,9 +83,9 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
   const remove = async (id: string) => {
     if (catalog && await persist(catalog.items.filter(item => item.id !== id))) { setDeleting(''); if (draft?.id === id) setDraft(null); }
   };
-  const copy = async (text: string) => {
-    try { await navigator.clipboard.writeText(text); setFeedback('API 地址已复制'); }
-    catch { setFeedback('自动复制不可用，请选中地址复制'); }
+  const copy = async (text: string, id: string) => {
+    try { await navigator.clipboard.writeText(text); setFeedback('API 地址已复制'); setCopiedId(id); }
+    catch { setError('自动复制不可用，请选中地址复制'); }
   };
   const editField = (field: keyof Bookmark, value: string) => setDraft(current => current ? { ...current, [field]: value } : current);
   const categories = ['全部', ...new Set(['AI 接口', '常用网站', ...(catalog?.items || []).map(groupOf)])];
@@ -87,9 +93,8 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
 
   return <AdminShell active="services" pageTitle="服务中心" badge={publicHost}>
     <div className="services-page">
-      <header className="services-intro"><div><h2>一个入口，找到所有服务</h2><p>收藏管理后台与常用网址，随时打开或复制 API 地址。</p></div></header>
       {error ? <div className="err" role="alert">{error} <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void reload()}>刷新列表</button></div> : null}
-      <p className={`services-feedback${feedback ? ' is-visible' : ''}`} role="status">{feedback}</p>
+      <p className="services-feedback" role="status">{feedback}</p>
       {draft ? <form className="services-editor" onSubmit={event => void save(event)} aria-label="编辑网站">
         <div className="services-editor-heading"><h3>{catalog?.items.some(item => item.id === draft.id) ? '编辑网站' : '添加网站'}</h3><span>收藏会同步到登录此面板的其他设备</span></div>
         <fieldset disabled={busy}>
@@ -107,11 +112,11 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
         <div className="services-toolbar-actions"><div className="services-search"><ServiceGlyph name="search"/><input ref={searchRef} type="search" aria-label="搜索网站" placeholder="搜索名称、用途或地址…" value={search} onChange={event => setSearch(event.target.value)}/><kbd>⌘ K</kbd></div><button className="btn service-secondary" type="button" title="刷新收藏列表" aria-label="刷新收藏列表" disabled={busy} onClick={() => void reload()}><ServiceGlyph name="refresh"/></button><button className="btn btn-primary" type="button" disabled={!catalog || busy || catalog.items.length >= 100} onClick={() => { setDraft(blank()); setFeedback(''); }}>＋ 添加网站</button></div>
       </div>
       <div className="services-grid">{items.map(item => <article className="service-card" key={item.id}>
-        <div className="service-card-heading"><span className="service-monogram" aria-hidden="true">{item.name.slice(0, 1).toUpperCase()}</span><div className="service-identity"><div className="service-title"><h3>{item.name}</h3><span className="service-category">{groupOf(item)}</span></div><span className="service-address" title={item.url}>{originOf(item.url)}</span></div><span className="service-status" title="尚未接入服务状态检测">未监测</span></div>
+        <div className="service-card-heading"><span className="service-monogram" aria-hidden="true">{item.name.slice(0, 1).toUpperCase()}</span><div className="service-identity"><div className="service-title"><h3>{item.name}</h3><span className="service-category">{groupOf(item)}</span></div><span className="service-address" title={item.url}>{originOf(item.url)}</span></div><div className="service-card-actions" role="group" aria-label="服务操作"><a className="btn service-secondary service-open" title="打开网站" aria-label="打开网站" href={item.url} target="_blank" rel="noopener noreferrer"><Icon name="open"/></a>{item.api_notes ? <button className="btn service-secondary" type="button" title="查看接口" aria-label="接口" onClick={() => { const detail = apiRefs.current[item.id]; if (detail) detail.open = !detail.open; }}><Icon name="rules"/></button> : null}<button className="btn service-secondary" type="button" aria-label="编辑" title="设置" disabled={busy} onClick={() => { setDraft({ ...item }); setDeleting(''); }}><Icon name="config"/></button><button className="btn service-secondary service-danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => setDeleting(item.id)}><ServiceGlyph name="delete"/></button></div></div>
         <p className="service-description">{item.description || '暂无用途说明'}</p>
-        {item.api_base ? <div className="service-api"><span>API Base URL</span><div className="service-api-row"><code>{item.api_base}</code><button className="btn service-secondary" type="button" aria-label="复制 API 地址" onClick={() => void copy(item.api_base)}><Icon name="copy"/>复制</button></div></div> : null}
+        {item.api_base ? <div className="service-api"><span>API Base URL</span><div className="service-api-row"><code>{item.api_base}</code><button className="btn service-secondary" type="button" aria-label="复制 API 地址" onClick={() => void copy(item.api_base, item.id)}><Icon name="copy"/>{copiedId === item.id ? '已复制' : '复制'}</button></div></div> : null}
         {item.api_notes ? <details ref={node => { apiRefs.current[item.id] = node; }} className="service-api-details"><summary><span>提供的 API <small>点击展开查看</small></span><span className="service-count">{apiLines(item.api_notes).length}</span></summary><p>{item.api_notes}</p></details> : null}
-        <footer><a className="btn btn-primary" href={item.url} target="_blank" rel="noopener noreferrer"><Icon name="open"/>打开网站 ↗</a>{item.api_notes ? <button className="btn service-secondary" type="button" onClick={() => { const detail = apiRefs.current[item.id]; if (detail) detail.open = !detail.open; }}><Icon name="rules"/>接口</button> : null}<button className="btn service-secondary" type="button" aria-label="编辑" disabled={busy} onClick={() => { setDraft({ ...item }); setDeleting(''); }}><Icon name="config"/>设置</button><button className="btn service-secondary service-danger" type="button" disabled={busy} onClick={() => setDeleting(item.id)}><ServiceGlyph name="delete"/>删除</button></footer>
+
         {deleting === item.id ? <div className="service-delete" role="group" aria-label={`删除 ${item.name}`}><span>从收藏中移除？</span><button className="btn btn-sm" type="button" disabled={busy} onClick={() => void remove(item.id)}>确认删除</button><button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => setDeleting('')}>取消</button></div> : null}
       </article>)}</div>
       {!catalog && !error ? <p>正在读取收藏…</p> : catalog && !items.length ? <div className="services-empty">{catalog.items.length ? '没有匹配的网站，试试其他搜索词或分组。' : '还没有收藏，添加第一个常用网站吧。'}</div> : null}
