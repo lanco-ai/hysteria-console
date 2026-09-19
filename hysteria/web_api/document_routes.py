@@ -43,6 +43,7 @@ REACT_DOCUMENTS = {
     '/admin/rules': ('路由规则', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
     '/admin/chat': ('AI 对话', 'has-shell page-workbench', 'admin'),
+    '/admin/services': ('服务中心', 'has-shell', 'admin'),
     '/admin/video': ('AI 视频', 'has-shell page-workbench', 'admin'),
 }
 

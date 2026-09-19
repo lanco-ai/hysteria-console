@@ -16,6 +16,7 @@ import { LandingPage } from './features/network-admin/landing/LandingPage';
 import { UserDetailPage } from './features/network-admin/user-detail/UserDetailPage';
 import { OverviewPage } from './features/network-admin/overview/OverviewPage';
 import { ChatPage } from './features/chat/ChatPage';
+import { ServicesPage } from './features/services/ServicesPage';
 import { VideoPage } from './features/video/VideoPage';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
@@ -30,7 +31,7 @@ const WORKBENCH_ROUTES = new Set(['/', '/auth', '/login', '/user/login', '/admin
 const LOGIN_ROUTES = new Set(['/auth', '/login', '/user/login']);
 const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
-  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/video',
+  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/video', '/admin/services',
 ]);
 const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter']);
 const REACT_DOCUMENT_ROUTES = new Set([
@@ -53,6 +54,7 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/rules': { title: '路由规则', bodyClass: 'has-shell', shell: true },
   '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
   '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
+  '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
   '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell page-workbench', shell: true },
   '/user/change-password': { title: '修改面板密码', bodyClass: 'page-auth' },
   '/user/panel': { title: '用户面板 · Hysteria', bodyClass: '' },
@@ -150,6 +152,7 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
   '/admin/config': { active: 'config', title: '模板配置' },
   '/admin/rules': { active: 'rules', title: '路由规则' },
   '/admin/landing-egresses': { active: 'landing-egresses', title: '家宽出口' },
+  '/admin/services': { active: 'services', title: '服务中心' },
   '/admin/video': { active: 'video', title: 'AI 视频' },
 };
 
@@ -174,6 +177,7 @@ function AdminRoute({ route, publicHost, authenticated, status }: { route: strin
   if (route === '/admin/incidents') return <IncidentsPage publicHost={publicHost}/>;
   if (route === '/admin/config') return <ConfigPage publicHost={publicHost}/>;
   if (route === '/admin/rules') return <RulesPage publicHost={publicHost}/>;
+  if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
   if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
   return <LandingPage publicHost={publicHost}/>;
 }

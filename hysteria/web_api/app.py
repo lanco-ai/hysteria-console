@@ -24,6 +24,7 @@ from .config_models import (
 from .document_routes import register_react_document_routes
 from .health_models import AdminHealthResponse
 from .health_routes import register_health_routes
+from .service_center import register_service_center_routes
 from .incident_models import AdminIncidentResponse
 from .landing_models import AdminLandingResponse
 from .landing_routes import register_landing_routes
@@ -260,6 +261,7 @@ def create_app(
     video_workflow_store=None,
     video_asset_store=None,
     video_run_service=None,
+    service_center_store=None,
 ):
     if isinstance(max_requests, bool) or not isinstance(max_requests, int) or max_requests <= 0:
         raise ValueError('max_requests must be a positive integer')
@@ -420,6 +422,7 @@ def create_app(
         run_service=video_run_service,
     )
     register_agent_routes(app, services, dispatch)
+    register_service_center_routes(app, services, dispatch, service_center_store)
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
 

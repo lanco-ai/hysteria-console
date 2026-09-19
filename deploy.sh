@@ -133,6 +133,7 @@ declare -a REACT_WEB_API_MODULES=(
   document_routes.py
   health_models.py
   health_routes.py
+  service_center.py
   incident_models.py
   landing_models.py
   landing_routes.py
@@ -360,6 +361,7 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/document_routes.py"
   add_durable_artifact "$HY_DIR/web_api/health_models.py"
   add_durable_artifact "$HY_DIR/web_api/health_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/service_center.py"
   add_durable_artifact "$HY_DIR/web_api/incident_models.py"
   add_durable_artifact "$HY_DIR/web_api/landing_models.py"
   add_durable_artifact "$HY_DIR/web_api/landing_routes.py"
@@ -2081,6 +2083,7 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/document_routes.py" "$HY_DIR/web_api/document_routes.py"
   render "$REPO_DIR/hysteria/web_api/health_models.py" "$HY_DIR/web_api/health_models.py"
   render "$REPO_DIR/hysteria/web_api/health_routes.py" "$HY_DIR/web_api/health_routes.py"
+  render "$REPO_DIR/hysteria/web_api/service_center.py" "$HY_DIR/web_api/service_center.py"
   render "$REPO_DIR/hysteria/web_api/incident_models.py" "$HY_DIR/web_api/incident_models.py"
   render "$REPO_DIR/hysteria/web_api/landing_models.py" "$HY_DIR/web_api/landing_models.py"
   render "$REPO_DIR/hysteria/web_api/landing_routes.py" "$HY_DIR/web_api/landing_routes.py"

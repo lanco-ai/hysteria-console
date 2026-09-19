@@ -24,6 +24,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: '运行维护',
     items: [
+      { key: 'services', href: '/admin/services', label: '服务中心', icon: 'dashboard' },
       { key: 'health', href: '/admin/health', label: '健康状态', icon: 'pulse' },
       { key: 'incidents', href: '/admin/incidents', label: '事故处理', icon: 'pulse' },
       { key: 'logs', href: '/admin/logs', label: '清零日志', icon: 'logs' },

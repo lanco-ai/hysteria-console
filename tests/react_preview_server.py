@@ -20,11 +20,13 @@ from preview_http_server import managed_preview_http_server
 from preview_http_server import read_request_body as _read_request_body
 from web_api import create_app
 from web_api.services import LegacyPanelServices
+from web_api.service_center import ServiceCenterStore
 
 from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
+    '/admin/services': ('服务中心', 'has-shell'),
     '/__react/admin': ('总览', 'has-shell'),
     '/__react/': ('Hysteria 工作台', 'has-shell page-workbench'),
     '/': ('Hysteria 工作台', 'has-shell page-workbench'),
@@ -296,7 +298,7 @@ def _handler(api_client, allowed_assets):
             super().do_POST()
 
         def do_PUT(self):
-            if urlsplit(self.path).path == '/api/chat/settings':
+            if urlsplit(self.path).path in {'/api/chat/settings', '/api/v1/admin/services'}:
                 self._json_api()
                 return
             super().do_PUT()
@@ -420,7 +422,8 @@ def preview_server(port=0, *, overview_fixture=False):
                 service._credential_generation(must_change_hash),
                 service.USER_SESSION_PANEL_PASSWORD,
             )
-            app = create_app(LegacyPanelServices(service), max_requests=4)
+            app = create_app(LegacyPanelServices(service), max_requests=4,
+                             service_center_store=ServiceCenterStore(Path(directory) / 'services.json'))
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
                 handler = _handler(api_client, allowed_assets)
                 with managed_preview_http_server(('127.0.0.1', port), handler) as server:
