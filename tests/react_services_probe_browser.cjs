@@ -1,0 +1,45 @@
+const assert = require('node:assert/strict');
+const { chromium } = require('playwright');
+const { expect } = require('@playwright/test');
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const base = process.env.PREVIEW_BASE_URL;
+    await context.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
+    const page = await context.newPage();
+    await page.goto(`${base}/admin/services`);
+    const cpa = page.locator('.service-card').filter({ hasText: 'CodexProxy · CPA' });
+    await cpa.getByRole('button', { name: '编辑', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    assert.equal(await dialog.evaluate(element => element.matches(':modal')), true);
+    await expect(dialog.getByLabel('服务名称', { exact: true })).toBeFocused();
+    await dialog.getByLabel('API Key / SK').fill('sk-wrong-for-test');
+    await dialog.getByRole('button', { name: '检测模型列表' }).click();
+    await expect(dialog.getByText('模型列表 · 密钥无效或已过期')).toBeVisible();
+    await dialog.getByLabel('API Key / SK').fill('sk-valid-for-test');
+    await dialog.getByRole('button', { name: '检测模型列表' }).click();
+    await expect(dialog.getByText('模型列表 · 已验证')).toBeVisible();
+    await expect(dialog.getByLabel('测试模型')).toHaveValue('test-model');
+    await dialog.getByRole('button', { name: '测试对话', exact: true }).click();
+    await expect(dialog.getByText('对话接口 · 已验证')).toBeVisible();
+    await dialog.getByRole('button', { name: '将已验证结果写入说明' }).click();
+    await dialog.locator('.services-manual-api summary').click();
+    assert((await dialog.getByLabel('提供哪些 API').inputValue()).includes('POST /v1/chat/completions — 已验证'));
+    await page.screenshot({ path: '/tmp/services-editor-desktop.png' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
+    await page.screenshot({ path: '/tmp/services-editor-mobile.png' });
+    await dialog.getByRole('button', { name: '保存网站', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    const data = await page.evaluate(async () => (await fetch('/api/v1/admin/services')).json());
+    assert(!JSON.stringify(data).includes('sk-valid-for-test'));
+    assert(data.items.find(item => item.id === 'codexproxy').api_notes.includes('已验证'));
+    await cpa.getByRole('button', { name: '编辑', exact: true }).click();
+    await expect(page.getByRole('dialog').getByLabel('API Key / SK')).toHaveValue('');
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    console.log('Services editor: modal, bad key, model discovery, chat test, save without key, close/reset, mobile passed');
+  } finally { await browser.close(); }
+})().catch(error => { console.error(error); process.exit(1); });

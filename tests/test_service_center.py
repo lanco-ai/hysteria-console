@@ -74,3 +74,15 @@ def test_service_document_requires_admin(tmp_path):
         response = client.get('/admin/services', headers=HEADERS)
         assert response.status_code == 200
         assert '<title>服务中心</title>' in response.text
+
+
+def test_probe_requires_admin_and_same_origin(tmp_path):
+    store = ServiceCenterStore(tmp_path / 'bookmarks.json')
+    with TestClient(create_app(Sessions(), service_center_store=store)) as client:
+        endpoint = '/api/v1/admin/services/probe'
+        payload = {'api_base': 'https://lancoai.site:9445/v1', 'api_key': 'sk-test', 'kind': 'models'}
+        assert client.post(endpoint, json=payload).status_code == 401
+        assert client.post(endpoint, headers={'Cookie': 'sid=user'}, json=payload).status_code == 403
+        assert client.post(endpoint, headers={'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'cross-site'}, json=payload).status_code == 403
+        assert client.post(endpoint, headers=HEADERS, content='x' * 17000).status_code == 413
+        assert not store.path.exists()

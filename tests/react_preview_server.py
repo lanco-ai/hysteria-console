@@ -292,7 +292,7 @@ def _handler(api_client, allowed_assets):
             }:
                 self._form_api()
                 return
-            if urlsplit(self.path).path == '/api/chat/completions':
+            if urlsplit(self.path).path in {'/api/chat/completions', '/api/v1/admin/services/probe'}:
                 self._json_api()
                 return
             super().do_POST()

@@ -1,5 +1,6 @@
 """Administrator service bookmarks. Monitoring is deliberately not connected yet."""
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -15,6 +16,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
+from .service_probe import ProbeInput, run_probe
 
 
 class Bookmark(BaseModel):
@@ -86,6 +88,7 @@ class ServiceCenterStore:
 
 def register_service_center_routes(app, services, dispatch, store=None):
     store = store or ServiceCenterStore()
+    probe_slots = asyncio.Semaphore(2)
 
     async def guard(request):
         try:
@@ -142,3 +145,27 @@ def register_service_center_routes(app, services, dispatch, store=None):
         except (ValueError, ValidationError) as exc:
             conflict = str(exc) == 'conflict'
             return JSONResponse({'error': 'revision_conflict' if conflict else 'invalid_bookmark'}, status_code=409 if conflict else 422)
+
+    @app.post('/api/v1/admin/services/probe')
+    async def probe_service(request: Request):
+        denied = await guard(request)
+        if denied is not None:
+            return denied
+        if not http_utils.is_same_origin_post(SimpleNamespace(headers=request.headers)):
+            return JSONResponse({'error': 'cross_site_request'}, status_code=403)
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > 16384:
+                return JSONResponse({'error': 'payload_too_large'}, status_code=413)
+        try:
+            value = ProbeInput.model_validate(json.loads(body))
+            if value.kind == 'chat' and not value.model:
+                raise ValueError('model required')
+        except (ValueError, UnicodeError):
+            return JSONResponse({'error': 'invalid_probe'}, status_code=422)
+        if probe_slots.locked():
+            return JSONResponse({'error': 'probe_busy'}, status_code=429)
+        async with probe_slots:
+            result = await run_probe(value)
+        return JSONResponse(result, headers={'Cache-Control': 'no-store'})
