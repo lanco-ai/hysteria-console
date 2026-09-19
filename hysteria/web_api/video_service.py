@@ -493,6 +493,8 @@ class RunService:
                 run['provider_jobs'][node_id] = job.provider_job_id
                 if job.asset_url:
                     run['assets'][node_id] = job.asset_url
+                if job.state == 'succeeded':
+                    status['state'] = 'succeeded'
                 continue
             image_url = self._source_value(run, node_id, 'image')
             if node_type == 'first_last_frame_video':
@@ -523,6 +525,8 @@ class RunService:
             run['provider_jobs'][node_id] = job.provider_job_id
             if job.asset_url:
                 run['assets'][node_id] = job.asset_url
+            if job.state == 'succeeded':
+                status['state'] = 'succeeded'
         if run['state'] != 'failed' and all(item['state'] == 'succeeded' for item in run['node_status'].values()):
             run['state'] = 'succeeded'
         self._replace(run)

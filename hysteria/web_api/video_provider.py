@@ -94,6 +94,8 @@ def _job_id(payload: dict) -> str:
     data = payload.get('data')
     if isinstance(data, list) and data and isinstance(data[0], dict):
         return _job_id(data[0])
+    if isinstance(data, dict):
+        return _job_id(data)
     raise ProviderError('invalid_provider_response')
 
 
@@ -105,6 +107,14 @@ def _asset_url(payload: dict) -> str | None:
     data = payload.get('data')
     if isinstance(data, list) and data and isinstance(data[0], dict):
         return _asset_url(data[0])
+    if isinstance(data, dict):
+        return _asset_url(data)
+    for key in ('video', 'image', 'output', 'result'):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            found = _asset_url(nested)
+            if found:
+                return found
     return None
 
 
@@ -162,16 +172,27 @@ class GrokVideoProvider:
         if request.height is not None:
             payload['height'] = request.height
         result = self._request('POST', _url(settings, 'images/generations'), settings, payload)
-        return ProviderJob(_job_id(result), asset_url=_asset_url(result), metadata={'kind': 'image'})
+        asset_url = _asset_url(result)
+        # Grok2API follows the OpenAI image response shape and returns the
+        # generated URL immediately (`data[].url`).  It does not return a
+        # video-style request_id for this endpoint.
+        if asset_url:
+            return ProviderJob('', state='succeeded', asset_url=asset_url, metadata={'kind': 'image'})
+        return ProviderJob(_job_id(result), asset_url=None, metadata={'kind': 'image'})
 
     def generate_video(self, request: VideoRequest, settings: VideoSettings) -> ProviderJob:
         payload = {'model': request.model, 'prompt': request.prompt}
         if request.image_url:
-            payload['image_url'] = request.image_url
+            # Current Grok2API schema uses the official xAI media object:
+            # {"image": {"url": "..."}}. Keep this provider boundary
+            # explicit so old top-level image_url payloads cannot regress.
+            payload['image'] = {'url': request.image_url}
         if request.first_frame_url:
-            payload['first_frame_url'] = request.first_frame_url
+            payload['image'] = {'url': request.first_frame_url}
         if request.last_frame_url:
-            payload['last_frame_url'] = request.last_frame_url
+            # Independent first/last-frame generation is not advertised by
+            # capabilities yet. Do not silently send an undocumented field.
+            raise ProviderError('first_last_frame_unsupported')
         if request.duration is not None:
             payload['duration'] = request.duration
         if request.aspect_ratio:
@@ -194,4 +215,3 @@ class GrokVideoProvider:
     def cancel_job(self, provider_job_id: str, settings: VideoSettings) -> CancelResult:
         del provider_job_id, settings
         return CancelResult('unsupported')
-

@@ -33,6 +33,13 @@ class FakeProvider:
         return type('Cancel', (), {'status': 'unsupported'})()
 
 
+class ImmediateImageProvider(FakeProvider):
+    def generate_image(self, request, settings):
+        del request, settings
+        self.image_calls += 1
+        return ProviderJob('', state='succeeded', asset_url='https://cdn.test/immediate.png')
+
+
 class ProviderErrorOnImage(FakeProvider):
     def generate_image(self, request, settings):
         del request, settings
@@ -63,6 +70,23 @@ def test_run_waits_for_image_before_submitting_video(tmp_path):
     provider.image_done = True
     service.tick(run['id'])
     assert provider.video_calls == 1
+
+
+def test_run_marks_immediate_image_response_succeeded(tmp_path):
+    workflows = workflow_store(tmp_path)
+    saved = workflows.save({'title': 'demo', 'nodes': [
+        {'id': 'prompt', 'type': 'prompt', 'data': {'text': 'a lake'}},
+        {'id': 'image', 'type': 'text_to_image', 'data': {'model': 'image'}},
+    ], 'edges': [
+        {'source': 'prompt', 'sourceHandle': 'text', 'target': 'image', 'targetHandle': 'prompt'},
+    ]})
+    provider = ImmediateImageProvider()
+    service = RunService(workflows, VideoSettings('https://provider.test/v1', 'secret'), provider, tmp_path / 'runs.json')
+    run = service.submit(saved['id'])
+    result = service.tick(run['id'])
+    assert result['state'] == 'succeeded'
+    assert result['node_status']['image']['state'] == 'succeeded'
+    assert result['assets']['image'] == 'https://cdn.test/immediate.png'
 
 
 def test_submit_timeout_does_not_duplicate_paid_request(tmp_path):

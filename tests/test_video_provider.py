@@ -95,6 +95,41 @@ def test_video_provider_polls_and_normalizes_done_status():
     assert result.asset_url == 'https://cdn.test/v.mp4'
 
 
+def test_video_provider_uses_current_media_object_for_image_to_video():
+    seen = {}
+    provider = GrokVideoProvider(opener=_opener(_Response({'request_id': 'job-2'}), seen))
+    provider.generate_video(
+        VideoRequest(prompt='camera moves', model='grok-imagine-video', image_url='https://cdn.test/frame.png'),
+        VideoSettings('https://provider.test/v1', 'secret'),
+    )
+    assert seen['body'] == {
+        'model': 'grok-imagine-video',
+        'prompt': 'camera moves',
+        'image': {'url': 'https://cdn.test/frame.png'},
+    }
+
+
+def test_video_provider_accepts_openai_image_response_without_request_id():
+    provider = GrokVideoProvider(opener=_opener(_Response({'created': 1, 'data': [{'url': 'https://cdn.test/image.png'}]}), {}))
+    result = provider.generate_image(
+        ImageRequest(prompt='blue circle', model='grok-imagine-image'),
+        VideoSettings('https://provider.test/v1', 'secret'),
+    )
+    assert result.state == 'succeeded'
+    assert result.provider_job_id == ''
+    assert result.asset_url == 'https://cdn.test/image.png'
+
+
+def test_video_provider_does_not_claim_unverified_first_last_frame_support():
+    provider = GrokVideoProvider(opener=lambda *_args, **_kwargs: None)
+    with pytest.raises(ProviderError) as error:
+        provider.generate_video(
+            VideoRequest(prompt='transition', model='grok-imagine-video', first_frame_url='https://cdn.test/a.png', last_frame_url='https://cdn.test/b.png'),
+            VideoSettings('https://provider.test/v1', 'secret'),
+        )
+    assert error.value.code == 'first_last_frame_unsupported'
+
+
 def test_video_provider_cancel_is_explicitly_unsupported():
     provider = GrokVideoProvider(opener=lambda *_args, **_kwargs: None)
     result = provider.cancel_job('job-1', VideoSettings('https://provider.test/v1', 'secret'))
