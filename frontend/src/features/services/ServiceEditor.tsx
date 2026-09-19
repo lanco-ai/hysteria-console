@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { createPortal } from 'react-dom';
 
-export type Bookmark = { id: string; name: string; url: string; description: string; category: string; api_base: string; api_notes: string };
+export type Bookmark = { id: string; name: string; url: string; description: string; category: string; api_base: string; api_notes: string; model_ids: string[]; models_checked_at: string };
 type Probe = { endpoint: string; status: string; models: string[]; http_status: number | null; elapsed_ms: number };
 const messages: Record<string, string> = {
   verified: '已验证', authentication_failed: '密钥无效或已过期', permission_denied: '账号权限不足',
@@ -14,7 +14,7 @@ const messages: Record<string, string> = {
 
 export function ServiceEditor({ draft, existing, busy, error, onChange, onSubmit, onClose }: {
   draft: Bookmark; existing: boolean; busy: boolean; error: string;
-  onChange: (field: keyof Bookmark, value: string) => void;
+  onChange: <K extends keyof Bookmark>(field: K, value: Bookmark[K]) => void;
   onSubmit: (event: FormEvent) => void; onClose: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -50,7 +50,13 @@ export function ServiceEditor({ draft, existing, busy, error, onChange, onSubmit
       if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? '请重新登录后测试。' : response.status === 429 ? '检测任务繁忙，请稍后重试。' : '请检查 API 地址与密钥格式。');
       const result = await response.json() as Probe;
       if (controller.signal.aborted) return;
-      if (kind === 'models') { setModels(result); setModel(result.models[0] || ''); } else setChat(result);
+      if (kind === 'models') {
+        setModels(result); setModel(result.models[0] || '');
+        if (result.status === 'verified' || result.status === 'empty_models') {
+          onChange('model_ids', result.models);
+          onChange('models_checked_at', new Date().toISOString());
+        }
+      } else setChat(result);
     } catch (value) { if (!controller.signal.aborted) setProbeError(value instanceof Error ? value.message : '检测失败'); }
     finally { if (!controller.signal.aborted) setProbing(''); }
   };
@@ -78,7 +84,7 @@ export function ServiceEditor({ draft, existing, busy, error, onChange, onSubmit
         <label>分组<input maxLength={40} required value={draft.category} onChange={event => onChange('category', event.target.value)} list="service-groups"/><datalist id="service-groups"><option value="AI 接口"/><option value="服务器管理"/><option value="常用网站"/><option value="内网服务"/></datalist></label>
         <label className="services-wide">网站地址<input type="url" required maxLength={2048} value={draft.url} onChange={event => onChange('url', event.target.value)}/></label>
         <label className="services-wide">服务用途<input maxLength={500} value={draft.description} onChange={event => onChange('description', event.target.value)} placeholder="记下它是做什么的"/></label>
-        <label className="services-wide">API Base URL（可选）<input type="url" maxLength={2048} value={draft.api_base} onChange={event => { onChange('api_base', event.target.value); resetProbe(); }} placeholder="https://example.com/v1"/></label>
+        <label className="services-wide">API Base URL（可选）<input type="url" maxLength={2048} value={draft.api_base} onChange={event => { onChange('api_base', event.target.value); onChange('model_ids', []); onChange('models_checked_at', ''); resetProbe(); }} placeholder="https://example.com/v1"/></label>
       </fieldset>
       <section className="services-probe" aria-label="API 检测">
         <div className="services-probe-heading"><strong>API 检测</strong><span>填写地址和 SK，自动读取模型</span></div>
@@ -86,11 +92,12 @@ export function ServiceEditor({ draft, existing, busy, error, onChange, onSubmit
         <div className="services-probe-actions"><button className="btn service-secondary" type="button" disabled={locked || !draft.api_base.trim() || !key.trim()} onClick={() => void probe('models')}>{probing === 'models' ? '正在检测…' : '检测模型列表'}</button><small>密钥仅发送给填写的 API 服务，不写入收藏。</small></div>
         {probeError ? <p className="err" role="alert">{probeError}</p> : null}
         {models ? resultLine(models, '模型列表') : null}
+        {models?.status === 'verified' || models?.status === 'empty_models' ? <small>模型列表已更新，点击“保存网站”后显示到卡片。额度数据需另行接入。</small> : null}
         {models?.status === 'verified' ? <><div className="services-probe-model"><label>测试模型<select value={model} disabled={locked} onChange={event => { setModel(event.target.value); setChat(null); setApplied(false); }}>{models.models.map(id => <option key={id} value={id}>{id}</option>)}</select></label><button className="btn service-secondary" type="button" disabled={locked || !model} onClick={() => void probe('chat')}>{probing === 'chat' ? '正在测试…' : '测试对话'}</button></div><small>发送一条极短对话，会消耗少量额度。图片、视频与流式输出暂不测试。</small></> : null}
         {chat ? resultLine(chat, '对话接口') : null}
         {models?.status === 'verified' ? <button className="btn service-secondary" type="button" disabled={locked || applied} onClick={applyResults}>{applied ? '已填入，下方保存后生效' : '将已验证结果写入说明'}</button> : null}
       </section>
-      <details className="services-manual-api"><summary>API 说明（可手动补充）</summary><label>提供哪些 API<textarea rows={5} maxLength={2000} disabled={locked} value={draft.api_notes} onChange={event => onChange('api_notes', event.target.value)}/></label></details>
+      <details className="services-manual-api"><summary>接口备注（可选，不在模型卡片展示）</summary><label>提供哪些 API<textarea rows={5} maxLength={2000} disabled={locked} value={draft.api_notes} onChange={event => onChange('api_notes', event.target.value)}/></label></details>
       <div className="services-editor-actions"><small>检测结果只代表本次请求。</small><button className="btn btn-ghost" type="button" disabled={busy} onClick={onClose}>取消</button><button className="btn btn-primary" disabled={locked}>{busy ? '保存中…' : '保存网站'}</button></div>
     </form>
   </dialog>, document.body);

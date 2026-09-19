@@ -28,6 +28,15 @@ class Bookmark(BaseModel):
     category: str = Field(default='常用网站', max_length=40)
     api_base: str = Field(default='', max_length=2048)
     api_notes: str = Field(default='', max_length=2000)
+    model_ids: list[str] = Field(default_factory=list, max_length=1000)
+    models_checked_at: str = Field(default='', max_length=64)
+
+    @field_validator('model_ids')
+    @classmethod
+    def validate_models(cls, values):
+        if any(not value or len(value) > 256 or any(ord(c) < 32 for c in value) for value in values):
+            raise ValueError('invalid model id')
+        return list(dict.fromkeys(values))
 
     @field_validator('url', 'api_base')
     @classmethod

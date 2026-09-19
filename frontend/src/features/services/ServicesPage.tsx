@@ -2,12 +2,12 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AdminShell } from '../../shared/AdminShell';
 import { Icon } from '../../shared/icons';
 import { ServiceEditor, type Bookmark } from './ServiceEditor';
+import { ServiceModels } from './ServiceModels';
 import './services.css';
 
 type Catalog = { items: Bookmark[]; revision: string };
 const endpoint = '/api/v1/admin/services';
 const groupOf = (item: Bookmark) => item.category || '常用网站';
-const apiLines = (notes: string) => notes.split('\n').filter(line => /^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+\//i.test(line.trim()));
 const originOf = (url: string) => { try { return new URL(url).origin; } catch { return url; } };
 
 function ServiceGlyph({ name }: { name: 'search' | 'refresh' | 'delete' | 'clock' | 'cpu' | 'memory' }) {
@@ -16,7 +16,7 @@ function ServiceGlyph({ name }: { name: 'search' | 'refresh' | 'delete' | 'clock
   </svg>;
 }
 
-const blank = (): Bookmark => ({ id: crypto.randomUUID(), name: '', url: '', description: '', category: '常用网站', api_base: '', api_notes: '' });
+const blank = (): Bookmark => ({ id: crypto.randomUUID(), name: '', url: '', description: '', category: '常用网站', api_base: '', api_notes: '', model_ids: [], models_checked_at: '' });
 
 async function request(options?: RequestInit): Promise<Catalog> {
   const response = await fetch(endpoint, { credentials: 'same-origin', ...options });
@@ -84,9 +84,9 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
     try { await navigator.clipboard.writeText(text); setFeedback('API 地址已复制'); setCopiedId(id); }
     catch { setError('自动复制不可用，请选中地址复制'); }
   };
-  const editField = (field: keyof Bookmark, value: string) => setDraft(current => current ? { ...current, [field]: value } : current);
+  const editField = <K extends keyof Bookmark>(field: K, value: Bookmark[K]) => setDraft(current => current ? { ...current, [field]: value } : current);
   const categories = ['全部', ...new Set(['AI 接口', '常用网站', ...(catalog?.items || []).map(groupOf)])];
-  const items = (catalog?.items || []).filter(item => (category === '全部' || groupOf(item) === category) && `${item.name} ${item.description} ${item.url} ${item.api_notes}`.toLowerCase().includes(search.toLowerCase()));
+  const items = (catalog?.items || []).filter(item => (category === '全部' || groupOf(item) === category) && `${item.name} ${item.description} ${item.url} ${(item.model_ids || []).join(' ')}`.toLowerCase().includes(search.toLowerCase()));
 
   return <AdminShell active="services" pageTitle="服务中心" badge={publicHost}>
     <div className="services-page">
@@ -101,7 +101,7 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
         <div className="service-card-heading"><span className="service-monogram" aria-hidden="true">{item.name.slice(0, 1).toUpperCase()}</span><div className="service-identity"><div className="service-title"><h3>{item.name}</h3><span className="service-category">{groupOf(item)}</span></div><span className="service-address" title={item.url}>{originOf(item.url)}</span></div><div className="service-card-actions" role="group" aria-label="服务操作"><a className="btn service-secondary service-open" title="打开网站" aria-label="打开网站" href={item.url} target="_blank" rel="noopener noreferrer"><Icon name="open"/></a><button className="btn service-secondary" type="button" aria-label="编辑" title="设置" disabled={busy} onClick={() => { setDraft({ ...item }); setDeleting(''); }}><Icon name="config"/></button><button className="btn service-secondary service-danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => setDeleting(item.id)}><ServiceGlyph name="delete"/></button></div></div>
         <p className="service-description">{item.description || '暂无用途说明'}</p>
         {item.api_base ? <div className="service-api"><span>API Base URL</span><div className="service-api-row"><code>{item.api_base}</code><button className="btn service-secondary" type="button" aria-label="复制 API 地址" onClick={() => void copy(item.api_base, item.id)}><Icon name="copy"/>{copiedId === item.id ? '已复制' : '复制'}</button></div></div> : null}
-        {item.api_notes ? <details className="service-api-details"><summary><span>提供的 API <small>点击展开查看</small></span><span className="service-count">{apiLines(item.api_notes).length}</span></summary><p>{item.api_notes}</p></details> : null}
+        {item.api_base ? <ServiceModels item={item} onDetect={() => { setDraft({ ...item }); setDeleting(''); }}/> : null}
 
         {deleting === item.id ? <div className="service-delete" role="group" aria-label={`删除 ${item.name}`}><span>从收藏中移除？</span><button className="btn btn-sm" type="button" disabled={busy} onClick={() => void remove(item.id)}>确认删除</button><button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => setDeleting('')}>取消</button></div> : null}
       </article>)}</div>

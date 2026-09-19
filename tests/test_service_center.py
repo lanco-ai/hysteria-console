@@ -86,3 +86,17 @@ def test_probe_requires_admin_and_same_origin(tmp_path):
         assert client.post(endpoint, headers={'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'cross-site'}, json=payload).status_code == 403
         assert client.post(endpoint, headers=HEADERS, content='x' * 17000).status_code == 413
         assert not store.path.exists()
+
+
+def test_model_snapshot_persists_and_old_bookmarks_still_load(tmp_path):
+    store = ServiceCenterStore(tmp_path / 'bookmarks.json')
+    data = store.read()
+    assert data['items'][0]['model_ids'] == []
+    data['items'][0]['model_ids'] = ['gemini-test', 'claude-test', 'gemini-test']
+    data['items'][0]['models_checked_at'] = '2026-09-19T04:00:00Z'
+    saved = store.replace(data['items'], data['revision'])
+    assert saved['items'][0]['model_ids'] == ['gemini-test', 'claude-test']
+    assert ServiceCenterStore(store.path).read() == saved
+    saved['items'][0]['model_ids'] = ['x\ny']
+    with pytest.raises(ValueError):
+        store.replace(saved['items'], saved['revision'])

@@ -13,7 +13,7 @@ def respond(request):
     if request.headers.get('authorization') != 'Bearer sk-valid-for-test':
         return httpx.Response(401, json={'error': 'invalid key'})
     if request.url.path.endswith('/models'):
-        return httpx.Response(200, json={'data': [{'id': 'test-model'}]})
+        return httpx.Response(200, json={'data': [{'id': id} for id in ['gemini-3-flash', 'claude-sonnet-test', 'gpt-test', 'grok-test', 'custom-test']]})
     return httpx.Response(200, json={'choices': [{'message': {'content': 'OK'}}]})
 
 
