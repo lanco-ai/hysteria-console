@@ -180,6 +180,15 @@ async function main() {
   await page.mouse.up();
   const afterDrag = await agent.boundingBox();
   assert(afterDrag && (afterDrag.x !== beforeDrag.x || afterDrag.y !== beforeDrag.y), 'agent panel should be draggable');
+  await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
+  const launcherAfterPanelDrag = await launcher.boundingBox();
+  assert(launcherAfterPanelDrag, 'agent launcher should be visible after closing the dragged panel');
+  assert(launcherAfterPanelDrag.x !== 1200 || launcherAfterPanelDrag.y !== 820,
+    'closing a dragged panel should keep the launcher anchored to that panel');
+  await launcher.click();
+  const reopenedPanel = await page.locator('.lanco-agent').boundingBox();
+  assert(reopenedPanel && Math.abs(reopenedPanel.x - afterDrag.x) < 3 && Math.abs(reopenedPanel.y - afterDrag.y) < 3,
+    'reopening should preserve the dragged panel position');
   await page.getByRole('button', { name: '重置位置' }).click();
   await page.locator('#lanco-agent-user').selectOption('alice');
   await expect(page.getByLabel('自动执行本用户规则')).toHaveCount(0);
@@ -220,12 +229,25 @@ async function main() {
   assert(launcherBefore, 'agent launcher should have a bounding box');
   await page.mouse.move(launcherBefore.x + 28, launcherBefore.y + 28);
   await page.mouse.down();
-  await page.mouse.move(launcherBefore.x - 120, launcherBefore.y - 90, { steps: 8 });
+  await page.mouse.move(640, 450, { steps: 8 });
   await page.mouse.up();
   const launcherAfter = await launcher.boundingBox();
   assert(launcherAfter && (launcherAfter.x !== launcherBefore.x || launcherAfter.y !== launcherBefore.y), 'agent launcher should be draggable');
   await launcher.click();
   await expect(page.locator('.lanco-agent')).toBeVisible();
+  const panelAfterLauncherDrag = await page.locator('.lanco-agent').boundingBox();
+  assert(panelAfterLauncherDrag, 'agent panel should have a bounding box after opening from the moved launcher');
+  assert(panelAfterLauncherDrag.x <= launcherAfter.x + launcherAfter.width + 12,
+    'agent panel should open beside the moved launcher instead of returning to the old corner');
+  assert(panelAfterLauncherDrag.y <= launcherAfter.y + launcherAfter.height + 12,
+    'agent panel should open near the moved launcher vertically');
+  await page.setViewportSize({ width: 800, height: 600 });
+  const panelAfterResize = await page.locator('.lanco-agent').boundingBox();
+  assert(panelAfterResize && panelAfterResize.x >= 0 && panelAfterResize.y >= 0
+    && panelAfterResize.x + panelAfterResize.width <= 800
+    && panelAfterResize.y + panelAfterResize.height <= 600,
+  'agent panel should remain fully inside the viewport after resizing');
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByText('你好，我可以帮你整理指定用户的网络规则。')).toBeVisible();
   await expect(page.locator('.lanco-agent-input')).toHaveValue('');
   // Closing during a submitted save clears the UI; late responses cannot

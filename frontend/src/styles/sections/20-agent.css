@@ -145,7 +145,7 @@
   .lanco-agent-launcher { right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); }
   /* A saved desktop coordinate must not strand the panel behind the mobile keyboard. */
   .lanco-agent { left: 12px !important; right: 12px !important; top: auto !important; bottom: calc(12px + env(safe-area-inset-bottom)) !important; width: calc(100vw - 24px); max-height: calc(100dvh - 24px - env(safe-area-inset-bottom)); border-radius: 16px; }
-  .lanco-agent-header { min-height: 64px; }
+  .lanco-agent-header { min-height: 64px; cursor: default; touch-action: pan-y; }
   .lanco-agent-rule-cards { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {

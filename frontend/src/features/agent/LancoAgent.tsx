@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import robotAvatar from '../../assets/lanco-agent-robot-hd.png';
 import {
   AgentApiError,
@@ -27,6 +27,12 @@ type DragState = {
 
 const PANEL_POSITION_KEY = 'hy2.lanco.agent.position.v1';
 const LAUNCHER_POSITION_KEY = 'hy2.lanco.agent.launcher-position.v1';
+const FLOATING_MARGIN = 8;
+const FLOATING_GAP = 12;
+const LAUNCHER_SIZE = 56;
+const PANEL_WIDTH = 410;
+const PANEL_HEIGHT = 680;
+const MOBILE_BREAKPOINT = 620;
 
 function readPosition(key: string): FloatingPosition | null {
   try {
@@ -37,6 +43,33 @@ function readPosition(key: string): FloatingPosition | null {
   } catch {
     return null;
   }
+}
+
+function samePosition(left: FloatingPosition | null, right: FloatingPosition | null): boolean {
+  return Boolean(left && right && left.left === right.left && left.top === right.top) || left === right;
+}
+
+function clampPosition(position: FloatingPosition, width: number, height: number): FloatingPosition {
+  return {
+    left: Math.min(Math.max(FLOATING_MARGIN, position.left), Math.max(FLOATING_MARGIN, window.innerWidth - width - FLOATING_MARGIN)),
+    top: Math.min(Math.max(FLOATING_MARGIN, position.top), Math.max(FLOATING_MARGIN, window.innerHeight - height - FLOATING_MARGIN)),
+  };
+}
+
+function defaultLauncherPosition(): FloatingPosition {
+  return clampPosition({ left: window.innerWidth - 24 - LAUNCHER_SIZE, top: window.innerHeight - 24 - LAUNCHER_SIZE }, LAUNCHER_SIZE, LAUNCHER_SIZE);
+}
+
+function panelPositionNearLauncher(launcher: FloatingPosition, panelWidth: number, panelHeight: number): FloatingPosition {
+  const launcherRight = launcher.left + LAUNCHER_SIZE;
+  const aboveTop = launcher.top - panelHeight - FLOATING_GAP;
+  const belowTop = launcher.top + LAUNCHER_SIZE + FLOATING_GAP;
+  const top = aboveTop >= FLOATING_MARGIN ? aboveTop : belowTop;
+  return clampPosition({ left: launcherRight - panelWidth, top }, panelWidth, panelHeight);
+}
+
+function launcherPositionForPanel(panel: FloatingPosition, panelWidth: number, panelHeight: number): FloatingPosition {
+  return clampPosition({ left: panel.left + panelWidth - LAUNCHER_SIZE, top: panel.top + panelHeight - LAUNCHER_SIZE }, LAUNCHER_SIZE, LAUNCHER_SIZE);
 }
 
 function RobotAvatar({ small = false }: { small?: boolean }) {
@@ -107,23 +140,35 @@ export function LancoAgent() {
 
   useEffect(() => {
     if (!draggingTarget) return undefined;
-    const clamp = (left: number, top: number, width: number, height: number): FloatingPosition => ({
-      left: Math.min(Math.max(8, left), Math.max(8, window.innerWidth - width - 8)),
-      top: Math.min(Math.max(8, top), Math.max(8, window.innerHeight - height - 8)),
-    });
     const onMove = (event: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag || event.pointerId !== drag.pointerId) return;
       const left = drag.startLeft + event.clientX - drag.startX;
       const top = drag.startTop + event.clientY - drag.startY;
-      if (Math.abs(event.clientX - drag.startX) > 4 || Math.abs(event.clientY - drag.startY) > 4) drag.moved = true;
-      const next = clamp(left, top, drag.width, drag.height);
-      if (drag.target === 'panel') setPanelPosition(next);
-      else setLauncherPosition(next);
+      if (Math.abs(event.clientX - drag.startX) > 6 || Math.abs(event.clientY - drag.startY) > 6) drag.moved = true;
+      const next = clampPosition({ left, top }, drag.width, drag.height);
+      if (drag.target === 'panel') {
+        setPanelPosition(current => samePosition(current, next) ? current : next);
+        setLauncherPosition(current => {
+          const anchor = launcherPositionForPanel(next, drag.width, drag.height);
+          return samePosition(current, anchor) ? current : anchor;
+        });
+      } else {
+        setLauncherPosition(current => samePosition(current, next) ? current : next);
+        // A launcher move invalidates the previous panel anchor. The panel is
+        // positioned beside the new launcher on the next open.
+        setPanelPosition(current => current === null ? current : null);
+      }
     };
-    const onEnd = (event: PointerEvent) => {
+    const onEnd = (event: PointerEvent, cancelled = false) => {
       const drag = dragRef.current;
       if (!drag || event.pointerId !== drag.pointerId) return;
+      if (cancelled) {
+        if (drag.target === 'launcher') suppressLauncherClickRef.current = true;
+        dragRef.current = null;
+        setDraggingTarget(null);
+        return;
+      }
       if (drag.target === 'launcher') {
         if (!drag.moved) setOpen(true);
         else suppressLauncherClickRef.current = true;
@@ -131,33 +176,70 @@ export function LancoAgent() {
       dragRef.current = null;
       setDraggingTarget(null);
     };
+    const onCancel = (event: PointerEvent) => onEnd(event, true);
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onEnd);
-    window.addEventListener('pointercancel', onEnd);
+    window.addEventListener('pointercancel', onCancel);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onEnd);
-      window.removeEventListener('pointercancel', onEnd);
+      window.removeEventListener('pointercancel', onCancel);
     };
   }, [draggingTarget]);
 
+  useLayoutEffect(() => {
+    if (!open || !panelRef.current) return undefined;
+    const positionPanel = () => {
+      const rect = panelRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPanelPosition(current => {
+        const anchor = launcherPosition || defaultLauncherPosition();
+        const next = current
+          ? clampPosition(current, rect.width, rect.height)
+          : panelPositionNearLauncher(anchor, rect.width, rect.height);
+        return samePosition(current, next) ? current : next;
+      });
+    };
+    positionPanel();
+    const frame = window.requestAnimationFrame(positionPanel);
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, launcherPosition]);
+
   useEffect(() => {
     const onResize = () => {
-      const clamp = (position: FloatingPosition | null, element: HTMLElement | null): FloatingPosition | null => {
-        if (!position || !element) return position;
-        const rect = element.getBoundingClientRect();
-        return {
-          left: Math.min(Math.max(8, position.left), Math.max(8, window.innerWidth - rect.width - 8)),
-          top: Math.min(Math.max(8, position.top), Math.max(8, window.innerHeight - rect.height - 8)),
-        };
-      };
-      setPanelPosition(current => clamp(current, panelRef.current));
-      setLauncherPosition(current => clamp(current, launcherRef.current));
+      const panelRect = panelRef.current?.getBoundingClientRect();
+      const panelWidth = panelRect?.width || Math.min(PANEL_WIDTH, Math.max(0, window.innerWidth - 32));
+      const panelHeight = panelRect?.height || Math.min(PANEL_HEIGHT, Math.max(0, window.innerHeight - 48));
+      setPanelPosition(current => {
+        if (!current) return current;
+        const next = clampPosition(current, panelWidth, panelHeight);
+        return samePosition(current, next) ? current : next;
+      });
+      setLauncherPosition(current => {
+        if (!current) return current;
+        const next = clampPosition(current, LAUNCHER_SIZE, LAUNCHER_SIZE);
+        return samePosition(current, next) ? current : next;
+      });
     };
     window.addEventListener('resize', onResize);
     onResize();
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(() => {
+    if (!open || !panelRef.current || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      const rect = panelRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setPanelPosition(current => {
+        if (!current) return current;
+        const next = clampPosition(current, rect.width, rect.height);
+        return samePosition(current, next) ? current : next;
+      });
+    });
+    observer.observe(panelRef.current);
+    return () => observer.disconnect();
+  }, [open]);
 
   useEffect(() => {
     if (!open || users.length) return;
@@ -262,6 +344,9 @@ export function LancoAgent() {
 
   const beginDrag = (target: DragTarget, event: ReactPointerEvent<HTMLElement>) => {
     if (event.button !== 0 || (target === 'panel' && event.target instanceof Element && event.target.closest('button, a, input, select, textarea'))) return;
+    // The mobile panel is intentionally bottom-fixed so it can follow the
+    // keyboard. Only the launcher is draggable on narrow screens.
+    if (target === 'panel' && window.innerWidth <= MOBILE_BREAKPOINT) return;
     const element = target === 'panel' ? panelRef.current : launcherRef.current;
     if (!element) return;
     const rect = element.getBoundingClientRect();
