@@ -229,6 +229,11 @@ async function main() {
   assert(launcherBefore, 'agent launcher should have a bounding box');
   await page.mouse.move(launcherBefore.x + 28, launcherBefore.y + 28);
   await page.mouse.down();
+  await page.evaluate(() => window.dispatchEvent(new PointerEvent('pointercancel', { bubbles: true, pointerId: 1 })));
+  await page.mouse.up();
+  await expect(page.locator('.lanco-agent')).toHaveCount(0);
+  await page.mouse.move(launcherBefore.x + 28, launcherBefore.y + 28);
+  await page.mouse.down();
   await page.mouse.move(640, 450, { steps: 8 });
   await page.mouse.up();
   const launcherAfter = await launcher.boundingBox();
