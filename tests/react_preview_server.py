@@ -49,6 +49,8 @@ REACT_PAGES = {
     '/__react/user/panel': ('用户面板 · Hysteria', ''),
     '/__react/admin/chat': ('AI 对话', 'has-shell'),
     '/admin/chat': ('AI 对话', 'has-shell'),
+    '/__react/admin/video': ('AI 视频', 'has-shell'),
+    '/admin/video': ('AI 视频', 'has-shell'),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'

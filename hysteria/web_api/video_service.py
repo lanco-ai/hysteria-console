@@ -331,11 +331,37 @@ class RunService:
     def list(self):
         return self._records()
 
-    def submit(self, workflow_id, request_snapshot=None):
+    def submit(self, workflow_id, request_snapshot=None, shot_id=None):
         workflow = self.workflows.get(workflow_id)
         if workflow is None:
             raise VideoValidationError('workflow not found')
-        validated = validate_workflow(workflow.get('nodes', []), workflow.get('edges', []))
+        workflow_snapshot = dict(workflow)
+        if shot_id is not None:
+            requested_shot = str(shot_id).strip()
+            storyboard = workflow.get('storyboard') if isinstance(workflow.get('storyboard'), dict) else {}
+            shots = storyboard.get('shots') if isinstance(storyboard.get('shots'), list) else []
+            if not requested_shot or not any(
+                isinstance(shot, dict) and str(shot.get('id')) == requested_shot for shot in shots
+            ):
+                raise VideoValidationError('storyboard shot not found')
+            nodes = workflow.get('nodes', []) if isinstance(workflow.get('nodes'), list) else []
+            selected_nodes = [
+                node for node in nodes
+                if isinstance(node, dict)
+                and isinstance(node.get('data'), dict)
+                and str(node['data'].get('shot_id')) == requested_shot
+            ]
+            selected_ids = {node.get('id') for node in selected_nodes}
+            if not selected_nodes:
+                raise VideoValidationError('storyboard shot has no executable nodes')
+            workflow_snapshot['nodes'] = selected_nodes
+            workflow_snapshot['edges'] = [
+                edge for edge in workflow.get('edges', [])
+                if isinstance(edge, dict)
+                and edge.get('source') in selected_ids
+                and edge.get('target') in selected_ids
+            ]
+        validated = validate_workflow(workflow_snapshot.get('nodes', []), workflow_snapshot.get('edges', []))
         node_status = {
             node['id']: {'state': 'queued'} for node in validated.nodes
         }
@@ -346,6 +372,7 @@ class RunService:
             'created_at': int(time.time()),
             'order': validated.order,
             'workflow': {'nodes': validated.nodes, 'edges': validated.edges},
+            'shot_id': str(shot_id) if shot_id is not None else None,
             'request': request_snapshot if isinstance(request_snapshot, dict) else {},
             'node_status': node_status,
             'provider_jobs': {},

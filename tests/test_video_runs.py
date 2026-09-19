@@ -84,3 +84,22 @@ def test_cancel_reports_unsupported_instead_of_faking_success(tmp_path):
     run = service.submit(saved['id'])
     result = service.cancel(run['id'])
     assert result['state'] == 'cancel_unsupported'
+
+
+def test_submit_can_limit_run_to_one_storyboard_shot(tmp_path):
+    workflows = workflow_store(tmp_path)
+    saved = workflows.save({'title': 'story', 'storyboard': {'shots': [
+        {'id': 'shot-1', 'title': '一', 'image_prompt': 'lake'},
+        {'id': 'shot-2', 'title': '二', 'image_prompt': 'forest'},
+    ]}, 'nodes': [
+        {'id': 'prompt-1', 'type': 'prompt', 'data': {'text': 'lake', 'shot_id': 'shot-1'}},
+        {'id': 'image-1', 'type': 'text_to_image', 'data': {'model': 'image', 'shot_id': 'shot-1'}},
+        {'id': 'prompt-2', 'type': 'prompt', 'data': {'text': 'forest', 'shot_id': 'shot-2'}},
+        {'id': 'image-2', 'type': 'text_to_image', 'data': {'model': 'image', 'shot_id': 'shot-2'}},
+    ], 'edges': [
+        {'source': 'prompt-1', 'sourceHandle': 'text', 'target': 'image-1', 'targetHandle': 'prompt'},
+        {'source': 'prompt-2', 'sourceHandle': 'text', 'target': 'image-2', 'targetHandle': 'prompt'},
+    ]})
+    service = RunService(workflows, VideoSettings('https://provider.test/v1', 'secret'), FakeProvider(), tmp_path / 'runs.json')
+    run = service.submit(saved['id'], shot_id='shot-2')
+    assert {node['id'] for node in run['workflow']['nodes']} == {'prompt-2', 'image-2'}

@@ -374,6 +374,10 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/user_detail_models.py"
   add_durable_artifact "$HY_DIR/web_api/user_detail_routes.py"
   add_durable_artifact "$HY_DIR/web_api/user_models.py"
+  add_durable_artifact "$HY_DIR/web_api/video_models.py"
+  add_durable_artifact "$HY_DIR/web_api/video_provider.py"
+  add_durable_artifact "$HY_DIR/web_api/video_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/video_service.py"
   add_durable_artifact "$HY_DIR/panel/current"
   add_durable_artifact "$HY_DIR/state/https_required"
   if [[ ! -f "$HY_DIR/template.yaml" ]]; then

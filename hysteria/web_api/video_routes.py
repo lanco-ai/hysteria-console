@@ -231,7 +231,8 @@ def register_video_routes(app, services, dispatch, *, settings_store=None, provi
         try:
             payload = json.loads((await request.body()).decode('utf-8'))
             workflow_id = payload.get('workflow_id') if isinstance(payload, dict) else None
-            result = await dispatch(lambda **_kwargs: get_run_service().submit(workflow_id), request)
+            shot_id = payload.get('shot_id') if isinstance(payload, dict) else None
+            result = await dispatch(lambda **_kwargs: get_run_service().submit(workflow_id, shot_id=shot_id), request)
         except (UnicodeDecodeError, json.JSONDecodeError):
             return _error('bad_request')
         except VideoValidationError:

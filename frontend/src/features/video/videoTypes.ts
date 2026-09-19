@@ -18,11 +18,41 @@ export type VideoWorkflow = {
   nodes: Array<Record<string, unknown>>;
   edges: Array<Record<string, unknown>>;
   version?: number;
+  storyboard?: VideoStoryboard;
+};
+
+export type VideoStoryboardShot = {
+  id: string;
+  title: string;
+  script: string;
+  shot_type: string;
+  character: string;
+  scene: string;
+  duration: number;
+  image_prompt: string;
+  motion_prompt: string;
+  dialogue: string;
+  image_model: string;
+  video_model: string;
+  image_url?: string;
+  video_url?: string;
+  image_state: 'idle' | 'queued' | 'running' | 'succeeded' | 'failed' | 'stale';
+  video_state: 'idle' | 'queued' | 'running' | 'succeeded' | 'failed' | 'stale';
+};
+
+export type VideoStoryboard = {
+  title: string;
+  source_text: string;
+  rewritten_text: string;
+  aspect_ratio: '16:9' | '9:16' | '1:1';
+  style_prompt: string;
+  shots: VideoStoryboardShot[];
 };
 
 export type VideoRun = {
   id: string;
   workflow_id: string;
+  shot_id?: string | null;
   state: string;
   node_status: Record<string, { state: string }>;
   assets?: Record<string, string>;
