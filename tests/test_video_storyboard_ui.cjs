@@ -5,6 +5,7 @@ const page = fs.readFileSync('frontend/src/features/video/VideoPage.tsx', 'utf8'
 const storyboard = fs.readFileSync('frontend/src/features/video/VideoStoryboard.tsx', 'utf8');
 const types = fs.readFileSync('frontend/src/features/video/videoTypes.ts', 'utf8');
 const styles = fs.readFileSync('frontend/src/styles/sections/22-video-storyboard.css', 'utf8');
+const canvas = fs.readFileSync('frontend/src/features/video/VideoCanvas.tsx', 'utf8');
 
 assert.match(page, /VideoStoryboard/);
 assert.match(storyboard, /video-storyboard/);
@@ -22,4 +23,12 @@ assert.match(fs.readFileSync('frontend/src/features/video/VideoSettingsDrawer.ts
 assert.match(types, /VideoStoryboardShot/);
 assert.match(types, /storyboard/);
 assert.match(styles, /video-storyboard-row/);
+assert.match(canvas, /video-node-palette/);
+assert.match(canvas, /application\/video-node/);
+assert.match(canvas, /onDropNode/);
+assert.match(canvas, /screenToFlowPosition/);
+assert.match(page, /VIDEO_TEMPLATES/);
+assert.match(page, /video-node-inspector/);
+assert.match(page, /selectedNode/);
+assert.match(page, /运行画布/);
 console.log('video storyboard UI contract passed');
