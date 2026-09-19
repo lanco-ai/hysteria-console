@@ -118,24 +118,29 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
     return () => window.clearTimeout(timer);
   }, [save, saveState]);
 
+  const ensureSaved = useCallback(async (): Promise<string | null> => {
+    if (!workflowId || saveState !== 'saved') return save();
+    return workflowId;
+  }, [save, saveState, workflowId]);
+
   const runAll = useCallback(async () => {
     if (storyboard.shots.some(shot => !shot.image_prompt.trim())) { setMessage('请先为每个分镜填写图片提示词'); return; }
-    const id = workflowId || await save();
+    const id = await ensureSaved();
     if (!id) return;
     setBusy(true);
     try { const result = await createRun(id); setRunId(result.id); setMessage(`全部分镜已提交（${result.state}）`); }
     catch (error) { setMessage(error instanceof Error ? error.message : '提交失败'); }
     finally { setBusy(false); }
-  }, [save, storyboard.shots, workflowId]);
+  }, [ensureSaved, storyboard.shots]);
 
   const runShot = useCallback(async (shot: Storyboard['shots'][number]) => {
-    const id = workflowId || await save();
+    const id = await ensureSaved();
     if (!id) return;
     setBusy(true); setMessage(`${shot.title} 已提交`);
     try { const result = await createRun(id, shot.id); setRunId(result.id); }
     catch (error) { setMessage(error instanceof Error ? error.message : '提交失败'); }
     finally { setBusy(false); }
-  }, [save, workflowId]);
+  }, [ensureSaved]);
 
   const uploadImage = useCallback(async (shot: Storyboard['shots'][number], file: File) => {
     setBusy(true); setMessage(`${shot.title} 图片上传中…`);
