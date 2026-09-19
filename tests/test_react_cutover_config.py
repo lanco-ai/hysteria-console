@@ -26,6 +26,7 @@ REACT_DOCUMENTS = (
     '/admin/rules',
     '/admin/landing-egresses',
     '/admin/chat',
+    '/admin/plans',
     '/admin/video',
 )
 
