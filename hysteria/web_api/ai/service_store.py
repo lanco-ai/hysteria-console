@@ -89,6 +89,8 @@ def _validate_base_url(value: object, protocol: str) -> str:
     if len(url) > 2048:
         raise AIServiceError('base_url is too long')
     if not url:
+        if protocol == 'gemini_native':
+            raise AIServiceError('Gemini base_url is required')
         return ''
     parsed = urlsplit(url)
     if (
@@ -102,16 +104,15 @@ def _validate_base_url(value: object, protocol: str) -> str:
         parsed.port
     except ValueError:
         raise AIServiceError('base_url has an invalid port') from None
-    if protocol == 'gemini_native' and url.rstrip('/') != GEMINI_BASE_URL:
-        raise AIServiceError('Gemini endpoint is fixed to the official API')
-    if protocol == 'grok_media' and parsed.scheme == 'http':
+    if protocol in ('gemini_native', 'grok_media') and parsed.scheme == 'http':
         hostname = parsed.hostname or ''
         try:
             loopback = ipaddress.ip_address(hostname).is_loopback
         except ValueError:
             loopback = hostname.lower().rstrip('.') == 'localhost'
         if not loopback:
-            raise AIServiceError('media API must use HTTPS or loopback HTTP')
+            label = 'Gemini API' if protocol == 'gemini_native' else 'media API'
+            raise AIServiceError(f'{label} must use HTTPS or loopback HTTP')
     return url.rstrip('/')
 
 
@@ -389,9 +390,12 @@ class AIServiceStore:
                     raise AIServiceError('service name is invalid')
                 profile['name'] = name
             if 'base_url' in values:
-                if profile['protocol'] == 'gemini_native':
-                    raise AIServiceError('Gemini endpoint is fixed to the official API')
+                previous_base_url = profile['base_url']
                 profile['base_url'] = _validate_base_url(values['base_url'], profile['protocol'])
+                if profile['protocol'] == 'gemini_native' and profile['base_url'] != previous_base_url:
+                    profile['models'] = []
+                    profile['last_verified_at'] = ''
+                    profile['verified_capabilities'] = []
             if 'temperature' in values:
                 try:
                     temperature = float(values['temperature'])

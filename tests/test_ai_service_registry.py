@@ -41,6 +41,69 @@ def test_profile_update_keeps_secret_when_omitted_and_clears_only_explicitly(tmp
     assert next(item for item in cleared['profiles'] if item['id'] == 'gemini-primary')['api_key_configured'] is False
 
 
+def test_gemini_base_url_accepts_loopback_http_and_https_but_rejects_public_http(tmp_path):
+    store = AIServiceStore(tmp_path / 'ai.json', chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
+    initial = store.public()
+
+    saved = store.update_profile(
+        'gemini-primary', revision=initial['revision'],
+        base_url='http://127.0.0.1:8317/v1',
+    )
+    gemini = next(item for item in saved['profiles'] if item['id'] == 'gemini-primary')
+    assert gemini['base_url'] == 'http://127.0.0.1:8317/v1'
+
+    saved = store.update_profile(
+        'gemini-primary', revision=saved['revision'],
+        base_url='https://gateway.example/gemini/v1',
+    )
+    gemini = next(item for item in saved['profiles'] if item['id'] == 'gemini-primary')
+    assert gemini['base_url'] == 'https://gateway.example/gemini/v1'
+
+    with pytest.raises(AIServiceError, match='loopback'):
+        store.update_profile(
+            'gemini-primary', revision=saved['revision'],
+            base_url='http://gateway.example/v1',
+        )
+
+
+def test_empty_gemini_base_url_is_rejected_without_changing_url_or_key(tmp_path):
+    store = AIServiceStore(tmp_path / 'ai.json', chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
+    initial = store.public()
+    configured_url = 'http://127.0.0.1:8317/v1'
+    saved = store.update_profile(
+        'gemini-primary', revision=initial['revision'],
+        base_url=configured_url, api_key='retained-gemini-key',
+    )
+
+    with pytest.raises(AIServiceError, match='base_url'):
+        store.update_profile(
+            'gemini-primary', revision=saved['revision'], base_url='',
+        )
+
+    profile = store.profile('gemini-primary')
+    assert profile['base_url'] == configured_url
+    assert profile['api_key'] == 'retained-gemini-key'
+
+
+def test_changing_gemini_base_url_clears_verified_model_metadata(tmp_path):
+    store = AIServiceStore(tmp_path / 'ai.json', chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
+    initial = store.public()
+    verified = store.update_catalog(
+        'gemini-primary', [{'id': 'gemini-fast', 'name': 'Gemini Fast'}],
+        capabilities=['chat', 'structured_output'], checked_at='2026-09-19T00:00:00Z',
+        revision=initial['revision'],
+    )
+
+    changed = store.update_profile(
+        'gemini-primary', revision=verified['revision'],
+        base_url='http://127.0.0.1:8317/v1',
+    )
+    gemini = next(item for item in changed['profiles'] if item['id'] == 'gemini-primary')
+    assert gemini['models'] == []
+    assert gemini['last_verified_at'] == ''
+    assert gemini['verified_capabilities'] == []
+
+
 def test_bindings_accept_only_compatible_service_protocols(tmp_path):
     store = AIServiceStore(tmp_path / 'ai.json', chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
     initial = store.public()

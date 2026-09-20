@@ -40,7 +40,7 @@ def _classify_status(status: int, *, models: bool = False) -> str:
 
 
 class GeminiAdapter:
-    """Uses fixed Google endpoints and sends credentials only in a header."""
+    """Uses Gemini native endpoints and sends credentials only in a header."""
 
     def __init__(
         self,
@@ -60,8 +60,14 @@ class GeminiAdapter:
             raise GeminiUpstreamError('service_not_configured')
         return api_key
 
+    @staticmethod
+    def _base_url(profile: dict) -> str:
+        base_url = profile.get('base_url') if isinstance(profile, dict) else None
+        return base_url.rstrip('/') if isinstance(base_url, str) and base_url else GEMINI_BASE_URL
+
     def _request(self, method: str, path: str, profile: dict, *, params=None, payload=None, models=False):
         api_key = self._api_key(profile)
+        base_url = self._base_url(profile)
         headers = {'x-goog-api-key': api_key, 'Accept': 'application/json'}
         if payload is not None:
             headers['Content-Type'] = 'application/json'
@@ -69,7 +75,7 @@ class GeminiAdapter:
             with httpx.Client(transport=self.transport, timeout=self.timeout, follow_redirects=False) as client:
                 response = client.request(
                     method,
-                    f'{GEMINI_BASE_URL}{path}',
+                    f'{base_url}{path}',
                     headers=headers,
                     params=params,
                     json=payload,
@@ -289,6 +295,7 @@ class GeminiAdapter:
         if reasoning_effort not in ('auto', 'low', 'medium', 'high'):
             raise ChatSettingsError('reasoning_effort is invalid')
         api_key = self._api_key(profile)
+        base_url = self._base_url(profile)
 
         async def generate():
             if reasoning_effort != 'auto':
@@ -303,7 +310,7 @@ class GeminiAdapter:
                     async with asyncio.timeout(600):
                         async with client.stream(
                             'POST',
-                            f'{GEMINI_BASE_URL}{path}:streamGenerateContent',
+                            f'{base_url}{path}:streamGenerateContent',
                             params={'alt': 'sse'},
                             headers={
                                 'x-goog-api-key': api_key,

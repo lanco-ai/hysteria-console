@@ -46,6 +46,33 @@ def test_generate_chat_translates_multiturn_messages_and_sanitizes_usage():
     assert API_KEY not in json.dumps(result)
 
 
+def test_sync_gemini_requests_use_profile_base_url_for_models_and_generation():
+    seen = []
+
+    def handler(request):
+        seen.append((str(request.url), request.headers.get('x-goog-api-key')))
+        if request.url.path.endswith('/models'):
+            return httpx.Response(200, json={'models': [{
+                'name': 'models/gemini-fast',
+                'supportedGenerationMethods': ['generateContent'],
+            }]})
+        return httpx.Response(200, json={
+            'candidates': [{'content': {'parts': [{'text': 'ok'}]}, 'finishReason': 'STOP'}],
+        })
+
+    adapter = GeminiAdapter(transport=httpx.MockTransport(handler))
+    profile = {'api_key': API_KEY, 'base_url': 'https://gateway.example/gemini/v1'}
+
+    assert adapter.list_models(profile) == [{'id': 'gemini-fast', 'name': 'gemini-fast'}]
+    result = adapter.generate_chat(profile, 'gemini-fast', [{'role': 'user', 'content': 'hello'}])
+
+    assert seen == [
+        ('https://gateway.example/gemini/v1/models?pageSize=1000', API_KEY),
+        ('https://gateway.example/gemini/v1/models/gemini-fast:generateContent', API_KEY),
+    ]
+    assert result['choices'][0]['message']['content'] == 'ok'
+
+
 class ChunkStream(httpx.AsyncByteStream):
     def __init__(self, chunks):
         self.chunks = chunks
@@ -91,6 +118,32 @@ def test_stream_chat_emits_incremental_events_and_closes_upstream():
     assert {'type': 'usage', 'usage': {'prompt_tokens': 3, 'completion_tokens': 2, 'total_tokens': 5}} in events
     assert events[-1] == {'type': 'done'}
     assert upstream.closed is True
+
+
+def test_stream_chat_uses_profile_base_url():
+    seen = {}
+    response_body = b'data: {"candidates":[{"content":{"parts":[{"text":"ok"}]}}]}\n\n'
+    upstream = ChunkStream([response_body])
+
+    def handler(request):
+        seen['url'] = str(request.url)
+        seen['key'] = request.headers.get('x-goog-api-key')
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=upstream)
+
+    adapter = GeminiAdapter(async_transport=httpx.MockTransport(handler))
+
+    async def collect():
+        return [chunk async for chunk in adapter.stream_chat(
+            {'api_key': API_KEY, 'base_url': 'http://127.0.0.1:8317/v1'},
+            'gemini-fast', [{'role': 'user', 'content': 'hello'}],
+        )]
+
+    chunks = asyncio.run(collect())
+    assert seen == {
+        'url': 'http://127.0.0.1:8317/v1/models/gemini-fast:streamGenerateContent?alt=sse',
+        'key': API_KEY,
+    }
+    assert any(b'"type":"done"' in chunk for chunk in chunks)
 
 
 def test_stream_chat_closes_upstream_when_client_cancels_after_first_delta():

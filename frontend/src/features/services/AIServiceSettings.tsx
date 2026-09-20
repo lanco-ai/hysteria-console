@@ -62,7 +62,7 @@ function draftFrom(profile: AIProfile): Draft {
 
 function saveButtonBody(revision: string, draft: Draft, profile: AIProfile) {
   const body: Record<string, unknown> = { revision, name: draft.name.trim() };
-  if (profile.protocol !== 'gemini_native') body.base_url = draft.base_url.trim();
+  body.base_url = draft.base_url.trim();
   if (profile.protocol === 'openai_compatible') body.temperature = Number(draft.temperature);
   if (draft.clear_api_key) body.clear_api_key = true;
   else if (draft.api_key) body.api_key = draft.api_key;
@@ -168,7 +168,7 @@ export function AIServiceSettings() {
           return <article className="ai-service-card" data-ai-service={profile.id} key={profile.id}>
             <header><div><span>{profile.protocol === 'gemini_native' ? 'Gemini 原生 API' : profile.protocol === 'openai_compatible' ? 'OpenAI Compatible' : '媒体生成 API'}</span><h3>{profile.name}</h3></div><span className={`ai-service-secret-state${profile.api_key_configured ? ' is-ready' : ''}`}>{profile.api_key_configured ? '已配置' : '未配置'}</span></header>
             <label className="ai-service-field">服务名称<input value={draft.name} maxLength={80} disabled={busyProfile} onChange={event => updateDraft(profile, { name: event.target.value })} /></label>
-            <label className="ai-service-field">API Base URL<input aria-label="API Base URL" type="url" value={draft.base_url} disabled={busyProfile || profile.protocol === 'gemini_native'} onChange={event => updateDraft(profile, { base_url: event.target.value })} placeholder={profile.protocol === 'gemini_native' ? 'Google Gemini API' : 'https://example.com/v1'} /></label>
+            <label className="ai-service-field">API Base URL<input aria-label="API Base URL" type="url" value={draft.base_url} disabled={busyProfile} onChange={event => updateDraft(profile, { base_url: event.target.value })} placeholder={profile.protocol === 'gemini_native' ? 'http://127.0.0.1:8317/v1 或 https://example.com/v1' : 'https://example.com/v1'} /></label>
             <label className="ai-service-field">API Key<input aria-label="API Key" type="password" value={draft.api_key} disabled={busyProfile || draft.clear_api_key} autoComplete="new-password" onChange={event => updateDraft(profile, { api_key: event.target.value })} placeholder={profile.api_key_configured ? profile.api_key_masked : '仅保存到服务器'} /></label>
             {profile.api_key_configured ? <label className="ai-service-clear-key"><input type="checkbox" checked={draft.clear_api_key} disabled={busyProfile} onChange={event => updateDraft(profile, { clear_api_key: event.target.checked, api_key: '' })} /> 清除已保存的 Key</label> : null}
             {profile.protocol === 'openai_compatible' ? <label className="ai-service-field">Temperature<input type="number" min="0" max="2" step="0.1" value={draft.temperature} disabled={busyProfile} onChange={event => updateDraft(profile, { temperature: event.target.value })} /></label> : null}
