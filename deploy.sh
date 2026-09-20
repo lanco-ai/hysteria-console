@@ -160,6 +160,8 @@ declare -a REACT_WEB_API_MODULES=(
   ai/gemini.py
   ai/routes.py
   ai/service_store.py
+  ai/assistant_generation.py
+  ai/assistant_schemas.py
 )
 declare -a PREVIOUSLY_ACTIVE_UNITS=()
 declare -A PREVIOUS_ENABLE_STATE=()
@@ -396,6 +398,8 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/ai/gemini.py"
   add_durable_artifact "$HY_DIR/web_api/ai/routes.py"
   add_durable_artifact "$HY_DIR/web_api/ai/service_store.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/assistant_generation.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/assistant_schemas.py"
   add_durable_artifact "$HY_DIR/panel/current"
   add_durable_artifact "$HY_DIR/state/https_required"
   if [[ ! -f "$HY_DIR/template.yaml" ]]; then
@@ -2127,6 +2131,8 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/ai/gemini.py" "$HY_DIR/web_api/ai/gemini.py"
   render "$REPO_DIR/hysteria/web_api/ai/routes.py" "$HY_DIR/web_api/ai/routes.py"
   render "$REPO_DIR/hysteria/web_api/ai/service_store.py" "$HY_DIR/web_api/ai/service_store.py"
+  render "$REPO_DIR/hysteria/web_api/ai/assistant_generation.py" "$HY_DIR/web_api/ai/assistant_generation.py"
+  render "$REPO_DIR/hysteria/web_api/ai/assistant_schemas.py" "$HY_DIR/web_api/ai/assistant_schemas.py"
 fi
 
 chmod 700 \

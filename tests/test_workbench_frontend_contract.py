@@ -187,8 +187,10 @@ def test_router_composes_every_workbench_alias_through_the_session_gate():
     assert "return <HomePage/>" not in router
     assert "return <LoginPage" not in router
     assert "resolveSameOriginReturnTo" in router
-    assert "window.history.pushState({}, '', returnTo)" in router
-    assert "window.history.replaceState({}, '', destination)" in router
+    assert "pushReactHistory(returnTo)" in router
+    assert "replaceReactHistory(destination)" in router
+    assert "window.history.pushState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path)" in router
+    assert "window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path)" in router
     assert "session.status === 'authenticated' && session.role === 'admin'" in router
     assert "const SAFE_LOGIN_QUERY_KEYS" in router
     assert "function sanitizeReturnTo" in router

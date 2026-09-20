@@ -62,7 +62,7 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
     const url = new URL(window.location.href);
     if (tab === 'ai') url.searchParams.set('tab', 'ai');
     else url.searchParams.set('tab', 'websites');
-    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   };
   const reload = async () => {
     setError(''); setBusy(true);

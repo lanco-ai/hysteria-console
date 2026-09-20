@@ -72,7 +72,38 @@ class PreviewGeminiAdapter:
     def list_models(self, profile):
         if not profile.get('api_key'):
             raise ValueError('missing preview credential')
-        return [{'id': 'gemini-preview-fast', 'name': 'Gemini Preview Fast', 'input_token_limit': 64000}]
+        return [
+            {'id': 'gemini-preview-listed-first', 'name': 'Gemini Preview Listed First'},
+            {'id': 'gemini-preview-fast', 'name': 'Gemini Preview Fast', 'input_token_limit': 64000},
+        ]
+
+    def generate_chat(self, profile, model, messages, **_kwargs):
+        if not profile.get('api_key') or model != 'gemini-preview-fast' or not messages:
+            raise ValueError('invalid preview capability test')
+        return {'choices': [{'message': {'role': 'assistant', 'content': 'capability test passed'}}]}
+
+    def generate_json(self, profile, model, prompt, schema):
+        if not profile.get('api_key') or model != 'gemini-preview-fast' or not prompt:
+            raise ValueError('invalid preview structured test')
+        if 'suggestions' in schema.get('properties', {}):
+            return {
+                'summary': '结构化输出检查',
+                'suggestions': [{
+                    'title': '测试建议', 'notes': '', 'quadrant': 'important',
+                    'start_time': '', 'estimate_minutes': 30,
+                    'reminder_offset_minutes': 0, 'reason': '检查计划建议结构',
+                }],
+            }
+        return {
+            'title': 'Preview Storyboard', 'rewritten_text': 'A short structured test story.',
+            'style_prompt': 'Soft light.', 'aspect_ratio': '16:9',
+            'shots': [{
+                'title': 'Preview Shot', 'script': 'A person looks up.', 'shot_type': '近景',
+                'character': 'A person', 'scene': 'A bright room', 'duration': 5,
+                'image_prompt': 'A bright room in soft light.', 'motion_prompt': 'Slow push in.',
+                'dialogue': 'Hello.',
+            }],
+        }
 
 
 def _manifest_assets(dist):
@@ -308,7 +339,8 @@ def _handler(api_client, allowed_assets):
                 return
             request_path = urlsplit(self.path).path
             if request_path in {'/api/chat/completions', '/api/v1/admin/services/probe'} or (
-                request_path.startswith('/api/ai/services/') and request_path.endswith('/test')
+                request_path.startswith('/api/ai/services/')
+                and request_path.endswith(('/test', '/test/generation', '/test/structured'))
             ):
                 self._json_api()
                 return

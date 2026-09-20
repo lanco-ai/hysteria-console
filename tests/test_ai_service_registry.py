@@ -104,13 +104,87 @@ def test_changing_gemini_base_url_clears_verified_model_metadata(tmp_path):
     assert gemini['verified_capabilities'] == []
 
 
+def test_changing_chat_profile_url_or_key_invalidates_old_model_catalog(tmp_path):
+    store = AIServiceStore(tmp_path / 'ai.json', chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
+    initial = store.public()
+    saved = store.update_profile(
+        'chat-primary', revision=initial['revision'],
+        base_url='https://one.example/v1', api_key='first-key',
+    )
+    catalog = store.update_catalog(
+        'chat-primary', [{'id': 'old-model'}], capabilities=['chat'],
+        checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    bound = store.set_binding(
+        'plan_assistant', 'chat-primary', model_id='old-model', revision=catalog['revision'],
+    )
+    changed_url = store.update_profile(
+        'chat-primary', revision=bound['revision'], base_url='https://two.example/v1',
+    )
+    chat = next(item for item in changed_url['profiles'] if item['id'] == 'chat-primary')
+    assert chat['models'] == []
+    assert chat['last_verified_at'] == ''
+    assert chat['verified_capabilities'] == []
+    assert changed_url['model_bindings']['plan_assistant'] == 'old-model'
+
+
 def test_bindings_accept_only_compatible_service_protocols(tmp_path):
     store = AIServiceStore(tmp_path / 'ai.json', chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
     initial = store.public()
     changed = store.set_binding('plan_assistant', 'gemini-primary', revision=initial['revision'])
     assert changed['bindings']['plan_assistant'] == 'gemini-primary'
+    assert changed['model_bindings']['plan_assistant'] == ''
     with pytest.raises(AIServiceError, match='incompatible'):
         store.set_binding('image_generation', 'gemini-primary', revision=changed['revision'])
+
+
+def test_assistant_binding_saves_an_explicit_model_and_keeps_legacy_models_empty(tmp_path):
+    from web_api.ai.service_store import _default_state
+
+    path = tmp_path / 'ai.json'
+    old_state = _default_state()
+    old_state.pop('model_bindings', None)
+    path.write_text(json.dumps(old_state))
+    store = AIServiceStore(path, chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
+
+    legacy = store.public()
+    assert legacy['model_bindings']['plan_assistant'] == ''
+    configured = store.update_profile('chat-primary', revision=legacy['revision'], api_key='test-chat-key')
+    catalog = store.update_catalog(
+        'chat-primary', [{'id': 'listed-first'}, {'id': 'explicit-choice'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=configured['revision'],
+    )
+    bound = store.set_binding(
+        'plan_assistant', 'chat-primary', model_id='explicit-choice', revision=catalog['revision'],
+    )
+    assert bound['bindings']['plan_assistant'] == 'chat-primary'
+    assert bound['model_bindings']['plan_assistant'] == 'explicit-choice'
+    assistant = store.bound_assistant('plan_assistant')
+    assert assistant['profile']['id'] == 'chat-primary'
+    assert assistant['model_id'] == 'explicit-choice'
+
+
+def test_assistant_binding_rejects_unlisted_models_and_preserves_stale_selection(tmp_path):
+    store = AIServiceStore(tmp_path / 'ai.json', chat_legacy_path=tmp_path / 'missing-chat.json', video_legacy_path=tmp_path / 'missing-video.json')
+    initial = store.public()
+    saved = store.update_profile('gemini-primary', revision=initial['revision'], api_key='test-gemini-key')
+    catalog = store.update_catalog(
+        'gemini-primary', [{'id': 'model-a'}, {'id': 'model-b'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    with pytest.raises(AIServiceError, match='model'):
+        store.set_binding(
+            'plan_assistant', 'gemini-primary', model_id='not-listed', revision=catalog['revision'],
+        )
+    chosen = store.set_binding(
+        'plan_assistant', 'gemini-primary', model_id='model-b', revision=catalog['revision'],
+    )
+    changed_catalog = store.update_catalog(
+        'gemini-primary', [{'id': 'model-a'}], capabilities=['chat'],
+        checked_at='2026-09-20T00:01:00Z', revision=chosen['revision'],
+    )
+    assert changed_catalog['model_bindings']['plan_assistant'] == 'model-b'
+    assert store.bound_assistant('plan_assistant')['model_id'] == 'model-b'
 
 
 def test_revision_conflict_does_not_overwrite_a_newer_profile(tmp_path):

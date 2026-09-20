@@ -52,6 +52,8 @@ WEB_API_MODULES = (
     'ai/gemini.py',
     'ai/routes.py',
     'ai/service_store.py',
+    'ai/assistant_generation.py',
+    'ai/assistant_schemas.py',
 )
 
 

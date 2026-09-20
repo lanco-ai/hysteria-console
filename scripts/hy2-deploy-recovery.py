@@ -280,6 +280,8 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/web_api/ai/gemini.py",
     "/root/hysteria/web_api/ai/routes.py",
     "/root/hysteria/web_api/ai/service_store.py",
+    "/root/hysteria/web_api/ai/assistant_generation.py",
+    "/root/hysteria/web_api/ai/assistant_schemas.py",
     "/root/hysteria/codex_quota.js",
     "/root/hysteria/template.yaml",
     "/root/hysteria/state/https_required",

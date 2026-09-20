@@ -8,6 +8,7 @@ import asyncio
 import codecs
 import json
 import math
+import re
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -46,12 +47,14 @@ class ChatUpstreamError(RuntimeError):
         code: str | None = None,
         reasoning_unsupported: bool = False,
         stream_options_unsupported: bool = False,
+        structured_output_unsupported: bool = False,
     ):
         self.status = status
         self.retry_after = retry_after
         self.code = code
         self.reasoning_unsupported = reasoning_unsupported
         self.stream_options_unsupported = stream_options_unsupported
+        self.structured_output_unsupported = structured_output_unsupported
         super().__init__('chat upstream request failed')
 
 
@@ -658,6 +661,123 @@ def forward_chat(
         return result
 
 
+def _structured_json_request(
+    settings: ChatSettings,
+    *,
+    model: str,
+    prompt: str,
+    schema: dict[str, object],
+    include_schema: bool,
+) -> urllib.request.Request:
+    if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > MAX_MESSAGE_CHARS:
+        raise ChatSettingsError('structured prompt is invalid')
+    try:
+        schema_bytes = json.dumps(schema, ensure_ascii=False).encode('utf-8')
+    except (TypeError, ValueError):
+        raise ChatSettingsError('structured schema is invalid') from None
+    if not isinstance(schema, dict) or len(schema_bytes) > 48_000:
+        raise ChatSettingsError('structured schema is invalid')
+    base_request = build_upstream_request(
+        settings, [{'role': 'user', 'content': prompt}], model=model,
+    )
+    payload = json.loads(base_request.data.decode('utf-8'))
+    if include_schema:
+        payload['response_format'] = {
+            'type': 'json_schema',
+            'json_schema': {'name': 'assistant_result', 'strict': True, 'schema': schema},
+        }
+    return urllib.request.Request(
+        base_request.full_url,
+        data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+        headers=dict(base_request.header_items()),
+        method='POST',
+    )
+
+
+def _parse_structured_response(payload: object) -> object:
+    try:
+        choices = payload.get('choices') if isinstance(payload, dict) else None
+        choice = choices[0] if isinstance(choices, list) and choices else None
+        message = choice.get('message') if isinstance(choice, dict) else None
+        if not isinstance(message, dict) or message.get('refusal'):
+            raise ValueError
+        finish_reason = choice.get('finish_reason')
+        if finish_reason not in (None, 'stop'):
+            raise ValueError
+        content = message.get('content')
+        if isinstance(content, list):
+            content = ''.join(
+                part.get('text', '') for part in content
+                if isinstance(part, dict) and isinstance(part.get('text'), str)
+            )
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError
+
+        def reject_constant(_value):
+            raise ValueError
+
+        return json.loads(content, parse_constant=reject_constant)
+    except (AttributeError, IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        raise ChatUpstreamError(200, code='invalid_model_response') from None
+
+
+def _structured_format_unsupported(error_body: str) -> bool:
+    normalized = error_body.replace('`', '').replace('"', '').replace("'", '')
+    if any(marker in normalized for marker in (
+        'invalid schema', 'invalid json schema', 'schema validation failed',
+        'unsupported keyword', 'unknown keyword', 'unrecognized keyword',
+    )):
+        return False
+    if not any(marker in normalized for marker in ('response_format', 'json_schema', 'json schema')):
+        return False
+    return bool(
+        re.search(
+            r'\b(?:unsupported|unknown|unrecognized|unexpected)\s+(?:request\s+)?'
+            r'(?:parameter|field|argument)\s*(?::|=)?\s*response_format\b', normalized,
+        )
+        or re.search(
+            r'\bresponse_format\b.{0,80}\b(?:unsupported|not supported|unknown|unrecognized)\b', normalized,
+        )
+        or re.search(
+            r'\b(?:does not|doesnt|do not|dont) support.{0,50}\b(?:response_format|json_schema|json schema)\b', normalized,
+        )
+        or re.search(
+            r'\bjson[_ ]schema\b.{0,80}\b(?:unsupported|not supported|unknown|unrecognized)\b', normalized,
+        )
+    )
+
+
+def forward_structured_json(
+    settings: ChatSettings,
+    *,
+    model: str,
+    prompt: str,
+    schema: dict[str, object],
+    opener=None,
+) -> tuple[object, str]:
+    """Generate strict JSON, with one text-mode retry only on explicit schema rejection."""
+    first_request = _structured_json_request(
+        settings, model=model, prompt=prompt, schema=schema, include_schema=True,
+    )
+    try:
+        payload = _read_json_request(first_request, opener=opener, timeout=120)
+        return _parse_structured_response(payload), 'json_schema'
+    except ChatUpstreamError as error:
+        if error.status != 400 or not error.structured_output_unsupported:
+            raise
+    fallback_request = _structured_json_request(
+        settings, model=model,
+        prompt=(
+            prompt + '\n\nReturn only one JSON object that follows this schema exactly. '
+            'Do not include Markdown fences, commentary, or surrounding text. Schema: '
+            + json.dumps(schema, ensure_ascii=False, separators=(',', ':'))
+        ),
+        schema=schema, include_schema=False,
+    )
+    fallback = _read_json_request(fallback_request, opener=opener, timeout=120)
+    return _parse_structured_response(fallback), 'json_text_fallback'
+
+
 def list_chat_models(
     settings: ChatSettings,
     *,
@@ -710,6 +830,7 @@ def _read_json_request(request, *, opener=None, timeout: int) -> dict[str, objec
     except urllib.error.HTTPError as exc:
         retry_after = exc.headers.get('Retry-After') if exc.headers else None
         reasoning_unsupported = False
+        structured_output_unsupported = False
         if exc.code == 400:
             try:
                 error_body = exc.read(MAX_BODY_BYTES + 1).decode('utf-8', 'ignore').lower()
@@ -719,7 +840,12 @@ def _read_json_request(request, *, opener=None, timeout: int) -> dict[str, objec
                 'reasoning_effort', 'unsupported parameter', 'unknown parameter',
                 'unknown field', 'unrecognized parameter',
             ))
-        raise ChatUpstreamError(exc.code, retry_after=retry_after, reasoning_unsupported=reasoning_unsupported) from None
+            structured_output_unsupported = _structured_format_unsupported(error_body)
+        raise ChatUpstreamError(
+            exc.code, retry_after=retry_after,
+            reasoning_unsupported=reasoning_unsupported,
+            structured_output_unsupported=structured_output_unsupported,
+        ) from None
     except (urllib.error.URLError, TimeoutError, OSError):
         raise ChatUpstreamError() from None
     if status < 200 or status >= 300 or len(raw) > MAX_BODY_BYTES:

@@ -198,7 +198,14 @@ def _ai_store(tmp_path):
         backup_dir=tmp_path / 'ai' / 'migration-backup',
     )
     snapshot = store.public()
-    store.update_profile('gemini-primary', revision=snapshot['revision'], api_key='gemini-server-secret')
+    snapshot = store.update_profile('gemini-primary', revision=snapshot['revision'], api_key='gemini-server-secret')
+    snapshot = store.update_catalog(
+        'gemini-primary', [{'id': 'listed-first'}, {'id': 'gemini-preview-fast'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=snapshot['revision'],
+    )
+    store.set_binding(
+        'video_assistant', 'gemini-primary', model_id='gemini-preview-fast', revision=snapshot['revision'],
+    )
     return store
 
 
@@ -216,10 +223,50 @@ def test_video_assistant_drafts_storyboard_without_running_paid_media_jobs(tmp_p
     assert response.status_code == 200
     result = response.json()
     assert result['model'] == 'gemini-preview-fast'
+    assert result['structured_output'] == 'gemini_native_schema'
     assert result['shots'][0]['image_prompt'].startswith('温暖的花园')
     assert 'gemini-server-secret' not in response.text
     assert 'gemini-server-secret' not in gemini.calls[0]['prompt']
     assert len(gemini.calls) == 1
+
+
+def test_video_assistant_uses_the_saved_chat_service_and_exact_model(tmp_path, monkeypatch):
+    import web_api.video_routes as video_routes
+
+    ai_store = _ai_store(tmp_path)
+    initial = ai_store.public()
+    saved = ai_store.update_profile(
+        'chat-primary', revision=initial['revision'],
+        base_url='https://provider.test/v1', api_key='test-chat-secret',
+    )
+    catalog = ai_store.update_catalog(
+        'chat-primary', [{'id': 'listed-first'}, {'id': 'chosen-video-model'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    ai_store.set_binding(
+        'video_assistant', 'chat-primary', model_id='chosen-video-model', revision=catalog['revision'],
+    )
+    observed = {}
+    valid_result = _VideoAssistantGemini().generate_json({}, 'chosen-video-model', '', {})
+
+    def generate(profile, model, prompt, schema, *, gemini_adapter):
+        observed.update(protocol=profile['protocol'], model=model, api_key=profile['api_key'])
+        return valid_result, 'json_text_fallback'
+
+    monkeypatch.setattr(video_routes, 'generate_assistant_json', generate, raising=False)
+    app = create_app(
+        _Services(), video_settings_store=VideoSettingsStore(tmp_path / 'video.json'),
+        ai_services_store=ai_store,
+    )
+    with TestClient(app) as client:
+        response = client.post('/api/video/assistant/draft', headers=_admin_headers(), json={
+            'idea': '一个孩子和会发光的种子', 'style_prompt': '温暖 3D 动画',
+            'aspect_ratio': '9:16', 'shot_count': 1, 'shot_duration': 5,
+        })
+    assert response.status_code == 200
+    assert response.json()['model'] == 'chosen-video-model'
+    assert response.json()['structured_output'] == 'json_text_fallback'
+    assert observed == {'protocol': 'openai_compatible', 'model': 'chosen-video-model', 'api_key': 'test-chat-secret'}
 
 
 def test_video_assistant_requires_admin_same_origin_and_rejects_invalid_draft(tmp_path):

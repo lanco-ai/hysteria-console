@@ -32,6 +32,7 @@ export type PlanAssistantPreview = {
   summary: string;
   model: string;
   service_name: string;
+  structured_output: 'gemini_native_schema' | 'json_schema' | 'json_text_fallback';
   suggestions: PlanAssistantSuggestion[];
 };
 
@@ -44,11 +45,13 @@ async function requestPlanAt<T>(url: string, init: RequestInit = {}): Promise<T>
       : response.status === 403 ? '当前账号没有管理计划的权限。'
       : response.status === 409 ? '计划已在其他设备更新，请刷新后再保存。'
       : response.status === 413 ? '计划数据过多，请减少内容后重试。'
-      : code === 'service_not_configured' ? '请先到服务中心配置并测试 Gemini API。'
-        : code === 'authentication_failed' ? 'Gemini API 认证失败，请检查服务中心中的 API Key。'
-          : code === 'permission_denied' ? '当前 Gemini 服务没有该模型的访问权限。'
-            : code === 'rate_limited' ? 'Gemini 请求频率受限，请稍后再试。'
-              : code === 'timeout' ? 'Gemini 响应超时，请稍后重试。'
+      : code === 'service_not_configured' ? '请先到服务中心配置助手服务。'
+        : code === 'model_not_selected' ? '请先到服务中心为今日计划助手选择模型。'
+          : code === 'model_not_available' ? '所选模型已不可用，请刷新模型列表并重新选择。'
+            : code === 'authentication_failed' ? 'AI 服务认证失败，请检查服务中心中的 API Key。'
+              : code === 'permission_denied' ? '所选 AI 服务没有该模型的访问权限。'
+                : code === 'rate_limited' ? 'AI 服务限流，请稍后再试。'
+                  : code === 'timeout' ? 'AI 服务响应超时，请稍后重试。'
       : code === 'invalid_plan' ? '计划内容不符合要求，请检查字段。'
                 : code === 'invalid_model_response' ? 'AI 返回内容无法安全解析，请调整描述后重试。'
                   : '计划暂时无法读取或保存，请稍后重试。';

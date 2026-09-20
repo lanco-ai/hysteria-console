@@ -57,7 +57,7 @@ async function main() {
         const input = route.request().postDataJSON();
         assert.equal(input.shot_count, 1);
         await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-          model: 'gemini-preview-fast', service_name: 'Gemini', title: 'AI 草稿',
+          model: 'gemini-preview-fast', service_name: 'Gemini', structured_output: 'gemini_native_schema', title: 'AI 草稿',
           rewritten_text: '一段整理后的故事。', style_prompt: '柔和电影光线。', aspect_ratio: '9:16',
           shots: [{ title: '发现线索', script: '主角发现线索。', shot_type: '近景', character: '主角', scene: '花园', duration: 5,
             image_prompt: '花园里主角发现闪光的线索。', motion_prompt: '镜头缓慢推进，主角拾起线索。', dialogue: '找到了！' }],
@@ -154,7 +154,7 @@ async function main() {
         await page.getByLabel('故事创意').fill('主角在花园寻找神秘线索');
         await page.getByLabel('分镜数').fill('1');
         await page.getByRole('button', { name: '生成分镜草稿' }).click();
-        await expect(page.getByText('Gemini · gemini-preview-fast · 仅生成文字草稿')).toBeVisible();
+        await expect(page.getByText('Gemini · gemini-preview-fast · 仅生成文字草稿 · Gemini 原生结构化输出已通过校验')).toBeVisible();
         await expect(page.getByLabel('画面提示词')).toHaveValue('花园里主角发现闪光的线索。');
         assert.equal(runRequests, 0, 'AI drafting must not submit a paid media run');
         await page.getByRole('button', { name: '应用到当前工作流' }).click();

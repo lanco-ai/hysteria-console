@@ -117,12 +117,130 @@ def test_gemini_connection_test_persists_only_safe_model_metadata(tmp_path):
         assert response.status_code == 200
         result = response.json()
         assert result['ok'] is True
+        assert result['test_level'] == 'A'
+        assert result['tested_at']
         assert result['models_count'] == 1
         assert result['models'][0]['id'] == 'gemini-test'
         assert 'gemini-secret-not-returned' not in response.text
         assert adapter.profile['api_key'] == 'gemini-secret-not-returned'
         assert client.get('/api/ai/services/gemini-primary/models', headers=HEADERS).json()['models'][0]['id'] == 'gemini-test'
         assert store.profile('gemini-primary')['models'] == result['models']
+
+
+def test_assistant_text_and_structured_capability_tests_are_explicit_and_ephemeral(tmp_path, monkeypatch):
+    import web_api.ai.routes as ai_routes
+
+    store = make_store(tmp_path)
+    initial = store.public()
+    saved = store.update_profile('gemini-primary', revision=initial['revision'], api_key='test-gemini-key')
+    catalog = store.update_catalog(
+        'gemini-primary', [{'id': 'listed-first'}, {'id': 'chosen-model'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    bound = store.set_binding(
+        'plan_assistant', 'gemini-primary', model_id='chosen-model', revision=catalog['revision'],
+    )
+    called = []
+
+    def text_test(profile, model, prompt, *, gemini_adapter):
+        called.append(('text', profile['protocol'], model, prompt))
+        return 'ok'
+
+    def structured_test(profile, model, prompt, schema, *, gemini_adapter):
+        called.append(('structured', profile['protocol'], model, prompt))
+        return ({'summary': '测试', 'suggestions': [{
+            'title': '测试任务', 'notes': '', 'quadrant': 'important',
+            'start_time': '', 'estimate_minutes': 30,
+            'reminder_offset_minutes': 0, 'reason': '结构测试',
+        }]}, 'gemini_native_schema')
+
+    monkeypatch.setattr(ai_routes, 'generate_assistant_text', text_test, raising=False)
+    monkeypatch.setattr(ai_routes, 'generate_assistant_json', structured_test, raising=False)
+    with TestClient(create_app(Sessions(), ai_services_store=store)) as client:
+        text_response = client.post(
+            '/api/ai/services/gemini-primary/test/generation', headers=HEADERS,
+            json={'feature': 'plan_assistant', 'model_id': 'chosen-model'},
+        )
+        structured_response = client.post(
+            '/api/ai/services/gemini-primary/test/structured', headers=HEADERS,
+            json={'feature': 'plan_assistant', 'model_id': 'chosen-model'},
+        )
+
+    assert text_response.status_code == 200
+    assert text_response.json()['level'] == 'B'
+    assert text_response.json()['model_id'] == 'chosen-model'
+    assert text_response.json()['revision'] == bound['revision']
+    assert structured_response.status_code == 200
+    assert structured_response.json()['level'] == 'C'
+    assert structured_response.json()['structured_output'] == 'gemini_native_schema'
+    assert structured_response.json()['revision'] == bound['revision']
+    assert [item[:3] for item in called] == [
+        ('text', 'gemini_native', 'chosen-model'),
+        ('structured', 'gemini_native', 'chosen-model'),
+    ]
+
+
+def test_video_assistant_capability_test_uses_video_structure_without_persisting_projects(tmp_path, monkeypatch):
+    import web_api.ai.routes as ai_routes
+
+    store = make_store(tmp_path)
+    initial = store.public()
+    saved = store.update_profile('chat-primary', revision=initial['revision'], base_url='https://provider.test/v1', api_key='test-chat-key')
+    catalog = store.update_catalog(
+        'chat-primary', [{'id': 'listed-first'}, {'id': 'chosen-video-model'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    bound = store.set_binding(
+        'video_assistant', 'chat-primary', model_id='chosen-video-model', revision=catalog['revision'],
+    )
+    observed = []
+
+    def generate(profile, model, prompt, schema, *, gemini_adapter):
+        observed.append((profile['protocol'], model, schema['properties']['shots']['items']['properties']['duration']))
+        return ({
+            'title': '测试分镜', 'rewritten_text': '故事草稿', 'style_prompt': '柔和光线',
+            'aspect_ratio': '16:9', 'shots': [{
+                'title': '镜头一', 'script': '人物抬头', 'shot_type': '近景',
+                'character': '人物', 'scene': '房间', 'duration': 5,
+                'image_prompt': '明亮房间', 'motion_prompt': '缓慢推进', 'dialogue': '',
+            }],
+        }, 'json_schema')
+
+    monkeypatch.setattr(ai_routes, 'generate_assistant_json', generate, raising=False)
+    with TestClient(create_app(Sessions(), ai_services_store=store)) as client:
+        response = client.post(
+            '/api/ai/services/chat-primary/test/structured', headers=HEADERS,
+            json={'feature': 'video_assistant', 'model_id': 'chosen-video-model'},
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()['level'] == 'C'
+    assert response.json()['revision'] == bound['revision']
+    assert response.json()['structured_output'] == 'json_schema'
+    assert observed == [('openai_compatible', 'chosen-video-model', {'type': 'INTEGER'})]
+
+
+def test_video_assistant_capability_test_sanitizes_invalid_structured_result(tmp_path, monkeypatch):
+    import web_api.ai.routes as ai_routes
+
+    store = make_store(tmp_path)
+    initial = store.public()
+    saved = store.update_profile('chat-primary', revision=initial['revision'], base_url='https://provider.test/v1', api_key='test-chat-key')
+    catalog = store.update_catalog(
+        'chat-primary', [{'id': 'chosen-video-model'}], capabilities=['chat'],
+        checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    store.set_binding('video_assistant', 'chat-primary', model_id='chosen-video-model', revision=catalog['revision'])
+    monkeypatch.setattr(ai_routes, 'generate_assistant_json', lambda *_args, **_kwargs: ({}, 'json_schema'))
+
+    with TestClient(create_app(Sessions(), ai_services_store=store)) as client:
+        response = client.post(
+            '/api/ai/services/chat-primary/test/structured', headers=HEADERS,
+            json={'feature': 'video_assistant', 'model_id': 'chosen-video-model'},
+        )
+
+    assert response.status_code == 502
+    assert response.json() == {'error': 'structured_result_invalid'}
+    assert 'ValidationError' not in response.text
 
 
 def test_legacy_chat_and_video_api_contracts_read_and_write_the_shared_registry(tmp_path):

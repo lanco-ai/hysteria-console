@@ -71,6 +71,39 @@ function normalizeRoute(pathname: string): string {
 
 function currentLocationKey(): string { return window.location.href; }
 
+const REACT_HISTORY_INDEX = '__hysteriaReactHistoryIndex';
+
+function readReactHistoryIndex(state: unknown): number | null {
+  if (!state || typeof state !== 'object') return null;
+  const value = (state as Record<string, unknown>)[REACT_HISTORY_INDEX];
+  return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
+}
+
+function withReactHistoryIndex(state: unknown, index: number): Record<string, unknown> {
+  const value: Record<string, unknown> = state && typeof state === 'object' && !Array.isArray(state)
+    ? { ...(state as Record<string, unknown>) }
+    : { __hysteriaPreviousHistoryState: state };
+  value[REACT_HISTORY_INDEX] = index;
+  return value;
+}
+
+let reactHistoryIndex = readReactHistoryIndex(window.history.state) ?? Math.max(0, window.history.length - 1);
+let reactHistoryLocation = window.location.href;
+if (readReactHistoryIndex(window.history.state) === null) {
+  window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', window.location.href);
+}
+
+function pushReactHistory(path: string): void {
+  reactHistoryIndex += 1;
+  window.history.pushState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
+  reactHistoryLocation = window.location.href;
+}
+
+function replaceReactHistory(path: string): void {
+  window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
+  reactHistoryLocation = window.location.href;
+}
+
 function isReactDocumentPath(pathname: string): boolean {
   const route = normalizeRoute(pathname);
   return REACT_DOCUMENT_ROUTES.has(route) || /^\/admin\/user\/[^/]+$/.test(route);
@@ -100,7 +133,21 @@ function protectedRouteReturnTo(route: string, search: string): string | undefin
 }
 
 function installClientNavigation(onNavigate: () => void): () => void {
-  const onPopState = () => onNavigate();
+  const onPopState = (event: PopStateEvent) => {
+    const previous = new URL(reactHistoryLocation);
+    const nextLocation = window.location.href;
+    const next = new URL(nextLocation);
+    const sameRoute = previous.pathname === next.pathname && previous.search === next.search;
+    const guardEvent = new CustomEvent<{ state: unknown; sameRoute: boolean; fromIndex: number }>('hysteria:before-client-popstate', {
+      detail: { state: event.state, sameRoute, fromIndex: reactHistoryIndex }, cancelable: true,
+    });
+    window.dispatchEvent(guardEvent);
+    if (guardEvent.defaultPrevented) return;
+    const nextIndex = readReactHistoryIndex(event.state);
+    if (nextIndex !== null) reactHistoryIndex = nextIndex;
+    reactHistoryLocation = nextLocation;
+    onNavigate();
+  };
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (!(event.target instanceof Element)) return;
@@ -108,11 +155,27 @@ function installClientNavigation(onNavigate: () => void): () => void {
     if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
     const url = new URL(anchor.href, window.location.href);
     if (url.origin !== window.location.origin || !isReactDocumentPath(url.pathname)) return;
-    if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) return;
+    if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) {
+      event.preventDefault();
+      const next = `${window.location.pathname}${window.location.search}${url.hash}`;
+      if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+        pushReactHistory(next);
+        onNavigate();
+      }
+      const targetId = (() => {
+        try { return decodeURIComponent(url.hash.slice(1)); } catch { return url.hash.slice(1); }
+      })();
+      const target = document.getElementById(targetId);
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView();
+        target.focus({ preventScroll: true });
+      }
+      return;
+    }
     event.preventDefault();
     const next = `${previewPath(normalizeRoute(url.pathname))}${url.search}${url.hash}`;
     if (next === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
-    window.history.pushState({}, '', next);
+    pushReactHistory(next);
     onNavigate();
   };
   window.addEventListener('popstate', onPopState);
@@ -213,7 +276,7 @@ function App() {
   const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/' || route === '/admin/chat') && session.status === 'anonymous') || needsAdminLogin;
   const protectedReturnTo = protectedRouteReturnTo(route, location.search);
 
-  const navigate = useCallback((path: string) => { window.history.pushState({}, '', path); setLocationKey(currentLocationKey()); }, []);
+  const navigate = useCallback((path: string) => { pushReactHistory(path); setLocationKey(currentLocationKey()); }, []);
   const closeLogin = useCallback(() => { setLoginRequested(false); if (LOGIN_ROUTES.has(route)) navigate(previewPath('/')); }, [navigate, route]);
   const requestLogin = useCallback(() => { setLoginRequested(true); }, []);
   const handleAuthenticated = useCallback(async (candidate?: string) => {
@@ -221,8 +284,8 @@ function App() {
     setLoginRequested(false);
     const returnTo = sanitizeReturnTo(candidate) || (route === '/user/login' ? '/user/panel' : '/');
     const destination = previewPath(returnTo);
-    window.history.pushState({}, '', returnTo);
-    if (destination !== returnTo) window.history.replaceState({}, '', destination);
+    pushReactHistory(returnTo);
+    if (destination !== returnTo) replaceReactHistory(destination);
     setLocationKey(currentLocationKey());
   }, [route, session]);
 

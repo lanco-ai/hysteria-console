@@ -25,8 +25,8 @@ PROTOCOLS = {'gemini_native', 'openai_compatible', 'grok_media'}
 PROFILE_IDS = {'gemini-primary', 'chat-primary', 'media-primary'}
 FEATURE_PROTOCOLS = {
     'chat': {'openai_compatible', 'gemini_native'},
-    'plan_assistant': {'gemini_native'},
-    'video_assistant': {'gemini_native'},
+    'plan_assistant': {'openai_compatible', 'gemini_native'},
+    'video_assistant': {'openai_compatible', 'gemini_native'},
     'image_generation': {'grok_media'},
     'video_generation': {'grok_media'},
 }
@@ -81,6 +81,7 @@ def _default_state() -> dict:
             'image_generation': 'media-primary',
             'video_generation': 'media-primary',
         },
+        'model_bindings': {'plan_assistant': '', 'video_assistant': ''},
     }
 
 
@@ -240,6 +241,15 @@ class AIServiceStore:
         if not isinstance(profiles, dict) or set(profiles) != PROFILE_IDS or not isinstance(bindings, dict):
             raise AIServiceError('AI service registry is invalid')
         state = deepcopy(raw)
+        model_bindings = state.get('model_bindings', {})
+        if not isinstance(model_bindings, dict) or set(model_bindings) - {'plan_assistant', 'video_assistant'}:
+            raise AIServiceError('AI service registry is invalid')
+        state['model_bindings'] = {
+            feature: model_bindings.get(feature, '')
+            for feature in ('plan_assistant', 'video_assistant')
+        }
+        if any(not isinstance(value, str) or len(value) > 256 for value in state['model_bindings'].values()):
+            raise AIServiceError('AI service registry is invalid')
         for profile_id in PROFILE_IDS:
             profile = state['profiles'].get(profile_id)
             default = _default_profile(profile_id)
@@ -333,6 +343,7 @@ class AIServiceStore:
             'revision': str(state['revision']),
             'profiles': [self._public_profile(state['profiles'][key]) for key in sorted(state['profiles'])],
             'bindings': deepcopy(state['bindings']),
+            'model_bindings': deepcopy(state['model_bindings']),
         }
 
     def profile(self, profile_id: str) -> dict:
@@ -340,12 +351,32 @@ class AIServiceStore:
             raise AIServiceError('unknown AI service')
         return deepcopy(self._ensure_initialized()['profiles'][profile_id])
 
+    def profile_snapshot(self, profile_id: str) -> dict:
+        if profile_id not in PROFILE_IDS:
+            raise AIServiceError('unknown AI service')
+        state = self._ensure_initialized()
+        return {
+            'profile': deepcopy(state['profiles'][profile_id]),
+            'revision': str(state['revision']),
+        }
+
     def bound_profile(self, feature: str) -> dict:
         if feature not in FEATURE_PROTOCOLS:
             raise AIServiceError('unknown AI feature')
         state = self._ensure_initialized()
         profile_id = state['bindings'][feature]
         return deepcopy(state['profiles'][profile_id])
+
+    def bound_assistant(self, feature: str) -> dict:
+        if feature not in {'plan_assistant', 'video_assistant'}:
+            raise AIServiceError('unknown AI assistant')
+        state = self._ensure_initialized()
+        profile_id = state['bindings'][feature]
+        return {
+            'profile': deepcopy(state['profiles'][profile_id]),
+            'model_id': state['model_bindings'][feature],
+            'revision': str(state['revision']),
+        }
 
     @staticmethod
     def _check_revision(state: dict, revision: object):
@@ -373,6 +404,7 @@ class AIServiceStore:
             'revision': str(state['revision']),
             'profiles': [cls._public_profile(state['profiles'][key]) for key in sorted(state['profiles'])],
             'bindings': deepcopy(state['bindings']),
+            'model_bindings': deepcopy(state['model_bindings']),
         }
 
     def update_profile(self, profile_id: str, *, revision: object, **values) -> dict:
@@ -384,18 +416,15 @@ class AIServiceStore:
 
         def update(state):
             profile = state['profiles'][profile_id]
+            previous_base_url = profile['base_url']
+            previous_api_key = profile['api_key']
             if 'name' in values:
                 name = str(values['name'] or '').strip()
                 if not name or len(name) > 80:
                     raise AIServiceError('service name is invalid')
                 profile['name'] = name
             if 'base_url' in values:
-                previous_base_url = profile['base_url']
                 profile['base_url'] = _validate_base_url(values['base_url'], profile['protocol'])
-                if profile['protocol'] == 'gemini_native' and profile['base_url'] != previous_base_url:
-                    profile['models'] = []
-                    profile['last_verified_at'] = ''
-                    profile['verified_capabilities'] = []
             if 'temperature' in values:
                 try:
                     temperature = float(values['temperature'])
@@ -413,18 +442,41 @@ class AIServiceStore:
                 profile['api_key'] = api_key
             if values.get('clear_api_key') not in (None, True, False):
                 raise AIServiceError('clear_api_key is invalid')
+            if (
+                profile['protocol'] in {'gemini_native', 'openai_compatible'}
+                and (profile['base_url'] != previous_base_url or profile['api_key'] != previous_api_key)
+            ):
+                profile['models'] = []
+                profile['last_verified_at'] = ''
+                profile['verified_capabilities'] = []
 
         return self._mutate(revision, update)
 
-    def set_binding(self, feature: str, profile_id: str, *, revision: object) -> dict:
+    def set_binding(self, feature: str, profile_id: str, *, revision: object, model_id: object = None) -> dict:
         if feature not in FEATURE_PROTOCOLS or profile_id not in PROFILE_IDS:
             raise AIServiceError('invalid feature binding')
+        if feature not in {'plan_assistant', 'video_assistant'} and model_id is not None:
+            raise AIServiceError('invalid feature binding')
+        if model_id is not None and (
+            not isinstance(model_id, str) or len(model_id) > 256
+            or any(ord(char) < 32 for char in model_id)
+        ):
+            raise AIServiceError('invalid model binding')
 
         def update(state):
             profile = state['profiles'][profile_id]
             if profile['protocol'] not in FEATURE_PROTOCOLS[feature]:
                 raise AIServiceError('incompatible AI service')
+            previous_profile_id = state['bindings'][feature]
             state['bindings'][feature] = profile_id
+            if feature in {'plan_assistant', 'video_assistant'}:
+                if model_id is not None:
+                    model_ids = {item['id'] for item in profile['models']}
+                    if model_id and model_id not in model_ids:
+                        raise AIServiceError('invalid model binding')
+                    state['model_bindings'][feature] = model_id
+                elif previous_profile_id != profile_id:
+                    state['model_bindings'][feature] = ''
 
         return self._mutate(revision, update)
 

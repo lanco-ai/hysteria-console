@@ -199,6 +199,8 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .ai-service-binding label { display: grid; gap: 6px; min-width: 0; color: #65736a; font-size: 12px; }
 .ai-service-binding select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 36px; padding: 6px 9px; border: 1px solid #dce4de; border-radius: 7px; background: #fff; color: #26372d; font: inherit; }
 .ai-service-binding [role="status"] { grid-column: 1 / -1; color: #286949; font-size: 11px; }
+.ai-service-assistant-tests { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; grid-column: 1 / -1; }
+.ai-service-assistant-tests small { flex: 1 1 100%; color: #87918a; font-size: 10px; line-height: 1.5; }
 .ai-service-security-note { margin: 0; color: #87918a; font-size: 11px; line-height: 1.6; }
 @media (max-width: 1100px) {
   .ai-service-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

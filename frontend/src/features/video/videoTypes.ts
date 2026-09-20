@@ -20,6 +20,7 @@ export type VideoAssistantShotDraft = {
 export type VideoAssistantDraft = {
   model: string;
   service_name: string;
+  structured_output?: 'gemini_native_schema' | 'json_schema' | 'json_text_fallback';
   title: string;
   rewritten_text: string;
   style_prompt: string;

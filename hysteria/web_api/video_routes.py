@@ -14,8 +14,11 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from .ai.assistant_generation import generate_assistant_json
+from .ai.assistant_schemas import video_assistant_schema
 from .ai.gemini import GeminiAdapter, GeminiUpstreamError
 from .ai.service_store import AIServiceError, AIServiceStore
+from .chat_service import ChatUpstreamError
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .video_provider import GrokVideoProvider, ProviderError
 from .video_service import AssetStore, RunService, VideoSettingsError, VideoSettingsStore, VideoStorageFullError, VideoValidationError, WorkflowStore
@@ -41,6 +44,37 @@ async def _require_admin(request, services, dispatch):
 
 def _same_origin(request: Request) -> bool:
     return http_utils.is_same_origin_post(SimpleNamespace(headers=request.headers))
+
+
+class VideoAssistantRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    idea: str = Field(min_length=1, max_length=6000)
+    style_prompt: str = Field(default='', max_length=1200)
+    aspect_ratio: str = Field(pattern=r'^(9:16|16:9|1:1)$')
+    shot_count: int = Field(ge=1, le=12)
+    shot_duration: int = Field(ge=1, le=30)
+
+
+class VideoAssistantShot(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    title: str = Field(min_length=1, max_length=160)
+    script: str = Field(default='', max_length=1200)
+    shot_type: str = Field(pattern=r'^(特写|近景|中景|全景)$')
+    character: str = Field(default='', max_length=120)
+    scene: str = Field(default='', max_length=500)
+    duration: int = Field(ge=1, le=30)
+    image_prompt: str = Field(min_length=1, max_length=3000)
+    motion_prompt: str = Field(min_length=1, max_length=3000)
+    dialogue: str = Field(default='', max_length=2000)
+
+
+class VideoAssistantResult(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    title: str = Field(min_length=1, max_length=160)
+    rewritten_text: str = Field(min_length=1, max_length=6000)
+    style_prompt: str = Field(default='', max_length=1200)
+    aspect_ratio: str = Field(pattern=r'^(9:16|16:9|1:1)$')
+    shots: list[VideoAssistantShot] = Field(min_length=1, max_length=12)
 
 
 def _provider_error(exc: ProviderError):
@@ -75,34 +109,6 @@ def register_video_routes(
     ai_store = ai_services_store
     gemini = gemini_adapter or GeminiAdapter()
     run_tick_lock = threading.Lock()
-
-    class VideoAssistantRequest(BaseModel):
-        model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
-        idea: str = Field(min_length=1, max_length=6000)
-        style_prompt: str = Field(default='', max_length=1200)
-        aspect_ratio: str = Field(pattern=r'^(9:16|16:9|1:1)$')
-        shot_count: int = Field(ge=1, le=12)
-        shot_duration: int = Field(ge=1, le=30)
-
-    class VideoAssistantShot(BaseModel):
-        model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
-        title: str = Field(min_length=1, max_length=160)
-        script: str = Field(default='', max_length=1200)
-        shot_type: str = Field(pattern=r'^(特写|近景|中景|全景)$')
-        character: str = Field(default='', max_length=120)
-        scene: str = Field(default='', max_length=500)
-        duration: int = Field(ge=1, le=30)
-        image_prompt: str = Field(min_length=1, max_length=3000)
-        motion_prompt: str = Field(min_length=1, max_length=3000)
-        dialogue: str = Field(default='', max_length=2000)
-
-    class VideoAssistantResult(BaseModel):
-        model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
-        title: str = Field(min_length=1, max_length=160)
-        rewritten_text: str = Field(min_length=1, max_length=6000)
-        style_prompt: str = Field(default='', max_length=1200)
-        aspect_ratio: str = Field(pattern=r'^(9:16|16:9|1:1)$')
-        shots: list[VideoAssistantShot] = Field(min_length=1, max_length=12)
 
     def get_run_service():
         if run_service is not None:
@@ -230,15 +236,15 @@ def register_video_routes(
         del headers, path
         if ai_store is None:
             raise AIServiceError('service_not_configured')
-        profile = ai_store.bound_profile('video_assistant')
-        if profile['protocol'] != 'gemini_native' or not profile['api_key']:
+        selection = ai_store.bound_assistant('video_assistant')
+        profile = selection['profile']
+        if profile['protocol'] not in {'gemini_native', 'openai_compatible'} or not profile['api_key']:
             raise AIServiceError('service_not_configured')
-        models = profile.get('models') or gemini.list_models(profile)
-        if not models:
-            raise GeminiUpstreamError('models_endpoint_unavailable')
-        model = models[0].get('id') if isinstance(models[0], dict) else None
-        if not isinstance(model, str) or not model:
-            raise GeminiUpstreamError('models_endpoint_unavailable')
+        model = selection['model_id']
+        if not model:
+            raise AIServiceError('model_not_selected')
+        if model not in {item['id'] for item in profile['models']}:
+            raise AIServiceError('model_not_available')
         prompt = (
             '你是短视频/漫剧分镜编剧。根据用户创意生成分镜草稿，数量必须与 shot_count 一致。'
             '图片提示词只描述单帧视觉；运动提示词描述镜头与动作；故事必须连续且角色、场景一致。'
@@ -251,29 +257,10 @@ def register_video_routes(
                 'shot_duration_seconds': values.shot_duration,
             }, ensure_ascii=False, separators=(',', ':'))
         )
-        schema = {
-            'type': 'OBJECT',
-            'properties': {
-                'title': {'type': 'STRING'}, 'rewritten_text': {'type': 'STRING'},
-                'style_prompt': {'type': 'STRING'}, 'aspect_ratio': {'type': 'STRING', 'enum': ['9:16', '16:9', '1:1']},
-                'shots': {
-                    'type': 'ARRAY', 'minItems': 1, 'maxItems': 12,
-                    'items': {
-                        'type': 'OBJECT',
-                        'properties': {
-                            'title': {'type': 'STRING'}, 'script': {'type': 'STRING'},
-                            'shot_type': {'type': 'STRING', 'enum': ['特写', '近景', '中景', '全景']},
-                            'character': {'type': 'STRING'}, 'scene': {'type': 'STRING'},
-                            'duration': {'type': 'INTEGER'}, 'image_prompt': {'type': 'STRING'},
-                            'motion_prompt': {'type': 'STRING'}, 'dialogue': {'type': 'STRING'},
-                        },
-                        'required': ['title', 'script', 'shot_type', 'character', 'scene', 'duration', 'image_prompt', 'motion_prompt', 'dialogue'],
-                    },
-                },
-            },
-            'required': ['title', 'rewritten_text', 'style_prompt', 'aspect_ratio', 'shots'],
-        }
-        result = gemini.generate_json(profile, model, prompt, schema)
+        schema = video_assistant_schema()
+        result, output_mode = generate_assistant_json(
+            profile, model, prompt, schema, gemini_adapter=gemini,
+        )
         try:
             validated = VideoAssistantResult.model_validate(result)
             if (
@@ -286,6 +273,7 @@ def register_video_routes(
             raise GeminiUpstreamError('invalid_model_response', 200) from None
         return {
             'model': model, 'service_name': profile['name'],
+            'structured_output': output_mode,
             **validated.model_dump(),
         }
 
@@ -371,7 +359,29 @@ def register_video_routes(
         except AIServiceError as exc:
             if 'not_configured' in str(exc):
                 return _error('service_not_configured', 422)
+            if 'model_not_selected' in str(exc):
+                return _error('model_not_selected', 422)
+            if 'model_not_available' in str(exc):
+                return _error('model_not_available', 422)
             return _error('ai_service_unavailable', 503)
+        except ChatUpstreamError as exc:
+            if exc.code == 'invalid_model_response':
+                return _error(exc.code, 502)
+            if exc.status == 401:
+                code = 'authentication_failed'
+            elif exc.status == 403:
+                code = 'permission_denied'
+            elif exc.status == 404:
+                code = 'model_not_available'
+            elif exc.status == 429:
+                code = 'rate_limited'
+            elif exc.status is None:
+                code = 'timeout'
+            elif exc.status >= 500:
+                code = 'upstream_unavailable'
+            else:
+                code = 'upstream_error'
+            return _error(code, 504 if code == 'timeout' else 502)
         except GeminiUpstreamError as exc:
             if exc.code == 'service_not_configured':
                 return _error(exc.code, 422)

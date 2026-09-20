@@ -14,6 +14,9 @@
 .plans-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 18px; }
 .plans-toolbar > div:last-child { display: flex; gap: 8px; }
 .plans-save-status { color: var(--text-secondary); font-size: 12px; }
+.plans-saved-at, .plans-save-feedback { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 11px; }
+.plans-conflict-draft { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; padding: 12px; border: 1px solid #e5cf9f; border-radius: 10px; background: #fff9e9; color: var(--text-secondary); font-size: 12px; }
+.plans-conflict-draft span { flex: 1 1 260px; }
 .plans-error { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
 .plans-reminder-list { margin: 0 0 18px; padding: 14px 16px; border: 1px solid #e5cf9f; border-radius: 12px; background: #fff9e9; }
 .plans-reminder-list h3 { margin: 0 0 8px; font-size: 14px; }

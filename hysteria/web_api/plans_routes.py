@@ -8,12 +8,16 @@ from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import http_utils
+import state_store
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
+from .ai.assistant_generation import generate_assistant_json
+from .ai.assistant_schemas import plan_assistant_schema
 from .ai.gemini import GeminiAdapter, GeminiUpstreamError
 from .ai.service_store import AIServiceError, AIServiceStore
+from .chat_service import ChatUpstreamError
 from .plans_service import PlanStore
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 
@@ -120,15 +124,15 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
         del headers, path
         if ai_store is None:
             raise AIServiceError('service_not_configured')
-        profile = ai_store.bound_profile('plan_assistant')
-        if profile['protocol'] != 'gemini_native' or not profile['api_key']:
+        selection = ai_store.bound_assistant('plan_assistant')
+        profile = selection['profile']
+        if profile['protocol'] not in {'gemini_native', 'openai_compatible'} or not profile['api_key']:
             raise AIServiceError('service_not_configured')
-        models = profile.get('models') or gemini.list_models(profile)
-        if not models:
-            raise GeminiUpstreamError('models_endpoint_unavailable')
-        model = models[0].get('id') if isinstance(models[0], dict) else None
-        if not isinstance(model, str) or not model:
-            raise GeminiUpstreamError('models_endpoint_unavailable')
+        model = selection['model_id']
+        if not model:
+            raise AIServiceError('model_not_selected')
+        if model not in {item['id'] for item in profile['models']}:
+            raise AIServiceError('model_not_available')
         task_context = [item.model_dump() for item in values.existing_tasks]
         prompt = (
             '你是私人每日计划助手。根据用户的目标和已有事项，提出 1 到 8 条可执行的计划建议。'
@@ -142,27 +146,10 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
                 'user_request': values.request, 'existing_tasks': task_context,
             }, ensure_ascii=False, separators=(',', ':'))
         )
-        schema = {
-            'type': 'OBJECT',
-            'properties': {
-                'summary': {'type': 'STRING'},
-                'suggestions': {
-                    'type': 'ARRAY', 'minItems': 1, 'maxItems': 8,
-                    'items': {
-                        'type': 'OBJECT',
-                        'properties': {
-                            'title': {'type': 'STRING'}, 'notes': {'type': 'STRING'},
-                            'quadrant': {'type': 'STRING', 'enum': ['important_urgent', 'important', 'urgent', 'later']},
-                            'start_time': {'type': 'STRING'}, 'estimate_minutes': {'type': 'INTEGER'},
-                            'reminder_offset_minutes': {'type': 'INTEGER'}, 'reason': {'type': 'STRING'},
-                        },
-                        'required': ['title', 'notes', 'quadrant', 'start_time', 'estimate_minutes', 'reminder_offset_minutes', 'reason'],
-                    },
-                },
-            },
-            'required': ['summary', 'suggestions'],
-        }
-        result = gemini.generate_json(profile, model, prompt, schema)
+        schema = plan_assistant_schema()
+        result, output_mode = generate_assistant_json(
+            profile, model, prompt, schema, gemini_adapter=gemini,
+        )
         try:
             validated = PlanAssistantResult.model_validate(result)
             suggestions = [item.model_dump() for item in validated.suggestions]
@@ -174,6 +161,7 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
             'summary': validated.summary,
             'model': model,
             'service_name': profile['name'],
+            'structured_output': output_mode,
             'suggestions': suggestions,
         }
 
@@ -184,7 +172,7 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
             return denied
         try:
             result = await dispatch(read, request)
-        except (OSError, ValueError):
+        except (OSError, RuntimeError, ValueError, state_store.StateStoreError):
             return JSONResponse({'error': 'plans_unavailable'}, status_code=503)
         if isinstance(result, JSONResponse):
             return result
@@ -211,7 +199,29 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
         except AIServiceError as exc:
             if 'not_configured' in str(exc):
                 return JSONResponse({'error': 'service_not_configured'}, status_code=422)
+            if 'model_not_selected' in str(exc):
+                return JSONResponse({'error': 'model_not_selected'}, status_code=422)
+            if 'model_not_available' in str(exc):
+                return JSONResponse({'error': 'model_not_available'}, status_code=422)
             return JSONResponse({'error': 'ai_service_unavailable'}, status_code=503)
+        except ChatUpstreamError as exc:
+            if exc.code == 'invalid_model_response':
+                return JSONResponse({'error': exc.code}, status_code=502)
+            if exc.status == 401:
+                code = 'authentication_failed'
+            elif exc.status == 403:
+                code = 'permission_denied'
+            elif exc.status == 404:
+                code = 'model_not_available'
+            elif exc.status == 429:
+                code = 'rate_limited'
+            elif exc.status is None:
+                code = 'timeout'
+            elif exc.status >= 500:
+                code = 'upstream_unavailable'
+            else:
+                code = 'upstream_error'
+            return JSONResponse({'error': code}, status_code=504 if code == 'timeout' else 502)
         except GeminiUpstreamError as exc:
             if exc.code == 'service_not_configured':
                 return JSONResponse({'error': exc.code}, status_code=422)

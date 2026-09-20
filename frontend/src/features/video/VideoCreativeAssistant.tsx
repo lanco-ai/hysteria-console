@@ -11,13 +11,15 @@ type VideoCreativeAssistantProps = {
 
 function friendlyError(value: unknown): string {
   const code = value instanceof Error ? value.message : '';
-  if (code === 'service_not_configured') return '请先到服务中心配置并测试 Gemini API。';
-  if (code === 'authentication_failed') return 'Gemini API 认证失败，请检查服务中心中的 API Key。';
-  if (code === 'permission_denied') return '当前 Gemini 服务没有所选模型的访问权限。';
-  if (code === 'rate_limited') return 'Gemini 请求频率受限，请稍后重试。';
-  if (code === 'timeout') return 'Gemini 响应超时，请稍后重试。';
+  if (code === 'service_not_configured') return '请先到服务中心配置视频创意助手服务。';
+  if (code === 'model_not_selected') return '请先到服务中心为视频创意助手选择模型。';
+  if (code === 'model_not_available') return '所选模型已不可用，请刷新模型列表并重新选择。';
+  if (code === 'authentication_failed') return 'AI 服务认证失败，请检查服务中心中的 API Key。';
+  if (code === 'permission_denied') return '当前 AI 服务没有所选模型的访问权限。';
+  if (code === 'rate_limited') return 'AI 服务请求频率受限，请稍后重试。';
+  if (code === 'timeout') return 'AI 服务响应超时，请稍后重试。';
   if (code === 'invalid_model_response') return 'AI 返回的分镜格式无法安全解析，请调整创意后重试。';
-  return 'Gemini 暂时无法生成分镜草稿，请稍后重试。';
+  return 'AI 服务暂时无法生成分镜草稿，请稍后重试。';
 }
 
 export function VideoCreativeAssistant({ aspectRatio, stylePrompt, onClose, onApply }: VideoCreativeAssistantProps): ReactElement {
@@ -48,7 +50,7 @@ export function VideoCreativeAssistant({ aspectRatio, stylePrompt, onClose, onAp
   } : null);
 
   return <section className="video-creative-assistant" role="dialog" aria-modal="false" aria-label="AI 创作助手">
-    <header><div><span className="video-eyebrow">GEMINI · 草稿模式</span><h2>AI 创作助手</h2><p>把创意整理成故事与分镜提示词；不会自动生成图片或视频。</p></div><button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>关闭</button></header>
+    <header><div><span className="video-eyebrow">AI · 草稿模式</span><h2>AI 创作助手</h2><p>把创意整理成故事与分镜提示词；不会自动生成图片或视频。</p></div><button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>关闭</button></header>
     <div className="video-creative-fields">
       <label>故事创意<textarea aria-label="故事创意" value={idea} onChange={event => setIdea(event.target.value)} maxLength={6000} rows={3} placeholder="描述人物、冲突、场景和想要的结尾…" /></label>
       <label>统一视觉风格<textarea aria-label="统一视觉风格" value={style} onChange={event => setStyle(event.target.value)} maxLength={1200} rows={2} placeholder="例如：温暖的 3D 动画、柔和晨光、电影感构图" /></label>
@@ -57,7 +59,7 @@ export function VideoCreativeAssistant({ aspectRatio, stylePrompt, onClose, onAp
     </div>
     {error ? <p className="video-creative-error" role="alert">{error}</p> : null}
     {draft ? <div className="video-creative-preview">
-      <p className="video-creative-model">{draft.service_name} · {draft.model} · 仅生成文字草稿</p>
+      <p className="video-creative-model">{draft.service_name} · {draft.model} · 仅生成文字草稿 · {draft.structured_output === 'json_text_fallback' ? '结构化参数不支持，已降级为严格 JSON 文本并完成校验' : draft.structured_output === 'json_schema' ? 'JSON Schema 输出已通过校验' : 'Gemini 原生结构化输出已通过校验'}</p>
       <label>作品标题<input value={draft.title} maxLength={160} onChange={event => updateDraft({ title: event.target.value })} /></label>
       <label>整理后的故事<textarea value={draft.rewritten_text} maxLength={6000} rows={3} onChange={event => updateDraft({ rewritten_text: event.target.value })} /></label>
       <label>统一风格<textarea value={draft.style_prompt} maxLength={1200} rows={2} onChange={event => updateDraft({ style_prompt: event.target.value })} /></label>

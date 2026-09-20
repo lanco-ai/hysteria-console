@@ -95,6 +95,21 @@ def test_plans_api_rejects_oversized_request_and_stale_revision(tmp_path):
         assert client.put(endpoint, headers={**HEADERS, 'Content-Type': 'application/json'}, content='x' * (128 * 1024 + 1)).status_code == 413
 
 
+def test_plans_read_storage_error_fails_closed_instead_of_looking_empty(tmp_path):
+    import state_store
+
+    store = PlanStore(tmp_path / 'plans.json')
+    def unavailable():
+        raise state_store.StateStoreError('private storage detail')
+    store.read = unavailable
+
+    with TestClient(create_app(Sessions(), plans_store=store)) as client:
+        response = client.get('/api/plans', headers=HEADERS)
+    assert response.status_code == 503
+    assert response.json() == {'error': 'plans_unavailable'}
+    assert 'private storage detail' not in response.text
+
+
 def test_plans_document_requires_admin_and_serves_the_react_shell(tmp_path):
     dist = tmp_path / 'dist'
     dist.mkdir()
@@ -172,7 +187,13 @@ def configure_gemini(store):
     saved = store.update_profile(
         'gemini-primary', revision=initial['revision'], api_key='server-only-key',
     )
-    return saved
+    catalog = store.update_catalog(
+        'gemini-primary', [{'id': 'listed-first'}, {'id': 'gemini-test-flash'}],
+        capabilities=['chat'], checked_at='2026-09-19T00:00:00Z', revision=saved['revision'],
+    )
+    return store.set_binding(
+        'plan_assistant', 'gemini-primary', model_id='gemini-test-flash', revision=catalog['revision'],
+    )
 
 
 def test_plan_assistant_returns_a_preview_without_changing_saved_plans(tmp_path):
@@ -192,11 +213,54 @@ def test_plan_assistant_returns_a_preview_without_changing_saved_plans(tmp_path)
         assert response.status_code == 200
         data = response.json()
         assert data['model'] == 'gemini-test-flash'
+        assert data['structured_output'] == 'gemini_native_schema'
         assert data['suggestions'][0]['quadrant'] == 'important'
         assert 'server-only-key' not in response.text
         assert 'server-only-key' not in gemini.calls[0]['prompt']
         assert gemini.calls[0]['model'] == 'gemini-test-flash'
         assert plan_store.read()['items'] == []
+
+
+def test_plan_assistant_uses_the_saved_chat_service_and_exact_model(tmp_path, monkeypatch):
+    import web_api.plans_routes as plans_routes
+
+    ai_store = make_ai_store(tmp_path)
+    initial = ai_store.public()
+    saved = ai_store.update_profile(
+        'chat-primary', revision=initial['revision'],
+        base_url='https://provider.test/v1', api_key='test-chat-secret',
+    )
+    catalog = ai_store.update_catalog(
+        'chat-primary', [{'id': 'listed-first'}, {'id': 'chosen-model'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    ai_store.set_binding(
+        'plan_assistant', 'chat-primary', model_id='chosen-model', revision=catalog['revision'],
+    )
+    observed = {}
+
+    def generate(profile, model, prompt, schema, *, gemini_adapter):
+        observed.update(protocol=profile['protocol'], model=model, api_key=profile['api_key'])
+        return ({
+            'summary': '计划建议', 'suggestions': [{
+                'title': '准备提纲', 'notes': '', 'quadrant': 'important',
+                'start_time': '', 'estimate_minutes': 30,
+                'reminder_offset_minutes': 0, 'reason': '先搭建结构',
+            }],
+        }, 'json_schema')
+
+    monkeypatch.setattr(plans_routes, 'generate_assistant_json', generate, raising=False)
+    with TestClient(create_app(
+        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'),
+        ai_services_store=ai_store,
+    )) as client:
+        response = client.post('/api/plans/assistant', headers=HEADERS, json={
+            'date': '2026-09-19', 'timezone': 'UTC', 'request': '安排计划', 'existing_tasks': [],
+        })
+    assert response.status_code == 200
+    assert response.json()['model'] == 'chosen-model'
+    assert response.json()['structured_output'] == 'json_schema'
+    assert observed == {'protocol': 'openai_compatible', 'model': 'chosen-model', 'api_key': 'test-chat-secret'}
 
 
 def test_plan_assistant_is_admin_same_origin_and_validates_model_output(tmp_path):
@@ -230,6 +294,27 @@ def test_plan_assistant_requires_a_configured_gemini_service(tmp_path):
         })
         assert response.status_code == 422
         assert response.json() == {'error': 'service_not_configured'}
+
+
+def test_plan_assistant_requires_explicit_model_in_legacy_binding(tmp_path):
+    store = make_ai_store(tmp_path)
+    initial = store.public()
+    saved = store.update_profile('gemini-primary', revision=initial['revision'], api_key='server-only-key')
+    store.update_catalog(
+        'gemini-primary', [{'id': 'first-model'}, {'id': 'another-model'}],
+        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
+    )
+    gemini = PlanGeminiStub()
+    with TestClient(create_app(
+        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'),
+        ai_services_store=store, gemini_adapter=gemini,
+    )) as client:
+        response = client.post('/api/plans/assistant', headers=HEADERS, json={
+            'date': '2026-09-19', 'timezone': 'UTC', 'request': '安排计划', 'existing_tasks': [],
+        })
+    assert response.status_code == 422
+    assert response.json() == {'error': 'model_not_selected'}
+    assert gemini.calls == []
 
 
 @pytest.mark.parametrize('date_value', ['2026-99-19', '2026-02-30', '0000-01-01'])
