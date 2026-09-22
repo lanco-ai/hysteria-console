@@ -136,7 +136,7 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
         task_context = [item.model_dump() for item in values.existing_tasks]
         prompt = (
             '你是私人每日计划助手。根据用户的目标和已有事项，提出 1 到 8 条可执行的计划建议。'
-            '只给建议，不执行、不保存、不声称已设置提醒。保持现实、简洁；重要且紧急事项优先。'
+            '只给建议，不执行、不保存、不声称已设置提醒。保持现实、简洁；重要且紧急事项优先。不要重复已有事项；如果已有事项只是措辞不同，应优先建议更新它，而不是创建第二条。'
             'quadrant 只能是 important_urgent、important、urgent、later。'
             'start_time 必须是当地 24 小时 HH:MM；没有把握时返回空字符串。'
             'reminder_offset_minutes 为 0 表示不建议提醒，否则是开始时间前的分钟数；若没有 start_time 必须为 0。'

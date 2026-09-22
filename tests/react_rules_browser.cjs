@@ -12,7 +12,8 @@ async function main() {
   const requests = [];
   page.on('request', request => requests.push(new URL(request.url()).pathname));
   await page.goto(`${baseUrl}/__react/admin/rules`);
-  await expect(page).toHaveTitle('路由规则');
+  await expect(page).toHaveTitle('模板与路由');
+  await expect(page.getByRole('heading', { name: '模板与路由' })).toBeVisible();
   await expect(page.getByRole('heading', { name: '当前规则列表' })).toBeVisible();
   const userSelect = page.locator('#rule-pack-user');
   const scopeSelect = page.locator('#rule-pack-scope');

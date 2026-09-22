@@ -27,3 +27,13 @@ def test_config_and_rules_react_routes_are_registered():
     for path in ('config', 'rules'):
         assert f"'/admin/{path}'" in entry
         assert f"'/__react/admin/{path}'" in preview
+
+
+def test_template_rules_workspace_keeps_panels_mounted_and_refreshes_clean_tab():
+    page = (ROOT / 'frontend/src/features/network-admin/template-rules/TemplateRulesPage.tsx').read_text()
+    config = (ROOT / 'frontend/src/features/network-admin/config/ConfigPage.tsx').read_text()
+    rules = (ROOT / 'frontend/src/features/network-admin/rules/RulesPage.tsx').read_text()
+    assert 'hidden={tab !== \'template\'}' in page
+    assert 'hidden={tab !== \'rules\'}' in page
+    assert 'active && config.status === \'success\' && !dirty' in config
+    assert 'active && rules.status === \'success\' && !dirty' in rules

@@ -168,6 +168,53 @@ body.has-shell .rules-table tbody tr:hover {
    /admin/rules: 信息架构重构
    ===================================================== */
 
+/* ---- Unified template + routing workspace ---- */
+body.has-shell .template-rules-page {
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+body.has-shell .template-rules-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+}
+
+body.has-shell .template-rules-tab {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  cursor: pointer;
+}
+
+body.has-shell .template-rules-tab:hover {
+  color: var(--text-primary);
+}
+
+body.has-shell .template-rules-tab.is-active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
+
+body.has-shell .template-rules-page > [role='tabpanel'] > .admin-page {
+  margin: 0;
+}
+
+body.has-shell .template-rules-page > [role='tabpanel'] > .admin-page.settings-page {
+  max-width: none;
+}
+
 /* ---- Rules intro note ---- */
 body.has-shell .rules-intro {
   margin-bottom: 24px;

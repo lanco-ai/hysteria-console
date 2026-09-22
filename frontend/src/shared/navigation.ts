@@ -27,8 +27,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: '网络管理',
     items: [
       { key: 'usage', href: '/admin/usage', label: '流量分析', icon: 'traffic' },
-      { key: 'config', href: '/admin/config', label: '模板配置', icon: 'config' },
-      { key: 'rules', href: '/admin/rules', label: '路由规则', icon: 'rules' },
+      { key: 'config', href: '/admin/config', label: '模板与路由', icon: 'config' },
       { key: 'landing-egresses', href: '/admin/landing-egresses', label: '家宽出口', icon: 'rules' },
     ],
   },

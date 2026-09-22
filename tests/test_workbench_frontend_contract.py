@@ -117,11 +117,13 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
         assert label in navigation
     for href in (
         "/admin", "/admin/usage", "/admin/health", "/admin/incidents",
-        "/admin/logs", "/admin/settings", "/admin/config", "/admin/rules",
+        "/admin/logs", "/admin/settings", "/admin/config",
         "/admin/landing-egresses", "/admin/chat", "/admin/plans",
         "/admin/video", "/admin/services",
     ):
         assert href in navigation
+    assert "/admin/rules" not in navigation, "the legacy rules route is kept as a page alias, not a duplicate sidebar entry"
+    assert "/admin/rules" in source("frontend/src/main.tsx")
 
 
 def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authenticated():

@@ -46,6 +46,15 @@ function timestamp(): string { return new Date().toISOString(); }
 function newId(): string { return globalThis.crypto?.randomUUID?.() || `task-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function normalizePlanTitle(value: string): string { return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase(); }
 function planIdentity(item: Pick<PlanItem, 'plan_date' | 'title'>): string { return `${item.plan_date}::${normalizePlanTitle(item.title)}`; }
+function planSemanticTitle(value: string): string {
+  return normalizePlanTitle(value)
+    .replace(/^(完成|做好|处理|安排|进行|继续|开始|优先|尽快|请)\s*/u, '')
+    .replace(/[与和及、\s\-_:：/]+/gu, '')
+    .replace(/任务$/u, '');
+}
+function planSemanticIdentity(item: Pick<PlanItem, 'plan_date' | 'title'>): string {
+  return `${item.plan_date}::${planSemanticTitle(item.title)}`;
+}
 
 type PlanSuggestionDraft = PlanAssistantSuggestion & { draftId: string; taskId: string; selected: boolean };
 
@@ -97,6 +106,7 @@ export function PlansPage(): ReactElement {
   protectedDraftRef.current = hasProtectedDraft;
   const itemsRef = useRef<PlanItem[]>([]);
   const saveLock = useRef(false);
+  const lastPersistWasClean = useRef(false);
   const assistantBusyRef = useRef(false);
   const generationVersion = useRef(0);
   const confirmedNavigation = useRef(false);
@@ -221,6 +231,7 @@ export function PlansPage(): ReactElement {
   const persist = async (next: PlanItem[]) => {
     if (saveLock.current || editingBlocked) return false;
     saveLock.current = true;
+    lastPersistWasClean.current = false;
     const submittedEditVersion = editVersion.current;
     const baseItems = itemsRef.current;
     const baseById = new Map(baseItems.map(item => [item.id, item]));
@@ -230,6 +241,7 @@ export function PlansPage(): ReactElement {
       setRevision(snapshot.revision);
       if (editVersion.current === submittedEditVersion) {
         replaceItems(snapshot.items); setDirty(false); setSaveState('saved'); setLastSavedAt(new Date().toISOString()); setFeedback(''); setConflictDraft(null);
+        lastPersistWasClean.current = true;
       } else {
         const latestById = new Map(itemsRef.current.map(item => [item.id, item]));
         const mergedItems = snapshot.items.flatMap(savedItem => {
@@ -272,12 +284,15 @@ export function PlansPage(): ReactElement {
   const updateTask = (id: string, patch: Partial<PlanItem>) => {
     if (editingBlocked) return;
     changeItems(items.map(item => item.id === id ? { ...item, ...patch, updated_at: timestamp() } : item));
+    if (patch.status === 'done') setFeedback('已标记完成；点击“保存计划”后同步');
+    else if (patch.status === 'todo' || patch.status === 'in_progress') setFeedback('状态已修改；点击“保存计划”后同步');
   };
 
   const removeTask = (id: string) => {
     if (editingBlocked) return;
     if (!window.confirm('删除这条计划？')) return;
     changeItems(items.filter(item => item.id !== id));
+    setFeedback('已从当前草稿删除；点击“保存计划”后同步');
   };
 
   const restoreConflictDraft = () => {
@@ -377,30 +392,73 @@ export function PlansPage(): ReactElement {
     const additionIds = new Set<string>();
     const existingKeys = new Set(items.map(planIdentity));
     const additionKeys = new Set<string>();
-    const additions: PlanItem[] = selected.map(item => ({
+    const existingSemantic = new Map(items.map(item => [planSemanticIdentity(item), item]));
+    const additions: PlanItem[] = [];
+    const additionsSemantic = new Map<string, PlanItem>();
+    const updates = new Map<string, PlanItem>();
+    selected.map(item => ({
       id: item.taskId, title: item.title.trim(), notes: item.notes.trim(), quadrant: item.quadrant,
       plan_date: selectedDate, timezone, start_time: item.start_time || null, due_at: null,
       estimate_minutes: item.estimate_minutes,
       reminder_at: reminderFromStart(selectedDate, item.start_time, item.reminder_offset_minutes),
       status: 'todo' as const, created_at: current, updated_at: current,
-    })).filter(item => {
-      if (!item.title) return false;
+    })).forEach(item => {
+      if (!item.title) return;
       const key = planIdentity(item);
-      if (existingIds.has(item.id) || additionIds.has(item.id) || existingKeys.has(key) || additionKeys.has(key)) return false;
+      if (existingIds.has(item.id) || additionIds.has(item.id) || existingKeys.has(key) || additionKeys.has(key)) return;
+      const existing = existingSemantic.get(planSemanticIdentity(item));
+      if (existing) {
+        updates.set(existing.id, {
+          ...existing,
+          title: item.title,
+          notes: item.notes || existing.notes,
+          quadrant: item.quadrant,
+          start_time: item.start_time,
+          estimate_minutes: item.estimate_minutes,
+          reminder_at: item.reminder_at,
+          updated_at: current,
+        });
+        return;
+      }
+      const semanticKey = planSemanticIdentity(item);
+      const added = additionsSemantic.get(semanticKey);
+      if (added) {
+        const replacement = {
+          ...added,
+          title: item.title,
+          notes: item.notes || added.notes,
+          quadrant: item.quadrant,
+          start_time: item.start_time,
+          estimate_minutes: item.estimate_minutes,
+          reminder_at: item.reminder_at,
+          updated_at: current,
+        };
+        const index = additions.findIndex(candidate => candidate.id === added.id);
+        if (index >= 0) additions[index] = replacement;
+        additionsSemantic.set(semanticKey, replacement);
+        return;
+      }
       additionIds.add(item.id);
       additionKeys.add(key);
-      return true;
+      additions.push(item);
+      additionsSemantic.set(semanticKey, item);
     });
-    if (!additions.length) {
+    if (!additions.length && !updates.size) {
       setAssistantOpen(false); setAssistantSuggestions([]); setAssistantSummary('');
       setAssistantApplyPending(false); setAssistantRequest(''); assistantRequestRef.current = '';
       setFeedback('所选建议已在计划中，无需重复添加');
       return;
     }
     setAssistantApplyPending(true);
-    if (await persist([...additions, ...items])) {
+    const nextItems = [
+      ...additions,
+      ...items.filter(item => !updates.has(item.id)).map(item => updates.get(item.id) || item),
+      ...Array.from(updates.values()),
+    ];
+    if (await persist(nextItems)) {
       setAssistantOpen(false); setAssistantSuggestions([]); setAssistantSummary(''); setAssistantRequest('');
       assistantRequestRef.current = ''; setAssistantApplyPending(false);
+      if (lastPersistWasClean.current) setFeedback(updates.size ? `已合并 ${updates.size} 条相似建议并保存` : '已添加建议并保存');
     }
   };
 

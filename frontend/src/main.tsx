@@ -10,8 +10,7 @@ import { SettingsPage } from './features/network-admin/settings/SettingsPage';
 import { UsagePage } from './features/network-admin/usage/UsagePage';
 import { HealthPage } from './features/network-admin/health/HealthPage';
 import { IncidentsPage } from './features/network-admin/incidents/IncidentsPage';
-import { ConfigPage } from './features/network-admin/config/ConfigPage';
-import { RulesPage } from './features/network-admin/rules/RulesPage';
+import { TemplateRulesPage } from './features/network-admin/template-rules/TemplateRulesPage';
 import { LandingPage } from './features/network-admin/landing/LandingPage';
 import { UserDetailPage } from './features/network-admin/user-detail/UserDetailPage';
 import { OverviewPage } from './features/network-admin/overview/OverviewPage';
@@ -52,8 +51,8 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/usage': { title: '流量分析', bodyClass: 'has-shell', shell: true },
   '/admin/health': { title: '健康状态', bodyClass: 'has-shell', shell: true },
   '/admin/incidents': { title: '事故处理', bodyClass: 'has-shell', shell: true },
-  '/admin/config': { title: '模板配置', bodyClass: 'has-shell', shell: true },
-  '/admin/rules': { title: '路由规则', bodyClass: 'has-shell', shell: true },
+  '/admin/config': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
+  '/admin/rules': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
   '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
   '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
@@ -215,8 +214,8 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
   '/admin/usage': { active: 'usage', title: '流量分析' },
   '/admin/health': { active: 'health', title: '健康状态' },
   '/admin/incidents': { active: 'incidents', title: '事故处理' },
-  '/admin/config': { active: 'config', title: '模板配置' },
-  '/admin/rules': { active: 'rules', title: '路由规则' },
+  '/admin/config': { active: 'config', title: '模板与路由' },
+  '/admin/rules': { active: 'config', title: '模板与路由' },
   '/admin/landing-egresses': { active: 'landing-egresses', title: '家宽出口' },
   '/admin/services': { active: 'services', title: '服务中心' },
   '/admin/plans': { active: 'plans', title: '今日计划' },
@@ -243,8 +242,7 @@ function AdminRoute({ route, publicHost, authenticated, status }: { route: strin
   if (route === '/admin/usage') return <UsagePage publicHost={publicHost}/>;
   if (route === '/admin/health') return <HealthPage publicHost={publicHost}/>;
   if (route === '/admin/incidents') return <IncidentsPage publicHost={publicHost}/>;
-  if (route === '/admin/config') return <ConfigPage publicHost={publicHost}/>;
-  if (route === '/admin/rules') return <RulesPage publicHost={publicHost}/>;
+  if (route === '/admin/config' || route === '/admin/rules') return <TemplateRulesPage publicHost={publicHost}/>;
   if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
   if (route === '/admin/plans') return <PlansPage/>;
   if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
