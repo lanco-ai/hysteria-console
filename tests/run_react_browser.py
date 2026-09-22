@@ -39,6 +39,7 @@ def main():
         'react_rules_browser.cjs',
         'react_chat_browser.cjs',
         'react_plans_assistant_browser.cjs',
+        'react_plans_layout_browser.cjs',
         'react_shell_navigation_browser.cjs',
         'react_landing_browser.cjs',
         'react_user_panel_browser.cjs',

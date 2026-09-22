@@ -44,6 +44,8 @@ function dateHeading(value: string): string {
 
 function timestamp(): string { return new Date().toISOString(); }
 function newId(): string { return globalThis.crypto?.randomUUID?.() || `task-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function normalizePlanTitle(value: string): string { return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase(); }
+function planIdentity(item: Pick<PlanItem, 'plan_date' | 'title'>): string { return `${item.plan_date}::${normalizePlanTitle(item.title)}`; }
 
 type PlanSuggestionDraft = PlanAssistantSuggestion & { draftId: string; taskId: string; selected: boolean };
 
@@ -99,6 +101,9 @@ export function PlansPage(): ReactElement {
   const generationVersion = useRef(0);
   const confirmedNavigation = useRef(false);
   const reversingHistoryRef = useRef(false);
+  const assistantTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const assistantCloseRef = useRef<HTMLButtonElement | null>(null);
+  const assistantWasOpenRef = useRef(false);
 
   const replaceItems = useCallback((next: PlanItem[]) => { itemsRef.current = next; setItems(next); }, []);
   const changeSelectedDate = (update: (current: string) => string) => {
@@ -318,25 +323,74 @@ export function PlansPage(): ReactElement {
     }
   };
 
-  const closeAssistant = () => {
+  const closeAssistant = useCallback(() => {
     generationVersion.current += 1;
     assistantBusyRef.current = false;
     setAssistantBusy(false);
     setAssistantOpen(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (!assistantOpen) {
+      if (assistantWasOpenRef.current) assistantTriggerRef.current?.focus({ preventScroll: true });
+      assistantWasOpenRef.current = false;
+      return;
+    }
+    assistantWasOpenRef.current = true;
+    assistantCloseRef.current?.focus({ preventScroll: true });
+    const onAssistantKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        closeAssistant();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const panel = document.querySelector<HTMLElement>('.plans-assistant');
+      if (!panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      )).filter(element => element.getClientRects().length > 0);
+      if (!focusable.length) {
+        event.preventDefault();
+        panel.focus({ preventScroll: true });
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus({ preventScroll: true });
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus({ preventScroll: true });
+      }
+    };
+    document.addEventListener('keydown', onAssistantKeyDown);
+    return () => document.removeEventListener('keydown', onAssistantKeyDown);
+  }, [assistantOpen, closeAssistant]);
 
   const applySuggestions = async () => {
     const selected = assistantSuggestions.filter(item => item.selected);
     if (!selected.length || saving || editingBlocked) return;
     const current = timestamp();
     const existingIds = new Set(items.map(item => item.id));
+    const additionIds = new Set<string>();
+    const existingKeys = new Set(items.map(planIdentity));
+    const additionKeys = new Set<string>();
     const additions: PlanItem[] = selected.map(item => ({
       id: item.taskId, title: item.title.trim(), notes: item.notes.trim(), quadrant: item.quadrant,
       plan_date: selectedDate, timezone, start_time: item.start_time || null, due_at: null,
       estimate_minutes: item.estimate_minutes,
       reminder_at: reminderFromStart(selectedDate, item.start_time, item.reminder_offset_minutes),
       status: 'todo' as const, created_at: current, updated_at: current,
-    })).filter(item => item.title && !existingIds.has(item.id));
+    })).filter(item => {
+      if (!item.title) return false;
+      const key = planIdentity(item);
+      if (existingIds.has(item.id) || additionIds.has(item.id) || existingKeys.has(key) || additionKeys.has(key)) return false;
+      additionIds.add(item.id);
+      additionKeys.add(key);
+      return true;
+    });
     if (!additions.length) {
       setAssistantOpen(false); setAssistantSuggestions([]); setAssistantSummary('');
       setAssistantApplyPending(false); setAssistantRequest(''); assistantRequestRef.current = '';
@@ -362,11 +416,27 @@ export function PlansPage(): ReactElement {
     setFeedback(''); setError('');
   };
 
+  const renderPlanError = (className = 'err plans-error') => <div className={className} role="alert">
+    <span>{error}</span>
+    <div className="plans-error-actions">
+      {loadFailed ? <button className="btn btn-ghost btn-sm" type="button" onClick={retryRead} disabled={loading || saving}>重试读取</button> : null}
+      {error.includes('其他设备') ? <>
+        <button className="btn btn-ghost btn-sm" type="button" onClick={() => { if (window.confirm('加载服务器最新版本会替换当前页面内容；本地冲突草稿会保留，可随后恢复。继续？')) void reload(undefined, true); }} disabled={loading || saving}>加载服务器最新版本</button>
+        {conflictDraft ? <button className="btn btn-ghost btn-sm" type="button" onClick={restoreConflictDraft} disabled={editingBlocked}>恢复本地冲突草稿</button> : null}
+      </> : null}
+    </div>
+  </div>;
+
+  const renderConflictNotice = (className = 'plans-conflict-draft') => <div className={className} role="status">
+    <span>冲突前的本地草稿仍保留。恢复后会以完整快照待保存。</span>
+    <div className="plans-error-actions"><button className="btn btn-ghost btn-sm" type="button" onClick={restoreConflictDraft}>恢复本地冲突草稿</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => { if (window.confirm('丢弃本地冲突草稿？')) setConflictDraft(null); }}>丢弃本地草稿</button></div>
+  </div>;
+
   return <CodexShell active="plans" pageTitle="今日计划">
     <section className="plans-page" aria-label="今日计划">
       <header className="plans-header">
         <div><p className="plans-eyebrow">PERSONAL WORKSPACE</p><h2>{dateHeading(selectedDate)}</h2><p className="plans-summary">{completed} / {selectedItems.length} 项完成 · 时区 {timezone}</p></div>
-        <div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))} disabled={editingBlocked}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button><button className="btn btn-primary" type="button" onClick={() => document.getElementById('plan-title')?.focus()} disabled={editingBlocked}>＋ 新计划</button></div>
+        <div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))} disabled={editingBlocked}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button><button className="btn btn-primary" type="button" onClick={() => document.getElementById('plan-title')?.focus()} disabled={editingBlocked}>＋ 新计划</button></div>
         <nav className="plans-date-nav" aria-label="日期选择"><button type="button" className="btn btn-ghost" aria-label="前一天" onClick={() => changeSelectedDate(value => shiftDate(value, -1))} disabled={editingBlocked}>‹</button><input aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} disabled={editingBlocked} /><button type="button" className="btn btn-ghost" aria-label="后一天" onClick={() => changeSelectedDate(value => shiftDate(value, 1))} disabled={editingBlocked}>›</button></nav>
       </header>
 
@@ -378,12 +448,14 @@ export function PlansPage(): ReactElement {
         <button className="btn btn-primary" type="submit" disabled={editingBlocked}>添加</button>
       </form>
 
-      <div className="plans-toolbar"><div><div className="plans-save-status" role="status">{loading ? '正在读取计划…' : loadFailed ? '计划读取失败' : saveState === 'saving' ? '保存中…' : saveState === 'failure' ? '保存失败' : hasProtectedDraft || saveState === 'unsaved' ? '未保存' : '已保存'}</div>{lastSavedAt ? <small className="plans-saved-at">最近成功保存：{new Date(lastSavedAt).toLocaleString()}</small> : null}{feedback ? <small className="plans-save-feedback">{feedback}</small> : hasFormDraft ? <small className="plans-save-feedback">表单草稿尚未加入计划；添加后才能保存。</small> : null}</div><div><button className="btn btn-ghost" type="button" onClick={abandonLocalChanges} disabled={!(dirty || hasFormDraft || assistantApplyPending) || saving || loading || editingBlocked}>放弃修改</button><button className="btn btn-primary" type="button" onClick={() => void persist(items)} disabled={!dirty || saving || editingBlocked}>{saving ? '保存中…' : '保存计划'}</button></div></div>
-      {error ? <div className="err plans-error" role="alert">{error}{loadFailed ? <button className="btn btn-ghost btn-sm" type="button" onClick={retryRead} disabled={loading || saving}>重试读取</button> : null}{error.includes('其他设备') ? <><button className="btn btn-ghost btn-sm" type="button" onClick={() => { if (window.confirm('加载服务器最新版本会替换当前页面内容；本地冲突草稿会保留，可随后恢复。继续？')) void reload(undefined, true); }} disabled={loading || saving}>加载服务器最新版本</button>{conflictDraft ? <button className="btn btn-ghost btn-sm" type="button" onClick={restoreConflictDraft} disabled={editingBlocked}>恢复本地冲突草稿</button> : null}</> : null}</div> : null}
-      {conflictDraft && !error ? <div className="plans-conflict-draft" role="status"><span>冲突前的本地草稿仍保留。恢复后会以完整快照待保存。</span><button className="btn btn-ghost btn-sm" type="button" onClick={restoreConflictDraft}>恢复本地冲突草稿</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => { if (window.confirm('丢弃本地冲突草稿？')) setConflictDraft(null); }}>丢弃本地草稿</button></div> : null}
+      <div className="plans-toolbar"><div className="plans-toolbar-status"><div className="plans-save-status" role="status">{loading ? '正在读取计划…' : loadFailed ? '计划读取失败' : saveState === 'saving' ? '保存中…' : saveState === 'failure' ? '保存失败' : hasProtectedDraft || saveState === 'unsaved' ? '未保存' : '已保存'}</div>{lastSavedAt ? <small className="plans-saved-at">最近成功保存：{new Date(lastSavedAt).toLocaleString()}</small> : null}{feedback ? <small className="plans-save-feedback">{feedback}</small> : hasFormDraft ? <small className="plans-save-feedback">表单草稿尚未加入计划；添加后才能保存。</small> : null}</div><div className="plans-toolbar-actions"><button className="btn btn-ghost" type="button" onClick={abandonLocalChanges} disabled={!(dirty || hasFormDraft || assistantApplyPending) || saving || loading || editingBlocked}>放弃修改</button><button className="btn btn-primary" type="button" onClick={() => void persist(items)} disabled={!dirty || saving || editingBlocked}>{saving ? '保存中…' : '保存计划'}</button></div></div>
+      {!assistantOpen && error ? renderPlanError() : null}
+      {!assistantOpen && conflictDraft && !error ? renderConflictNotice() : null}
 
-        {assistantOpen ? <section className="plans-assistant" aria-label="AI 每日计划建议">
-        <header><div><p className="plans-eyebrow">AI 助手</p><h3>把目标整理成可选计划</h3><p>建议先预览和编辑；只有点击“添加选中建议并保存”后才会写入计划。</p></div><button className="btn btn-ghost btn-sm" type="button" onClick={closeAssistant}>关闭</button></header>
+        {assistantOpen ? <><button className="plans-assistant-backdrop" type="button" tabIndex={-1} aria-label="关闭 AI 建议" onClick={closeAssistant} /><section className="plans-assistant" role="region" aria-label="AI 每日计划建议" tabIndex={-1}>
+        <div className="plans-assistant-dialog" role="dialog" aria-modal="true" aria-labelledby="plans-assistant-title">
+        <header><div><p className="plans-eyebrow">AI 助手</p><h3 id="plans-assistant-title">把目标整理成可选计划</h3><p>建议先预览和编辑；只有点击“添加选中建议并保存”后才会写入计划。</p></div><button className="btn btn-ghost btn-sm" type="button" ref={assistantCloseRef} onClick={closeAssistant}>关闭</button></header>
+        {error ? renderPlanError('err plans-error plans-assistant-save-state') : conflictDraft ? renderConflictNotice('plans-conflict-draft plans-assistant-save-state') : null}
         <label htmlFor="plan-assistant-request">告诉 Gemini 你的目标<textarea id="plan-assistant-request" value={assistantRequest} onChange={event => changeAssistantRequest(event.target.value)} maxLength={4000} rows={3} placeholder="例如：今天先完成项目方案，下午运动，给重要任务留出专注时间。" disabled={editingBlocked} /></label>
         <div className="plans-assistant-actions"><button className="btn btn-primary" type="button" onClick={() => void generateSuggestions()} disabled={editingBlocked || assistantBusy || !assistantRequest.trim()}>{assistantBusy ? '正在整理建议…' : '生成建议'}</button><a href="/admin/services?tab=ai">选择服务和模型</a></div>
         {assistantError ? <p className="plans-assistant-error" role="alert">{assistantError}</p> : null}
@@ -396,7 +468,7 @@ export function PlansPage(): ReactElement {
           </li>)}</ul>
           <button className="btn btn-primary" type="button" onClick={() => void applySuggestions()} disabled={saving || !assistantSuggestions.some(item => item.selected && item.title.trim())}>{saving ? '保存中…' : '添加选中建议并保存'}</button>
         </div> : null}
-      </section> : null}
+        </div></section></> : null}
 
       {loading && !items.length ? null : <div className="plans-grid">{groups.map(group => {
         const groupItems = selectedItems.filter(item => item.quadrant === group.id);

@@ -11,13 +11,17 @@
 .plans-estimate, .plans-reminder { display: flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
 .plans-estimate input { width: 68px; }
 .plans-reminder input { width: 100%; }
-.plans-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 14px 0 18px; }
-.plans-toolbar > div:last-child { display: flex; gap: 8px; }
+.plans-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 14px 0 18px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
+.plans-toolbar-status { min-width: 0; }
+.plans-toolbar-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .plans-save-status { color: var(--text-secondary); font-size: 12px; }
 .plans-saved-at, .plans-save-feedback { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 11px; }
 .plans-conflict-draft { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 14px; padding: 12px; border: 1px solid #e5cf9f; border-radius: 10px; background: #fff9e9; color: var(--text-secondary); font-size: 12px; }
 .plans-conflict-draft span { flex: 1 1 260px; }
 .plans-error { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+.plans-error-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.plans-assistant-save-state { margin: 14px 0 0; padding: 10px 12px; border-radius: 10px; }
+.plans-assistant-save-state > span { flex: 1 1 220px; min-width: 0; }
 .plans-reminder-list { margin: 0 0 18px; padding: 14px 16px; border: 1px solid #e5cf9f; border-radius: 12px; background: #fff9e9; }
 .plans-reminder-list h3 { margin: 0 0 8px; font-size: 14px; }
 .plans-reminder-list article { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid rgba(130,100,40,.15); }
@@ -52,19 +56,20 @@
 .plans-global-reminders small { color: var(--text-tertiary); font-size: 11px; }
 .plans-global-reminder-actions { display: flex; gap: 6px; }
 .plans-global-reminders > p { margin: 8px 0; color: var(--text-secondary); font-size: 12px; }
-.plans-assistant { margin: 0 0 18px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); box-shadow: 0 8px 24px rgba(20, 28, 20, .05); }
-.plans-assistant > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.plans-assistant-backdrop { position: fixed; z-index: 39; inset: 0; border: 0; background: rgba(24, 30, 24, .2); cursor: default; }
+.plans-assistant { position: fixed; z-index: 40; top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right)); bottom: max(14px, env(safe-area-inset-bottom)); width: min(560px, calc(100vw - 28px)); margin: 0; padding: 22px; overflow-y: auto; border: 1px solid var(--border); border-radius: 20px; background: var(--bg-surface); box-shadow: 0 24px 70px rgba(20, 28, 20, .22); }
+.plans-assistant-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .plans-assistant h3 { margin: 0; font-size: 17px; }
-.plans-assistant > header p:last-child { margin: 6px 0 0; color: var(--text-secondary); font-size: 12px; }
-.plans-assistant > label { display: grid; gap: 7px; margin-top: 16px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
-.plans-assistant > label textarea { width: 100%; min-height: 80px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: white; color: var(--text-primary); font: inherit; font-weight: 400; resize: vertical; }
+.plans-assistant-dialog > header p:last-child { margin: 6px 0 0; color: var(--text-secondary); font-size: 12px; }
+.plans-assistant-dialog > label { display: grid; gap: 7px; margin-top: 16px; color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.plans-assistant-dialog > label textarea { width: 100%; min-height: 80px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: white; color: var(--text-primary); font: inherit; font-weight: 400; resize: vertical; }
 .plans-assistant-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 10px; }
 .plans-assistant-actions a { color: var(--text-secondary); font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
 .plans-assistant-error { color: #a52323; font-size: 13px; }
 .plans-assistant-preview { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .plans-assistant-preview > p { margin: 0; color: var(--text-primary); font-size: 14px; }
 .plans-assistant-preview > small { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: 11px; }
-.plans-assistant-preview ul { display: grid; gap: 8px; margin: 12px 0; padding: 0; list-style: none; }
+.plans-assistant-preview ul { display: grid; gap: 8px; max-height: 42vh; margin: 12px 0; padding: 0 4px 0 0; overflow-y: auto; list-style: none; }
 .plans-assistant-preview li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: white; }
 .plans-assistant-select input { width: 16px; height: 16px; accent-color: #596552; }
 .plans-assistant-suggestion { min-width: 0; }
@@ -75,4 +80,4 @@
 .plans-assistant-suggestion select, .plans-assistant-suggestion label input { min-height: 34px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: #fafaf8; color: var(--text-secondary); font-size: 12px; }
 .plans-assistant-suggestion label { display: flex; align-items: center; gap: 5px; color: var(--text-tertiary); font-size: 11px; }
 @media (max-width: 1100px) { .plans-create { grid-template-columns: minmax(150px, 1fr) minmax(130px, 180px) auto; } .plans-reminder { grid-column: 1 / 3; } }
-@media (max-width: 760px) { .plans-header { grid-template-columns: 1fr; } .plans-header-actions { justify-content: flex-start; } .plans-date-nav { grid-column: 1; } .plans-create { grid-template-columns: 1fr 1fr; } .plans-create > input { grid-column: 1 / -1; } .plans-estimate { justify-content: flex-start; } .plans-reminder { grid-column: 1 / -1; } .plans-reminder input { flex: 1; } .plans-create > button { justify-self: end; } .plans-grid { grid-template-columns: 1fr; } .plans-quadrant { min-height: 150px; } .plans-toolbar { align-items: flex-start; } .plans-task-controls input { width: min(100%, 190px); } }
+@media (max-width: 760px) { .plans-header { grid-template-columns: 1fr; } .plans-header-actions { justify-content: flex-start; } .plans-date-nav { grid-column: 1; } .plans-create { grid-template-columns: 1fr 1fr; } .plans-create > input { grid-column: 1 / -1; } .plans-estimate { justify-content: flex-start; } .plans-reminder { grid-column: 1 / -1; } .plans-reminder input { flex: 1; } .plans-create > button { justify-self: end; } .plans-grid { grid-template-columns: 1fr; } .plans-quadrant { min-height: 150px; } .plans-toolbar { align-items: flex-start; flex-wrap: wrap; } .plans-toolbar-actions { width: 100%; justify-content: flex-end; } .plans-error { align-items: stretch; flex-direction: column; } .plans-error-actions { justify-content: flex-start; } .plans-assistant { top: max(8px, env(safe-area-inset-top)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: calc(100vw - 16px); padding: 18px; border-radius: 16px; } .plans-assistant-preview ul { max-height: 34vh; } .plans-task-controls input { width: min(100%, 190px); } }
