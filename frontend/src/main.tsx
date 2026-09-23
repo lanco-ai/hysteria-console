@@ -5,11 +5,9 @@ import { LoginModal, resolveSameOriginReturnTo } from './features/auth/LoginModa
 import { LogoutPage } from './features/auth/LogoutPage';
 import { UserPasswordPage } from './features/auth/UserPasswordPage';
 import { UserPanelPage } from './features/user/UserPanelPage';
-import { LogsPage } from './features/network-admin/logs/LogsPage';
 import { SettingsPage } from './features/network-admin/settings/SettingsPage';
 import { UsagePage } from './features/network-admin/usage/UsagePage';
-import { HealthPage } from './features/network-admin/health/HealthPage';
-import { IncidentsPage } from './features/network-admin/incidents/IncidentsPage';
+import { OperationsPage } from './features/network-admin/operations/OperationsPage';
 import { TemplateRulesPage } from './features/network-admin/template-rules/TemplateRulesPage';
 import { LandingPage } from './features/network-admin/landing/LandingPage';
 import { UserDetailPage } from './features/network-admin/user-detail/UserDetailPage';
@@ -45,12 +43,12 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/auth': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
   '/login': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
   '/user/login': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
-  '/admin': { title: '总览', bodyClass: 'has-shell', shell: true },
-  '/admin/logs': { title: '清零日志', bodyClass: 'has-shell', shell: true },
+  '/admin': { title: '用户', bodyClass: 'has-shell', shell: true },
+  '/admin/logs': { title: '运维', bodyClass: 'has-shell', shell: true },
   '/admin/settings': { title: '设置', bodyClass: 'has-shell', shell: true },
   '/admin/usage': { title: '流量分析', bodyClass: 'has-shell', shell: true },
-  '/admin/health': { title: '健康状态', bodyClass: 'has-shell', shell: true },
-  '/admin/incidents': { title: '事故处理', bodyClass: 'has-shell', shell: true },
+  '/admin/health': { title: '运维', bodyClass: 'has-shell', shell: true },
+  '/admin/incidents': { title: '运维', bodyClass: 'has-shell', shell: true },
   '/admin/config': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/rules': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
@@ -208,12 +206,12 @@ function passwordMaxLength(): number {
 }
 
 const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
-  '/admin': { active: 'dashboard', title: '总览' },
-  '/admin/logs': { active: 'logs', title: '清零日志' },
+  '/admin': { active: 'dashboard', title: '用户' },
+  '/admin/logs': { active: 'operations', title: '运维' },
   '/admin/settings': { active: 'settings', title: '设置' },
   '/admin/usage': { active: 'usage', title: '流量分析' },
-  '/admin/health': { active: 'health', title: '健康状态' },
-  '/admin/incidents': { active: 'incidents', title: '事故处理' },
+  '/admin/health': { active: 'operations', title: '运维' },
+  '/admin/incidents': { active: 'operations', title: '运维' },
   '/admin/config': { active: 'config', title: '模板与路由' },
   '/admin/rules': { active: 'config', title: '模板与路由' },
   '/admin/landing-egresses': { active: 'landing-egresses', title: '家宽出口' },
@@ -232,16 +230,14 @@ function AdminPlaceholder({ route, status }: { route: string; status: 'loading' 
   return <CodexShell active={metadata.active} pageTitle={metadata.title} authStatus={status}><section className="card"><p>{label}</p></section></CodexShell>;
 }
 
-function AdminRoute({ route, publicHost, authenticated, status }: { route: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'unavailable' }) {
+function AdminRoute({ route, locationKey, publicHost, authenticated, status }: { route: string; locationKey: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'unavailable' }) {
   const detail = route.match(/^\/admin\/user\/([^/]+)$/);
   if (!authenticated) return <AdminPlaceholder route={route} status={status}/>;
   if (detail) return <UserDetailPage publicHost={publicHost} uid={decodeRouteSegment(detail[1] || '')}/>;
   if (route === '/admin') return <OverviewPage publicHost={publicHost}/>;
-  if (route === '/admin/logs') return <LogsPage publicHost={publicHost}/>;
+  if (route === '/admin/logs' || route === '/admin/health' || route === '/admin/incidents') return <OperationsPage locationKey={locationKey} publicHost={publicHost}/>;
   if (route === '/admin/settings') return <SettingsPage publicHost={publicHost}/>;
   if (route === '/admin/usage') return <UsagePage publicHost={publicHost}/>;
-  if (route === '/admin/health') return <HealthPage publicHost={publicHost}/>;
-  if (route === '/admin/incidents') return <IncidentsPage publicHost={publicHost}/>;
   if (route === '/admin/config' || route === '/admin/rules') return <TemplateRulesPage publicHost={publicHost}/>;
   if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
   if (route === '/admin/plans') return <PlansPage/>;
@@ -292,7 +288,7 @@ function App() {
   useEffect(() => { if (LOGIN_ROUTES.has(route)) setLoginRequested(true); }, [route]);
 
   if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
-  if (isProtectedAdminRoute) return <><AdminRoute route={route} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
+  if (isProtectedAdminRoute) return <><AdminRoute route={route} locationKey={locationKey} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
   if (route === '/user/change-password') return <UserPasswordPage publicHost={publicHost}/>;
   if (route === '/user/panel') return <UserPanelPage publicHost={publicHost}/>;
   if (route === '/logout' || route === '/user/logout') return <LogoutPage realm={route === '/logout' ? 'admin' : 'user'} publicHost={publicHost}/>;

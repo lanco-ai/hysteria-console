@@ -7,6 +7,28 @@ body.has-shell .incidents-page {
   gap: 20px;
 }
 
+body.has-shell .operations-page {
+  max-width: 1180px;
+  margin-inline: auto;
+}
+
+body.has-shell .operations-page > [role='tabpanel'] > .admin-page {
+  margin: 0;
+}
+
+body.has-shell .operations-panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+body.has-shell .incidents-page .health-top-kpis {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 body.has-shell .incident-page-header {
   display: flex;
   justify-content: flex-end;
@@ -186,6 +208,8 @@ body.has-shell .template-rules-tabs {
 }
 
 body.has-shell .template-rules-tab {
+  display: inline-flex;
+  align-items: center;
   min-height: 36px;
   padding: 0 16px;
   border: 0;
@@ -193,6 +217,7 @@ body.has-shell .template-rules-tab {
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
+  text-decoration: none;
   cursor: pointer;
 }
 

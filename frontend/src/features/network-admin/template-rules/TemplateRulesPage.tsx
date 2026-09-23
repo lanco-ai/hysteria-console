@@ -29,7 +29,7 @@ export function TemplateRulesPage({ publicHost }: { publicHost: string }) {
     setTab(next);
   };
 
-  return <AdminShell active="config" pageTitle="模板与路由" subtitle={`${publicHost} · 订阅配置与匹配规则`} topbarExtra={<span className="badge poll-status">版本受保护</span>}>
+  return <AdminShell active="config" pageTitle="模板与路由" subtitle={publicHost}>
     <div className="template-rules-page admin-page">
       <div className="template-rules-tabs" role="tablist" aria-label="模板与路由设置">
         <button type="button" role="tab" aria-selected={tab === 'template'} className={`template-rules-tab${tab === 'template' ? ' is-active' : ''}`} onClick={() => selectTab('template')}>订阅模板</button>

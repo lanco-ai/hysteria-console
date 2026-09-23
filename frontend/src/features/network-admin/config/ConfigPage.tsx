@@ -24,12 +24,11 @@ export function ConfigPanel({ active = true }: { active?: boolean }) {
     {config.status === 'loading' ? <LoadingState label="正在加载模板…"/> : null}
     {config.status === 'success' ? <div className="admin-page settings-page">
       {message ? <div className="flash" role="status">{message}</div> : null}
-      <section className="form-section"><div className="form-section-title">模板说明与影响范围</div><div className="form-section-desc">编辑 JSON 格式的订阅模板，保存前会校验结构并以版本号保护并发修改。</div><ul className="template-impact"><li>影响用户下次拉取订阅，不修改代理服务运行配置。</li><li>每个用户的密码和 UUID 由服务端自动注入。</li></ul></section>
-      <section className="code-panel"><div className="code-panel-header"><div className="code-panel-title">模板 JSON</div><div className="code-panel-actions"><button className="btn btn-ghost btn-sm" type="button" onClick={format} disabled={busy}>格式化 JSON</button></div></div><div className="code-panel-body"><label className="sr-only" htmlFor="config-editor">订阅模板 JSON</label><textarea id="config-editor" className="code-area code-tall" spellCheck={false} value={draft} onChange={event => { setDraft(event.target.value); setDirty(true); }} /> <div className="row mt-md"><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={busy || !dirty}>保存订阅模板</button><button className="btn secondary" type="button" onClick={() => { setDraft(JSON.stringify(config.data.config, null, 2)); setRevision(config.data.revision); setDirty(false); setMessage('已恢复最新版本'); }} disabled={busy || !dirty}>放弃草稿</button></div></div></section>
+      <section className="code-panel"><div className="code-panel-header"><div><div className="code-panel-title">模板 JSON</div><div className="small faint">下次拉取订阅生效 · 保存校验结构与版本 · 用户凭证由服务端注入</div></div><div className="code-panel-actions"><button className="btn btn-ghost btn-sm" type="button" onClick={format} disabled={busy}>格式化 JSON</button></div></div><div className="code-panel-body"><label className="sr-only" htmlFor="config-editor">订阅模板 JSON</label><textarea id="config-editor" className="code-area code-tall" spellCheck={false} value={draft} onChange={event => { setDraft(event.target.value); setDirty(true); }} /> <div className="row mt-md"><button className="btn btn-primary" type="button" onClick={() => void save()} disabled={busy || !dirty}>保存订阅模板</button><button className="btn secondary" type="button" onClick={() => { setDraft(JSON.stringify(config.data.config, null, 2)); setRevision(config.data.revision); setDirty(false); setMessage('已恢复最新版本'); }} disabled={busy || !dirty}>放弃草稿</button></div></div></section>
     </div> : null}
   </>;
 }
 
 export function ConfigPage({ publicHost }: { publicHost: string }) {
-  return <AdminShell active="config" pageTitle="模板与路由" subtitle={`${publicHost} · 订阅模板`} topbarExtra={<span className="badge poll-status">仅影响后续订阅</span>}><ConfigPanel/></AdminShell>;
+  return <AdminShell active="config" pageTitle="模板与路由" subtitle={publicHost}><ConfigPanel/></AdminShell>;
 }

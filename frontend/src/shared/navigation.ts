@@ -17,8 +17,13 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: '工作台',
     items: [
-      { key: 'dashboard', href: '/admin', label: '总览', icon: 'dashboard' },
+      { key: 'dashboard', href: '/admin', label: '用户', icon: 'dashboard' },
       { key: 'plans', href: '/admin/plans', label: '今日计划', icon: 'calendar' },
+    ],
+  },
+  {
+    label: 'AI 工具',
+    items: [
       { key: 'chat', href: '/admin/chat', label: 'AI 对话', icon: 'chat' },
       { key: 'video', href: '/admin/video', label: 'AI 视频', icon: 'video' },
     ],
@@ -34,9 +39,7 @@ export const navigationGroups: NavigationGroup[] = [
   {
     label: '运维管理',
     items: [
-      { key: 'health', href: '/admin/health', label: '健康状态', icon: 'pulse' },
-      { key: 'incidents', href: '/admin/incidents', label: '事故处理', icon: 'pulse' },
-      { key: 'logs', href: '/admin/logs', label: '清零日志', icon: 'logs' },
+      { key: 'operations', href: '/admin/health', label: '运维', icon: 'pulse' },
     ],
   },
   {

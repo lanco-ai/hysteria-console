@@ -11,8 +11,9 @@ const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
 const columns = ['时间', '操作人', 'IP', '操作', '目标', '日期', '流量变化'];
 const navigation = [
   ['工作台', null],
-  ['总览', '/admin'],
+  ['用户', '/admin'],
   ['今日计划', '/admin/plans'],
+  ['AI 工具', null],
   ['AI 对话', '/admin/chat'],
   ['AI 视频', '/admin/video'],
   ['网络管理', null],
@@ -20,9 +21,7 @@ const navigation = [
   ['模板与路由', '/admin/config'],
   ['家宽出口', '/admin/landing-egresses'],
   ['运维管理', null],
-  ['健康状态', '/admin/health'],
-  ['事故处理', '/admin/incidents'],
-  ['清零日志', '/admin/logs'],
+  ['运维', '/admin/health'],
   ['服务接入', null],
   ['服务中心', '/admin/services'],
   ['设置', '/admin/settings'],
@@ -86,8 +85,8 @@ async function verifyAuthenticatedLogs(browser) {
   await gotoReact(page);
   await page.getByText('preview-admin', { exact: true }).waitFor();
 
-  assert.equal(await page.title(), '清零日志');
-  assert.equal(await page.locator('.page-title').innerText(), '清零日志');
+  assert.equal(await page.title(), '运维');
+  assert.equal(await page.locator('.page-title').innerText(), '运维');
   assert.equal(await page.locator('.badge').innerText(), 'preview.invalid');
   assert.equal(await page.locator('.app').count(), 1, 'the page must have one shell frame');
   assert.equal(await page.locator('.sidebar').count(), 1, 'the page must have one sidebar');
@@ -95,7 +94,7 @@ async function verifyAuthenticatedLogs(browser) {
   assert.deepEqual(await page.locator('.sidebar-section').allTextContents(), navigation.filter(([, href]) => !href).map(([label]) => label));
   assert.deepEqual(await page.locator('.sidebar-link').evaluateAll(links => links.map(link => [link.textContent.trim(), new URL(link.href).pathname])), navigation.filter(([, href]) => href));
   assert.equal(await page.locator('.sidebar-link[aria-current="page"]').count(), 1);
-  assert.equal(await page.locator('.sidebar-link[aria-current="page"]').innerText(), '清零日志');
+  assert.equal(await page.locator('.sidebar-link[aria-current="page"]').innerText(), '运维');
   assert.deepEqual(await page.locator('.data-table th').allTextContents(), columns);
   assert.deepEqual(await page.locator('.data-table tbody tr').first().locator('td').allTextContents(), [
     '2026-07-18T12:00:00+08:00',
@@ -117,7 +116,7 @@ async function verifyAuthenticatedLogs(browser) {
     await gotoReact(page);
     await page.getByText('preview-admin', { exact: true }).waitFor();
     const current = await snapshot(page);
-    assert.equal(current.title, '清零日志');
+    assert.equal(current.title, '运维');
     for (const selector of ['.sidebar', '.topbar', '.content', '.admin-section']) {
       const box = await page.locator(selector).boundingBox();
       assert(box && box.width > 0 && box.height > 0, `${selector} must have visible bounds at ${width}px`);

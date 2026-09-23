@@ -39,10 +39,12 @@ async function main() {
         label: group.querySelector('.sidebar-section')?.textContent?.trim() || '',
         hrefs: Array.from(group.querySelectorAll('a[href]'), link => new URL(link.href).pathname),
       })));
-      assert.deepEqual(navGroups.map(group => group.label), ['工作台', '网络管理', '运维管理', '服务接入']);
-      for (const path of ['/admin/plans', '/admin/chat', '/admin/video']) {
-        assert.equal(navGroups.find(group => group.hrefs.includes(path))?.label, '工作台', `${path} belongs in the workbench group`);
+      assert.deepEqual(navGroups.map(group => group.label), ['工作台', 'AI 工具', '网络管理', '运维管理', '服务接入']);
+      assert.equal(navGroups.find(group => group.hrefs.includes('/admin/plans'))?.label, '工作台');
+      for (const path of ['/admin/chat', '/admin/video']) {
+        assert.equal(navGroups.find(group => group.hrefs.includes(path))?.label, 'AI 工具', `${path} belongs in the AI tools group`);
       }
+      assert.deepEqual(navGroups.find(group => group.label === '运维管理')?.hrefs, ['/admin/health']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/services'))?.label, '服务接入');
       assert.deepEqual(await page.locator('.sidebar-footer a[href]').evaluateAll(links => links.map(link => new URL(link.href).pathname)), ['/admin/settings']);
       await page.evaluate(() => { window.__navigationMarker = 'same-document'; });

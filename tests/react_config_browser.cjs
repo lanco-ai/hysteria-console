@@ -15,6 +15,8 @@ async function main() {
   await expect(page).toHaveTitle('模板与路由');
   await expect(page.getByRole('heading', { name: '模板与路由' })).toBeVisible();
   await expect(page.locator('#config-editor')).toBeVisible();
+  await expect(page.getByText(/下次拉取订阅生效 · 保存校验结构与版本 · 用户凭证由服务端注入/)).toBeVisible();
+  await expect(page.getByText('模板说明与影响范围', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: '格式化 JSON' }).click();
   await expect(page.getByRole('status')).toContainText('已格式化 JSON');
   assert(requests.includes('/api/v1/admin/config'));

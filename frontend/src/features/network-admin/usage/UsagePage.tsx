@@ -115,7 +115,7 @@ export function UsagePage({ publicHost }: { publicHost: string }) {
   }, [usage.status, usage.retry]);
   const refresh = () => { setPolling('正在更新…'); usage.retry(); };
 
-  return <AdminShell active="usage" pageTitle="流量分析" badge={usage.status === 'success' ? `${usage.data.stats.online} 个在线` : ''} subtitle={`${publicHost} · 实时数据`} topbarExtra={<><button className="btn ghost btn-sm" type="button" onClick={refresh} disabled={usage.status === 'loading'}>立即刷新</button><span className="badge poll-status" data-role="usage-poll-status">{polling}</span><span className="sr-only" role="status" aria-live="polite">{polling}</span></>}>
+  return <AdminShell active="usage" pageTitle="流量分析" subtitle={`${publicHost} · 实时数据`} topbarExtra={<><button className="btn ghost btn-sm" type="button" onClick={refresh} disabled={usage.status === 'loading'}>立即刷新</button><span className="badge poll-status" data-role="usage-poll-status">{polling}</span><span className="sr-only" role="status" aria-live="polite">{polling}</span></>}>
     <div className="admin-page usage-page">
       {usage.status === 'error' ? <ErrorState error={usage.error} retry={usage.retry}/> : null}
       {usage.status === 'loading' ? <LoadingState label="正在加载流量分析…"/> : null}

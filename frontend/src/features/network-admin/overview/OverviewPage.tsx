@@ -46,9 +46,9 @@ export function OverviewPage({ publicHost }: { publicHost: string }) {
 
   return <AdminShell
     active="dashboard"
-    pageTitle="总览"
+    pageTitle="用户"
     badge={data ? `${data.users.length} 个用户` : ''}
-    subtitle={data ? `${publicHost} · 计费周期 ${data.cycle.key}` : publicHost}
+    subtitle={publicHost}
     topbarExtra={topbarExtra}
   >
     {overview.message ? <div className="flash" role="status">{overview.message}</div> : null}
@@ -62,7 +62,7 @@ export function OverviewPage({ publicHost }: { publicHost: string }) {
         onClick={overview.refresh}
       >刷新核对</button>}
     </div> : null}
-    {overview.loading && !data ? <LoadingState label="正在加载总览…"/> : null}
+    {overview.loading && !data ? <LoadingState label="正在加载用户…"/> : null}
     {data ? <>
       <div className="overview-stats">
         <div className="overview-stat">
