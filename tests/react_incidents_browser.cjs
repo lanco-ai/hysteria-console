@@ -29,7 +29,7 @@ async function main() {
   await page.getByRole('tab', { name: '清零日志' }).click();
   await expect(page).toHaveURL(/\/__react\/admin\/health\?tab=logs$/);
   await expect(page.getByRole('heading', { name: '最近清零记录' })).toBeVisible();
-  assert(requests.some(([method, path]) => method === 'GET' && path === '/api/v1/admin/logs'));
+  await expect.poll(() => requests.some(([method, path]) => method === 'GET' && path === '/api/v1/admin/logs')).toBe(true);
   await page.goBack();
   await expect(page).toHaveURL(/\/__react\/admin\/health\?tab=incidents$/);
   await expect(page.getByRole('tab', { name: '事故处理' })).toHaveAttribute('aria-selected', 'true');

@@ -80,7 +80,7 @@ async function verifyPrototypeNamedInitialMessages(browser) {
       const response = page.waitForResponse(`**${apiPath}`);
       await goto(page, `${pagePath}?msg=${encodeURIComponent(queryValue)}`);
       await response;
-      await page.waitForTimeout(50);
+      await page.locator(`form[action="${formAction}"]`).waitFor({ state: 'attached' });
       assert.equal(await page.locator(`form[action="${formAction}"]`).count(), 1, `${realm} ${value} keeps the form usable`);
       const feedback = page.locator(`.${expectedClass}`).first();
       assert.equal(await feedback.innerText(), value, `${realm} ${value} renders literally`);
