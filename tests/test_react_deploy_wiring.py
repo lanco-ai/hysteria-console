@@ -34,6 +34,8 @@ WEB_API_MODULES = (
     'operation_models.py',
     'operation_routes.py',
     'overview_models.py',
+    'plans_routes.py',
+    'plans_service.py',
     'requests.py',
     'rules_routes.py',
     'services.py',
@@ -41,6 +43,17 @@ WEB_API_MODULES = (
     'user_detail_models.py',
     'user_detail_routes.py',
     'user_models.py',
+    'video_models.py',
+    'video_provider.py',
+    'video_routes.py',
+    'video_service.py',
+    'ai/__init__.py',
+    'ai/compat.py',
+    'ai/gemini.py',
+    'ai/routes.py',
+    'ai/service_store.py',
+    'ai/assistant_generation.py',
+    'ai/assistant_schemas.py',
 )
 
 
@@ -71,7 +84,10 @@ def test_react_backend_sources_are_in_every_deploy_inventory():
     assert 'render "$REPO_DIR/hysteria/react_server.py" "$HY_DIR/react_server.py"' in deploy
     assert 'local dist="$HY_REACT_DIST_DIR"' in deploy
     assert 'install -d -o root -g root -m 755 "$HY_DIR/web_api"' in deploy
+    assert 'install -d -o root -g root -m 755 "$HY_DIR/web_api/ai"' in deploy
+    module_inventory = deploy.split('declare -a REACT_WEB_API_MODULES=(', 1)[1].split('\n)', 1)[0]
     for module in WEB_API_MODULES:
+        assert f'\n  {module}' in module_inventory
         assert f'hysteria/web_api/{module}' in deploy
         assert f'/root/hysteria/web_api/{module}' in recovery
     assert '/root/hysteria/react_server.py' in recovery

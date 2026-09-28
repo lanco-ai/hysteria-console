@@ -19,12 +19,19 @@ from fastapi.testclient import TestClient
 from preview_http_server import managed_preview_http_server
 from preview_http_server import read_request_body as _read_request_body
 from web_api import create_app
+from web_api.ai.service_store import AIServiceStore
+from web_api.plans_service import PlanStore
+from web_api.service_center import ServiceCenterStore
 from web_api.services import LegacyPanelServices
 
 from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
+    '/__react/admin/services': ('服务中心', 'has-shell'),
+    '/admin/services': ('服务中心', 'has-shell'),
+    '/__react/admin/plans': ('今日计划', 'has-shell'),
+    '/admin/plans': ('今日计划', 'has-shell'),
     '/__react/admin': ('总览', 'has-shell'),
     '/__react/': ('Hysteria 工作台', 'has-shell page-workbench'),
     '/': ('Hysteria 工作台', 'has-shell page-workbench'),
@@ -35,8 +42,8 @@ REACT_PAGES = {
     '/__react/admin/usage': ('流量分析', 'has-shell'),
     '/__react/admin/health': ('健康状态', 'has-shell'),
     '/__react/admin/incidents': ('事故处理', 'has-shell'),
-    '/__react/admin/config': ('模板配置', 'has-shell'),
-    '/__react/admin/rules': ('路由规则', 'has-shell'),
+    '/__react/admin/config': ('模板与路由', 'has-shell'),
+    '/__react/admin/rules': ('模板与路由', 'has-shell'),
     '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
     '/__react/admin/user/demo_alex': ('demo_alex · 用量画像', 'has-shell'),
     '/__react/login': ('Hysteria 工作台', 'has-shell page-workbench'),
@@ -49,12 +56,75 @@ REACT_PAGES = {
     '/__react/user/panel': ('用户面板 · Hysteria', ''),
     '/__react/admin/chat': ('AI 对话', 'has-shell'),
     '/admin/chat': ('AI 对话', 'has-shell'),
+    '/__react/admin/video': ('AI 视频', 'has-shell'),
+    '/admin/video': ('AI 视频', 'has-shell'),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'
 PREVIEW_USER_PASSWORD = 'preview-user-password'
 PREVIEW_MUST_CHANGE_PASSWORD = 'preview-change-required-password'
 RECEIPT_TIMEOUT = 10
+
+
+class PreviewGeminiAdapter:
+    """Deterministic Gemini model-list double; never performs network requests."""
+
+    def list_models(self, profile):
+        if not profile.get('api_key'):
+            raise ValueError('missing preview credential')
+        return [
+            {'id': 'gemini-preview-listed-first', 'name': 'Gemini Preview Listed First'},
+            {
+                'id': 'gemini-preview-fast',
+                'name': 'Gemini Preview Fast',
+                'input_token_limit': 64000,
+            },
+        ]
+
+    def generate_chat(self, profile, model, messages, **_kwargs):
+        if not profile.get('api_key') or model != 'gemini-preview-fast' or not messages:
+            raise ValueError('invalid preview capability test')
+        return {
+            'choices': [{'message': {'role': 'assistant', 'content': 'capability test passed'}}]
+        }
+
+    def generate_json(self, profile, model, prompt, schema):
+        if not profile.get('api_key') or model != 'gemini-preview-fast' or not prompt:
+            raise ValueError('invalid preview structured test')
+        if 'suggestions' in schema.get('properties', {}):
+            return {
+                'summary': '结构化输出检查',
+                'suggestions': [
+                    {
+                        'title': '测试建议',
+                        'notes': '',
+                        'quadrant': 'important',
+                        'start_time': '',
+                        'estimate_minutes': 30,
+                        'reminder_offset_minutes': 0,
+                        'reason': '检查计划建议结构',
+                    }
+                ],
+            }
+        return {
+            'title': 'Preview Storyboard',
+            'rewritten_text': 'A short structured test story.',
+            'style_prompt': 'Soft light.',
+            'aspect_ratio': '16:9',
+            'shots': [
+                {
+                    'title': 'Preview Shot',
+                    'script': 'A person looks up.',
+                    'shot_type': '近景',
+                    'character': 'A person',
+                    'scene': 'A bright room',
+                    'duration': 5,
+                    'image_prompt': 'A bright room in soft light.',
+                    'motion_prompt': 'Slow push in.',
+                    'dialogue': 'Hello.',
+                }
+            ],
+        }
 
 
 def _manifest_assets(dist):
@@ -235,7 +305,14 @@ def _handler(api_client, allowed_assets):
                 if payload.count(marker) != 1:
                     raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
                 payload = payload.replace(marker, replacement, 1)
-            if path in ('/__react/', '/__react/auth', '/__react/login', '/__react/user/login', '/login', '/user/login'):
+            if path in (
+                '/__react/',
+                '/__react/auth',
+                '/__react/login',
+                '/__react/user/login',
+                '/login',
+                '/user/login',
+            ):
                 marker = f'data-public-host="{escaped_public_host}"'
                 replacement = (
                     marker + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'
@@ -288,13 +365,22 @@ def _handler(api_client, allowed_assets):
             }:
                 self._form_api()
                 return
-            if urlsplit(self.path).path == '/api/chat/completions':
+            request_path = urlsplit(self.path).path
+            if request_path in {'/api/chat/completions', '/api/v1/admin/services/probe'} or (
+                request_path.startswith('/api/ai/services/')
+                and request_path.endswith(('/test', '/test/generation', '/test/structured'))
+            ):
                 self._json_api()
                 return
             super().do_POST()
 
         def do_PUT(self):
-            if urlsplit(self.path).path == '/api/chat/settings':
+            request_path = urlsplit(self.path).path
+            if request_path in {
+                '/api/chat/settings',
+                '/api/v1/admin/services',
+                '/api/ai/service-bindings',
+            } or request_path.startswith('/api/ai/services/'):
                 self._json_api()
                 return
             super().do_PUT()
@@ -418,7 +504,20 @@ def preview_server(port=0, *, overview_fixture=False):
                 service._credential_generation(must_change_hash),
                 service.USER_SESSION_PANEL_PASSWORD,
             )
-            app = create_app(LegacyPanelServices(service), max_requests=4)
+            preview_ai_root = Path(directory) / 'ai'
+            app = create_app(
+                LegacyPanelServices(service),
+                max_requests=4,
+                service_center_store=ServiceCenterStore(Path(directory) / 'services.json'),
+                ai_services_store=AIServiceStore(
+                    preview_ai_root / 'services.json',
+                    chat_legacy_path=preview_ai_root / 'missing-chat.json',
+                    video_legacy_path=preview_ai_root / 'missing-video.json',
+                    backup_dir=preview_ai_root / 'migration-backup',
+                ),
+                plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
+                gemini_adapter=PreviewGeminiAdapter(),
+            )
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
                 handler = _handler(api_client, allowed_assets)
                 with managed_preview_http_server(('127.0.0.1', port), handler) as server:

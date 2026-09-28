@@ -1,0 +1,65 @@
+.video-primary-toolbar { display: grid; gap: 12px; }
+.video-primary-toolbar-meta, .video-primary-toolbar-controls { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.video-primary-toolbar-meta { justify-content: space-between; }
+.video-primary-heading { min-width: 0; }
+.video-primary-toolbar-controls { justify-content: flex-end; }
+.video-workflow-select { display: inline-flex; align-items: center; gap: 7px; flex: none; color: var(--muted, #68717c); font-size: .84rem; white-space: nowrap; }
+.video-workflow-select select { width: 210px; min-width: 0; }
+.video-canvas-title { margin-right: auto; }
+.video-canvas-title input { width: min(300px, 40vw); box-sizing: border-box; font-weight: 600; }
+.video-save-state { color: var(--muted, #68717c); font-size: .78rem; white-space: nowrap; }
+.video-save-state[data-state='error'] { color: #b42318; }
+.video-canvas-editor-primary { display: grid; grid-template-columns: minmax(0, 1fr) 260px; height: calc(100dvh - 245px); min-height: 560px; max-height: 980px; overflow: hidden; background: #f6f7f7; border: 1px solid var(--border, #dfe4e8); border-radius: 16px; box-shadow: 0 8px 28px #19212b0a; }
+.video-canvas-shell { position: relative; min-width: 0; min-height: 0; height: 100%; }
+.video-canvas-editor-primary .video-canvas { min-height: 0; height: 100%; }
+.video-canvas-editor-primary .react-flow__edge-path { stroke: var(--accent, #0e9f91); stroke-width: 2; }
+.video-canvas-editor-primary .react-flow__edges { inset: 0; width: 100%; height: 100%; }
+.video-canvas-editor-primary .react-flow__edges svg { width: 100%; height: 100%; max-width: none; }
+.video-node-inspector { min-width: 0; padding: 16px; overflow: auto; background: var(--surface-subtle, #f7f8f7); border-left: 1px solid var(--border, #e4e7eb); }
+.video-canvas-panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 12px; }
+.video-inspector-close { display: none; }
+.video-node-inspector label { display: grid; gap: 6px; margin: 12px 0; color: var(--muted, #68717c); font-size: .76rem; font-weight: 600; }
+.video-node-inspector input, .video-node-inspector select, .video-node-inspector textarea { width: 100%; box-sizing: border-box; }
+.video-inspector-note, .video-inspector-warning { margin: 12px 0; color: var(--muted, #68717c); font-size: .77rem; line-height: 1.5; }
+.video-inspector-warning { color: #a15c00; }
+.video-asset-preview { display: block; width: 100%; max-height: 200px; object-fit: contain; border-radius: 9px; }
+.video-node { position: relative; width: 258px; padding: 14px; color: var(--text, #20262d); background: var(--surface, #fff); border: 1px solid var(--border, #dfe4e8); border-radius: 13px; box-shadow: 0 7px 22px #19212b14; box-sizing: border-box; }
+.video-node-text_to_image { width: 330px; }
+.video-node-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.video-node strong, .video-node small { display: block; }
+.video-node small { margin-top: 5px; color: var(--muted, #68717c); font-size: .73rem; }
+.video-node textarea { width: 100%; margin-top: 10px; box-sizing: border-box; resize: vertical; }
+.video-node-run { width: 100%; margin-top: 12px; }
+.video-candidate-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.video-candidate { min-width: 0; padding: 5px; border: 1px solid var(--border, #dfe4e8); border-radius: 9px; background: var(--surface-subtle, #f7f8f7); }
+.video-candidate img { display: block; width: 100%; height: 92px; object-fit: cover; border-radius: 6px; }
+.video-candidate-badges { display: flex; min-height: 18px; gap: 3px; margin-top: 3px; }
+.video-candidate-badges span { padding: 1px 5px; border-radius: 5px; color: #076d57; background: #dff7ec; font-size: .65rem; }
+.video-candidate-actions { display: grid; gap: 3px; }
+.video-candidate-actions button { min-height: 26px; padding: 2px; color: var(--text, #20262d); background: var(--surface, #fff); border: 1px solid var(--border, #dfe4e8); border-radius: 5px; font-size: .68rem; cursor: pointer; }
+.video-candidate-actions button[aria-pressed='true'] { color: #076d57; border-color: #0e9f91; }
+.video-node-port-labels { display: flex; justify-content: space-between; margin-top: 6px; color: var(--muted, #68717c); font-size: .68rem; }
+.video-node video { display: block; width: 100%; margin-top: 10px; border-radius: 8px; }
+.video-node a { display: inline-block; margin-top: 8px; color: var(--accent, #0e9f91); font-size: .75rem; }
+.video-add-node-touch { display: none; }
+.video-context-backdrop { position: absolute; z-index: 20; inset: 0; }
+.video-context-menu { position: absolute; display: grid; width: 206px; max-height: calc(100% - 16px); padding: 5px; overflow: auto; background: var(--surface, #fff); border: 1px solid var(--border, #dfe4e8); border-radius: 11px; box-shadow: 0 15px 40px #19212b2a; }
+.video-context-menu button { display: grid; gap: 3px; min-height: 36px; padding: 7px 9px; color: var(--text, #20262d); text-align: left; background: transparent; border: 0; border-radius: 7px; cursor: pointer; }
+.video-context-menu button:hover, .video-context-menu button:focus-visible { background: var(--surface-subtle, #f3f5f6); }
+.video-context-menu small { color: #a15c00; font-size: .68rem; }
+@media (max-width: 900px) {
+  .video-canvas-editor-primary { grid-template-columns: minmax(0, 1fr); height: min(72dvh, 680px); min-height: 480px; max-height: none; }
+  .video-node-inspector { position: fixed; z-index: 25; inset: auto 0 0 auto; display: none; width: min(360px, 100vw); max-height: min(68dvh, 620px); box-sizing: border-box; overflow: auto; border-top: 1px solid var(--border, #e4e7eb); border-left: 1px solid var(--border, #e4e7eb); border-radius: 15px 0 0; box-shadow: 0 -10px 35px #19212b30; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .video-node-inspector.is-open { display: block; }
+  .video-inspector-close { display: block; color: var(--text, #20262d); background: transparent; border: 0; cursor: pointer; }
+}
+@media (max-width: 620px) {
+  .video-primary-toolbar-meta { align-items: stretch; flex-direction: column; }
+  .video-primary-toolbar-controls { flex-wrap: wrap; justify-content: space-between; }
+  .video-workflow-select { justify-content: space-between; }
+  .video-workflow-select select { flex: 1; width: auto; }
+  .video-canvas-title { flex: 1 1 100%; }
+  .video-canvas-title input { width: 100%; }
+  .video-canvas-editor-primary { height: 66dvh; min-height: 440px; }
+  .video-add-node-touch { position: absolute; z-index: 10; top: 12px; left: 12px; display: block; }
+}

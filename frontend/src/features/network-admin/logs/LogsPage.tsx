@@ -29,7 +29,7 @@ function formatResetDate(value: string, fallback: string): string {
   return `${date.getFullYear()}.${date.getMonth() + 1}.${date.getDate()}`;
 }
 
-function LogsContent() {
+export function LogsPanel() {
   const session = useReadResource('/api/v1/session', { validate: validateSession });
   const isAdmin = session.status === 'success' && session.data.role === 'admin';
   const logs = useReadResource('/api/v1/admin/logs', { enabled: isAdmin, validate: validateLogs });
@@ -68,5 +68,5 @@ function LogsContent() {
 }
 
 export function LogsPage({ publicHost }: { publicHost: string }) {
-  return <AdminShell active="logs" badge={publicHost} pageTitle="清零日志"><LogsContent/></AdminShell>;
+  return <AdminShell active="operations" pageTitle="运维" subtitle={publicHost}><LogsPanel/></AdminShell>;
 }

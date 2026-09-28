@@ -1,6 +1,7 @@
 """Side-effect-free FastAPI application factory."""
 
 import threading
+from contextlib import asynccontextmanager
 from functools import partial
 from types import SimpleNamespace
 from urllib.parse import urlencode
@@ -14,9 +15,13 @@ from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 
 from .account_routes import register_account_routes
+from .agent_routes import register_agent_routes
+from .ai.gemini import GeminiAdapter
+from .ai.routes import register_ai_service_routes
+from .ai.service_store import AIServiceStore
 from .auth_routes import register_auth_routes
-from .compat_routes import register_compatibility_routes
 from .chat_routes import register_chat_routes
+from .compat_routes import register_compatibility_routes
 from .config_models import (
     AdminRulesResponse,
     AdminTemplateResponse,
@@ -44,8 +49,10 @@ from .models import (
 )
 from .operation_routes import register_operation_routes
 from .overview_models import AdminOverviewPageResponse
+from .plans_routes import register_plans_routes
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .rules_routes import register_rules_routes
+from .service_center import register_service_center_routes
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .subscription_routes import register_subscription_routes
 from .usage_models import (
@@ -55,6 +62,7 @@ from .usage_models import (
 )
 from .user_detail_routes import register_user_detail_routes
 from .user_models import UserPanelResponse
+from .video_routes import register_video_routes
 
 _API_SECURITY_HEADERS = {
     'Cache-Control': 'no-store',
@@ -287,17 +295,56 @@ def _read_error_response(exc):
     raise exc
 
 
-def create_app(services, *, max_requests=32, react_dist=None, lifespan=None):
+def create_app(
+    services,
+    *,
+    max_requests=32,
+    react_dist=None,
+    lifespan=None,
+    video_settings_store=None,
+    video_provider_factory=None,
+    video_workflow_store=None,
+    video_asset_store=None,
+    video_run_service=None,
+    video_scheduler_enabled=False,
+    video_scheduler_interval=5.0,
+    service_center_store=None,
+    plans_store=None,
+    chat_settings_store=None,
+    ai_services_store: AIServiceStore | None = None,
+    gemini_adapter: GeminiAdapter | None = None,
+    openai_models_fetcher=None,
+    media_provider_factory=None,
+):
     if isinstance(max_requests, bool) or not isinstance(max_requests, int) or max_requests <= 0:
         raise ValueError('max_requests must be a positive integer')
+    if not isinstance(video_scheduler_enabled, bool):
+        raise ValueError('video_scheduler_enabled must be a boolean')
+    if (
+        isinstance(video_scheduler_interval, bool)
+        or not isinstance(video_scheduler_interval, (int, float))
+        or video_scheduler_interval <= 0
+        or video_scheduler_interval > 60
+    ):
+        raise ValueError('video_scheduler_interval must be greater than 0 and at most 60 seconds')
 
     app = FastAPI(
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
         redirect_slashes=False,
-        lifespan=lifespan,
     )
+    if lifespan is not None:
+        route_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def combined_lifespan(app):
+            # Keep route-owned workers inside the domain service's lifecycle.
+            async with lifespan(app) as state:
+                async with route_lifespan(app):
+                    yield state
+
+        app.router.lifespan_context = combined_lifespan
     app.add_middleware(_SecurityAndErrorBoundary)
     capacity = threading.BoundedSemaphore(max_requests)
 
@@ -437,7 +484,47 @@ def create_app(services, *, max_requests=32, react_dist=None, lifespan=None):
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
     register_subscription_routes(app, services, dispatch)
-    register_chat_routes(app, services, dispatch, dispatch_stream=dispatch_stream)
+    register_chat_routes(
+        app,
+        services,
+        dispatch,
+        dispatch_stream=dispatch_stream,
+        settings_store=chat_settings_store,
+    )
+    register_video_routes(
+        app,
+        services,
+        dispatch,
+        settings_store=video_settings_store,
+        provider_factory=video_provider_factory,
+        workflow_store=video_workflow_store,
+        asset_store=video_asset_store,
+        run_service=video_run_service,
+        scheduler_enabled=video_scheduler_enabled,
+        scheduler_interval=float(video_scheduler_interval),
+        ai_services_store=ai_services_store,
+        gemini_adapter=gemini_adapter,
+    )
+    register_agent_routes(app, services, dispatch)
+    register_service_center_routes(app, services, dispatch, service_center_store)
+    register_plans_routes(
+        app,
+        services,
+        dispatch,
+        store=plans_store,
+        ai_services_store=ai_services_store,
+        gemini_adapter=gemini_adapter,
+    )
+    if ai_services_store is not None:
+        register_ai_service_routes(
+            app,
+            services,
+            dispatch,
+            store=ai_services_store,
+            gemini_adapter=gemini_adapter,
+            openai_models_fetcher=openai_models_fetcher,
+            media_provider_factory=media_provider_factory,
+        )
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
     # Register the loopback auth transport after React documents so the

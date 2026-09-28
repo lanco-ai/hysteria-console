@@ -207,6 +207,17 @@ def _legacy_daily(handler, ctx, path, q, host, base_url, send_payload):
     return
 
 
+def _video_removed_from_legacy(handler, ctx, path, q, host, base_url, send_payload):
+    """The video document belongs to the React service, not the legacy server."""
+    handler.send_response_body(
+        404,
+        '{"error":"not_found"}',
+        'application/json; charset=utf-8',
+        send_payload,
+    )
+    return
+
+
 def _settings(handler, ctx, path, q, host, base_url, send_payload):
     if not ctx.is_logged_in(handler):
         handler.redirect('/login')
@@ -284,6 +295,8 @@ def handle_read(
         route = _user_json
     elif path == '/admin/daily':
         route = _legacy_daily
+    elif path == '/admin/video':
+        route = _video_removed_from_legacy
     elif path == '/admin/settings':
         route = _settings
     elif path == '/admin/landing-egresses':

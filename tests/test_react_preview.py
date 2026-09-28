@@ -172,8 +172,8 @@ def test_react_preview_serves_auth_alias_with_workbench_bootstrap(running_previe
     [
         ('/__react/admin/settings', '设置', 'has-shell'),
         ('/__react/user/change-password', '修改面板密码', 'page-auth'),
-        ('/__react/admin/config', '模板配置', 'has-shell'),
-        ('/__react/admin/rules', '路由规则', 'has-shell'),
+        ('/__react/admin/config', '模板与路由', 'has-shell'),
+        ('/__react/admin/rules', '模板与路由', 'has-shell'),
         ('/__react/admin/landing-egresses', '家宽出口', 'has-shell'),
         ('/__react/user/panel', '用户面板 · Hysteria', ''),
     ],

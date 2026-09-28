@@ -34,10 +34,12 @@ async function realOperations(browser) {
   page.on('requestfailed', request => { if (!request.failure()?.errorText.includes('ERR_ABORTED')) failures.push(request.failure()?.errorText); });
   page.on('request', request => requests.push([request.method(), new URL(request.url()).pathname]));
   await goto(page);
-  assert.equal(await page.title(), '总览');
+  assert.equal(await page.title(), '用户');
+  await expect(page.locator('.page-title small')).toHaveText('preview.invalid');
+  await expect(page.locator('.page-title small')).not.toContainText('计费周期');
   assert.equal(await page.locator('.users-table th').count(), 5);
   assert.equal(await page.locator('script[src*="admin-poll"]').count(), 0);
-  await expect(page.locator('.sidebar-link[aria-current="page"]')).toHaveText('总览');
+  await expect(page.locator('.sidebar-link[aria-current="page"]')).toHaveText('用户');
   await expect(page.getByRole('link', { name: '导出 CSV' })).toHaveAttribute('href', '/admin/usage.csv?window=cycle');
   assert((await snapshot(context)).cycle.total_used > 0, 'accounting fixture must be nonzero');
   fs.mkdirSync(screenshots, { recursive: true });

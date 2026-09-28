@@ -10,7 +10,7 @@ from web_api import create_app
 
 
 class _Services:
-    service_module = object()
+    pass
 
 
 def _client():

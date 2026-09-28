@@ -39,11 +39,15 @@ REACT_DOCUMENTS = {
     '/admin/usage': ('流量分析', 'has-shell', 'admin'),
     '/admin/health': ('健康状态', 'has-shell', 'admin'),
     '/admin/incidents': ('事故处理', 'has-shell', 'admin'),
-    '/admin/config': ('模板配置', 'has-shell', 'admin'),
-    '/admin/rules': ('路由规则', 'has-shell', 'admin'),
+    '/admin/config': ('模板与路由', 'has-shell', 'admin'),
+    '/admin/rules': ('模板与路由', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
     '/admin/chat': ('AI 对话', 'has-shell page-workbench', 'admin'),
+    '/admin/services': ('服务中心', 'has-shell', 'admin'),
+    '/admin/plans': ('今日计划', 'has-shell', 'admin'),
+    '/admin/video': ('AI 视频', 'has-shell', 'admin'),
 }
+
 
 def _public_host(request: Request, services) -> str:
     raw = request.headers.get('host', '127.0.0.1')

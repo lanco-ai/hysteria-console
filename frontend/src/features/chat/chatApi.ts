@@ -4,22 +4,19 @@ export type ChatMessageData = {
 };
 
 export type ChatSettings = {
-  base_url: string;
   temperature: number;
   api_key_configured: boolean;
-  api_key_masked: string;
+  protocol?: 'openai_compatible' | 'gemini_native';
+  name?: string;
 };
 
 export type ReasoningEffort = 'auto' | 'low' | 'medium' | 'high';
 
 export type SettingsUpdate = {
-  base_url?: string;
   temperature?: number;
-  api_key?: string;
 };
 
 export type ChatModel = { id: string; name: string; context_window?: number };
-export type ChatConnectionResult = { ok: true; message: string; models_count: number };
 export type ChatStreamEvent =
   | { type: 'delta'; text: string }
   | { type: 'usage'; usage: Record<string, unknown> }
@@ -44,8 +41,8 @@ async function readJson(response: Response): Promise<unknown> {
 function errorMessage(status: number, payload: unknown): string {
   if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
     const code = (payload as Record<string, unknown>).error;
-    if (code === 'api_key_not_configured') return '请先在 API 设置中填写 API Key。';
-    if (code === 'settings_incomplete') return '请先完成 API Base URL 设置。';
+    if (code === 'api_key_not_configured') return '请先前往服务中心配置聊天模型服务。';
+    if (code === 'settings_incomplete') return '聊天模型服务配置不完整，请前往服务中心检查。';
     if (code === 'upstream_error') return '第三方 API 暂时不可用，请稍后重试。';
     if (code === 'authentication_failed') return '第三方 API 认证失败，请检查 API Key。';
     if (code === 'models_endpoint_unavailable') return '模型列表接口不可用，可手动填写模型标识。';
@@ -83,14 +80,6 @@ export function saveChatSettings(update: SettingsUpdate): Promise<ChatSettings> 
 
 export function loadChatModels(): Promise<ChatModel[]> {
   return requestJson<ChatModel[]>('/api/chat/models');
-}
-
-export function testChatConnection(): Promise<ChatConnectionResult> {
-  return requestJson<ChatConnectionResult>('/api/chat/test', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}',
-  });
 }
 
 export function completeChat(

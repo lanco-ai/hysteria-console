@@ -51,7 +51,7 @@ function operationMessage(result: RulesOperationMutation): string {
   return messages[result.code ?? ''] ?? '规则操作失败，服务器未修改';
 }
 
-export function RulesPage({ publicHost }: { publicHost: string }) {
+export function RulesPanel({ active = true }: { active?: boolean }) {
   const rules = useReadResource(RULES_ENDPOINT, { validate: parseRules });
   const formAction = useFormAction();
   const [draft, setDraft] = useState('');
@@ -61,6 +61,10 @@ export function RulesPage({ publicHost }: { publicHost: string }) {
   const [pack, setPack] = useState('');
   const [scope, setScope] = useState<'global' | 'user'>('global');
   const [user, setUser] = useState('');
+
+  useEffect(() => {
+    if (active && rules.status === 'success' && !dirty) rules.retry();
+  }, [active]);
 
   useEffect(() => {
     if (rules.status === 'success' && !dirty) {
@@ -117,7 +121,7 @@ export function RulesPage({ publicHost }: { publicHost: string }) {
     void runOperation(action, fields(event.currentTarget));
   };
 
-  return <AdminShell active="rules" pageTitle="路由规则" badge={rules.status === 'success' ? `${rules.data.rules.length} 条` : ''} subtitle={`${publicHost} · 订阅匹配顺序`} topbarExtra={<span className="badge poll-status">版本受保护</span>}>
+  return <>
     {rules.status === 'error' ? <ErrorState error={rules.error} retry={rules.retry}/> : null}
     {rules.status === 'loading' ? <LoadingState label="正在加载规则…"/> : null}
     {rules.status === 'success' ? <div className="admin-page">
@@ -159,5 +163,9 @@ export function RulesPage({ publicHost }: { publicHost: string }) {
 
       <section className="admin-section"><div className="admin-section-header"><h2 className="admin-section-title">当前规则列表</h2><div className="small">{rules.data.rules.length} 条</div></div><div className="admin-section-body no-pad"><div className="data-table-wrap" tabIndex={0} aria-label="路由规则，可横向滚动"><table className="data-table"><thead><tr><th>#</th><th>类型</th><th>匹配</th><th>动作</th><th>操作</th></tr></thead><tbody>{rules.data.rules.length ? rules.data.rules.map((rule, index) => { const parts = ruleParts(rule); const system = isSystemRule(rule); return <tr key={`${index}-${rule}`} className={system ? 'system-row' : undefined}><th scope="row">{index + 1}</th><td>{parts.type || '—'}</td><td className="break"><code>{parts.pattern || rule}</code></td><td>{parts.action || '—'}{parts.extra ? <span className="small"> ({parts.extra})</span> : null}</td><td>{system ? <span className="small faint">内置</span> : <form method="post" action="/admin/rules/delete" onSubmit={event => submit(event, 'delete')}><input type="hidden" name="index" value={index}/><input type="hidden" name="expected_rule" value={rule}/><input type="hidden" name="template_revision" value={revision}/><button className="btn btn-danger btn-sm" type="submit" disabled={formAction.busy}>删除</button></form>}</td></tr>; }) : <tr><td colSpan={5} className="empty">暂无规则</td></tr>}</tbody></table></div></div></section>
     </div> : null}
-  </AdminShell>;
+  </>;
+}
+
+export function RulesPage({ publicHost }: { publicHost: string }) {
+  return <AdminShell active="config" pageTitle="模板与路由" subtitle={`${publicHost} · 订阅匹配顺序`} topbarExtra={<span className="badge poll-status">版本受保护</span>}><RulesPanel/></AdminShell>;
 }

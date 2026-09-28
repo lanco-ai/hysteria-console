@@ -5,17 +5,17 @@ import { LoginModal, resolveSameOriginReturnTo } from './features/auth/LoginModa
 import { LogoutPage } from './features/auth/LogoutPage';
 import { UserPasswordPage } from './features/auth/UserPasswordPage';
 import { UserPanelPage } from './features/user/UserPanelPage';
-import { LogsPage } from './features/network-admin/logs/LogsPage';
 import { SettingsPage } from './features/network-admin/settings/SettingsPage';
 import { UsagePage } from './features/network-admin/usage/UsagePage';
-import { HealthPage } from './features/network-admin/health/HealthPage';
-import { IncidentsPage } from './features/network-admin/incidents/IncidentsPage';
-import { ConfigPage } from './features/network-admin/config/ConfigPage';
-import { RulesPage } from './features/network-admin/rules/RulesPage';
+import { OperationsPage } from './features/network-admin/operations/OperationsPage';
+import { TemplateRulesPage } from './features/network-admin/template-rules/TemplateRulesPage';
 import { LandingPage } from './features/network-admin/landing/LandingPage';
 import { UserDetailPage } from './features/network-admin/user-detail/UserDetailPage';
 import { OverviewPage } from './features/network-admin/overview/OverviewPage';
 import { ChatPage } from './features/chat/ChatPage';
+import { ServicesPage } from './features/services/ServicesPage';
+import { VideoPage } from './features/video/VideoPage';
+import { PlansPage } from './features/plans/PlansPage';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
@@ -29,7 +29,8 @@ const WORKBENCH_ROUTES = new Set(['/', '/auth', '/login', '/user/login', '/admin
 const LOGIN_ROUTES = new Set(['/auth', '/login', '/user/login']);
 const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
-  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses',
+  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/video', '/admin/services',
+  '/admin/plans',
 ]);
 const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter']);
 const REACT_DOCUMENT_ROUTES = new Set([
@@ -42,16 +43,19 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/auth': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
   '/login': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
   '/user/login': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
-  '/admin': { title: '总览', bodyClass: 'has-shell', shell: true },
-  '/admin/logs': { title: '清零日志', bodyClass: 'has-shell', shell: true },
+  '/admin': { title: '用户', bodyClass: 'has-shell', shell: true },
+  '/admin/logs': { title: '运维', bodyClass: 'has-shell', shell: true },
   '/admin/settings': { title: '设置', bodyClass: 'has-shell', shell: true },
   '/admin/usage': { title: '流量分析', bodyClass: 'has-shell', shell: true },
-  '/admin/health': { title: '健康状态', bodyClass: 'has-shell', shell: true },
-  '/admin/incidents': { title: '事故处理', bodyClass: 'has-shell', shell: true },
-  '/admin/config': { title: '模板配置', bodyClass: 'has-shell', shell: true },
-  '/admin/rules': { title: '路由规则', bodyClass: 'has-shell', shell: true },
+  '/admin/health': { title: '运维', bodyClass: 'has-shell', shell: true },
+  '/admin/incidents': { title: '运维', bodyClass: 'has-shell', shell: true },
+  '/admin/config': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
+  '/admin/rules': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
   '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
+  '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
+  '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell', shell: true },
+  '/admin/plans': { title: '今日计划', bodyClass: 'has-shell', shell: true },
   '/user/change-password': { title: '修改面板密码', bodyClass: 'page-auth' },
   '/user/panel': { title: '用户面板 · Hysteria', bodyClass: '' },
   '/logout': { title: '确认退出', bodyClass: '' },
@@ -63,6 +67,39 @@ function normalizeRoute(pathname: string): string {
 }
 
 function currentLocationKey(): string { return window.location.href; }
+
+const REACT_HISTORY_INDEX = '__hysteriaReactHistoryIndex';
+
+function readReactHistoryIndex(state: unknown): number | null {
+  if (!state || typeof state !== 'object') return null;
+  const value = (state as Record<string, unknown>)[REACT_HISTORY_INDEX];
+  return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
+}
+
+function withReactHistoryIndex(state: unknown, index: number): Record<string, unknown> {
+  const value: Record<string, unknown> = state && typeof state === 'object' && !Array.isArray(state)
+    ? { ...(state as Record<string, unknown>) }
+    : { __hysteriaPreviousHistoryState: state };
+  value[REACT_HISTORY_INDEX] = index;
+  return value;
+}
+
+let reactHistoryIndex = readReactHistoryIndex(window.history.state) ?? Math.max(0, window.history.length - 1);
+let reactHistoryLocation = window.location.href;
+if (readReactHistoryIndex(window.history.state) === null) {
+  window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', window.location.href);
+}
+
+function pushReactHistory(path: string): void {
+  reactHistoryIndex += 1;
+  window.history.pushState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
+  reactHistoryLocation = window.location.href;
+}
+
+function replaceReactHistory(path: string): void {
+  window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
+  reactHistoryLocation = window.location.href;
+}
 
 function isReactDocumentPath(pathname: string): boolean {
   const route = normalizeRoute(pathname);
@@ -93,7 +130,21 @@ function protectedRouteReturnTo(route: string, search: string): string | undefin
 }
 
 function installClientNavigation(onNavigate: () => void): () => void {
-  const onPopState = () => onNavigate();
+  const onPopState = (event: PopStateEvent) => {
+    const previous = new URL(reactHistoryLocation);
+    const nextLocation = window.location.href;
+    const next = new URL(nextLocation);
+    const sameRoute = previous.pathname === next.pathname && previous.search === next.search;
+    const guardEvent = new CustomEvent<{ state: unknown; sameRoute: boolean; fromIndex: number }>('hysteria:before-client-popstate', {
+      detail: { state: event.state, sameRoute, fromIndex: reactHistoryIndex }, cancelable: true,
+    });
+    window.dispatchEvent(guardEvent);
+    if (guardEvent.defaultPrevented) return;
+    const nextIndex = readReactHistoryIndex(event.state);
+    if (nextIndex !== null) reactHistoryIndex = nextIndex;
+    reactHistoryLocation = nextLocation;
+    onNavigate();
+  };
   const onClick = (event: MouseEvent) => {
     if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     if (!(event.target instanceof Element)) return;
@@ -101,11 +152,27 @@ function installClientNavigation(onNavigate: () => void): () => void {
     if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
     const url = new URL(anchor.href, window.location.href);
     if (url.origin !== window.location.origin || !isReactDocumentPath(url.pathname)) return;
-    if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) return;
+    if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) {
+      event.preventDefault();
+      const next = `${window.location.pathname}${window.location.search}${url.hash}`;
+      if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+        pushReactHistory(next);
+        onNavigate();
+      }
+      const targetId = (() => {
+        try { return decodeURIComponent(url.hash.slice(1)); } catch { return url.hash.slice(1); }
+      })();
+      const target = document.getElementById(targetId);
+      if (target instanceof HTMLElement) {
+        target.scrollIntoView();
+        target.focus({ preventScroll: true });
+      }
+      return;
+    }
     event.preventDefault();
     const next = `${previewPath(normalizeRoute(url.pathname))}${url.search}${url.hash}`;
     if (next === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
-    window.history.pushState({}, '', next);
+    pushReactHistory(next);
     onNavigate();
   };
   window.addEventListener('popstate', onPopState);
@@ -139,38 +206,42 @@ function passwordMaxLength(): number {
 }
 
 const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
-  '/admin': { active: 'dashboard', title: '总览' },
-  '/admin/logs': { active: 'logs', title: '清零日志' },
+  '/admin': { active: 'dashboard', title: '用户' },
+  '/admin/logs': { active: 'operations', title: '运维' },
   '/admin/settings': { active: 'settings', title: '设置' },
   '/admin/usage': { active: 'usage', title: '流量分析' },
-  '/admin/health': { active: 'health', title: '健康状态' },
-  '/admin/incidents': { active: 'incidents', title: '事故处理' },
-  '/admin/config': { active: 'config', title: '模板配置' },
-  '/admin/rules': { active: 'rules', title: '路由规则' },
+  '/admin/health': { active: 'operations', title: '运维' },
+  '/admin/incidents': { active: 'operations', title: '运维' },
+  '/admin/config': { active: 'config', title: '模板与路由' },
+  '/admin/rules': { active: 'config', title: '模板与路由' },
   '/admin/landing-egresses': { active: 'landing-egresses', title: '家宽出口' },
+  '/admin/services': { active: 'services', title: '服务中心' },
+  '/admin/plans': { active: 'plans', title: '今日计划' },
+  '/admin/video': { active: 'video', title: 'AI 视频' },
 };
 
 function AdminPlaceholder({ route, status }: { route: string; status: 'loading' | 'anonymous' | 'unavailable' }) {
+  if (status === 'loading') return null;
   const detail = route.match(/^\/admin\/user\/([^/]+)$/);
   const metadata = detail
     ? { active: 'dashboard', title: `${decodeRouteSegment(detail[1] || '')} · 用量画像` }
     : ADMIN_ROUTE_DETAILS[route] || { active: 'dashboard', title: 'Hysteria 工作台' };
-  const label = status === 'loading' ? '正在确认登录状态…' : status === 'unavailable' ? '暂时无法确认登录状态。' : '请登录后继续访问此页面。';
+  const label = status === 'unavailable' ? '暂时无法确认登录状态。' : '请登录后继续访问此页面。';
   return <CodexShell active={metadata.active} pageTitle={metadata.title} authStatus={status}><section className="card"><p>{label}</p></section></CodexShell>;
 }
 
-function AdminRoute({ route, publicHost, authenticated, status }: { route: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'unavailable' }) {
+function AdminRoute({ route, locationKey, publicHost, authenticated, status }: { route: string; locationKey: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'unavailable' }) {
   const detail = route.match(/^\/admin\/user\/([^/]+)$/);
   if (!authenticated) return <AdminPlaceholder route={route} status={status}/>;
   if (detail) return <UserDetailPage publicHost={publicHost} uid={decodeRouteSegment(detail[1] || '')}/>;
   if (route === '/admin') return <OverviewPage publicHost={publicHost}/>;
-  if (route === '/admin/logs') return <LogsPage publicHost={publicHost}/>;
+  if (route === '/admin/logs' || route === '/admin/health' || route === '/admin/incidents') return <OperationsPage locationKey={locationKey} publicHost={publicHost}/>;
   if (route === '/admin/settings') return <SettingsPage publicHost={publicHost}/>;
   if (route === '/admin/usage') return <UsagePage publicHost={publicHost}/>;
-  if (route === '/admin/health') return <HealthPage publicHost={publicHost}/>;
-  if (route === '/admin/incidents') return <IncidentsPage publicHost={publicHost}/>;
-  if (route === '/admin/config') return <ConfigPage publicHost={publicHost}/>;
-  if (route === '/admin/rules') return <RulesPage publicHost={publicHost}/>;
+  if (route === '/admin/config' || route === '/admin/rules') return <TemplateRulesPage publicHost={publicHost}/>;
+  if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
+  if (route === '/admin/plans') return <PlansPage/>;
+  if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
   return <LandingPage publicHost={publicHost}/>;
 }
 
@@ -199,7 +270,7 @@ function App() {
   const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/' || route === '/admin/chat') && session.status === 'anonymous') || needsAdminLogin;
   const protectedReturnTo = protectedRouteReturnTo(route, location.search);
 
-  const navigate = useCallback((path: string) => { window.history.pushState({}, '', path); setLocationKey(currentLocationKey()); }, []);
+  const navigate = useCallback((path: string) => { pushReactHistory(path); setLocationKey(currentLocationKey()); }, []);
   const closeLogin = useCallback(() => { setLoginRequested(false); if (LOGIN_ROUTES.has(route)) navigate(previewPath('/')); }, [navigate, route]);
   const requestLogin = useCallback(() => { setLoginRequested(true); }, []);
   const handleAuthenticated = useCallback(async (candidate?: string) => {
@@ -207,8 +278,8 @@ function App() {
     setLoginRequested(false);
     const returnTo = sanitizeReturnTo(candidate) || (route === '/user/login' ? '/user/panel' : '/');
     const destination = previewPath(returnTo);
-    window.history.pushState({}, '', returnTo);
-    if (destination !== returnTo) window.history.replaceState({}, '', destination);
+    pushReactHistory(returnTo);
+    if (destination !== returnTo) replaceReactHistory(destination);
     setLocationKey(currentLocationKey());
   }, [route, session]);
 
@@ -217,7 +288,7 @@ function App() {
   useEffect(() => { if (LOGIN_ROUTES.has(route)) setLoginRequested(true); }, [route]);
 
   if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
-  if (isProtectedAdminRoute) return <><AdminRoute route={route} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
+  if (isProtectedAdminRoute) return <><AdminRoute route={route} locationKey={locationKey} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
   if (route === '/user/change-password') return <UserPasswordPage publicHost={publicHost}/>;
   if (route === '/user/panel') return <UserPanelPage publicHost={publicHost}/>;
   if (route === '/logout' || route === '/user/logout') return <LogoutPage realm={route === '/logout' ? 'admin' : 'user'} publicHost={publicHost}/>;

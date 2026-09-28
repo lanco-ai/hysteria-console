@@ -122,6 +122,9 @@ declare -a REACT_WEB_API_MODULES=(
   __init__.py
   account_models.py
   account_routes.py
+  agent_routes.py
+  agent_rule_service.py
+  agent_service.py
   app.py
   auth_routes.py
   chat_routes.py
@@ -131,6 +134,8 @@ declare -a REACT_WEB_API_MODULES=(
   document_routes.py
   health_models.py
   health_routes.py
+  service_center.py
+  service_probe.py
   incident_models.py
   landing_models.py
   landing_routes.py
@@ -138,6 +143,8 @@ declare -a REACT_WEB_API_MODULES=(
   operation_models.py
   operation_routes.py
   overview_models.py
+  plans_routes.py
+  plans_service.py
   requests.py
   rules_routes.py
   services.py
@@ -146,6 +153,17 @@ declare -a REACT_WEB_API_MODULES=(
   user_detail_models.py
   user_detail_routes.py
   user_models.py
+  video_models.py
+  video_provider.py
+  video_routes.py
+  video_service.py
+  ai/__init__.py
+  ai/compat.py
+  ai/gemini.py
+  ai/routes.py
+  ai/service_store.py
+  ai/assistant_generation.py
+  ai/assistant_schemas.py
 )
 declare -a PREVIOUSLY_ACTIVE_UNITS=()
 declare -A PREVIOUS_ENABLE_STATE=()
@@ -344,6 +362,9 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/__init__.py"
   add_durable_artifact "$HY_DIR/web_api/account_models.py"
   add_durable_artifact "$HY_DIR/web_api/account_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/agent_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/agent_rule_service.py"
+  add_durable_artifact "$HY_DIR/web_api/agent_service.py"
   add_durable_artifact "$HY_DIR/web_api/app.py"
   add_durable_artifact "$HY_DIR/web_api/auth_routes.py"
   add_durable_artifact "$HY_DIR/web_api/chat_routes.py"
@@ -353,6 +374,8 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/document_routes.py"
   add_durable_artifact "$HY_DIR/web_api/health_models.py"
   add_durable_artifact "$HY_DIR/web_api/health_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/service_center.py"
+  add_durable_artifact "$HY_DIR/web_api/service_probe.py"
   add_durable_artifact "$HY_DIR/web_api/incident_models.py"
   add_durable_artifact "$HY_DIR/web_api/landing_models.py"
   add_durable_artifact "$HY_DIR/web_api/landing_routes.py"
@@ -360,6 +383,8 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/operation_models.py"
   add_durable_artifact "$HY_DIR/web_api/operation_routes.py"
   add_durable_artifact "$HY_DIR/web_api/overview_models.py"
+  add_durable_artifact "$HY_DIR/web_api/plans_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/plans_service.py"
   add_durable_artifact "$HY_DIR/web_api/requests.py"
   add_durable_artifact "$HY_DIR/web_api/rules_routes.py"
   add_durable_artifact "$HY_DIR/web_api/services.py"
@@ -368,6 +393,17 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/user_detail_models.py"
   add_durable_artifact "$HY_DIR/web_api/user_detail_routes.py"
   add_durable_artifact "$HY_DIR/web_api/user_models.py"
+  add_durable_artifact "$HY_DIR/web_api/video_models.py"
+  add_durable_artifact "$HY_DIR/web_api/video_provider.py"
+  add_durable_artifact "$HY_DIR/web_api/video_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/video_service.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/__init__.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/compat.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/gemini.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/routes.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/service_store.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/assistant_generation.py"
+  add_durable_artifact "$HY_DIR/web_api/ai/assistant_schemas.py"
   add_durable_artifact "$HY_DIR/panel/current"
   add_durable_artifact "$HY_DIR/state/https_required"
   if [[ ! -f "$HY_DIR/template.yaml" ]]; then
@@ -2096,6 +2132,9 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/__init__.py" "$HY_DIR/web_api/__init__.py"
   render "$REPO_DIR/hysteria/web_api/account_models.py" "$HY_DIR/web_api/account_models.py"
   render "$REPO_DIR/hysteria/web_api/account_routes.py" "$HY_DIR/web_api/account_routes.py"
+  render "$REPO_DIR/hysteria/web_api/agent_routes.py" "$HY_DIR/web_api/agent_routes.py"
+  render "$REPO_DIR/hysteria/web_api/agent_rule_service.py" "$HY_DIR/web_api/agent_rule_service.py"
+  render "$REPO_DIR/hysteria/web_api/agent_service.py" "$HY_DIR/web_api/agent_service.py"
   render "$REPO_DIR/hysteria/web_api/app.py" "$HY_DIR/web_api/app.py"
   render "$REPO_DIR/hysteria/web_api/auth_routes.py" "$HY_DIR/web_api/auth_routes.py"
   render "$REPO_DIR/hysteria/web_api/chat_routes.py" "$HY_DIR/web_api/chat_routes.py"
@@ -2105,6 +2144,8 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/document_routes.py" "$HY_DIR/web_api/document_routes.py"
   render "$REPO_DIR/hysteria/web_api/health_models.py" "$HY_DIR/web_api/health_models.py"
   render "$REPO_DIR/hysteria/web_api/health_routes.py" "$HY_DIR/web_api/health_routes.py"
+  render "$REPO_DIR/hysteria/web_api/service_center.py" "$HY_DIR/web_api/service_center.py"
+  render "$REPO_DIR/hysteria/web_api/service_probe.py" "$HY_DIR/web_api/service_probe.py"
   render "$REPO_DIR/hysteria/web_api/incident_models.py" "$HY_DIR/web_api/incident_models.py"
   render "$REPO_DIR/hysteria/web_api/landing_models.py" "$HY_DIR/web_api/landing_models.py"
   render "$REPO_DIR/hysteria/web_api/landing_routes.py" "$HY_DIR/web_api/landing_routes.py"
@@ -2112,6 +2153,8 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/operation_models.py" "$HY_DIR/web_api/operation_models.py"
   render "$REPO_DIR/hysteria/web_api/operation_routes.py" "$HY_DIR/web_api/operation_routes.py"
   render "$REPO_DIR/hysteria/web_api/overview_models.py" "$HY_DIR/web_api/overview_models.py"
+  render "$REPO_DIR/hysteria/web_api/plans_routes.py" "$HY_DIR/web_api/plans_routes.py"
+  render "$REPO_DIR/hysteria/web_api/plans_service.py" "$HY_DIR/web_api/plans_service.py"
   render "$REPO_DIR/hysteria/web_api/requests.py" "$HY_DIR/web_api/requests.py"
   render "$REPO_DIR/hysteria/web_api/rules_routes.py" "$HY_DIR/web_api/rules_routes.py"
   render "$REPO_DIR/hysteria/web_api/services.py" "$HY_DIR/web_api/services.py"
@@ -2120,6 +2163,18 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/user_detail_models.py" "$HY_DIR/web_api/user_detail_models.py"
   render "$REPO_DIR/hysteria/web_api/user_detail_routes.py" "$HY_DIR/web_api/user_detail_routes.py"
   render "$REPO_DIR/hysteria/web_api/user_models.py" "$HY_DIR/web_api/user_models.py"
+  render "$REPO_DIR/hysteria/web_api/video_models.py" "$HY_DIR/web_api/video_models.py"
+  render "$REPO_DIR/hysteria/web_api/video_provider.py" "$HY_DIR/web_api/video_provider.py"
+  render "$REPO_DIR/hysteria/web_api/video_routes.py" "$HY_DIR/web_api/video_routes.py"
+  render "$REPO_DIR/hysteria/web_api/video_service.py" "$HY_DIR/web_api/video_service.py"
+  install -d -o root -g root -m 755 "$HY_DIR/web_api/ai"
+  render "$REPO_DIR/hysteria/web_api/ai/__init__.py" "$HY_DIR/web_api/ai/__init__.py"
+  render "$REPO_DIR/hysteria/web_api/ai/compat.py" "$HY_DIR/web_api/ai/compat.py"
+  render "$REPO_DIR/hysteria/web_api/ai/gemini.py" "$HY_DIR/web_api/ai/gemini.py"
+  render "$REPO_DIR/hysteria/web_api/ai/routes.py" "$HY_DIR/web_api/ai/routes.py"
+  render "$REPO_DIR/hysteria/web_api/ai/service_store.py" "$HY_DIR/web_api/ai/service_store.py"
+  render "$REPO_DIR/hysteria/web_api/ai/assistant_generation.py" "$HY_DIR/web_api/ai/assistant_generation.py"
+  render "$REPO_DIR/hysteria/web_api/ai/assistant_schemas.py" "$HY_DIR/web_api/ai/assistant_schemas.py"
 fi
 
 chmod 700 \

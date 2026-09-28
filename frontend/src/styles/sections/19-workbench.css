@@ -1,25 +1,14 @@
 /* =====================================================
-   CODEX-STYLE WORKBENCH
-   These rules are deliberately limited to the unified workbench routes.
-   Legacy administration screens retain their existing wider data layout.
+   CHAT WORKBENCH CONTENT
+   Navigation and topbar use the shared admin shell. Only the chat content
+   needs a viewport-height workspace with an independently scrolling thread.
    ===================================================== */
 
 body.page-workbench {
   overflow-x: hidden;
-  background: #f7f7f5;
-  font-family: var(--font-sans);
 }
 
-body.has-shell.page-workbench .app:not(.sidebar-collapsed) {
-  grid-template-columns: 240px minmax(0, 1fr);
-  background: #f7f7f5;
-  height: 100dvh;
-  min-height: 100dvh;
-  overflow: hidden;
-}
-
-body.page-workbench .app.sidebar-collapsed {
-  grid-template-columns: 64px minmax(0, 1fr);
+body.page-workbench .app {
   height: 100dvh;
   min-height: 100dvh;
   overflow: hidden;
@@ -28,43 +17,6 @@ body.page-workbench .app.sidebar-collapsed {
 body.page-workbench .main {
   min-height: 0;
   height: 100dvh;
-}
-
-body.page-workbench .sidebar {
-  width: 240px;
-  background: #fbfbfa;
-  border-right-color: #e7e7e3;
-}
-
-body.page-workbench .sidebar-top {
-  max-height: 42vh;
-  border-bottom-color: #e7e7e3;
-}
-
-body.page-workbench .sidebar-nav {
-  min-height: 0;
-  padding-block: 10px;
-}
-
-body.page-workbench .sidebar-section {
-  padding-top: 13px;
-}
-
-body.page-workbench .sidebar-link {
-  min-height: 36px;
-  height: auto;
-}
-
-body.page-workbench .topbar {
-  min-height: 60px;
-  background: rgba(251, 251, 250, .9);
-  border-bottom-color: #e7e7e3;
-}
-
-body.page-workbench .topbar-inner {
-  max-width: none;
-  min-height: 60px;
-  padding: 8px 24px;
 }
 
 body.page-workbench .content {
@@ -266,58 +218,6 @@ body.page-workbench .login-form .auth-submit {
 }
 
 @media (max-width: 880px) {
-  body.page-workbench .app,
-  body.page-workbench .app.sidebar-collapsed {
-    grid-template-columns: minmax(0, 1fr);
-    height: 100dvh;
-    min-height: 100dvh;
-    overflow: hidden;
-  }
-
-  body.page-workbench .sidebar {
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 10;
-    width: min(280px, 86vw);
-    height: 100dvh;
-    padding-bottom: env(safe-area-inset-bottom);
-    background: #fbfbfa;
-    box-shadow: 14px 0 34px rgba(28, 32, 27, .12);
-    transform: translateX(-105%);
-    transition: transform 180ms ease-out;
-  }
-
-  body.page-workbench .sidebar.open {
-    transform: translateX(0);
-  }
-
-  body.page-workbench .sidebar-toggle {
-    display: flex;
-  }
-
-  body.page-workbench.sidebar-open .scrim {
-    display: block;
-  }
-
-  body.page-workbench .scrim {
-    z-index: 9;
-    background: rgba(32, 36, 30, .28);
-    backdrop-filter: blur(2px);
-    -webkit-backdrop-filter: blur(2px);
-  }
-
-  @supports (backdrop-filter: blur(2px)) {
-    body.page-workbench .scrim {
-      backdrop-filter: blur(2px);
-    }
-  }
-
-  body.page-workbench .topbar-inner {
-    padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
-  }
-
   body.page-workbench .chat-page {
     min-height: 0;
     padding: 12px;
@@ -350,10 +250,6 @@ body.page-workbench .login-form .auth-submit {
 }
 
 @media (max-width: 620px) {
-  body.page-workbench .topbar-inner {
-    gap: 8px;
-  }
-
   body.page-workbench .chat-history-toggle {
     width: 34px;
     padding-inline: 0;
@@ -363,10 +259,6 @@ body.page-workbench .login-form .auth-submit {
 
   body.page-workbench .chat-history-toggle > span {
     display: none;
-  }
-
-  body.page-workbench .page-title {
-    font-size: 15px;
   }
 
   body.page-workbench .chat-thread-heading {
@@ -383,7 +275,6 @@ body.page-workbench .login-form .auth-submit {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body.page-workbench .sidebar,
   body.page-workbench .login-modal-backdrop {
     transition: none;
   }

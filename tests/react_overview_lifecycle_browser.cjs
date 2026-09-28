@@ -31,6 +31,7 @@ async function setup(browser, baseline, { clock = false } = {}) {
   let data = copy(baseline), reads = 0;
   await page.route(boot, route => { reads++; return reply(route, data); });
   await page.route(pollUrl, route => reply(route, counters(data)));
+  await page.route('**/api/plans/reminders', route => reply(route, { items: [] }));
   await page.route('**/api/v1/admin/reload-status', route => reply(route, { pending: false, xray: false, tuic: false }));
   await page.goto(`${baseUrl}/__react/admin`);
   await expect(row(page).getByRole('button', { name: '编辑套餐' })).toBeEnabled();
@@ -290,8 +291,8 @@ async function lateReadsAndClipboard(browser, baseline) {
   await expect(row(page)).toBeVisible();
   await page.route(boot, route => { delayed = route; });
   await page.reload();
-  await expect(page.getByRole('status', { name: '正在加载总览…' })).toBeVisible();
-  assert.equal(await page.getByText('正在加载总览…', { exact: true }).count(), 0, 'loading state has no visible text node');
+  await expect(page.getByRole('status', { name: '正在加载用户…' })).toBeVisible();
+  assert.equal(await page.getByText('正在加载用户…', { exact: true }).count(), 0, 'loading state has no visible text node');
   await page.clock.runFor(10_000);
   await expect(page.getByRole('alert')).toContainText('总览加载失败');
   await reply(delayed, baseline).catch(() => {});

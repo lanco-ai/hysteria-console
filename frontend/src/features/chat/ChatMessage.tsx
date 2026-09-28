@@ -82,7 +82,7 @@ function renderMarkdown(value: string): ReactNode[] {
     : <span className="chat-markdown-block" key={`text-${index}`}>{markdownBlocks(part, `text-${index}`)}</span>);
 }
 
-export function ChatMessage({ message }: { message: ChatMessageData }) {
+export function ChatMessage({ message, pending = false }: { message: ChatMessageData; pending?: boolean }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -95,7 +95,7 @@ export function ChatMessage({ message }: { message: ChatMessageData }) {
   };
   return <article className={`chat-message chat-message-${message.role}`}>
     <div className="chat-message-meta"><span>{message.role === 'user' ? '你' : message.role === 'system' ? '系统' : 'Lanco AI'}</span>
-      {message.role === 'assistant' ? <button type="button" className="btn btn-ghost btn-sm" onClick={copy}>{copied ? '已复制' : '复制'}</button> : null}</div>
-    <div className="chat-message-content">{renderMarkdown(message.content)}</div>
+      {message.role === 'assistant' && !pending ? <button type="button" className="btn btn-ghost btn-sm" onClick={copy}>{copied ? '已复制' : '复制'}</button> : null}</div>
+    <div className={`chat-message-content${pending ? ' chat-message-pending' : ''}`}>{pending ? <><span>模型正在思考</span><span className="chat-thinking-dots" aria-hidden="true"><i /><i /><i /></span></> : renderMarkdown(message.content)}</div>
   </article>;
 }

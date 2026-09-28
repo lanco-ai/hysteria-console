@@ -13,6 +13,9 @@ from pathlib import Path
 
 import subscription_service
 from web_api import create_app
+from web_api.ai.compat import ChatSettingsAdapter, VideoSettingsAdapter
+from web_api.ai.gemini import GeminiAdapter
+from web_api.ai.service_store import AIServiceStore
 from web_api.services import LegacyPanelServices
 
 RUNTIME_ROOT = Path(__file__).resolve().parent
@@ -110,10 +113,17 @@ def build_app():
             stop_event.set()
             worker.join(timeout=5)
 
+    ai_services = AIServiceStore()
+    gemini = GeminiAdapter()
     return create_app(
         LegacyPanelServices(subscription_service),
         react_dist=REACT_DIST,
         lifespan=lifespan,
+        video_scheduler_enabled=True,
+        chat_settings_store=ChatSettingsAdapter(ai_services, gemini),
+        video_settings_store=VideoSettingsAdapter(ai_services),
+        ai_services_store=ai_services,
+        gemini_adapter=gemini,
     )
 
 

@@ -76,7 +76,10 @@ body.has-shell {
 
 .sidebar-nav {
   flex: 1;
+  min-height: 0;
   padding: 12px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sidebar-section {

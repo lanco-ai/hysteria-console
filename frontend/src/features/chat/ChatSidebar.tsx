@@ -29,7 +29,6 @@ export type ChatSidebarProps = {
   onSelect: (id: string) => void;
   onRename: (session: ChatSession) => void;
   onDelete: (session: ChatSession) => void;
-  onOpenSettings: () => void;
   onOpenUsage: () => void;
   onClose?: () => void;
   disabled?: boolean;
@@ -60,7 +59,7 @@ function formatTime(value: number) {
   return new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function ChatSidebar({ sessions, activeId, search, usage, onSearch, onNew, onSelect, onRename, onDelete, onOpenSettings, onOpenUsage, onClose, disabled = false }: ChatSidebarProps) {
+export function ChatSidebar({ sessions, activeId, search, usage, onSearch, onNew, onSelect, onRename, onDelete, onOpenUsage, onClose, disabled = false }: ChatSidebarProps) {
   const needle = search.trim().toLocaleLowerCase();
   const visibleSessions = needle ? sessions.filter(session => sessionTitle(session).toLocaleLowerCase().includes(needle)) : sessions;
   const groups = new Map<string, ChatSession[]>();
@@ -81,6 +80,6 @@ export function ChatSidebar({ sessions, activeId, search, usage, onSearch, onNew
     <div className="chat-session-list">
       {groupedSessions.length ? groupedSessions.map(group => <section className="chat-session-group" key={group.label}><h2>{group.label}</h2>{group.items.map(session => <div className={`chat-session-row${session.id === activeId ? ' active' : ''}`} key={session.id}><button className="chat-session" type="button" onClick={() => onSelect(session.id)} disabled={disabled}><span>{sessionTitle(session)}</span><small>{formatTime(session.updatedAt)}</small></button><div className="chat-session-actions"><button type="button" aria-label={`重命名 ${sessionTitle(session)}`} onClick={() => onRename(session)} disabled={disabled}>…</button><button type="button" aria-label={`删除 ${sessionTitle(session)}`} onClick={() => onDelete(session)} disabled={disabled}>×</button></div></div>)}</section>) : <p className="chat-sidebar-empty">{search ? '没有匹配的对话' : '还没有会话'}</p>}
     </div>
-    <div className="chat-sidebar-footer"><button className="chat-sidebar-link" type="button" onClick={onOpenUsage} disabled={disabled}><span>AI 用量</span><small>{usage.today} 次 · 今日</small></button><button className="chat-sidebar-link" type="button" onClick={onOpenSettings} disabled={disabled}><span>API 设置</span><small>管理连接配置</small></button></div>
+    <div className="chat-sidebar-footer"><button className="chat-sidebar-link" type="button" onClick={onOpenUsage} disabled={disabled}><span>AI 用量</span><small>{usage.today} 次 · 今日</small></button><a className="chat-sidebar-link" href="/admin/services?tab=ai" aria-disabled={disabled || undefined} tabIndex={disabled ? -1 : undefined}><span>服务中心</span><small>管理 AI API 连接</small></a></div>
   </div>;
 }

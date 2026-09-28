@@ -102,9 +102,11 @@ def test_codex_shell_owns_the_single_responsive_workbench_tree():
 
 
 def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
-    """A second frame or a missing route link would break admin page compatibility."""
+    """Admin pages remain reachable through navigation, routes, and operations tabs."""
     adapter = source("frontend/src/shared/AdminShell.tsx")
     navigation = source("frontend/src/shared/navigation.ts")
+    routes = source("frontend/src/main.tsx")
+    operations = source("frontend/src/features/network-admin/operations/OperationsPage.tsx")
 
     assert "import { CodexShell }" in adapter
     assert "return <CodexShell" in adapter
@@ -113,14 +115,21 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     assert 'className="main"' not in adapter
     assert "navigationGroups" in navigation
     assert "placement: 'bottom'" in navigation
-    for label in ("概览与用量", "运行维护", "网络配置"):
+    for label in ("工作台", "网络管理", "运维管理", "服务接入"):
         assert label in navigation
     for href in (
-        "/admin", "/admin/usage", "/admin/health", "/admin/incidents",
-        "/admin/logs", "/admin/settings", "/admin/config", "/admin/rules",
-        "/admin/landing-egresses", "/admin/chat",
+        "/admin", "/admin/usage", "/admin/health",
+        "/admin/settings", "/admin/config",
+        "/admin/landing-egresses", "/admin/chat", "/admin/plans",
+        "/admin/video", "/admin/services",
     ):
         assert href in navigation
+    for route, tab in (("/admin/health", "health"), ("/admin/incidents", "incidents"), ("/admin/logs", "logs")):
+        assert f"'{route}':" in routes
+        assert f"key: '{tab}'" in operations
+    assert "tab=${item.key}" in operations
+    assert "/admin/rules" not in navigation, "the legacy rules route is kept as a page alias, not a duplicate sidebar entry"
+    assert "/admin/rules" in routes
 
 
 def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authenticated():
@@ -186,8 +195,10 @@ def test_router_composes_every_workbench_alias_through_the_session_gate():
     assert "return <HomePage/>" not in router
     assert "return <LoginPage" not in router
     assert "resolveSameOriginReturnTo" in router
-    assert "window.history.pushState({}, '', returnTo)" in router
-    assert "window.history.replaceState({}, '', destination)" in router
+    assert "pushReactHistory(returnTo)" in router
+    assert "replaceReactHistory(destination)" in router
+    assert "window.history.pushState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path)" in router
+    assert "window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path)" in router
     assert "session.status === 'authenticated' && session.role === 'admin'" in router
     assert "const SAFE_LOGIN_QUERY_KEYS" in router
     assert "function sanitizeReturnTo" in router

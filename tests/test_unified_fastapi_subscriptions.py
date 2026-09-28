@@ -9,6 +9,7 @@ from web_api.services import LegacyPanelServices
 
 
 class _Module:
+    USERS_FILE = "/tmp/hy2-subscription-test-users.json"
     USER_SESSION_SUBSCRIPTION_TOKEN = "subscription"
     PASSWORD_MAX_LENGTH = 128
 
