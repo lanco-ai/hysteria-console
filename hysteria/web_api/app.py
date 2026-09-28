@@ -28,6 +28,7 @@ from .config_models import (
     TemplateMutationResponse,
 )
 from .document_routes import register_react_document_routes
+from .github_trending_routes import register_github_trending_routes
 from .health_models import AdminHealthResponse
 from .health_routes import register_health_routes
 from .incident_models import AdminIncidentResponse
@@ -309,6 +310,8 @@ def create_app(
     video_scheduler_enabled=False,
     video_scheduler_interval=5.0,
     service_center_store=None,
+    github_trending_store=None,
+    github_trending_scheduler_enabled=False,
     plans_store=None,
     chat_settings_store=None,
     ai_services_store: AIServiceStore | None = None,
@@ -507,6 +510,13 @@ def create_app(
     )
     register_agent_routes(app, services, dispatch)
     register_service_center_routes(app, services, dispatch, service_center_store)
+    register_github_trending_routes(
+        app,
+        services,
+        dispatch,
+        store=github_trending_store,
+        scheduler_enabled=github_trending_scheduler_enabled,
+    )
     register_plans_routes(
         app,
         services,

@@ -1,0 +1,71 @@
+body.has-shell .trending-page { width: 100%; min-width: 0; gap: 20px; }
+
+body.has-shell .trending-intro { display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; padding: 10px 2px 4px; }
+body.has-shell .trending-intro > div:first-child { min-width: 0; }
+body.has-shell .trending-eyebrow { color: var(--data); font: 600 11px var(--font-label); letter-spacing: .16em; margin-bottom: 10px; }
+body.has-shell .trending-intro h2 { font-size: clamp(26px, 3vw, 40px); margin-bottom: 8px; }
+body.has-shell .trending-intro p:not(.trending-eyebrow) { color: var(--text-secondary); font-size: var(--text-ui); }
+body.has-shell .trending-source { display: grid; gap: 2px; text-align: right; flex-shrink: 0; }
+body.has-shell .trending-source span { color: var(--text-tertiary); font-size: var(--text-caption); }
+body.has-shell .trending-source strong { font-size: var(--text-ui); }
+body.has-shell .trending-source small { color: var(--text-secondary); font-size: var(--text-small); }
+
+body.has-shell .trending-controls { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--hairline); }
+body.has-shell .trending-period { display: inline-flex; gap: 3px; padding: 3px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+body.has-shell .trending-period button { cursor: pointer; border: 0; border-radius: var(--radius-xs); background: transparent; color: var(--text-secondary); font: inherit; font-size: var(--text-ui); padding: 6px 18px; }
+body.has-shell .trending-period button[aria-pressed="true"] { background: var(--bg-surface); color: var(--text-primary); font-weight: 600; box-shadow: var(--shadow-xs); }
+body.has-shell .trending-status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 20px; color: var(--text-secondary); font-size: var(--text-small); border-bottom: 1px solid var(--hairline); }
+body.has-shell .trending-status:empty { display: none; }
+body.has-shell .trending-notice { background: var(--bg-subtle); border-radius: var(--radius-pill); padding: 4px 10px; }
+body.has-shell .trending-notice.warning { background: var(--warn-soft); color: var(--warn); }
+body.has-shell .trending-feedback { color: var(--data); font-weight: 600; }
+body.has-shell .trending-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; padding: 16px 20px; border-bottom: 1px solid var(--hairline); }
+body.has-shell .trending-filters label { display: grid; gap: 5px; min-width: min(100%, 190px); font-size: var(--text-small); font-weight: 600; color: var(--text-secondary); }
+body.has-shell .trending-filters label:first-child { flex: 1 1 260px; }
+body.has-shell .trending-filters input,
+body.has-shell .trending-filters select { width: 100%; min-width: 0; height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0 10px; color: var(--text-primary); background: var(--bg-surface); font: inherit; font-size: var(--text-ui); }
+body.has-shell .trending-filters small { color: var(--text-tertiary); font-size: var(--text-small); white-space: nowrap; padding-bottom: 8px; }
+body.has-shell .trending-clear { border: 0; background: transparent; color: var(--data); font: 600 var(--text-small) var(--font-sans); cursor: pointer; padding: 8px 2px; white-space: nowrap; }
+body.has-shell .trending-empty { padding: 42px 20px; text-align: center; color: var(--text-secondary); }
+
+body.has-shell .trending-list { list-style: none; }
+body.has-shell .trending-repo { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; grid-template-areas: "rank main metrics" "rank main actions"; gap: 6px 18px; align-items: start; padding: 20px; border-bottom: 1px solid var(--hairline); }
+body.has-shell .trending-repo:last-child { border-bottom: 0; }
+body.has-shell .trending-repo:hover { background: var(--bg-overlay); }
+body.has-shell .trending-rank { grid-area: rank; color: var(--data); font: 600 18px var(--font-num); }
+body.has-shell .trending-repo-main { grid-area: main; min-width: 0; }
+body.has-shell .trending-repo-main h2 { font-size: var(--text-card-title); overflow-wrap: anywhere; }
+body.has-shell .trending-repo-main p { color: var(--text-secondary); font-size: var(--text-ui); margin: 6px 0 10px; overflow-wrap: anywhere; }
+body.has-shell .trending-language { display: inline-flex; max-width: 100%; overflow-wrap: anywhere; color: var(--data); background: var(--data-soft); padding: 2px 9px; border-radius: var(--radius-pill); font-size: var(--text-small); }
+body.has-shell .trending-metrics { grid-area: metrics; display: grid; grid-template-columns: repeat(3, minmax(76px, 1fr)); gap: 12px; }
+body.has-shell .trending-metrics div { text-align: right; }
+body.has-shell .trending-metrics dt { color: var(--text-tertiary); font-size: var(--text-caption); white-space: nowrap; }
+body.has-shell .trending-metrics dd { color: var(--text-primary); font: 600 14px var(--font-num); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+body.has-shell .trending-actions { grid-area: actions; display: flex; justify-content: flex-end; gap: 14px; font-size: var(--text-small); white-space: nowrap; }
+body.has-shell .trending-actions a { color: var(--data); font-weight: 600; }
+body.has-shell .trending-actions button { border: 0; background: transparent; color: var(--text-secondary); font: inherit; cursor: pointer; }
+body.has-shell .trending-actions button:hover { color: var(--text-primary); }
+body.has-shell .trending-actions span { color: var(--text-tertiary); }
+
+@media (max-width: 900px) {
+  body.has-shell .trending-repo { grid-template-columns: 38px minmax(0, 1fr); grid-template-areas: "rank main" ". metrics" ". actions"; }
+  body.has-shell .trending-metrics { justify-self: start; }
+  body.has-shell .trending-metrics div { text-align: left; }
+  body.has-shell .trending-actions { justify-content: flex-start; }
+}
+
+@media (max-width: 600px) {
+  body.has-shell .trending-intro { display: block; }
+  body.has-shell .trending-source { text-align: left; margin-top: 14px; }
+  body.has-shell .trending-controls { padding: 14px; }
+  body.has-shell .trending-period button { padding: 6px 12px; }
+  body.has-shell .trending-status,
+  body.has-shell .trending-filters { padding: 12px 14px; }
+  body.has-shell .trending-filters label { width: 100%; }
+  body.has-shell .trending-filters small { padding-bottom: 0; }
+  body.has-shell .trending-repo { padding: 16px 14px; gap: 9px 10px; grid-template-columns: 30px minmax(0, 1fr); }
+  body.has-shell .trending-rank { font-size: 15px; }
+  body.has-shell .trending-metrics { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  body.has-shell .trending-metrics dt { white-space: normal; }
+  body.has-shell .trending-actions { flex-wrap: wrap; white-space: normal; }
+}

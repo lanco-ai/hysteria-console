@@ -13,11 +13,17 @@ The explicit React document allow-list covers:
 - `/user/panel`, `/user/change-password`
 - `/admin`, `/admin/logs`, `/admin/settings`, `/admin/usage`, `/admin/health`
 - `/admin/incidents`, `/admin/config`, `/admin/rules`,
-  `/admin/landing-egresses`, and `/admin/user/<uid>`
+  `/admin/landing-egresses`, `/admin/github-trending`, and `/admin/user/<uid>`
 
 The document shell injects the request host and the appropriate session guard;
 unknown paths are not treated as SPA fallbacks. Page data and mutations use the
 cookie-authenticated `/api/v1/*` adapters.
+
+The administrator's 开源发现 page at `/admin/github-trending` reads the daily
+and weekly GitHub Trending snapshots through `/api/v1/github-trending`. Search
+and language filtering apply only to the currently displayed snapshot. Manual
+refresh requests use the same-origin `/api/v1/github-trending/refresh` endpoint;
+its cooldown and upstream retry fields are authoritative.
 
 ## Asset ownership
 

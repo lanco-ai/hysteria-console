@@ -28,6 +28,7 @@ REACT_DOCUMENTS = (
     '/admin/chat',
     '/admin/plans',
     '/admin/video',
+    '/admin/github-trending',
 )
 
 

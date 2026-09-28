@@ -16,6 +16,7 @@ import { ChatPage } from './features/chat/ChatPage';
 import { ServicesPage } from './features/services/ServicesPage';
 import { VideoPage } from './features/video/VideoPage';
 import { PlansPage } from './features/plans/PlansPage';
+import { GithubTrendingPage } from './features/github-trending/GithubTrendingPage';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
@@ -31,6 +32,7 @@ const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
   '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/video', '/admin/services',
   '/admin/plans',
+  '/admin/github-trending',
 ]);
 const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter']);
 const REACT_DOCUMENT_ROUTES = new Set([
@@ -56,6 +58,7 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
   '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell', shell: true },
   '/admin/plans': { title: '今日计划', bodyClass: 'has-shell', shell: true },
+  '/admin/github-trending': { title: 'GitHub 热榜', bodyClass: 'has-shell', shell: true },
   '/user/change-password': { title: '修改面板密码', bodyClass: 'page-auth' },
   '/user/panel': { title: '用户面板 · Hysteria', bodyClass: '' },
   '/logout': { title: '确认退出', bodyClass: '' },
@@ -217,6 +220,7 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
   '/admin/landing-egresses': { active: 'landing-egresses', title: '家宽出口' },
   '/admin/services': { active: 'services', title: '服务中心' },
   '/admin/plans': { active: 'plans', title: '今日计划' },
+  '/admin/github-trending': { active: 'github-trending', title: 'GitHub 热榜' },
   '/admin/video': { active: 'video', title: 'AI 视频' },
 };
 
@@ -241,6 +245,7 @@ function AdminRoute({ route, locationKey, publicHost, authenticated, status }: {
   if (route === '/admin/config' || route === '/admin/rules') return <TemplateRulesPage publicHost={publicHost}/>;
   if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
   if (route === '/admin/plans') return <PlansPage/>;
+  if (route === '/admin/github-trending') return <GithubTrendingPage/>;
   if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
   return <LandingPage publicHost={publicHost}/>;
 }

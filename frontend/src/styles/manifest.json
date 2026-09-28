@@ -18,5 +18,8 @@
   "18-chat.css",
   "19-workbench.css",
   "20-agent.css",
-  "21-video.css"
+  "21-video.css",
+  "22-video-storyboard.css",
+  "23-plans.css",
+  "24-github-trending.css"
 ]
