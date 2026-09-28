@@ -14,11 +14,11 @@ from starlette.exceptions import HTTPException
 
 from .account_routes import register_account_routes
 from .agent_routes import register_agent_routes
-from .ai.routes import register_ai_service_routes
 from .ai.gemini import GeminiAdapter
+from .ai.routes import register_ai_service_routes
 from .ai.service_store import AIServiceStore
-from .compat_routes import register_compatibility_routes
 from .chat_routes import register_chat_routes
+from .compat_routes import register_compatibility_routes
 from .config_models import (
     AdminRulesResponse,
     AdminTemplateResponse,
@@ -27,7 +27,6 @@ from .config_models import (
 from .document_routes import register_react_document_routes
 from .health_models import AdminHealthResponse
 from .health_routes import register_health_routes
-from .service_center import register_service_center_routes
 from .incident_models import AdminIncidentResponse
 from .landing_models import AdminLandingResponse
 from .landing_routes import register_landing_routes
@@ -46,10 +45,11 @@ from .models import (
     UserSessionResponse,
 )
 from .operation_routes import register_operation_routes
-from .plans_routes import register_plans_routes
 from .overview_models import AdminOverviewPageResponse
+from .plans_routes import register_plans_routes
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .rules_routes import register_rules_routes
+from .service_center import register_service_center_routes
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .usage_models import (
     AdminUsageHistoryResponse,
@@ -432,7 +432,10 @@ def create_app(
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
     register_chat_routes(
-        app, services, dispatch, dispatch_stream=dispatch_stream,
+        app,
+        services,
+        dispatch,
+        dispatch_stream=dispatch_stream,
         settings_store=chat_settings_store,
     )
     register_video_routes(
@@ -452,12 +455,19 @@ def create_app(
     register_agent_routes(app, services, dispatch)
     register_service_center_routes(app, services, dispatch, service_center_store)
     register_plans_routes(
-        app, services, dispatch, store=plans_store,
-        ai_services_store=ai_services_store, gemini_adapter=gemini_adapter,
+        app,
+        services,
+        dispatch,
+        store=plans_store,
+        ai_services_store=ai_services_store,
+        gemini_adapter=gemini_adapter,
     )
     if ai_services_store is not None:
         register_ai_service_routes(
-            app, services, dispatch, store=ai_services_store,
+            app,
+            services,
+            dispatch,
+            store=ai_services_store,
             gemini_adapter=gemini_adapter,
             openai_models_fetcher=openai_models_fetcher,
             media_provider_factory=media_provider_factory,

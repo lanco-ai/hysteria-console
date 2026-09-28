@@ -48,6 +48,7 @@ REACT_DOCUMENTS = {
     '/admin/video': ('AI 视频', 'has-shell', 'admin'),
 }
 
+
 def _public_host(request: Request, services) -> str:
     raw = request.headers.get('host', '127.0.0.1')
     service = getattr(services, 'service_module', None)

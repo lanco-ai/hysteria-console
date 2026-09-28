@@ -49,7 +49,9 @@ def test_react_documents_and_api_use_8083():
     for path in TEMPLATES:
         text = path.read_text(encoding='utf-8')
         if path.name.endswith('-https.conf'):
-            assert 'location = / {\n        return 302 https://lancoai.site/admin/chat;\n    }' in text
+            assert (
+                'location = / {\n        return 302 https://lancoai.site/admin/chat;\n    }' in text
+            )
         else:
             assert 'location = / {\n        proxy_pass http://127.0.0.1:8083;' in text
         for document in REACT_DOCUMENTS[1:]:

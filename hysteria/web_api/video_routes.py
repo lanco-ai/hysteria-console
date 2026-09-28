@@ -12,13 +12,10 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field
 
-from .ai.assistant_generation import generate_assistant_json
-from .ai.assistant_schemas import video_assistant_schema
-from .ai.gemini import GeminiAdapter, GeminiUpstreamError
-from .ai.service_store import AIServiceError, AIServiceStore
-from .chat_service import ChatUpstreamError
+from .ai.gemini import GeminiAdapter
+from .ai.service_store import AIServiceStore
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .video_provider import GrokVideoProvider, ProviderError
 from .video_service import AssetStore, RunService, VideoSettingsError, VideoSettingsStore, VideoStorageFullError, VideoValidationError, WorkflowStore
@@ -44,15 +41,6 @@ async def _require_admin(request, services, dispatch):
 
 def _same_origin(request: Request) -> bool:
     return http_utils.is_same_origin_post(SimpleNamespace(headers=request.headers))
-
-
-class VideoAssistantRequest(BaseModel):
-    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
-    idea: str = Field(min_length=1, max_length=6000)
-    style_prompt: str = Field(default='', max_length=1200)
-    aspect_ratio: str = Field(pattern=r'^(9:16|16:9|1:1)$')
-    shot_count: int = Field(ge=1, le=12)
-    shot_duration: int = Field(ge=1, le=30)
 
 
 class VideoAssistantShot(BaseModel):
@@ -106,8 +94,6 @@ def register_video_routes(
     store = settings_store or VideoSettingsStore()
     workflows = workflow_store or WorkflowStore()
     assets = asset_store or AssetStore()
-    ai_store = ai_services_store
-    gemini = gemini_adapter or GeminiAdapter()
     run_tick_lock = threading.Lock()
 
     def get_run_service():
@@ -186,17 +172,21 @@ def register_video_routes(
             return run
         presented = dict(run)
         public_assets = {}
-        for node_id, value in (run.get('assets') or {}).items():
+        def present_asset(node_id, value):
             if not isinstance(value, str):
-                continue
+                return None
             if value.startswith('asset://'):
                 asset_id = value[len('asset://'):]
-                public_assets[node_id] = f'/api/video/assets/{quote(asset_id, safe="")}/content'
-            else:
-                public_assets[node_id] = (
-                    f'/api/video/runs/{quote(str(run.get("id") or ""), safe="")}'
-                    f'/assets/{quote(str(node_id), safe="")}/content'
-                )
+                return f'/api/video/assets/{quote(asset_id, safe="")}/content'
+            return (
+                f'/api/video/runs/{quote(str(run.get("id") or ""), safe="")}'
+                f'/assets/{quote(str(node_id), safe="")}/content'
+            )
+        for node_id, value in (run.get('assets') or {}).items():
+            if isinstance(value, list):
+                public_assets[node_id] = [url for item in value if (url := present_asset(node_id, item))]
+            elif (url := present_asset(node_id, value)):
+                public_assets[node_id] = url
         presented['assets'] = public_assets
         return presented
 
@@ -222,6 +212,8 @@ def register_video_routes(
         return {
             'image_models': list(caps.image_models),
             'video_models': list(caps.video_models),
+            'image_batch_models': list(getattr(caps, 'image_batch_models', [])),
+            'first_last_frame_models': list(getattr(caps, 'first_last_frame_models', [])),
             'first_last_frame': {
                 'supported': bool(caps.first_last_frame.supported),
                 'reason': getattr(caps.first_last_frame, 'reason', None),
@@ -230,51 +222,6 @@ def register_video_routes(
                 'supported': bool(caps.video_composition.supported),
                 'reason': getattr(caps.video_composition, 'reason', None),
             },
-        }
-
-    def draft_video_storyboard(*, headers, path, values):
-        del headers, path
-        if ai_store is None:
-            raise AIServiceError('service_not_configured')
-        selection = ai_store.bound_assistant('video_assistant')
-        profile = selection['profile']
-        if profile['protocol'] not in {'gemini_native', 'openai_compatible'} or not profile['api_key']:
-            raise AIServiceError('service_not_configured')
-        model = selection['model_id']
-        if not model:
-            raise AIServiceError('model_not_selected')
-        if model not in {item['id'] for item in profile['models']}:
-            raise AIServiceError('model_not_available')
-        prompt = (
-            '你是短视频/漫剧分镜编剧。根据用户创意生成分镜草稿，数量必须与 shot_count 一致。'
-            '图片提示词只描述单帧视觉；运动提示词描述镜头与动作；故事必须连续且角色、场景一致。'
-            '只返回 JSON，不生成图片/视频，不调用素材服务，也不声称任务已经开始。'
-            'shot_type 只能是特写、近景、中景、全景；画幅使用请求给定的值。'
-            '所有图像和运动提示词必须是可直接编辑后提交给媒体模型的具体描述。\n\n'
-            + json.dumps({
-                'idea': values.idea, 'style_prompt': values.style_prompt,
-                'aspect_ratio': values.aspect_ratio, 'shot_count': values.shot_count,
-                'shot_duration_seconds': values.shot_duration,
-            }, ensure_ascii=False, separators=(',', ':'))
-        )
-        schema = video_assistant_schema()
-        result, output_mode = generate_assistant_json(
-            profile, model, prompt, schema, gemini_adapter=gemini,
-        )
-        try:
-            validated = VideoAssistantResult.model_validate(result)
-            if (
-                len(validated.shots) != values.shot_count
-                or validated.aspect_ratio != values.aspect_ratio
-                or any(shot.duration != values.shot_duration for shot in validated.shots)
-            ):
-                raise ValueError('response does not match requested storyboard shape')
-        except (ValidationError, ValueError):
-            raise GeminiUpstreamError('invalid_model_response', 200) from None
-        return {
-            'model': model, 'service_name': profile['name'],
-            'structured_output': output_mode,
-            **validated.model_dump(),
         }
 
     @app.get('/api/video/settings')
@@ -337,58 +284,6 @@ def register_video_routes(
             return result
         models = list(dict.fromkeys(result['image_models'] + result['video_models']))
         return JSONResponse({'ok': True, 'models_count': len(models)})
-
-    @app.post('/api/video/assistant/draft')
-    async def draft_video_assistant(request: Request):
-        if not _same_origin(request):
-            return _error('cross_site_request', 403)
-        denied = await _require_admin(request, services, dispatch)
-        if denied is not None:
-            return denied
-        if request.headers.get('content-type', '').split(';', 1)[0].strip().lower() != 'application/json':
-            return _error('json_required', 400)
-        try:
-            body = await request.body()
-            if len(body) > 16 * 1024:
-                return _error('request_too_large', 413)
-            payload = VideoAssistantRequest.model_validate(json.loads(body.decode('utf-8')))
-        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError):
-            return _error('invalid_request', 400)
-        try:
-            result = await dispatch(partial(draft_video_storyboard, values=payload), request)
-        except AIServiceError as exc:
-            if 'not_configured' in str(exc):
-                return _error('service_not_configured', 422)
-            if 'model_not_selected' in str(exc):
-                return _error('model_not_selected', 422)
-            if 'model_not_available' in str(exc):
-                return _error('model_not_available', 422)
-            return _error('ai_service_unavailable', 503)
-        except ChatUpstreamError as exc:
-            if exc.code == 'invalid_model_response':
-                return _error(exc.code, 502)
-            if exc.status == 401:
-                code = 'authentication_failed'
-            elif exc.status == 403:
-                code = 'permission_denied'
-            elif exc.status == 404:
-                code = 'model_not_available'
-            elif exc.status == 429:
-                code = 'rate_limited'
-            elif exc.status is None:
-                code = 'timeout'
-            elif exc.status >= 500:
-                code = 'upstream_unavailable'
-            else:
-                code = 'upstream_error'
-            return _error(code, 504 if code == 'timeout' else 502)
-        except GeminiUpstreamError as exc:
-            if exc.code == 'service_not_configured':
-                return _error(exc.code, 422)
-            return _error(exc.code, 504 if exc.code == 'timeout' else 502)
-        except (OSError, RuntimeError):
-            return _error('ai_service_unavailable', 503)
-        return result if isinstance(result, JSONResponse) else JSONResponse(result)
 
     @app.get('/api/video/workflows')
     async def list_workflows(request: Request):
@@ -497,9 +392,17 @@ def register_video_routes(
             return denied
         try:
             payload = json.loads((await request.body()).decode('utf-8'))
-            workflow_id = payload.get('workflow_id') if isinstance(payload, dict) else None
-            shot_id = payload.get('shot_id') if isinstance(payload, dict) else None
-            result = await dispatch(lambda **_kwargs: get_run_service().submit(workflow_id, shot_id=shot_id), request)
+            if not isinstance(payload, dict):
+                return _error('bad_request')
+            workflow_id = payload.get('workflow_id')
+            shot_id = payload.get('shot_id')
+            target_node_id = payload.get('target_node_id')
+            if not isinstance(workflow_id, str) or (
+                target_node_id is not None
+                and (not isinstance(target_node_id, str) or not target_node_id)
+            ):
+                return _error('invalid_workflow', 422)
+            result = await dispatch(lambda **_kwargs: get_run_service().submit(workflow_id, shot_id=shot_id, target_node_id=target_node_id), request)
         except (UnicodeDecodeError, json.JSONDecodeError):
             return _error('bad_request')
         except VideoValidationError:

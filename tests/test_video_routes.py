@@ -6,9 +6,9 @@ from fastapi.testclient import TestClient
 
 import web_api.video_routes as video_routes
 from web_api import create_app
-from web_api.ai.service_store import AIServiceStore
 from web_api.video_provider import ProviderError
-from web_api.video_service import VideoSettingsError, VideoSettingsStore
+from web_api.video_models import VideoSettings
+from web_api.video_service import RunService, VideoSettingsError, VideoSettingsStore, WorkflowStore
 from web_api.services import LoginRequired
 
 
@@ -168,144 +168,49 @@ def test_video_connection_test_returns_sanitized_model_count(tmp_path, monkeypat
     assert response.json() == {'ok': True, 'models_count': 2}
 
 
-class _VideoAssistantGemini:
-    def __init__(self):
-        self.calls = []
+def test_direct_video_assistant_route_is_removed_but_shared_schema_remains(tmp_path):
+    from web_api.video_routes import VideoAssistantResult
 
-    def list_models(self, profile):
-        assert profile['api_key'] == 'gemini-server-secret'
-        return [{'id': 'gemini-preview-fast', 'name': 'Gemini Preview Fast'}]
-
-    def generate_json(self, profile, model, prompt, schema):
-        self.calls.append({'model': model, 'prompt': prompt, 'schema': schema})
-        return {
-            'title': '小小探险家', 'rewritten_text': '孩子在花园找到一颗发光的种子。',
-            'style_prompt': '温暖的 3D 动画，柔和晨光。', 'aspect_ratio': '9:16',
-            'shots': [{
-                'title': '发现种子', 'script': '孩子蹲下发现种子。', 'shot_type': '近景',
-                'character': '小朋友', 'scene': '晨光花园', 'duration': 5,
-                'image_prompt': '温暖的花园里，小朋友发现一颗发光的种子。',
-                'motion_prompt': '镜头缓慢推进，小朋友好奇地拾起种子。', 'dialogue': '这是什么？',
-            }],
-        }
-
-
-def _ai_store(tmp_path):
-    store = AIServiceStore(
-        tmp_path / 'ai' / 'registry.json',
-        chat_legacy_path=tmp_path / 'chat.json',
-        video_legacy_path=tmp_path / 'video.json',
-        backup_dir=tmp_path / 'ai' / 'migration-backup',
-    )
-    snapshot = store.public()
-    snapshot = store.update_profile('gemini-primary', revision=snapshot['revision'], api_key='gemini-server-secret')
-    snapshot = store.update_catalog(
-        'gemini-primary', [{'id': 'listed-first'}, {'id': 'gemini-preview-fast'}],
-        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=snapshot['revision'],
-    )
-    store.set_binding(
-        'video_assistant', 'gemini-primary', model_id='gemini-preview-fast', revision=snapshot['revision'],
-    )
-    return store
-
-
-def test_video_assistant_drafts_storyboard_without_running_paid_media_jobs(tmp_path):
-    gemini = _VideoAssistantGemini()
-    app = create_app(
-        _Services(), video_settings_store=VideoSettingsStore(tmp_path / 'video.json'),
-        ai_services_store=_ai_store(tmp_path), gemini_adapter=gemini,
-    )
+    assert VideoAssistantResult.__name__ == 'VideoAssistantResult'
+    app = create_app(_Services(), video_settings_store=VideoSettingsStore(tmp_path / 'settings.json'))
     with TestClient(app) as client:
-        response = client.post('/api/video/assistant/draft', headers=_admin_headers(), json={
-            'idea': '一个孩子和会发光的种子', 'style_prompt': '温暖 3D 动画',
-            'aspect_ratio': '9:16', 'shot_count': 1, 'shot_duration': 5,
-        })
+        response = client.post('/api/video/assistant/draft', headers=_admin_headers(), json={})
+    assert response.status_code == 404
+
+
+def test_run_presentation_converts_candidate_refs_to_admin_asset_urls(tmp_path):
+    run = _completed_run()
+    run['assets']['image-node'] = ['asset://first123', 'asset://last456']
+    app = create_app(_Services(), video_settings_store=VideoSettingsStore(tmp_path / 'settings.json'),
+                     video_run_service=_RunService(run))
+    with TestClient(app) as client:
+        response = client.get('/api/video/runs/run-1', headers=_admin_headers())
     assert response.status_code == 200
-    result = response.json()
-    assert result['model'] == 'gemini-preview-fast'
-    assert result['structured_output'] == 'gemini_native_schema'
-    assert result['shots'][0]['image_prompt'].startswith('温暖的花园')
-    assert 'gemini-server-secret' not in response.text
-    assert 'gemini-server-secret' not in gemini.calls[0]['prompt']
-    assert len(gemini.calls) == 1
+    assert response.json()['assets']['image-node'] == [
+        '/api/video/assets/first123/content', '/api/video/assets/last456/content',
+    ]
 
 
-def test_video_assistant_uses_the_saved_chat_service_and_exact_model(tmp_path, monkeypatch):
-    import web_api.video_routes as video_routes
-
-    ai_store = _ai_store(tmp_path)
-    initial = ai_store.public()
-    saved = ai_store.update_profile(
-        'chat-primary', revision=initial['revision'],
-        base_url='https://provider.test/v1', api_key='test-chat-secret',
-    )
-    catalog = ai_store.update_catalog(
-        'chat-primary', [{'id': 'listed-first'}, {'id': 'chosen-video-model'}],
-        capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
-    )
-    ai_store.set_binding(
-        'video_assistant', 'chat-primary', model_id='chosen-video-model', revision=catalog['revision'],
-    )
-    observed = {}
-    valid_result = _VideoAssistantGemini().generate_json({}, 'chosen-video-model', '', {})
-
-    def generate(profile, model, prompt, schema, *, gemini_adapter):
-        observed.update(protocol=profile['protocol'], model=model, api_key=profile['api_key'])
-        return valid_result, 'json_text_fallback'
-
-    monkeypatch.setattr(video_routes, 'generate_assistant_json', generate, raising=False)
-    app = create_app(
-        _Services(), video_settings_store=VideoSettingsStore(tmp_path / 'video.json'),
-        ai_services_store=ai_store,
-    )
+def test_create_run_accepts_target_node_and_rejects_invalid_target_shape(tmp_path):
+    workflows = WorkflowStore(tmp_path / 'workflows.json')
+    saved = workflows.save({'title': 'target', 'nodes': [
+        {'id': 'prompt', 'type': 'prompt', 'data': {'text': 'forest'}},
+        {'id': 'image', 'type': 'text_to_image', 'data': {}},
+        {'id': 'sibling', 'type': 'prompt', 'data': {'text': 'other'}},
+    ], 'edges': [{'source': 'prompt', 'sourceHandle': 'text', 'target': 'image', 'targetHandle': 'prompt'}]})
+    service = RunService(workflows, VideoSettings('https://provider.test/v1', 'secret'), object(), tmp_path / 'runs.json')
+    app = create_app(_Services(), video_workflow_store=workflows, video_run_service=service,
+                     video_settings_store=VideoSettingsStore(tmp_path / 'settings.json'))
     with TestClient(app) as client:
-        response = client.post('/api/video/assistant/draft', headers=_admin_headers(), json={
-            'idea': '一个孩子和会发光的种子', 'style_prompt': '温暖 3D 动画',
-            'aspect_ratio': '9:16', 'shot_count': 1, 'shot_duration': 5,
+        response = client.post('/api/video/runs', headers=_admin_headers(), json={
+            'workflow_id': saved['id'], 'target_node_id': 'image',
         })
-    assert response.status_code == 200
-    assert response.json()['model'] == 'chosen-video-model'
-    assert response.json()['structured_output'] == 'json_text_fallback'
-    assert observed == {'protocol': 'openai_compatible', 'model': 'chosen-video-model', 'api_key': 'test-chat-secret'}
-
-
-def test_video_assistant_requires_admin_same_origin_and_rejects_invalid_draft(tmp_path):
-    class InvalidGemini(_VideoAssistantGemini):
-        def generate_json(self, profile, model, prompt, schema):
-            return {'title': 'bad', 'shots': [{'title': 'bad', 'duration': 999}]}
-
-    app = create_app(
-        _Services(), video_settings_store=VideoSettingsStore(tmp_path / 'video.json'),
-        ai_services_store=_ai_store(tmp_path), gemini_adapter=InvalidGemini(),
-    )
-    endpoint = '/api/video/assistant/draft'
-    payload = {'idea': '一段短故事', 'style_prompt': '', 'aspect_ratio': '9:16', 'shot_count': 2, 'shot_duration': 5}
-    with TestClient(app) as client:
-        assert client.post(endpoint, json=payload).status_code == 401
-        assert client.post(endpoint, headers={'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'cross-site'}, json=payload).status_code == 403
-        response = client.post(endpoint, headers=_admin_headers(), json=payload)
-    assert response.status_code == 502
-    assert response.json() == {'error': 'invalid_model_response'}
-
-
-def test_video_assistant_rejects_shot_durations_that_differ_from_the_request(tmp_path):
-    class WrongDurationGemini(_VideoAssistantGemini):
-        def generate_json(self, profile, model, prompt, schema):
-            result = super().generate_json(profile, model, prompt, schema)
-            result['shots'][0]['duration'] = 3
-            return result
-
-    app = create_app(
-        _Services(), video_settings_store=VideoSettingsStore(tmp_path / 'video.json'),
-        ai_services_store=_ai_store(tmp_path), gemini_adapter=WrongDurationGemini(),
-    )
-    with TestClient(app) as client:
-        response = client.post('/api/video/assistant/draft', headers=_admin_headers(), json={
-            'idea': '一段短故事', 'style_prompt': '', 'aspect_ratio': '9:16',
-            'shot_count': 1, 'shot_duration': 5,
+        invalid = client.post('/api/video/runs', headers=_admin_headers(), json={
+            'workflow_id': saved['id'], 'target_node_id': ['image'],
         })
-    assert response.status_code == 502
-    assert response.json() == {'error': 'invalid_model_response'}
+    assert response.status_code == 202
+    assert response.json()['order'] == ['prompt', 'image']
+    assert invalid.status_code == 422
 
 
 def test_run_responses_replace_provider_media_urls_with_same_origin_links(tmp_path):
@@ -447,3 +352,24 @@ def test_video_run_scheduler_resumes_pending_runs_without_browser_polling(tmp_pa
     )
     with TestClient(app):
         assert ticked.wait(1), 'the application should advance persisted runs without a client request'
+
+
+def test_create_run_returns_accepted_receipt_when_candidate_claim_is_unavailable(tmp_path, monkeypatch):
+    workflows = WorkflowStore(tmp_path / 'workflows.json')
+    saved = workflows.save({'nodes': [
+        {'id': 'image', 'type': 'text_to_image', 'data': {'prompt': 'forest'}},
+    ], 'edges': []})
+    service = RunService(workflows, VideoSettings('https://provider.test/v1', 'secret'), object(), tmp_path / 'runs.json')
+    def unavailable(*args, **kwargs):
+        raise OSError('workflow storage temporarily unavailable')
+    monkeypatch.setattr(workflows, 'reconcile_candidate_run', unavailable)
+    app = create_app(_Services(), video_workflow_store=workflows, video_run_service=service,
+                     video_settings_store=VideoSettingsStore(tmp_path / 'settings.json'))
+    with TestClient(app) as client:
+        response = client.post('/api/video/runs', headers=_admin_headers(), json={
+            'workflow_id': saved['id'], 'target_node_id': 'image',
+        })
+    assert response.status_code == 202
+    assert response.json()['state'] == 'queued'
+    assert service.get(response.json()['id']) is not None
+    assert len(service.list()) == 1

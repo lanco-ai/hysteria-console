@@ -18,6 +18,7 @@ class ImageRequest:
     width: int | None = None
     height: int | None = None
     aspect_ratio: str | None = None
+    n: int = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +38,7 @@ class ProviderJob:
     state: str = 'queued'
     asset_url: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    asset_urls: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +59,8 @@ class Capability:
 class Capabilities:
     image_models: list[str] = field(default_factory=list)
     video_models: list[str] = field(default_factory=list)
+    image_batch_models: list[str] = field(default_factory=list)
+    first_last_frame_models: list[str] = field(default_factory=list)
     first_last_frame: Capability = field(default_factory=lambda: Capability(False, 'unverified'))
     video_composition: Capability = field(default_factory=lambda: Capability(False, 'unverified'))
 

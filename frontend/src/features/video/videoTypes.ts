@@ -1,31 +1,10 @@
 export type VideoCapabilities = {
   image_models: string[];
   video_models: string[];
+  image_batch_models: string[];
+  first_last_frame_models: string[];
   first_last_frame: { supported: boolean; reason?: string | null };
   video_composition: { supported: boolean; reason?: string | null };
-};
-
-export type VideoAssistantShotDraft = {
-  title: string;
-  script: string;
-  shot_type: string;
-  character: string;
-  scene: string;
-  duration: number;
-  image_prompt: string;
-  motion_prompt: string;
-  dialogue: string;
-};
-
-export type VideoAssistantDraft = {
-  model: string;
-  service_name: string;
-  structured_output?: 'gemini_native_schema' | 'json_schema' | 'json_text_fallback';
-  title: string;
-  rewritten_text: string;
-  style_prompt: string;
-  aspect_ratio: '16:9' | '9:16' | '1:1';
-  shots: VideoAssistantShotDraft[];
 };
 
 export type VideoWorkflow = {
@@ -70,10 +49,11 @@ export type VideoRun = {
   id: string;
   workflow_id: string;
   shot_id?: string | null;
+  target_node_id?: string | null;
   created_at?: number;
   state: string;
   node_status: Record<string, { state: string }>;
-  assets?: Record<string, string>;
+  assets?: Record<string, string | string[]>;
   error?: string;
   workflow?: VideoWorkflow;
 };

@@ -46,7 +46,7 @@ def test_video_provider_builds_image_request_without_exposing_key():
     assert seen['url'] == 'https://provider.test/v1/images/generations'
     assert seen['method'] == 'POST'
     assert seen['authorization'] == 'Bearer secret'
-    assert seen['body'] == {'model': 'grok-imagine-image', 'prompt': 'blue circle'}
+    assert seen['body'] == {'model': 'grok-imagine-image', 'prompt': 'blue circle', 'n': 1}
     assert job.provider_job_id == 'asset-1'
 
 
@@ -61,6 +61,7 @@ def test_video_provider_passes_storyboard_dimensions_to_upstream():
         'model': 'grok-imagine-image',
         'prompt': 'portrait',
         'aspect_ratio': '9:16',
+        'n': 1,
     }
 
 
@@ -155,8 +156,121 @@ def test_video_provider_accepts_openai_image_response_without_request_id():
     assert result.asset_url == 'https://cdn.test/image.png'
 
 
+def test_generate_image_sends_verified_batch_count_and_returns_all_urls():
+    seen = []
+
+    def opener(request, timeout):
+        del timeout
+        seen.append((request.full_url, json.loads(request.data) if request.data else None))
+        if request.full_url.endswith('/models'):
+            return _Response({'data': [{'id': 'image-model', 'capabilities': {'image_batch': True}}]})
+        return _Response({'data': [
+            {'url': 'https://provider.test/v1/media/images/a'},
+            {'url': ''},
+            {'url': 'https://provider.test/v1/media/images/b'},
+        ]})
+
+    job = GrokVideoProvider(opener=opener).generate_image(
+        ImageRequest(prompt='forest', model='image-model', n=3),
+        VideoSettings('https://provider.test/v1', 'secret'),
+    )
+    assert seen[-1][1] == {'model': 'image-model', 'prompt': 'forest', 'n': 3}
+    assert job.asset_urls == [
+        'https://provider.test/v1/media/images/a',
+        'https://provider.test/v1/media/images/b',
+    ]
+
+
+def test_unverified_batch_count_is_rejected_before_generation():
+    seen = []
+
+    def opener(request, timeout):
+        del timeout
+        seen.append(request.full_url)
+        return _Response({'data': [{'id': 'image-model'}]})
+
+    with pytest.raises(ProviderError, match='image_batch_unsupported'):
+        GrokVideoProvider(opener=opener).generate_image(
+            ImageRequest(prompt='forest', model='image-model', n=4),
+            VideoSettings('https://provider.test/v1', 'secret'),
+        )
+    assert seen == ['https://provider.test/v1/models']
+
+
+def test_video_provider_sends_last_frame_only_for_advertised_model():
+    seen = []
+
+    def opener(request, timeout):
+        del timeout
+        seen.append((request.full_url, json.loads(request.data) if request.data else None))
+        if request.full_url.endswith('/models'):
+            return _Response({'data': [{'id': 'video-model', 'capabilities': {'first_last_frame': True}}]})
+        return _Response({'id': 'job-1'})
+
+    GrokVideoProvider(opener=opener).generate_video(
+        VideoRequest(prompt='camera moves', model='video-model', first_frame_url='asset://first', last_frame_url='asset://last'),
+        VideoSettings('https://provider.test/v1', 'secret'),
+    )
+    assert seen[-1][1] == {
+        'model': 'video-model', 'prompt': 'camera moves',
+        'image': {'url': 'asset://first'}, 'last_frame': {'url': 'asset://last'},
+    }
+
+
+@pytest.mark.parametrize('count', [False, 0, 11, 1.0, '4'])
+def test_image_request_rejects_invalid_count_before_any_provider_call(count):
+    def unexpected(*_args, **_kwargs):
+        raise AssertionError('invalid count must never reach provider')
+
+    with pytest.raises(ProviderError, match='invalid_image_count'):
+        GrokVideoProvider(opener=unexpected).generate_image(
+            ImageRequest(prompt='forest', model='image-model', n=count),
+            VideoSettings('https://provider.test/v1', 'secret'),
+        )
+
+
+def test_verified_batch_accepts_upper_bound_ten():
+    seen = []
+
+    def opener(request, timeout):
+        del timeout
+        seen.append(json.loads(request.data) if request.data else None)
+        if request.full_url.endswith('/models'):
+            return _Response({'data': [{'id': 'image-model', 'capabilities': {'image_batch': True}}]})
+        return _Response({'data': [{'url': f'https://provider.test/v1/media/images/{index}'} for index in range(10)]})
+
+    job = GrokVideoProvider(opener=opener).generate_image(
+        ImageRequest(prompt='forest', model='image-model', n=10),
+        VideoSettings('https://provider.test/v1', 'secret'),
+    )
+    assert seen[-1]['n'] == 10
+    assert len(job.asset_urls) == 10
+
+
+def test_advertised_capabilities_are_scoped_to_exact_model_id():
+    provider = GrokVideoProvider(opener=_opener(_Response({'data': [
+        {'id': 'grok-imagine-image', 'capabilities': {'image_batch': True}},
+        {'id': 'grok-imagine-video-1.5', 'capabilities': {'first_last_frame': True}},
+        {'id': 'grok-imagine-video'},
+    ]}), {}))
+    caps = provider.capabilities(VideoSettings('https://provider.test/v1', 'secret'))
+    assert caps.image_batch_models == ['grok-imagine-image']
+    assert caps.first_last_frame_models == ['grok-imagine-video-1.5']
+    assert caps.first_last_frame.supported is True
+
+
+def test_provider_rejects_more_image_urls_than_requested():
+    provider = GrokVideoProvider(opener=_opener(_Response({'data': [
+        {'url': 'https://provider.test/v1/media/images/a'},
+        {'url': 'https://provider.test/v1/media/images/b'},
+    ]}), {}))
+    with pytest.raises(ProviderError, match='invalid_provider_response'):
+        provider.generate_image(ImageRequest(prompt='forest', model='grok-imagine-image', n=1),
+                                VideoSettings('https://provider.test/v1', 'secret'))
+
+
 def test_video_provider_does_not_claim_unverified_first_last_frame_support():
-    provider = GrokVideoProvider(opener=lambda *_args, **_kwargs: None)
+    provider = GrokVideoProvider(opener=_opener(_Response({'data': [{'id': 'grok-imagine-video'}]}), {}))
     with pytest.raises(ProviderError) as error:
         provider.generate_video(
             VideoRequest(prompt='transition', model='grok-imagine-video', first_frame_url='https://cdn.test/a.png', last_frame_url='https://cdn.test/b.png'),

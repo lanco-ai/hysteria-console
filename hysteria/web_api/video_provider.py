@@ -211,15 +211,28 @@ class GrokVideoProvider:
         if not isinstance(entries, list):
             raise ProviderError('invalid_provider_response')
         ids = []
+        image_batch_models = []
+        first_last_frame_models = []
         for entry in entries:
             if isinstance(entry, dict) and isinstance(entry.get('id'), str):
-                ids.append(entry['id'])
+                model = entry['id']
+                ids.append(model)
+                # IDs only prove routing. Accept these features only when the
+                # configured proxy advertises them for this exact model.
+                features = entry.get('capabilities')
+                if isinstance(features, dict):
+                    if features.get('image_batch') is True:
+                        image_batch_models.append(model)
+                    if features.get('first_last_frame') is True:
+                        first_last_frame_models.append(model)
         image_models = [model for model in ids if 'imagine-image' in model]
         video_models = [model for model in ids if 'imagine-video' in model]
         return Capabilities(
             image_models=image_models,
             video_models=video_models,
-            first_last_frame=Capability(False, 'provider capability not verified'),
+            image_batch_models=image_batch_models,
+            first_last_frame_models=first_last_frame_models,
+            first_last_frame=Capability(bool(first_last_frame_models), None if first_last_frame_models else 'provider capability not verified'),
             video_composition=Capability(False, 'provider capability not verified'),
         )
 
@@ -309,7 +322,17 @@ class GrokVideoProvider:
         )
 
     def generate_image(self, request: ImageRequest, settings: VideoSettings) -> ProviderJob:
-        payload = {'model': request.model, 'prompt': request.prompt}
+        return self.prepare_image(request, settings)()
+
+    def prepare_image(self, request: ImageRequest, settings: VideoSettings):
+        if type(request.n) is not int or not 1 <= request.n <= 10:
+            raise ProviderError('invalid_image_count')
+        if request.n > 1 and request.model not in self.capabilities(settings).image_batch_models:
+            raise ProviderError('image_batch_unsupported')
+        return lambda: self._submit_image(request, settings)
+
+    def _submit_image(self, request: ImageRequest, settings: VideoSettings) -> ProviderJob:
+        payload = {'model': request.model, 'prompt': request.prompt, 'n': request.n}
         if request.width is not None:
             payload['width'] = request.width
         if request.height is not None:
@@ -317,15 +340,35 @@ class GrokVideoProvider:
         if request.aspect_ratio:
             payload['aspect_ratio'] = request.aspect_ratio
         result = self._request('POST', _url(settings, 'images/generations'), settings, payload)
-        asset_url = _asset_url(result)
+        data = result.get('data')
+        asset_urls = [
+            item['url'] for item in data
+            if isinstance(item, dict)
+            and isinstance(item.get('url'), str)
+            and item['url'].startswith(('https://', 'http://'))
+        ] if isinstance(data, list) else []
+        if len(asset_urls) > request.n:
+            raise ProviderError('invalid_provider_response')
+        asset_url = asset_urls[0] if asset_urls else _asset_url(result)
         # Grok2API follows the OpenAI image response shape and returns the
         # generated URL immediately (`data[].url`).  It does not return a
         # video-style request_id for this endpoint.
         if asset_url:
-            return ProviderJob('', state='succeeded', asset_url=asset_url, metadata={'kind': 'image'})
+            return ProviderJob('', state='succeeded', asset_url=asset_url, metadata={'kind': 'image'}, asset_urls=asset_urls or [asset_url])
+        if request.n > 1:
+            raise ProviderError('invalid_provider_response')
         return ProviderJob(_job_id(result), asset_url=None, metadata={'kind': 'image'})
 
     def generate_video(self, request: VideoRequest, settings: VideoSettings) -> ProviderJob:
+        return self.prepare_video(request, settings)()
+
+    def prepare_video(self, request: VideoRequest, settings: VideoSettings):
+        if request.last_frame_url:
+            if not request.first_frame_url or request.model not in self.capabilities(settings).first_last_frame_models:
+                raise ProviderError('first_last_frame_unsupported')
+        return lambda: self._submit_video(request, settings)
+
+    def _submit_video(self, request: VideoRequest, settings: VideoSettings) -> ProviderJob:
         payload = {'model': request.model, 'prompt': request.prompt}
         if request.image_url:
             # Current Grok2API schema uses the official xAI media object:
@@ -335,9 +378,7 @@ class GrokVideoProvider:
         if request.first_frame_url:
             payload['image'] = {'url': request.first_frame_url}
         if request.last_frame_url:
-            # Independent first/last-frame generation is not advertised by
-            # capabilities yet. Do not silently send an undocumented field.
-            raise ProviderError('first_last_frame_unsupported')
+            payload['last_frame'] = {'url': request.last_frame_url}
         if request.duration is not None:
             payload['duration'] = request.duration
         if request.aspect_ratio:

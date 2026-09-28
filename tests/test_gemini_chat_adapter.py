@@ -170,7 +170,7 @@ def test_stream_chat_closes_upstream_when_client_cancels_after_first_delta():
         generator = adapter.stream_chat(
             {'api_key': API_KEY}, 'gemini-fast', [{'role': 'user', 'content': 'hello'}],
         )
-        event = await anext(generator)
+        event = await generator.__anext__()
         assert json.loads(event.decode().splitlines()[0][6:]) == {'type': 'delta', 'text': 'first'}
         await generator.aclose()
 
