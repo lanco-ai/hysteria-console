@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from 'react';
 import { CodexShell } from '../../shared/CodexShell';
 import { loadPlanSnapshot, requestPlanAssistant, savePlanSnapshot, type PlanAssistantSuggestion, type PlanItem, type PlanQuadrant, type PlanSnapshot, type PlanStatus } from './plansApi';
+import { JournalPage } from './JournalPage';
 
 const groups: Array<{ id: PlanQuadrant; title: string; hint: string }> = [
   { id: 'important_urgent', title: '重要且紧急', hint: '优先处理' },
@@ -90,6 +91,13 @@ export function PlansPage(): ReactElement {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
   }, []);
   const [selectedDate, setSelectedDate] = useState(() => localDate(timezone));
+  const [activeView, setActiveView] = useState<'timeline' | 'plans' | 'review'>(() => {
+    try {
+      const saved = window.sessionStorage.getItem('plans-active-view');
+      return saved === 'plans' || saved === 'review' ? saved : 'timeline';
+    } catch { return 'timeline'; }
+  });
+  const [journalProtected, setJournalProtected] = useState(false);
   const [items, setItems] = useState<PlanItem[]>([]);
   const [revision, setRevision] = useState('');
   const [loading, setLoading] = useState(true);
@@ -125,6 +133,11 @@ export function PlansPage(): ReactElement {
   const formDraftVersion = useRef(0);
   const protectedDraftRef = useRef(false);
   protectedDraftRef.current = hasProtectedDraft;
+  const journalProtectedRef = useRef(false);
+  const onJournalProtectionChange = useCallback((protectedDraft: boolean) => {
+    journalProtectedRef.current = protectedDraft;
+    setJournalProtected(protectedDraft);
+  }, []);
   const itemsRef = useRef<PlanItem[]>([]);
   const saveLock = useRef(false);
   const pendingDeleteIdRef = useRef<string | null>(null);
@@ -202,8 +215,8 @@ export function PlansPage(): ReactElement {
         reversingHistoryRef.current = false;
         return;
       }
-      if (guardEvent.detail.sameRoute || !protectedDraftRef.current) return;
-      if (window.confirm('有未保存的计划修改或草稿，确定离开此页面吗？')) {
+      if (guardEvent.detail.sameRoute || !(protectedDraftRef.current || journalProtectedRef.current)) return;
+      if (window.confirm('有未保存的计划或记录修改，确定离开此页面吗？')) {
         confirmedNavigation.current = true;
         window.setTimeout(() => { confirmedNavigation.current = false; }, 0);
         return;
@@ -221,7 +234,7 @@ export function PlansPage(): ReactElement {
   }, []);
 
   useEffect(() => {
-    if (!hasProtectedDraft) return;
+    if (!hasProtectedDraft && !journalProtected) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (confirmedNavigation.current) return;
       event.preventDefault();
@@ -233,7 +246,7 @@ export function PlansPage(): ReactElement {
       if (!link || link.target || link.hasAttribute('download')) return;
       const target = new URL(link.href, window.location.href);
       if (target.origin !== window.location.origin || target.pathname === window.location.pathname && target.search === window.location.search && target.hash) return;
-      if (window.confirm('有未保存的计划修改或草稿，确定离开此页面吗？')) {
+      if (window.confirm('有未保存的计划或记录修改，确定离开此页面吗？')) {
         confirmedNavigation.current = true;
         window.setTimeout(() => { confirmedNavigation.current = false; }, 0);
         return;
@@ -248,7 +261,7 @@ export function PlansPage(): ReactElement {
       window.removeEventListener('beforeunload', onBeforeUnload);
       document.removeEventListener('click', onDocumentClick, true);
     };
-  }, [hasProtectedDraft]);
+  }, [hasProtectedDraft, journalProtected]);
 
   const persist = async (next: PlanItem[]) => {
     if (saveLock.current || editingBlocked) return false;
@@ -527,6 +540,10 @@ export function PlansPage(): ReactElement {
 
   return <CodexShell active="plans" pageTitle="今日计划">
     <section className="plans-page" aria-label="今日计划">
+      <nav className="journal-view-tabs" role="tablist" aria-label="记录与计划视图">
+        {([['timeline', '时间线'], ['plans', '今日计划'], ['review', '回顾']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={activeView === id} onClick={() => { setActiveView(id); try { window.sessionStorage.setItem('plans-active-view', id); } catch { /* Private browsing may disable storage. */ } }}>{label}</button>)}
+      </nav>
+      <div hidden={activeView !== 'plans'}>
       <header className="plans-header">
         <div><h2>{dateHeading(selectedDate)}</h2><p className="plans-summary">{completed} / {selectedItems.length} 项完成 · 时区 {timezone}</p></div>
         <div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))} disabled={editingBlocked}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button></div>
@@ -580,6 +597,8 @@ export function PlansPage(): ReactElement {
         </section>;
       })}</div>}
       <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services?tab=ai">服务中心</a></footer>
+      </div>
+      <div hidden={activeView === 'plans'}><JournalPage selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} view={activeView === 'review' ? 'review' : 'timeline'} onDraftProtectionChange={onJournalProtectionChange} /></div>
     </section>
   </CodexShell>;
 }

@@ -32,6 +32,7 @@ const { expect } = require('@playwright/test');
     });
 
     await page.goto(`${base}/admin/plans`);
+    await page.getByRole('tab', { name: '今日计划' }).click();
     await expect(page.getByRole('heading', { name: '今日计划' })).toBeVisible();
     await expect(page.locator('.plans-header .plans-eyebrow')).toHaveCount(0);
     await expect(page.locator('.plans-save-status')).toHaveText('已保存');

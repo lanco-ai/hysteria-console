@@ -32,6 +32,7 @@ from .github_trending_routes import register_github_trending_routes
 from .health_models import AdminHealthResponse
 from .health_routes import register_health_routes
 from .incident_models import AdminIncidentResponse
+from .journal_routes import register_journal_routes
 from .landing_models import AdminLandingResponse
 from .landing_routes import register_landing_routes
 from .models import (
@@ -314,6 +315,7 @@ def create_app(
     github_trending_avatar_proxy=None,
     github_trending_scheduler_enabled=False,
     plans_store=None,
+    journal_store=None,
     chat_settings_store=None,
     ai_services_store: AIServiceStore | None = None,
     gemini_adapter: GeminiAdapter | None = None,
@@ -527,6 +529,7 @@ def create_app(
         ai_services_store=ai_services_store,
         gemini_adapter=gemini_adapter,
     )
+    register_journal_routes(app, services, dispatch, store=journal_store)
     if ai_services_store is not None:
         register_ai_service_routes(
             app,

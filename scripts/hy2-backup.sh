@@ -195,6 +195,7 @@ for p in \
   "$HY_DIR/server.crt" \
   "$HY_DIR/server.key" \
   "$HY_DIR/config.yaml" \
+  "$HY_DIR/state/journal/entries.json" \
   "$TUIC_CONFIG" \
   "$XRAY_CONFIG"; do
   add_path "$p"

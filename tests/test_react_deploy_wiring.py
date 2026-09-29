@@ -42,6 +42,8 @@ WEB_API_MODULES = (
     'overview_models.py',
     'plans_routes.py',
     'plans_service.py',
+    'journal_routes.py',
+    'journal_service.py',
     'requests.py',
     'rules_routes.py',
     'services.py',
@@ -94,7 +96,8 @@ def test_react_backend_sources_are_in_every_deploy_inventory():
     module_inventory = deploy.split('declare -a REACT_WEB_API_MODULES=(', 1)[1].split('\n)', 1)[0]
     for module in WEB_API_MODULES:
         assert f'\n  {module}' in module_inventory
-        assert f'hysteria/web_api/{module}' in deploy
+        assert f'add_durable_artifact "$HY_DIR/web_api/{module}"' in deploy
+        assert f'render "$REPO_DIR/hysteria/web_api/{module}" "$HY_DIR/web_api/{module}"' in deploy
         assert f'/root/hysteria/web_api/{module}' in recovery
     assert '/root/hysteria/react_server.py' in recovery
     assert '/etc/systemd/system/hysteria-react.service' in recovery

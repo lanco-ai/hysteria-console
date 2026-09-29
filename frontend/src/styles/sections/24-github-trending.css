@@ -159,7 +159,7 @@ body.has-shell .trending-status {
 body.has-shell .trending-status:empty { display: none; }
 body.has-shell .trending-notice { padding: 4px 9px; border-radius: var(--radius-pill); background: var(--bg-subtle); }
 body.has-shell .trending-notice.warning { background: var(--warn-soft); color: var(--warn); }
-body.has-shell .trending-feedback { color: var(--trending-accent); font-weight: 600; }
+body.has-shell .trending-feedback { min-width: 0; overflow-wrap: anywhere; color: var(--trending-accent); font-weight: 600; }
 body.has-shell .trending-empty { padding: 42px 20px; color: var(--text-secondary); text-align: center; }
 body.has-shell .trending-list-header {
   display: flex;

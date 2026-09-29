@@ -320,6 +320,15 @@ const snapshot = (period, overrides = {}) => ({
 
     const screenshotDir = process.env.REACT_TRENDING_SCREENSHOT_DIR || path.join(process.cwd(), '.astra-luna/screenshots');
     fs.mkdirSync(screenshotDir, { recursive: true });
+    const assertSectionFits = async width => {
+      const section = await page.locator('.trending-page .admin-section').evaluate(element => ({
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        scrollLeft: element.scrollLeft,
+      }));
+      assert(section.scrollWidth <= section.clientWidth + 1 && section.scrollLeft === 0,
+        `expanded ${width}px section must not scroll horizontally (${JSON.stringify(section)})`);
+    };
     await page.setViewportSize({ width: 390, height: 900 });
     await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), '390px stress content must not overflow');
@@ -347,6 +356,7 @@ const snapshot = (period, overrides = {}) => ({
     assert(topCardActionsClearName, 'expanded 390px top-card actions must be usable without covering the repository name');
     await stressRow.getByRole('button', { name: /复制链接/ }).click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `https://github.com/owner/${'x'.repeat(150)}`);
+    await assertSectionFits(390);
     await disclosure.focus();
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'expanded 390px content must not overflow');
     await page.screenshot({ path: path.join(screenshotDir, 'github-trending-expanded-390.png'), fullPage: true });
@@ -382,6 +392,7 @@ const snapshot = (period, overrides = {}) => ({
       if (width >= 720) assert(actionLayout.rightGap > 0 && actionLayout.rightGap < 26 && actionLayout.actionsAboveName, `${width}px desktop actions should reveal at the top right`);
       await stressRow.getByRole('button', { name: /复制链接/ }).click();
       assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `https://github.com/owner/${'x'.repeat(150)}`);
+      await assertSectionFits(width);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `expanded ${width}px content must not overflow`);
       await page.evaluate(() => window.scrollTo(0, 0));
       const firstCardLeft = await page.locator('.trending-top-card').first().evaluate(element => element.getBoundingClientRect().left);
