@@ -21,6 +21,7 @@ from preview_http_server import read_request_body as _read_request_body
 from web_api import create_app
 from web_api.ai.service_store import AIServiceStore
 from web_api.plans_service import PlanStore
+from web_api.journal_service import JournalStore
 from web_api.service_center import ServiceCenterStore
 from web_api.services import LegacyPanelServices
 
@@ -366,7 +367,7 @@ def _handler(api_client, allowed_assets):
                 self._form_api()
                 return
             request_path = urlsplit(self.path).path
-            if request_path in {'/api/chat/completions', '/api/v1/admin/services/probe'} or (
+            if request_path in {'/api/chat/completions', '/api/v1/admin/services/probe', '/api/journal'} or (
                 request_path.startswith('/api/ai/services/')
                 and request_path.endswith(('/test', '/test/generation', '/test/structured'))
             ):
@@ -380,10 +381,16 @@ def _handler(api_client, allowed_assets):
                 '/api/chat/settings',
                 '/api/v1/admin/services',
                 '/api/ai/service-bindings',
-            } or request_path.startswith('/api/ai/services/'):
+            } or request_path.startswith(('/api/ai/services/', '/api/journal/')):
                 self._json_api()
                 return
             super().do_PUT()
+
+        def do_DELETE(self):
+            if urlsplit(self.path).path.startswith('/api/journal/'):
+                self._json_api()
+                return
+            super().do_DELETE()
 
     return ReactPreview
 
@@ -516,6 +523,7 @@ def preview_server(port=0, *, overview_fixture=False):
                     backup_dir=preview_ai_root / 'migration-backup',
                 ),
                 plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
+                journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
                 gemini_adapter=PreviewGeminiAdapter(),
             )
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:

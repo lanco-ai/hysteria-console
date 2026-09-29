@@ -95,6 +95,7 @@ const { expect } = require('@playwright/test');
     const initialRead = createReadGate();
     heldRead = initialRead;
     await page.goto(`${base}/admin/plans`);
+    await page.getByRole('tab', { name: '今日计划' }).click();
     await expect(page.getByRole('heading', { name: '今日计划' })).toBeVisible();
     await initialRead.started;
     await expect(page.getByLabel('计划标题')).toBeDisabled();

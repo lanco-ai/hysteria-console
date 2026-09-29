@@ -47,6 +47,7 @@ from .models import (
 from .operation_routes import register_operation_routes
 from .overview_models import AdminOverviewPageResponse
 from .plans_routes import register_plans_routes
+from .journal_routes import register_journal_routes
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .rules_routes import register_rules_routes
 from .service_center import register_service_center_routes
@@ -269,6 +270,7 @@ def create_app(
     video_scheduler_interval=5.0,
     service_center_store=None,
     plans_store=None,
+    journal_store=None,
     chat_settings_store=None,
     ai_services_store: AIServiceStore | None = None,
     gemini_adapter: GeminiAdapter | None = None,
@@ -462,6 +464,7 @@ def create_app(
         ai_services_store=ai_services_store,
         gemini_adapter=gemini_adapter,
     )
+    register_journal_routes(app, services, dispatch, store=journal_store)
     if ai_services_store is not None:
         register_ai_service_routes(
             app,
