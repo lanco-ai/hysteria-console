@@ -36,11 +36,38 @@ const { expect } = require('@playwright/test');
     await expect(page.getByRole('heading', { name: '今日计划' })).toBeVisible();
     await expect(page.locator('.plans-header .plans-eyebrow')).toHaveCount(0);
     await expect(page.locator('.plans-save-status')).toHaveText('已保存');
+    const dateInput = page.getByLabel('计划日期');
+    await dateInput.fill('2026-09-29');
+    await expect(page.locator('.plans-header h2')).toHaveText('9月29日 星期二');
+    await expect(page.locator('.plans-date-subtitle')).toContainText('2026年09月29日');
+    await expect(page.locator('.plans-quote')).toContainText('专注当下，持续积累');
+    await page.getByRole('button', { name: '前一天' }).click();
+    await expect(dateInput).toHaveValue('2026-09-28');
+    await expect(page.locator('.plans-header h2')).toHaveText('9月28日 星期一');
+    await expect(page.locator('.plans-date-subtitle')).toContainText('2026年09月28日');
+    await page.getByRole('button', { name: '后一天' }).click();
+    await expect(dateInput).toHaveValue('2026-09-29');
     const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const desktopHeader = await page.locator('.plans-header').boundingBox();
+    const desktopQuote = await page.locator('.plans-quote').boundingBox();
+    const desktopHeading = await page.locator('.plans-header h2').boundingBox();
+    assert(desktopHeader && desktopQuote && desktopHeading && desktopQuote.x > desktopHeading.x + desktopHeading.width,
+      'quote card should sit to the right of the date heading on desktop');
+    if (screenshotDir) {
+      require('node:fs').mkdirSync(screenshotDir, { recursive: true });
+      await page.screenshot({ path: require('node:path').join(screenshotDir, 'plans-header-desktop-1440.png'), fullPage: true });
+    }
+    await page.setViewportSize({ width: 768, height: 900 });
+    assert((await page.evaluate(() => document.documentElement.scrollWidth)) <= 768, 'plan layout should fit 768px');
     await page.setViewportSize({ width: 390, height: 840 });
     await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThan(1);
     const cleanMobileWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     assert(cleanMobileWidth <= 390, `clean plan layout should fit 390px (scrollWidth ${cleanMobileWidth}px)`);
+    const mobileQuote = await page.locator('.plans-quote').boundingBox();
+    const mobileHeading = await page.locator('.plans-header h2').boundingBox();
+    assert(mobileQuote && mobileHeading && mobileQuote.y > mobileHeading.y + mobileHeading.height,
+      'quote card should stack below the date heading on mobile');
     if (screenshotDir) {
       require('node:fs').mkdirSync(screenshotDir, { recursive: true });
       await page.screenshot({ path: require('node:path').join(screenshotDir, 'plans-mobile-clean.png'), fullPage: true });

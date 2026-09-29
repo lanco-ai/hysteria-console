@@ -40,7 +40,8 @@ function isoFromLocalInput(value: string): string | null {
 function dateHeading(value: string): string {
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(Date.UTC(year || 2000, (month || 1) - 1, day || 1, 12));
-  return new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' }).format(date);
+  const weekday = new Intl.DateTimeFormat('zh-CN', { weekday: 'long', timeZone: 'UTC' }).format(date);
+  return `${month}月${day}日 ${weekday}`;
 }
 
 function timestamp(): string { return new Date().toISOString(); }
@@ -545,9 +546,17 @@ export function PlansPage(): ReactElement {
       </nav>
       <div hidden={activeView !== 'plans'}>
       <header className="plans-header">
-        <div><h2>{dateHeading(selectedDate)}</h2><p className="plans-summary">{completed} / {selectedItems.length} 项完成 · 时区 {timezone}</p></div>
-        <div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))} disabled={editingBlocked}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button></div>
-        <nav className="plans-date-nav" aria-label="日期选择"><button type="button" className="btn btn-ghost" aria-label="前一天" onClick={() => changeSelectedDate(value => shiftDate(value, -1))} disabled={editingBlocked}>‹</button><input aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} disabled={editingBlocked} /><button type="button" className="btn btn-ghost" aria-label="后一天" onClick={() => changeSelectedDate(value => shiftDate(value, 1))} disabled={editingBlocked}>›</button></nav>
+        <div className="plans-header-main">
+          <div className="plans-date-copy">
+            <div className="plans-heading-row"><button className="plans-date-arrow" type="button" aria-label="前一天" onClick={() => changeSelectedDate(value => shiftDate(value, -1))} disabled={editingBlocked}>‹</button><h2>{dateHeading(selectedDate)}</h2><button className="plans-date-arrow" type="button" aria-label="后一天" onClick={() => changeSelectedDate(value => shiftDate(value, 1))} disabled={editingBlocked}>›</button></div>
+            <p className="plans-date-subtitle">{selectedDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1年$2月$3日')}<span className="plans-subtitle-divider"> · </span>新的一天，加油！ <span aria-hidden="true">☀️</span></p>
+          </div>
+          <aside className="plans-quote" aria-label="今日寄语"><p>专注当下，持续积累，<br />让每一天都更有意义。</p><small>— Today is a new start —</small></aside>
+        </div>
+        <div className="plans-header-utility">
+          <p className="plans-summary">{completed} / {selectedItems.length} 项完成 · 时区 {timezone}</p>
+          <div className="plans-header-controls"><nav className="plans-date-nav" aria-label="日期选择"><input aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} disabled={editingBlocked} /></nav><div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))} disabled={editingBlocked}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button></div></div>
+        </div>
       </header>
 
       <form className="plans-create" onSubmit={addTask}>
