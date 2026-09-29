@@ -166,7 +166,7 @@ async function main() {
 
   await page.goto(`${baseUrl}/__react/admin/chat`);
   await expect(page).toHaveTitle('AI 对话');
-  await expect(page.getByRole('heading', { name: 'Lanco AI' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '把问题想明白' })).toBeVisible();
   await expect(page.getByRole('button', { name: '打开 Lanco Agent' })).toBeVisible();
   await page.getByRole('button', { name: '打开 Lanco Agent' }).click();
   const agent = page.locator('.lanco-agent');
@@ -338,113 +338,8 @@ async function main() {
   await page.getByRole('button', { name: '重置位置' }).click();
   await page.getByRole('button', { name: '收起 Lanco Agent' }).click();
   await expect(page.getByRole('button', { name: '打开 Lanco Agent' })).toBeVisible();
-  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '打开历史记录' })).toContainText('历史');
-  await expect(page.locator('.chat-history-count')).toHaveText('0');
-  await expect(page.getByLabel('当前模型')).toBeEnabled();
-  await expect(page.getByLabel('当前模型')).toHaveValue('gemini-3.8-flash-high');
-
-  await page.locator('button[aria-label="设置"]').click();
-  await expect(page.getByRole('heading', { name: '设置' })).toBeVisible();
-  await expect(page.locator('#chat-api-key, #chat-base-url')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '测试连接' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '刷新模型' })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: /服务中心.*API/ })).toHaveAttribute('href', '/admin/services?tab=ai');
-  await expect(page.getByRole('button', { name: '保存聊天参数' })).toBeVisible();
-  await expect(page.getByLabel('上下文状态')).toContainText('未知 / 未知');
-  await page.locator('#chat-temperature').fill('0.4');
-  await page.getByRole('button', { name: '保存聊天参数' }).click();
-  await expect(page.getByText('设置已保存')).toBeVisible();
-  assert(putBodies.some(body => body.temperature === 0.4));
-  assert(putBodies.every(body => !Object.hasOwn(body, 'api_key') && !Object.hasOwn(body, 'base_url')));
-  assert(putBodies.every(body => !Object.hasOwn(body, 'model') && !Object.hasOwn(body, 'reasoning_effort')));
-  assert.equal(legacyChatTestCalls, 0, 'API connection tests belong in Service Center');
-  await page.locator('button[aria-label="关闭设置"]').click();
-
-  const composer = page.locator('.chat-composer textarea');
-  await composer.fill('hello');
-  await composer.press('Enter');
-  await expect(page.locator('.chat-message-assistant .chat-message-content')).toContainText('HELLO');
-  await expect(page.locator('.chat-history-count')).toHaveText('1');
-  await page.locator('select[aria-label="思考强度"]').selectOption('high');
-  expectedReasoning = 'high';
-  await composer.fill('second');
-  await composer.press('Enter');
-  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SECOND');
-
-  const seededMessages = Array.from({ length: 24 }, (_, index) => ({
-    role: index % 2 ? 'assistant' : 'user',
-    content: `历史消息 ${index + 1} `.repeat(12),
-  }));
-  await page.evaluate(messages => {
-    localStorage.setItem('hy2.chat.sessions.v1', JSON.stringify([{
-      id: 'scroll-test',
-      title: '滚动测试',
-      messages,
-      updatedAt: Date.now(),
-      model: 'model-a',
-      reasoningEffort: 'high',
-    }]));
-  }, seededMessages);
-  expectedModel = 'model-a';
-  await page.reload();
-  await expect(page.locator('.chat-history-count')).toHaveText('1');
-  await expect(page.getByLabel('当前模型')).toHaveValue('model-a');
-  await composer.fill('scroll-check');
-  await composer.press('Enter');
-  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SCROLL-CHECK');
-  await page.waitForFunction(() => {
-    const node = document.querySelector('.chat-messages');
-    return node && node.scrollHeight - node.scrollTop - node.clientHeight <= 4;
-  }, undefined, { timeout: 5000 });
-
-  await page.getByRole('button', { name: '复制' }).last().click();
-  await expect(page.getByRole('button', { name: '已复制' })).toBeVisible();
-  await composer.fill('slow');
-  await composer.press('Enter');
-  await expect(page.getByRole('button', { name: '停止' })).toBeVisible();
-  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('模型正在思考');
-  await page.getByRole('button', { name: '停止' }).click();
-  await expect(page.locator('.chat-notice')).toContainText('已停止生成');
-  const stored = await page.evaluate(key => localStorage.getItem(key), 'hy2.chat.sessions.v1');
-  assert(stored);
-  const [html, localStorageValues, responseBodies] = await Promise.all([
-    page.content(),
-    page.evaluate(() => Object.keys(localStorage).map(key => localStorage.getItem(key))),
-    Promise.all(browserResponseBodies),
-  ]);
-  assert.equal(html.includes('api_key_masked'), false);
-  assert.equal(JSON.stringify(localStorageValues).includes('Authorization'), false);
-  assert.equal(JSON.stringify(localStorageValues).includes('api_key'), false);
-  assert.equal(responseBodies.join('\n').includes('"api_key":'), false);
-
-  await page.reload();
-  await expect(page.locator('.chat-message-assistant .chat-message-content').last()).toContainText('SCROLL-CHECK');
-  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
-  page.once('dialog', dialog => dialog.accept());
-  await page.getByRole('button', { name: '清空' }).click();
-  await expect(page.getByRole('heading', { name: 'Lanco AI' })).toBeVisible();
-  await expect(page.locator('.chat-empty-state')).toBeVisible();
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.reload();
-  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
-  await expect(page.locator('.chat-history-toggle > span').first()).toBeHidden();
-  await expect(page.locator('.chat-history-count')).toBeHidden();
-  await page.getByRole('button', { name: '打开历史记录' }).click();
-  await expect(page.locator('.chat-history-panel')).toBeVisible();
-  await expect(page.locator('.chat-history')).toHaveCSS('display', 'flex');
-  await expect(page.locator('.chat-session-list')).toHaveCSS('overflow-y', 'auto');
-  await expect(page.locator('.chat-new-button')).toBeVisible();
-  await page.locator('.chat-session').first().click();
-  await expect(page.locator('.chat-history-panel')).toHaveCount(0);
-  await expect(page.locator('.sidebar-toggle')).toBeVisible();
-  await page.locator('.sidebar-toggle').click();
-  await expect(page.locator('.sidebar.open')).toBeVisible();
-  await page.getByRole('button', { name: '关闭导航' }).click();
-
   await context.close();
   await browser.close();
-  console.log('React chat browser acceptance passed');
+  console.log('React agent and anonymous chat acceptance passed');
 }
-
 main().catch(error => { console.error(error); process.exitCode = 1; });

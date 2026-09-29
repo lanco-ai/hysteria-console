@@ -23,6 +23,7 @@ from web_api.ai.service_store import AIServiceStore
 from web_api.github_trending_source import SourceError
 from web_api.github_trending_store import TrendingStore
 from web_api.journal_service import JournalStore
+from web_api.chat_workspace_store import WorkspaceStore
 from web_api.plans_service import PlanStore
 from web_api.service_center import ServiceCenterStore
 from web_api.services import LegacyPanelServices
@@ -69,6 +70,18 @@ PREVIEW_LOGIN_PASSWORD = 'preview-only-password'
 PREVIEW_USER_PASSWORD = 'preview-user-password'
 PREVIEW_MUST_CHANGE_PASSWORD = 'preview-change-required-password'
 RECEIPT_TIMEOUT = 10
+
+
+class PreviewWorkspaceProvider:
+    """Fictional streaming answers; cannot access any external provider."""
+
+    def stream(self, messages, **_kwargs):
+        from web_api.chat_workspace_routes import sse
+        async def generate():
+            yield sse({'type': 'delta', 'text': '### 理解与验证\n\nLSM Tree 将随机写入变成顺序写入。 [S1]\n\n| 项目 | 观察 |\n| --- | --- |\n| 写入放大 | 需要测量 |\n\n$E = mc^2$\n\n' + messages[-1]['content']})
+            yield sse({'type': 'usage', 'usage': {'prompt_tokens': 42, 'completion_tokens': 24}})
+            yield sse({'type': 'done'})
+        return generate()
 
 
 class PreviewGeminiAdapter:
@@ -246,7 +259,7 @@ def _handler(api_client, allowed_assets):
             try:
                 raw_length = self.headers.get('Content-Length', '')
                 length = int(raw_length)
-                if length < 0 or length > 128 * 1024:
+                if length < 0 or length > (10 * 1024 * 1024 if urlsplit(self.path).path == '/api/chat/documents/upload' else 128 * 1024):
                     raise ValueError
             except (TypeError, ValueError):
                 self._json_error(400, 'bad_request')
@@ -379,7 +392,7 @@ def _handler(api_client, allowed_assets):
                 '/api/chat/completions',
                 '/api/v1/admin/services/probe',
                 '/api/journal',
-            } or (
+            } or request_path.startswith('/api/chat/') or (
                 request_path.startswith('/api/ai/services/')
                 and request_path.endswith(('/test', '/test/generation', '/test/structured'))
             ):
@@ -393,13 +406,19 @@ def _handler(api_client, allowed_assets):
                 '/api/chat/settings',
                 '/api/v1/admin/services',
                 '/api/ai/service-bindings',
-            } or request_path.startswith(('/api/ai/services/', '/api/journal/')):
+            } or request_path.startswith(('/api/ai/services/', '/api/journal/', '/api/chat/')):
                 self._json_api()
                 return
             super().do_PUT()
 
+        def do_PATCH(self):
+            if urlsplit(self.path).path.startswith('/api/chat/'):
+                self._json_api()
+                return
+            self.send_error(404)
+
         def do_DELETE(self):
-            if urlsplit(self.path).path.startswith('/api/journal/'):
+            if urlsplit(self.path).path.startswith(('/api/journal/', '/api/chat/')):
                 self._json_api()
                 return
             super().do_DELETE()
@@ -540,6 +559,8 @@ def preview_server(port=0, *, overview_fixture=False):
                 ),
                 plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
                 journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
+                chat_workspace_store=WorkspaceStore(Path(directory) / 'chat' / 'workspace.sqlite3'),
+                chat_workspace_settings=PreviewWorkspaceProvider(),
                 github_trending_store=trending_store,
                 gemini_adapter=PreviewGeminiAdapter(),
             )

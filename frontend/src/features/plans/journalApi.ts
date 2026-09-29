@@ -26,6 +26,7 @@ export type JournalDraft = {
 };
 
 export type JournalRecord = JournalDraft & {
+  chat_source?: { conversation_id: string; message_id: string; title: string; sha256: string } | null;
   id: string;
   local_date: string;
   created_at: string;

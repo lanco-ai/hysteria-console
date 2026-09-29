@@ -38,6 +38,7 @@ def main():
         'react_config_browser.cjs',
         'react_rules_browser.cjs',
         'react_chat_browser.cjs',
+        'react_chat_workspace_browser.cjs',
         'react_plans_assistant_browser.cjs',
         'react_plans_layout_browser.cjs',
         'react_journal_browser.cjs',

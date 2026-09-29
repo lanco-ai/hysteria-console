@@ -317,6 +317,8 @@ def create_app(
     plans_store=None,
     journal_store=None,
     chat_settings_store=None,
+    chat_workspace_store=None,
+    chat_workspace_settings=None,
     ai_services_store: AIServiceStore | None = None,
     gemini_adapter: GeminiAdapter | None = None,
     openai_models_fetcher=None,
@@ -446,7 +448,10 @@ def create_app(
                 async for chunk in iterator:
                     yield chunk
             finally:
-                release_capacity()
+                try:
+                    await iterator.aclose()
+                finally:
+                    release_capacity()
 
         return retain_capacity()
 
@@ -530,6 +535,9 @@ def create_app(
         gemini_adapter=gemini_adapter,
     )
     register_journal_routes(app, services, dispatch, store=journal_store)
+    from .chat_workspace_routes import register_workspace_routes
+    register_workspace_routes(app, services, dispatch, dispatch_stream,
+                              store=chat_workspace_store, settings=chat_workspace_settings or chat_settings_store, journal=journal_store)
     if ai_services_store is not None:
         register_ai_service_routes(
             app,

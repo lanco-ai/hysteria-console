@@ -93,6 +93,7 @@ export function PlansPage(): ReactElement {
   }, []);
   const [selectedDate, setSelectedDate] = useState(() => localDate(timezone));
   const [activeView, setActiveView] = useState<'timeline' | 'plans' | 'review'>(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'journal') return 'timeline';
     try {
       const saved = window.sessionStorage.getItem('plans-active-view');
       return saved === 'plans' || saved === 'review' ? saved : 'timeline';

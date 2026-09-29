@@ -86,6 +86,7 @@ class JournalUpdate(JournalInput):
 
 
 class JournalRecord(JournalInput):
+    chat_source: dict[str, str] | None = None
     id: str = Field(pattern=r'^[a-f0-9-]{36}$')
     local_date: date
     created_at: datetime
@@ -169,6 +170,12 @@ class JournalStore:
         return {'items': records}
 
     def create(self, values):
+        return self._create(values)
+
+    def create_from_chat(self, values, provenance):
+        return self._create(values, provenance)
+
+    def _create(self, values, provenance=None):
         item = JournalInput.model_validate(values)
         now = datetime.now(timezone.utc).isoformat()
         record = {
@@ -176,8 +183,15 @@ class JournalStore:
             'local_date': item.occurred_at.astimezone(ZoneInfo(item.timezone)).date().isoformat(),
             'created_at': now, 'updated_at': now, 'revision': 1,
         }
+        if provenance:
+            record['chat_source'] = provenance
         with state_store.file_lock(self._lock_path(), timeout=3):
             records = self._all()
+            if provenance:
+                for old in records:
+                    source = old.get('chat_source') or {}
+                    if source.get('conversation_id') == provenance['conversation_id'] and source.get('message_id') == provenance['message_id']:
+                        return {'item': old, 'already_saved': True}
             records.append(record)
             self._save(records)
         return {'item': record}
@@ -197,6 +211,8 @@ class JournalStore:
                         'created_at': old['created_at'], 'updated_at': datetime.now(timezone.utc).isoformat(),
                         'revision': old['revision'] + 1,
                     }
+                    if old.get('chat_source'):
+                        record['chat_source'] = old['chat_source']
                     records[index] = record
                     self._save(records)
                     return {'item': record}

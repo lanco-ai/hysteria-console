@@ -899,3 +899,54 @@
     padding-inline: 18px;
   }
 }
+
+/* Personal learning workspace */
+.personal-workspace { gap: 12px; }
+.workspace-project-bar, .workspace-actions, .workspace-banner, .workspace-paper { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.workspace-project-bar { justify-content: space-between; }
+.workspace-project-bar > label { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 13px; }
+.workspace-project-bar select { min-width: 180px; max-width: 300px; }
+.workspace-goal, .workspace-muted { color: var(--text-secondary); font-size: 12px; line-height: 1.7; margin: 0; }
+.workspace-banner { padding: 12px 16px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 12px; font-size: 13px; justify-content: space-between; }
+.workspace-papers { padding: 16px; display: grid; gap: 12px; }
+.workspace-papers input[type='file'] { max-width: 210px; font-size: 12px; }
+.workspace-paper { border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
+.workspace-paper > label { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.workspace-paper small { color: var(--text-tertiary); white-space: nowrap; }
+.workspace-dialog { color: var(--text-primary); background: var(--bg-overlay, #fff); width: min(640px, calc(100vw - 32px)); max-height: 88dvh; padding: 24px; border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 90px #0003; }
+.workspace-dialog::backdrop { background: #0006; }
+.workspace-dialog > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.workspace-dialog h2 { margin: 0; font-size: 20px; }
+.workspace-form { display: grid; gap: 18px; }
+.workspace-form > label { display: grid; gap: 8px; font-size: 13px; }
+.workspace-form textarea { resize: vertical; line-height: 1.7; }
+.chat-citations { margin-top: 16px; border: 1px solid var(--border); border-radius: 10px; padding: 12px; font-size: 12px; }
+.chat-citations summary { cursor: pointer; color: var(--text-secondary); }
+.chat-citation { margin-top: 14px; }
+.chat-citation blockquote { max-height: 200px; overflow-y: auto; white-space: pre-wrap; line-height: 1.7; margin: 10px 0; border-left: 2px solid var(--border); padding-left: 12px; }
+.chat-message-content table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.chat-message-content td, .chat-message-content th { border: 1px solid var(--border); padding: 8px 12px; }
+.chat-message-content .katex-display { overflow-x: auto; overflow-y: hidden; padding: 4px 0; }
+.chat-message-content pre { overflow-x: auto; }
+.personal-workspace .chat-history > .workspace-muted { padding: 12px 16px; }
+.personal-workspace .chat-thread-heading { gap: 12px; }
+.personal-workspace .chat-thread-title { overflow: hidden; }
+.personal-workspace .chat-thread-title strong { overflow-wrap: anywhere; }
+.personal-workspace .chat-composer textarea { max-height: 220px; }
+@media (width <= 700px) {
+  .workspace-project-bar { align-items: stretch; }
+  .workspace-project-bar > label { flex: 1; }
+  .workspace-project-bar select { min-width: 0; width: 100%; }
+  .workspace-project-bar > .workspace-actions { width: 100%; justify-content: flex-end; }
+  .workspace-dialog { padding: 18px; }
+  .chat-message-heading { flex-wrap: wrap; gap: 6px; }
+  .personal-workspace .chat-thread-heading { align-items: flex-start; }
+}
+
+.workspace-project-bar > label { white-space: nowrap; }
+.workspace-papers { flex: 0 0 auto; max-height: 240px; overflow-y: auto !important; }
+.workspace-project-bar, .workspace-goal, .workspace-banner { flex-shrink: 0; }
+.chat-message-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.chat-message-content h1, .chat-message-content h2, .chat-message-content h3 { margin: 16px 0 10px; line-height: 1.5; }
+.chat-message-content > :first-child { margin-top: 0; }
+.personal-workspace .chat-composer { padding-right: 56px; }

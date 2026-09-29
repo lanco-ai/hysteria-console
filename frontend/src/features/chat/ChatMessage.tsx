@@ -1,101 +1,30 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import type { ChatMessageData } from './chatApi';
+import type { WorkspaceMessage } from './workspaceApi';
 
-function safeHref(value: string): string | null {
-  try {
-    const url = new URL(value, window.location.origin);
-    if (url.protocol === 'http:' || url.protocol === 'https:' || url.protocol === 'mailto:') return url.href;
-  } catch {
-    // Invalid and unsupported links remain plain text.
-  }
-  return null;
-}
-
-function inlineMarkdown(value: string, prefix: string): ReactNode[] {
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^\s)]+\))/g;
-  const output: ReactNode[] = [];
-  let cursor = 0;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(value))) {
-    if (match.index > cursor) output.push(value.slice(cursor, match.index));
-    const token = match[0];
-    if (token.startsWith('**')) {
-      output.push(<strong key={`${prefix}-strong-${match.index}`}>{token.slice(2, -2)}</strong>);
-    } else if (token.startsWith('`')) {
-      output.push(<code key={`${prefix}-inline-${match.index}`}>{token.slice(1, -1)}</code>);
-    } else {
-      const link = token.match(/^\[([^\]]+)\]\(([^\s)]+)\)$/);
-      const href = link ? safeHref(link[2] || '') : null;
-      output.push(href ? <a key={`${prefix}-link-${match.index}`} href={href} target="_blank" rel="noreferrer">{link?.[1] || ''}</a> : token);
-    }
-    cursor = match.index + token.length;
-  }
-  if (cursor < value.length) output.push(value.slice(cursor));
-  return output;
-}
-
-function markdownBlocks(value: string, prefix: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const paragraph: string[] = [];
-  const list: string[] = [];
-  const flushParagraph = () => {
-    if (!paragraph.length) return;
-    const key = `${prefix}-p-${nodes.length}`;
-    nodes.push(<p key={key}>{inlineMarkdown(paragraph.join('\n'), key)}</p>);
-    paragraph.length = 0;
-  };
-  const flushList = () => {
-    if (!list.length) return;
-    const key = `${prefix}-ul-${nodes.length}`;
-    nodes.push(<ul key={key}>{list.map((item, index) => <li key={`${key}-${index}`}>{inlineMarkdown(item, `${key}-${index}`)}</li>)}</ul>);
-    list.length = 0;
-  };
-  value.split('\n').forEach((line, index) => {
-    const item = line.match(/^\s*[-*]\s+(.+)$/);
-    const heading = line.match(/^\s*(#{1,3})\s+(.+)$/);
-    if (!line.trim()) {
-      flushParagraph();
-      flushList();
-    } else if (item) {
-      flushParagraph();
-      list.push(item[1] || '');
-    } else if (heading) {
-      flushParagraph();
-      flushList();
-      const headingMarks = heading[1] || '';
-      const headingText = heading[2] || '';
-      const Tag = headingMarks.length === 1 ? 'h3' : 'h4';
-      nodes.push(<Tag key={`${prefix}-heading-${index}`}>{inlineMarkdown(headingText, `${prefix}-heading-${index}`)}</Tag>);
-    } else {
-      flushList();
-      paragraph.push(line);
-    }
-  });
-  flushParagraph();
-  flushList();
-  return nodes;
-}
-
-function renderMarkdown(value: string): ReactNode[] {
-  return value.split('```').map((part, index) => index % 2 === 1
-    ? <pre key={`code-${index}`}><code>{part.replace(/^[\w+#.-]+\n/, '')}</code></pre>
-    : <span className="chat-markdown-block" key={`text-${index}`}>{markdownBlocks(part, `text-${index}`)}</span>);
-}
-
-export function ChatMessage({ message, pending = false }: { message: ChatMessageData; pending?: boolean }) {
+export function ChatMessage({ message, pending = false, onJournal }: { message: ChatMessageData | WorkspaceMessage; pending?: boolean; onJournal?: () => void }) {
   const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1400);
-    } catch {
-      setCopied(false);
-    }
-  };
+  const [copyError, setCopyError] = useState(false);
+  const citations = 'citations' in message ? message.citations : [];
+  const status = 'status' in message ? message.status : 'completed';
   return <article className={`chat-message chat-message-${message.role}`}>
-    <div className="chat-message-meta"><span>{message.role === 'user' ? '你' : message.role === 'system' ? '系统' : 'Lanco AI'}</span>
-      {message.role === 'assistant' && !pending ? <button type="button" className="btn btn-ghost btn-sm" onClick={copy}>{copied ? '已复制' : '复制'}</button> : null}</div>
-    <div className={`chat-message-content${pending ? ' chat-message-pending' : ''}`}>{pending ? <><span>模型正在思考</span><span className="chat-thinking-dots" aria-hidden="true"><i /><i /><i /></span></> : renderMarkdown(message.content)}</div>
+    <div className="chat-message-heading"><strong>{message.role === 'user' ? '你' : message.role === 'system' ? '系统' : 'Lanco AI'}</strong><div className="workspace-actions">
+      {message.content && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { void navigator.clipboard.writeText(message.content).then(() => { setCopied(true); setCopyError(false); }).catch(() => setCopyError(true)); }}>{copyError ? '复制失败，请手动选择' : copied ? '已复制' : '复制'}</button>}
+      {onJournal && message.content && status !== 'streaming' && <button type="button" className="btn btn-ghost btn-sm" onClick={onJournal}>存入学习日记</button>}
+    </div></div>
+    <div className={`chat-message-content${pending ? ' chat-message-pending' : ''}`}>{pending ? <span>模型正在思考…</span> : <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { strict: 'ignore', trust: false, maxExpand: 1000 }]]} skipHtml components={{
+      a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+      img: ({ alt }) => <span>[图片：{alt || '未加载外部图片'}]</span>,
+    }}>{message.content}</ReactMarkdown>}</div>
+    {citations.length > 0 && <details className="chat-citations"><summary>参考原文 · {citations.length} 个片段</summary>{citations.map(c => <div key={c.id} className="chat-citation">
+      <a href={`/api/chat/documents/${encodeURIComponent(c.document_id)}/file#page=${c.page}`} target="_blank" rel="noreferrer">[{c.id}] {c.title} · 第 {c.page} 页 ↗</a><blockquote>{c.quote}</blockquote>
+    </div>)}<small>页码是 PDF 文件页序。片段已随回答保存；原文件删除后无法打开。引用由模型生成，请核对原文。</small></details>}
+    {'context_truncated' in message && message.context_truncated && <p className="workspace-muted">此次回答只使用了最近的一部分对话，完整历史仍已保存。</p>}
+    {status !== 'completed' && status !== 'streaming' && <p className="workspace-muted">{status === 'stopped' ? '已停止生成' : '回答未完成'} · 已保留收到的内容</p>}
   </article>;
 }

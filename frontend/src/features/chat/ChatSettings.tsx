@@ -6,10 +6,10 @@ type ChatSettingsProps = {
   busy: boolean;
   feedback: string;
   onSave: (values: SettingsUpdate) => Promise<boolean>;
-  onClearData: () => void;
+  onExport: () => void;
 };
 
-export function ChatSettings({ settings, busy, feedback, onSave, onClearData }: ChatSettingsProps) {
+export function ChatSettings({ settings, busy, feedback, onSave, onExport }: ChatSettingsProps) {
   const [temperature, setTemperature] = useState('0.7');
 
   useEffect(() => {
@@ -39,8 +39,8 @@ export function ChatSettings({ settings, busy, feedback, onSave, onClearData }: 
     </section>
 
     <section className="chat-settings-section chat-settings-data">
-      <div className="chat-settings-section-heading"><div><h3>数据</h3><p>聊天记录只在当前浏览器保存。</p></div></div>
-      <button className="btn btn-danger" type="button" onClick={onClearData}>清空本地聊天记录</button>
+      <div className="chat-settings-section-heading"><div><h3>数据</h3><p>对话与项目保存在服务器，可在其他设备登录后继续使用。导出包含对话、项目与引用片段；论文原文件请从资料列表下载。</p></div></div>
+      <button className="btn btn-secondary" type="button" onClick={onExport}>导出全部对话与项目</button>
     </section>
 
     {feedback ? <div className="chat-settings-feedback" role="status">{feedback}</div> : null}

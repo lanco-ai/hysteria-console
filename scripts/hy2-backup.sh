@@ -98,6 +98,8 @@ tmp_tar="$plain_out.tmp"
 tmp_enc=""
 tmp_sha=""
 manifest="$(mktemp)"
+chat_snapshot_dir=""
+chat_snapshot_args=()
 pass_arg=()
 snapshot_locks_held=0
 
@@ -113,6 +115,9 @@ fi
 
 cleanup() {
   rm -f "$manifest" "$tmp_tar"
+  if [[ -n "$chat_snapshot_dir" ]]; then
+    rm -rf -- "$chat_snapshot_dir"
+  fi
   if [[ -n "$tmp_enc" ]]; then
     rm -f "$tmp_enc"
   fi
@@ -212,12 +217,32 @@ if [[ -d "$HY_DIR/state" ]]; then
     ! -name 'device_admissions.json' | sort)
 fi
 
-if [[ ! -s "$manifest" ]]; then
+# SQLite's backup API produces a consistent database, including PDF BLOBs.
+# Never copy a live database or its WAL as ordinary files.
+if [[ -f "$HY_DIR/state/chat/workspace.sqlite3" ]]; then
+  chat_snapshot_dir="$(mktemp -d)"
+  chat_snapshot_rel="${HY_DIR#/}/state/chat/workspace.sqlite3"
+  python3 - "$HY_DIR/state/chat/workspace.sqlite3" "$chat_snapshot_dir/$chat_snapshot_rel" <<'PY'
+import sqlite3
+import sys
+from pathlib import Path
+
+source, target = map(Path, sys.argv[1:])
+target.parent.mkdir(parents=True, mode=0o700)
+with sqlite3.connect(source.resolve().as_uri() + '?mode=ro', uri=True) as src:
+    with sqlite3.connect(target) as dst:
+        src.backup(dst)
+target.chmod(0o600)
+PY
+  chat_snapshot_args=(-C "$chat_snapshot_dir" "$chat_snapshot_rel")
+fi
+
+if [[ ! -s "$manifest" && ${#chat_snapshot_args[@]} -eq 0 ]]; then
   printf 'No hy2 runtime files found under %s\n' "$HY_DIR" >&2
   exit 1
 fi
 
-tar -C / -czf "$tmp_tar" --files-from "$manifest"
+tar -C / -czf "$tmp_tar" --files-from "$manifest" "${chat_snapshot_args[@]}"
 release_snapshot_locks
 
 if [[ ${#pass_arg[@]} -gt 0 ]]; then
