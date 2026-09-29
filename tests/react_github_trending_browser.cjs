@@ -136,10 +136,15 @@ const snapshot = (period, overrides = {}) => ({
       const title = document.querySelector('.trending-intro h2');
       const row = document.querySelector('.trending-repo-row').getBoundingClientRect();
       const action = document.querySelector('.trending-actions a').getBoundingClientRect();
-      return { left: pageBox.left, right: pageBox.right, width: pageBox.width, contentLeft: contentBox.left, contentRight: contentBox.right, titleSize: parseFloat(getComputedStyle(title).fontSize), rowHeight: row.height, actionHeight: action.height };
+      const rank = document.querySelector('.trending-top-card .trending-rank');
+      const accent = getComputedStyle(document.querySelector('.trending-page')).getPropertyValue('--trending-accent').trim();
+      const shellSage = getComputedStyle(document.body).getPropertyValue('--data').trim();
+      return { left: pageBox.left, right: pageBox.right, width: pageBox.width, contentLeft: contentBox.left, contentRight: contentBox.right, titleSize: parseFloat(getComputedStyle(title).fontSize), rowHeight: row.height, actionHeight: action.height, rankSize: parseFloat(getComputedStyle(rank).fontSize), accent, shellSage };
     });
-    assert(desktopLayout.width <= 1200 && Math.abs((desktopLayout.left - desktopLayout.contentLeft) - (desktopLayout.contentRight - desktopLayout.right)) <= 2, 'desktop content should be centered and readable');
-    assert(desktopLayout.titleSize >= 36, 'page heading should establish clear hierarchy');
+    assert(desktopLayout.width <= 1280 && Math.abs((desktopLayout.left - desktopLayout.contentLeft) - (desktopLayout.contentRight - desktopLayout.right)) <= 2, 'desktop content should share the centered page width');
+    assert(desktopLayout.titleSize >= 28 && desktopLayout.titleSize <= 34, 'trending heading should align with the other page headings');
+    assert(desktopLayout.rankSize <= 18, 'rank labels should stay legible without giant watermarks');
+    assert.equal(desktopLayout.accent, desktopLayout.shellSage, 'trending accents should use the shell sage token');
     assert(desktopLayout.rowHeight <= 125, 'desktop repository rows should remain compact');
     assert(desktopLayout.actionHeight >= 36, 'repository actions should offer generous click targets');
     await expect(page.locator('.trending-repo').first()).toContainText('#2');
@@ -192,13 +197,12 @@ const snapshot = (period, overrides = {}) => ({
     await expect(page.locator('.trending-top-card').nth(2).locator('.trending-period-stat strong')).toHaveText('40');
     await page.emulateMedia({ reducedMotion: 'reduce' });
     const reducedCard = page.locator('.trending-top-card').first();
-    const glowBefore = await reducedCard.evaluate(element => ({ x: element.style.getPropertyValue('--pointer-x'), y: element.style.getPropertyValue('--pointer-y') }));
     const glowBox = await reducedCard.boundingBox();
-    assert(glowBox, 'focus card must have a box for reduced-motion hover');
+    assert(glowBox, 'focus card must have a box for hover');
     await page.mouse.move(glowBox.x + 10, glowBox.y + 10);
     await page.mouse.move(glowBox.x + glowBox.width - 10, glowBox.y + glowBox.height - 10);
-    const glowAfter = await reducedCard.evaluate(element => ({ opacity: getComputedStyle(element, '::before').opacity, x: element.style.getPropertyValue('--pointer-x'), y: element.style.getPropertyValue('--pointer-y') }));
-    assert.deepEqual({ opacity: glowAfter.opacity, tracked: glowAfter.x !== glowBefore.x || glowAfter.y !== glowBefore.y }, { opacity: '0', tracked: false }, 'reduced motion should disable the pointer glow and its tracking');
+    const glowAfter = await reducedCard.evaluate(element => ({ content: getComputedStyle(element, '::before').content, x: element.style.getPropertyValue('--pointer-x'), y: element.style.getPropertyValue('--pointer-y') }));
+    assert.deepEqual(glowAfter, { content: 'none', x: '', y: '' }, 'focus cards should not render or track pointer glow');
     const reducedContentOpacity = await page.evaluate(() => ({
       card: getComputedStyle(document.querySelector('.trending-top-card')).opacity,
       row: getComputedStyle(document.querySelector('.trending-repo-row')).opacity,

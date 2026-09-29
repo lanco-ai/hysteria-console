@@ -1,12 +1,12 @@
 body.has-shell .trending-page {
-  --trending-accent: #5145d4;
-  --trending-accent-hover: #4034bb;
-  --trending-accent-soft: #f0eeff;
-  --trending-ink: #172039;
-  width: min(100%, 1180px);
+  --trending-accent: var(--data);
+  --trending-accent-hover: var(--accent-hover);
+  --trending-accent-soft: var(--data-soft);
+  --trending-ink: var(--text-primary);
+  width: min(100%, 1280px);
   min-width: 0;
   margin-inline: auto;
-  gap: 14px;
+  gap: 20px;
 }
 
 body.has-shell .trending-intro {
@@ -14,27 +14,24 @@ body.has-shell .trending-intro {
   justify-content: space-between;
   align-items: end;
   gap: 24px;
-  padding: 4px 2px 2px;
+  padding: 0 2px;
 }
 body.has-shell .trending-intro > div:first-child { min-width: 0; }
 body.has-shell .trending-eyebrow {
   display: inline-block;
-  margin-bottom: 8px;
-  padding: 5px 9px;
-  border-radius: 5px;
-  background: var(--trending-accent-soft);
+  margin-bottom: 6px;
   color: var(--trending-accent);
-  font: 700 11px var(--font-label);
-  letter-spacing: .14em;
+  font: 650 11px var(--font-label);
+  letter-spacing: .1em;
 }
 body.has-shell .trending-intro h2 {
   margin-bottom: 6px;
-  font-size: clamp(36px, 3vw, 42px);
-  line-height: 1.12;
-  letter-spacing: -.04em;
+  font-size: clamp(26px, 2vw, 30px);
+  line-height: 1.25;
+  letter-spacing: -.02em;
   color: var(--trending-ink);
 }
-body.has-shell .trending-intro h2 span { color: var(--trending-accent); }
+body.has-shell .trending-intro h2 span { color: var(--trending-ink); }
 body.has-shell .trending-intro p:not(.trending-eyebrow) {
   color: var(--text-secondary);
   font-size: var(--text-body);
@@ -45,9 +42,9 @@ body.has-shell .trending-source {
   gap: 4px;
   flex-shrink: 0;
   padding: 10px 13px;
-  border: 1px solid #e3e1f2;
+  border: 1px solid var(--border);
   border-radius: 9px;
-  background: rgba(255, 255, 255, .72);
+  background: var(--bg-surface);
   color: var(--text-tertiary);
   text-align: right;
   font-size: var(--text-small);
@@ -55,7 +52,7 @@ body.has-shell .trending-source {
 body.has-shell .trending-source strong { margin-left: 5px; color: var(--trending-ink); font-weight: 700; }
 body.has-shell .trending-source small { color: var(--text-secondary); font-size: var(--text-small); }
 
-body.has-shell .trending-page .admin-section { border-color: #dfdeea; border-radius: 14px; box-shadow: 0 8px 28px rgba(31, 30, 66, .04); }
+body.has-shell .trending-page .admin-section { border-color: var(--border); border-radius: 14px; box-shadow: var(--shadow-xs); }
 body.has-shell .trending-controls {
   display: flex;
   align-items: center;
@@ -63,15 +60,15 @@ body.has-shell .trending-controls {
   min-width: 0;
   padding: 12px 16px;
   border-bottom: 1px solid var(--hairline);
-  background: #fff;
+  background: var(--bg-surface);
 }
 body.has-shell .trending-period {
   display: inline-flex;
   flex: 0 0 auto;
   gap: 2px;
   padding: 3px;
-  background: var(--trending-accent-soft);
-  border: 1px solid #e3e1f2;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
   border-radius: 9px;
 }
 body.has-shell .trending-period button {
@@ -94,14 +91,14 @@ body.has-shell .trending-controls > .btn {
   flex: 0 0 auto;
   min-height: 42px;
   margin-left: auto;
-  border: 1px solid var(--trending-accent);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--trending-accent);
-  color: #fff;
-  font-weight: 650;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 600;
 }
-body.has-shell .trending-controls > .btn:hover:not(:disabled) { border-color: var(--trending-accent-hover); background: var(--trending-accent-hover); }
-body.has-shell .trending-controls > .btn:disabled { border-color: #e7e5ef; background: #f0eff4; color: #777485; }
+body.has-shell .trending-controls > .btn:hover:not(:disabled) { border-color: var(--border-strong); background: var(--bg-subtle); }
+body.has-shell .trending-controls > .btn:disabled { border-color: var(--border); background: var(--bg-subtle); color: var(--text-tertiary); }
 body.has-shell .trending-filters {
   display: flex;
   flex: 1 1 auto;
@@ -126,7 +123,7 @@ body.has-shell .trending-filters select {
   min-width: 0;
   height: 42px;
   padding: 0 12px;
-  border: 1px solid #dcdce7;
+  border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -134,7 +131,7 @@ body.has-shell .trending-filters select {
 }
 body.has-shell .trending-filters input::placeholder { color: var(--text-tertiary); }
 body.has-shell .trending-filters input:hover,
-body.has-shell .trending-filters select:hover { border-color: #ada8dd; }
+body.has-shell .trending-filters select:hover { border-color: var(--border-strong); }
 body.has-shell .trending-filters small { color: var(--text-tertiary); font-size: var(--text-small); white-space: nowrap; }
 body.has-shell .trending-clear {
   min-height: 42px;
@@ -169,7 +166,7 @@ body.has-shell .trending-list-header {
   min-height: 39px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--hairline);
-  background: #fafaff;
+  background: var(--bg-overlay);
 }
 body.has-shell .trending-list-header strong { color: var(--trending-ink); font-size: var(--text-ui); font-weight: 700; }
 body.has-shell .trending-list-header span { color: var(--text-tertiary); font-size: var(--text-small); }
@@ -181,7 +178,7 @@ body.has-shell .trending-period-indicator {
   width: calc(50% - 4px);
   border-radius: 6px;
   background: var(--trending-accent);
-  box-shadow: 0 2px 5px rgba(81, 69, 212, .18);
+  box-shadow: none;
   transition: transform 220ms ease;
 }
 body.has-shell .trending-period.is-daily .trending-period-indicator { transform: translateX(calc(100% + 2px)); }
@@ -198,7 +195,7 @@ body.has-shell .trending-repo {
   position: relative;
   min-width: 0;
   overflow: hidden;
-  border: 1px solid #e3e1f2;
+  border: 1px solid var(--border);
   border-radius: 11px;
   background: #fff;
   cursor: pointer;
@@ -211,26 +208,16 @@ body.has-shell .trending-top-card {
   grid-template-columns: 40px minmax(0, 1fr) auto;
   align-content: start;
   gap: 12px 10px;
-  min-height: 245px;
-  padding: 20px;
+  min-height: 220px;
+  padding: 42px 18px 18px;
 }
-body.has-shell .trending-top-card::before {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(220px circle at var(--pointer-x, 50%) var(--pointer-y, 50%), color-mix(in srgb, var(--trending-accent) 8%, transparent), transparent 75%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 200ms ease;
-  content: "";
-}
-body.has-shell .trending-top-card:hover::before { opacity: 1; }
 body.has-shell .trending-rank { color: var(--trending-accent); font: 700 13px var(--font-num); }
 body.has-shell .trending-top-card .trending-rank {
   position: absolute;
-  top: 3px;
-  right: 12px;
-  color: color-mix(in srgb, var(--trending-accent) 8.5%, transparent);
-  font-size: 88px;
+  top: 15px;
+  left: 18px;
+  color: var(--trending-accent);
+  font-size: 13px;
   line-height: 1;
   pointer-events: none;
 }
@@ -240,7 +227,7 @@ body.has-shell .trending-avatar {
   width: 40px;
   height: 40px;
   overflow: hidden;
-  border: 1px solid #dfdcf6;
+  border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--trending-accent-soft);
   color: var(--trending-accent);
@@ -317,7 +304,7 @@ body.has-shell .trending-actions button {
   width: 36px;
   height: 36px;
   padding: 0;
-  border: 1px solid #dedee8;
+  border: 1px solid var(--border);
   border-radius: 7px;
   background: #fff;
   color: var(--trending-accent);
@@ -401,7 +388,5 @@ body.has-shell .trending-repo:focus-visible { outline: 2px solid var(--trending-
   body.has-shell .trending-period-indicator,
   body.has-shell .trending-repo,
   body.has-shell .trending-actions { transition: none; }
-  body.has-shell .trending-top-card::before,
-  body.has-shell .trending-top-card:hover::before { opacity: 0; transition: none; }
   body.has-shell .trending-progress-fill { animation: none; }
 }

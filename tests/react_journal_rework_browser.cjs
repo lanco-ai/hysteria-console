@@ -164,6 +164,7 @@ const { expect } = require('@playwright/test');
     await scenario('failed date and search reads hide stale records and preserve draft', async page => {
       await page.clock.install({ time: new Date('2027-04-10T17:00:00Z') });
       await page.goto(`${base}/admin/plans`);
+      await page.getByText('更多记录选项').click();
       await page.getByLabel('记录标题').fill('Old day entry');
       await page.getByLabel('记录内容').fill('Saved on April 10');
       await page.getByRole('button', { name: '保存记录' }).click();

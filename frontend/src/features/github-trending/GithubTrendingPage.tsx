@@ -223,7 +223,7 @@ export function GithubTrendingPage() {
             {search || language ? <button className="trending-clear" type="button" onClick={() => { setSearch(''); setLanguage(''); }}>清除筛选</button> : null}
             <small>本榜内筛选 · {filtered.length} / {snapshot.items.length} 个项目</small>
           </div> : null}
-          <button className="btn secondary" type="button" onClick={refresh} disabled={posting || loading || !!snapshot?.refreshing || cooldownSeconds > 0 || retrySeconds > 0 || authExpired}>手动刷新</button>
+          <button className="btn btn-secondary" type="button" onClick={refresh} disabled={posting || loading || !!snapshot?.refreshing || cooldownSeconds > 0 || retrySeconds > 0 || authExpired}>手动刷新</button>
         </div>
         <div className="trending-status" aria-live="polite">
           {snapshot?.is_stale && snapshot.last_success_at ? <span className="trending-notice warning">正在显示上次成功缓存</span> : null}
@@ -234,8 +234,8 @@ export function GithubTrendingPage() {
           {snapshot && !snapshot.is_stale && !snapshot.refreshing && !snapshot.error && snapshot.status === 'ready' ? <span className="trending-notice">已加载缓存榜单</span> : null}
           {requestError ? <span className="trending-notice warning" role="alert">{requestError === '401' ? '管理员登录已失效。' : requestError === '403' ? '需要管理员权限。' : '榜单请求失败，请重试。'}</span> : null}
           {feedback ? <span className="trending-feedback" role="status">{feedback}</span> : null}
-          {requestError === '401' ? <a className="btn secondary" href="/login">前往登录</a> : null}
-          {requestError && !authExpired ? <button className="btn secondary" type="button" onClick={() => setReloadEpoch(value => value + 1)}>重试</button> : null}
+          {requestError === '401' ? <a className="btn btn-secondary" href="/login">前往登录</a> : null}
+          {requestError && !authExpired ? <button className="btn btn-secondary" type="button" onClick={() => setReloadEpoch(value => value + 1)}>重试</button> : null}
         </div>
         {snapshot?.status === 'ready' && snapshot.items.length > 0 ? <div className="trending-list-header"><strong>{period === 'weekly' ? '本周热门仓库' : '今日热门仓库'}</strong><span>共 {filtered.length} 个项目</span></div> : null}
         {loading ? <div className="trending-empty" role="status">正在读取{period === 'weekly' ? '周榜' : '日榜'}缓存…</div> : null}

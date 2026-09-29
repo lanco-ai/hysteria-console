@@ -1,4 +1,4 @@
-import { useEffect, useState, type PointerEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from '../../shared/icons';
 
 export type Period = 'weekly' | 'daily';
@@ -97,13 +97,7 @@ type EntryProps = {
 function EntryFrame({ item, period, maximum, expanded, onToggle, onCopy, snapshotKey, focus }: EntryProps & { focus: boolean }) {
   const label = period === 'weekly' ? '本周 Stars' : '今日 Stars';
   const detailsId = `trending-details-${period}-${item.source_rank}`;
-  const onPointerMove = (event: PointerEvent<HTMLLIElement>) => {
-    if (!focus || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    event.currentTarget.style.setProperty('--pointer-x', `${event.clientX - rect.left}px`);
-    event.currentTarget.style.setProperty('--pointer-y', `${event.clientY - rect.top}px`);
-  };
-  return <li className={`trending-repo ${focus ? 'trending-top-card' : 'trending-repo-row'}${expanded ? ' is-expanded' : ''}`} value={item.source_rank} onPointerMove={onPointerMove}>
+  return <li className={`trending-repo ${focus ? 'trending-top-card' : 'trending-repo-row'}${expanded ? ' is-expanded' : ''}`} value={item.source_rank}>
     <button className="trending-entry-toggle" type="button" aria-expanded={expanded} aria-controls={detailsId} aria-label={`${item.full_name}，${label} ${count(item.stars_period)}，${expanded ? '收起详情' : '展开详情'}`} onClick={onToggle}/>
     <span className="trending-rank" aria-hidden="true">#{item.source_rank}</span>
     <Avatar item={item}/>

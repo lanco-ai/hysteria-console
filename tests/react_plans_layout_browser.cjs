@@ -36,6 +36,29 @@ const { expect } = require('@playwright/test');
     await expect(page.getByRole('heading', { name: '今日计划' })).toBeVisible();
     await expect(page.locator('.plans-header .plans-eyebrow')).toHaveCount(0);
     await expect(page.locator('.plans-save-status')).toHaveText('已保存');
+    const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
+    await page.setViewportSize({ width: 390, height: 840 });
+    await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThan(1);
+    const cleanMobileWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    assert(cleanMobileWidth <= 390, `clean plan layout should fit 390px (scrollWidth ${cleanMobileWidth}px)`);
+    if (screenshotDir) {
+      require('node:fs').mkdirSync(screenshotDir, { recursive: true });
+      await page.screenshot({ path: require('node:path').join(screenshotDir, 'plans-mobile-clean.png'), fullPage: true });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const addOptions = page.locator('.plans-create-options');
+    await expect(addOptions).not.toHaveAttribute('open', '');
+    await expect(page.getByLabel('预计分钟')).toBeHidden();
+    await expect(page.getByLabel('提醒时间')).toBeHidden();
+    await page.getByText('时间与提醒选项').click();
+    await expect(page.getByLabel('预计分钟')).toBeVisible();
+    await expect(page.getByLabel('提醒时间')).toBeVisible();
+    const emptyHeight = await page.locator('.plans-quadrant').first().evaluate(element => element.getBoundingClientRect().height);
+    assert(emptyHeight < 190, 'empty plan quadrants should avoid excess vertical space');
+    if (screenshotDir) {
+      require('node:fs').mkdirSync(screenshotDir, { recursive: true });
+      await page.screenshot({ path: require('node:path').join(screenshotDir, 'plans-desktop.png'), fullPage: true });
+    }
     const gridBefore = await page.locator('.plans-grid').boundingBox();
     await page.getByRole('button', { name: 'AI 建议' }).click();
     const assistant = page.getByRole('dialog', { name: '把目标整理成可选计划' });
