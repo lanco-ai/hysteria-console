@@ -71,6 +71,18 @@ const snapshot = (period, overrides = {}) => ({
     await expect(page.getByRole('link', { name: '开源发现' })).toHaveAttribute('href', '/admin/github-trending');
     await expect(page.getByRole('button', { name: '周榜' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.trending-repo')).toHaveCount(3);
+    const desktopLayout = await page.evaluate(() => {
+      const pageBox = document.querySelector('.trending-page').getBoundingClientRect();
+      const contentBox = document.querySelector('.content').getBoundingClientRect();
+      const title = document.querySelector('.trending-intro h2');
+      const row = document.querySelector('.trending-repo').getBoundingClientRect();
+      const action = document.querySelector('.trending-actions a').getBoundingClientRect();
+      return { left: pageBox.left, right: pageBox.right, width: pageBox.width, contentLeft: contentBox.left, contentRight: contentBox.right, titleSize: parseFloat(getComputedStyle(title).fontSize), rowHeight: row.height, actionHeight: action.height };
+    });
+    assert(desktopLayout.width <= 1200 && Math.abs((desktopLayout.left - desktopLayout.contentLeft) - (desktopLayout.contentRight - desktopLayout.right)) <= 2, 'desktop content should be centered and readable');
+    assert(desktopLayout.titleSize >= 36, 'page heading should establish clear hierarchy');
+    assert(desktopLayout.rowHeight <= 125, 'desktop repository rows should remain compact');
+    assert(desktopLayout.actionHeight >= 36, 'repository actions should offer generous click targets');
     await expect(page.locator('.trending-repo').first()).toContainText('#2');
     await expect(page.locator('.trending-repo').first()).toContainText('1,200');
     await expect(page.locator('.trending-repo').first()).toContainText('0');
@@ -183,7 +195,7 @@ const snapshot = (period, overrides = {}) => ({
     await expect.poll(() => typeof releaseWeekly).toBe('function');
     refresh = snapshot('weekly', { items: [
       item(1, 'manual/newer', 'Rust', 'Manual result', 9, 8, 2),
-      item(2, `owner/${'x'.repeat(150)}`, 'VeryLongLanguage'.repeat(30), 'Very long values', Number.MAX_SAFE_INTEGER + 1, 0, 123456789012345),
+      item(2, `owner/${'x'.repeat(150)}`, 'VeryLongLanguage'.repeat(30), 'A long repository description about useful open source work. '.repeat(7), Number.MAX_SAFE_INTEGER + 1, 0, 123456789012345),
     ] });
     await page.getByRole('button', { name: '手动刷新' }).click();
     await expect(page.locator('.trending-repo').first()).toContainText('manual/newer');
@@ -198,6 +210,31 @@ const snapshot = (period, overrides = {}) => ({
     await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), '390px stress content must not overflow');
     await expect(page.locator('.trending-repo').nth(1).locator('.trending-metrics dd').first()).toHaveText('—');
+    const stressRow = page.locator('.trending-repo').nth(1);
+    await expect(page.locator('.trending-repo').first().getByRole('button', { name: /展开详情/ })).toHaveCount(0);
+    const disclosure = stressRow.getByRole('button', { name: /展开详情/ });
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    await disclosure.focus();
+    await page.keyboard.press('Enter');
+    await expect(stressRow.getByRole('button', { name: /收起详情/ })).toHaveAttribute('aria-expanded', 'true');
+    const fullTextVisible = await stressRow.evaluate(element => {
+      const main = element.querySelector('.trending-repo-main');
+      return [...main.querySelectorAll('h2, p, .trending-language')].every(node => {
+        const box = node.getBoundingClientRect();
+        const style = getComputedStyle(node);
+        return box.height > 0 && node.scrollHeight <= node.clientHeight + 1 && node.scrollWidth <= node.clientWidth + 1 && style.webkitLineClamp === 'none' && style.textOverflow !== 'ellipsis';
+      });
+    });
+    assert(fullTextVisible, 'expanded repository name, description, and language must render without clipping');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'expanded 390px content must not overflow');
+    await page.screenshot({ path: path.join(screenshotDir, 'github-trending-expanded-390.png'), fullPage: true });
+    await page.keyboard.press('Space');
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    await disclosure.click();
+    await expect(stressRow.getByRole('button', { name: /收起详情/ })).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Space');
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+    assert(await page.locator('.trending-repo').nth(1).evaluate(element => element.getBoundingClientRect().height) < 260, 'unusually long repository values should not dominate a mobile page');
     await page.screenshot({ path: path.join(screenshotDir, 'github-trending-stress-390.png'), fullPage: true });
     weekly = snapshot('weekly');
     await page.reload();
@@ -206,6 +243,17 @@ const snapshot = (period, overrides = {}) => ({
       await page.setViewportSize({ width, height: 900 });
       if (width < 880) await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${width}px page must not overflow`);
+      const targets = await page.locator('.trending-repo').first().locator('.trending-actions a, .trending-actions button').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
+      assert(targets.every(height => height >= (width === 390 ? 44 : 36)), `${width}px repository action targets should be comfortably tappable`);
+      if (width === 390) assert(await page.locator('.trending-repo').first().evaluate(element => element.getBoundingClientRect().top) < 460, 'mobile toolbar should expose the first repository without excess header height');
+      if (width === 768) {
+        const rowLayout = await page.locator('.trending-repo').first().evaluate(element => ({
+          height: element.getBoundingClientRect().height,
+          mainRight: element.querySelector('.trending-repo-main').getBoundingClientRect().right,
+          metricsLeft: element.querySelector('.trending-metrics').getBoundingClientRect().left,
+        }));
+        assert(rowLayout.height < 145 && rowLayout.metricsLeft >= rowLayout.mainRight, '768px repository metrics should sit beside the text in a compact row');
+      }
       await page.screenshot({ path: path.join(screenshotDir, `github-trending-${width}.png`), fullPage: true });
     }
     weekly = snapshot('weekly', { refreshing: true });
