@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { CodexShell } from '../../shared/CodexShell';
 import { loadPlanSnapshot, requestPlanAssistant, savePlanSnapshot, type PlanAssistantSuggestion, type PlanItem, type PlanQuadrant, type PlanSnapshot, type PlanStatus } from './plansApi';
 import { JournalPage } from './JournalPage';
+import { useInitialFragmentNavigation } from '../../shared/useInitialFragmentNavigation';
 
 const groups: Array<{ id: PlanQuadrant; title: string; hint: string }> = [
   { id: 'important_urgent', title: '重要且紧急', hint: '优先处理' },
@@ -10,6 +11,7 @@ const groups: Array<{ id: PlanQuadrant; title: string; hint: string }> = [
   { id: 'later', title: '不紧急不重要', hint: '延后或重新评估' },
 ];
 const statusLabels: Record<PlanStatus, string> = { todo: '待办', in_progress: '进行中', done: '已完成' };
+const dailySectionTargets = new Set(['daily-plans', 'daily-timeline', 'daily-review']);
 
 function localDate(timezone: string, date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
@@ -92,12 +94,7 @@ export function PlansPage(): ReactElement {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
   }, []);
   const [selectedDate, setSelectedDate] = useState(() => localDate(timezone));
-  const [activeView, setActiveView] = useState<'timeline' | 'plans' | 'review'>(() => {
-    try {
-      const saved = window.sessionStorage.getItem('plans-active-view');
-      return saved === 'plans' || saved === 'review' ? saved : 'timeline';
-    } catch { return 'timeline'; }
-  });
+  useInitialFragmentNavigation(dailySectionTargets);
   const [journalProtected, setJournalProtected] = useState(false);
   const [items, setItems] = useState<PlanItem[]>([]);
   const [revision, setRevision] = useState('');
@@ -541,23 +538,28 @@ export function PlansPage(): ReactElement {
 
   return <CodexShell active="plans" pageTitle="今日计划">
     <section className="plans-page" aria-label="今日计划">
-      <nav className="journal-view-tabs" role="tablist" aria-label="记录与计划视图">
-        {([['timeline', '时间线'], ['plans', '今日计划'], ['review', '回顾']] as const).map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={activeView === id} onClick={() => { setActiveView(id); try { window.sessionStorage.setItem('plans-active-view', id); } catch { /* Private browsing may disable storage. */ } }}>{label}</button>)}
-      </nav>
-      <div hidden={activeView !== 'plans'}>
       <header className="plans-header">
         <div className="plans-header-main">
           <div className="plans-date-copy">
-            <div className="plans-heading-row"><button className="plans-date-arrow" type="button" aria-label="前一天" onClick={() => changeSelectedDate(value => shiftDate(value, -1))} disabled={editingBlocked}>‹</button><h2>{dateHeading(selectedDate)}</h2><button className="plans-date-arrow" type="button" aria-label="后一天" onClick={() => changeSelectedDate(value => shiftDate(value, 1))} disabled={editingBlocked}>›</button></div>
+            <div className="plans-heading-row"><button className="plans-date-arrow" type="button" aria-label="前一天" onClick={() => changeSelectedDate(value => shiftDate(value, -1))}>‹</button><h2>{dateHeading(selectedDate)}</h2><button className="plans-date-arrow" type="button" aria-label="后一天" onClick={() => changeSelectedDate(value => shiftDate(value, 1))}>›</button></div>
             <p className="plans-date-subtitle">{selectedDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1年$2月$3日')}<span className="plans-subtitle-divider"> · </span>新的一天，加油！ <span aria-hidden="true">☀️</span></p>
           </div>
           <aside className="plans-quote" aria-label="今日寄语"><p>专注当下，持续积累，<br />让每一天都更有意义。</p><small>— Today is a new start —</small></aside>
         </div>
         <div className="plans-header-utility">
           <p className="plans-summary">{completed} / {selectedItems.length} 项完成 · 时区 {timezone}</p>
-          <div className="plans-header-controls"><nav className="plans-date-nav" aria-label="日期选择"><input aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} disabled={editingBlocked} /></nav><div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))} disabled={editingBlocked}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button></div></div>
+          <div className="plans-header-controls"><nav className="plans-date-nav" aria-label="日期选择"><input aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} /></nav><div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button></div></div>
         </div>
       </header>
+
+      <nav className="daily-section-nav" aria-label="今日页面内容">
+        <a href="#daily-timeline">时间线</a>
+        <a href="#daily-plans">今日计划</a>
+        <a href="#daily-review">回顾</a>
+      </nav>
+
+      <section className="daily-plans-section" id="daily-plans" aria-labelledby="daily-plans-heading" tabIndex={-1}>
+        <div className="daily-section-heading"><div><span>01 / PLAN</span><h2 id="daily-plans-heading">今日计划</h2></div><p>把重要的事放在眼前，逐项推进。</p></div>
 
       <form className="plans-create" onSubmit={addTask}>
         <label className="sr-only" htmlFor="plan-title">计划标题</label><input id="plan-title" value={title} onChange={event => { formDraftVersion.current += 1; setTitle(event.target.value); setFeedback(''); }} maxLength={160} placeholder="添加今天要做的事…" required disabled={editingBlocked} />
@@ -597,7 +599,7 @@ export function PlansPage(): ReactElement {
 
       {loading && !items.length ? null : <div className="plans-grid">{groups.map(group => {
         const groupItems = selectedItems.filter(item => item.quadrant === group.id);
-        return <section className={`plans-quadrant plans-quadrant-${group.id}`} key={group.id} aria-label={group.title}>
+        return <section className={`plans-quadrant plans-quadrant-${group.id}${groupItems.length ? '' : ' plans-quadrant-empty'}`} key={group.id} aria-label={group.title}>
           <header><div><h3>{group.title}</h3><p>{group.hint}</p></div><span>{groupItems.length}</span></header>
           {groupItems.length ? <ul>{groupItems.map(item => <li className={item.status === 'done' ? 'is-done' : ''} key={item.id}>
             <label className="plans-task-check"><input type="checkbox" checked={item.status === 'done'} onChange={event => updateTask(item.id, { status: event.target.checked ? 'done' : 'todo' })} disabled={editingBlocked || pendingDeleteId === item.id} /><span className="sr-only">标记完成</span></label>
@@ -608,8 +610,8 @@ export function PlansPage(): ReactElement {
         </section>;
       })}</div>}
       <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services?tab=ai">服务中心</a></footer>
-      </div>
-      <div hidden={activeView === 'plans'}><JournalPage selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} view={activeView === 'review' ? 'review' : 'timeline'} onDraftProtectionChange={onJournalProtectionChange} /></div>
+      </section>
+      <JournalPage selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
     </section>
   </CodexShell>;
 }
