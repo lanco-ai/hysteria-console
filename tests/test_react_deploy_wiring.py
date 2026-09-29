@@ -5,6 +5,8 @@ flag should install the paired ASGI runtime and verified asset release without
 silently changing the production nginx route.
 """
 
+import ast
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,6 +27,10 @@ WEB_API_MODULES = (
     'compat_routes.py',
     'config_models.py',
     'document_routes.py',
+    'github_trending_avatar.py',
+    'github_trending_routes.py',
+    'github_trending_source.py',
+    'github_trending_store.py',
     'health_models.py',
     'health_routes.py',
     'incident_models.py',
@@ -93,6 +99,37 @@ def test_react_backend_sources_are_in_every_deploy_inventory():
     assert '/root/hysteria/react_server.py' in recovery
     assert '/etc/systemd/system/hysteria-react.service' in recovery
     assert 'hysteria-react.service' in deploy
+
+
+def test_react_web_api_imports_are_rendered_and_recoverable():
+    """An imported sibling module must reach the runtime and rollback journal."""
+    deploy = DEPLOY.read_text(encoding='utf-8')
+    recovery = RECOVERY.read_text(encoding='utf-8')
+    source_dir = ROOT / 'hysteria/web_api'
+    match = re.search(r'(?ms)^declare -a REACT_WEB_API_MODULES=\(\n(.*?)^\)', deploy)
+    assert match
+    inventory = set(match.group(1).split())
+    dependencies = set()
+
+    for module in inventory:
+        tree = ast.parse((source_dir / module).read_text(encoding='utf-8'))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or node.level != 1:
+                continue
+            names = [node.module] if node.module else [alias.name for alias in node.names]
+            for name in names:
+                relative = Path(module).parent.joinpath(*name.split('.'))
+                candidates = (relative.with_suffix('.py'), relative / '__init__.py')
+                dependencies.update(
+                    str(candidate) for candidate in candidates if (source_dir / candidate).is_file()
+                )
+
+    assert dependencies <= inventory, sorted(dependencies - inventory)
+    for module in inventory:
+        destination = f'$HY_DIR/web_api/{module}'
+        assert f'render "$REPO_DIR/hysteria/web_api/{module}" "{destination}"' in deploy, module
+        assert f'add_durable_artifact "{destination}"' in deploy, module
+        assert f'"/root/hysteria/web_api/{module}"' in recovery, module
 
 
 def test_react_release_is_staged_and_activated_atomically():
