@@ -1,17 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AdminShell } from '../../shared/AdminShell';
+import { RepoRow, TopCard, safeRepoUrl, validCount, type Period, type TrendingItem } from './TrendingEntries';
 
-type Period = 'weekly' | 'daily';
-type TrendingItem = {
-  source_rank: number;
-  full_name: string;
-  html_url: string;
-  description: string | null;
-  language: string | null;
-  stars_total: number | null;
-  stars_period: number | null;
-  forks_count: number | null;
-};
 type Snapshot = {
   period: Period;
   source: string;
@@ -28,21 +18,6 @@ type Snapshot = {
 };
 
 const REFRESH_STARTED_MESSAGE = '刷新已开始，正在获取 GitHub 榜单。';
-
-function safeRepoUrl(item: TrendingItem): string | null {
-  try {
-    const url = new URL(item.html_url);
-    if (url.protocol !== 'https:' || url.hostname !== 'github.com' || url.port || url.username || url.password || url.search || url.hash) return null;
-    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(item.full_name) || url.pathname !== `/${item.full_name}`) return null;
-    return url.href;
-  } catch {
-    return null;
-  }
-}
-
-function count(value: number | null): string {
-  return value === null || !Number.isSafeInteger(value) || value < 0 ? '—' : value.toLocaleString('en-US');
-}
 
 function timeLabel(value: string | null): string {
   if (!value) return '尚无成功记录';
@@ -164,6 +139,9 @@ export function GithubTrendingPage() {
       (!query || `${item.full_name} ${item.description || ''}`.toLocaleLowerCase().includes(query))
     );
   }, [snapshot, search, language]);
+  const isFiltered = !!search.trim() || !!language;
+  const maximum = Math.max(0, ...filtered.map(item => validCount(item.stars_period) ? item.stars_period : 0));
+  const snapshotKey = `${period}:${snapshot?.fetched_at || ''}:${snapshot?.last_success_at || ''}`;
 
   const changePeriod = (next: Period) => {
     if (next === period) return;
@@ -234,7 +212,8 @@ export function GithubTrendingPage() {
       </header>
       <section className="admin-section" aria-label="GitHub 热榜控制台">
         <div className="trending-controls">
-          <div className="trending-period" role="group" aria-label="榜单周期">
+          <div className={`trending-period ${period === 'daily' ? 'is-daily' : ''}`} role="group" aria-label="榜单周期">
+            <span className="trending-period-indicator" aria-hidden="true"/>
             <button type="button" aria-pressed={period === 'weekly'} onClick={() => changePeriod('weekly')}>周榜</button>
             <button type="button" aria-pressed={period === 'daily'} onClick={() => changePeriod('daily')}>日榜</button>
           </div>
@@ -264,20 +243,11 @@ export function GithubTrendingPage() {
         {!loading && noCache && (snapshot?.status === 'unavailable' || requestError) ? <div className="trending-empty">暂时无法获取榜单。{retrySeconds ? `约 ${retrySeconds} 秒后可重试。` : '请稍后重试。'}</div> : null}
         {!loading && snapshot?.last_success_at && snapshot.items.length === 0 ? <div className="trending-empty">本期榜单暂无项目。</div> : null}
         {!loading && snapshot?.items.length && filtered.length === 0 ? <div className="trending-empty">本榜内没有符合筛选条件的仓库。</div> : null}
-        {filtered.length > 0 ? <ol className="trending-list" aria-label={`${period === 'weekly' ? '周榜' : '日榜'}仓库`}>
-          {filtered.map((item, index) => {
-            const url = safeRepoUrl(item);
+        {filtered.length > 0 ? <ol className={`trending-list${isFiltered ? ' is-filtered' : ''}`} aria-label={`${period === 'weekly' ? '周榜' : '日榜'}仓库`}>
+          {filtered.map(item => {
             const itemKey = `${period}:${item.source_rank}:${item.full_name}`;
-            const detailsId = `trending-details-${period}-${item.source_rank}-${index}`;
-            const hasLongDetails = item.full_name.length > 35 || (item.description?.length || 0) > 65 || (item.language?.length || 0) > 20;
-            const expanded = !!expandedRows[itemKey];
-            return <li className={`trending-repo${hasLongDetails ? ' is-collapsible' : ''}${expanded ? ' is-expanded' : ''}`} key={`${item.source_rank}:${item.full_name}`}>
-              <span className="trending-rank">#{item.source_rank}</span>
-              <span className="trending-avatar" aria-hidden="true">{item.full_name.charAt(0).toUpperCase()}</span>
-              <div className="trending-repo-main" id={detailsId}><h2>{item.full_name}</h2><p>{item.description || '暂无简介'}</p><span className="trending-language">{item.language || '语言未标注'}</span></div>
-              <dl className="trending-metrics"><div><dt>总 Stars</dt><dd>{count(item.stars_total)}</dd></div><div className="trending-metric-period"><dt>{period === 'weekly' ? '本周 Stars' : '今日 Stars'}</dt><dd>{count(item.stars_period)}</dd></div><div><dt>Forks</dt><dd>{count(item.forks_count)}</dd></div></dl>
-              <div className="trending-actions">{url ? <><a href={url} target="_blank" rel="noopener noreferrer">在 GitHub 查看</a><button type="button" onClick={() => void copy(item)}>复制链接</button></> : <span>链接不可用</span>}{hasLongDetails ? <button className="trending-disclosure" type="button" aria-label={`${expanded ? '收起详情' : '展开详情'}：${item.full_name}`} aria-controls={detailsId} aria-expanded={expanded} onClick={() => setExpandedRows(current => ({ ...current, [itemKey]: !current[itemKey] }))}>{expanded ? '收起详情' : '展开详情'}</button> : null}</div>
-            </li>;
+            const Entry = !isFiltered && item.source_rank <= 3 ? TopCard : RepoRow;
+            return <Entry key={`${item.source_rank}:${item.full_name}`} item={item} period={period} maximum={maximum} expanded={!!expandedRows[itemKey]} onToggle={() => setExpandedRows(current => ({ ...current, [itemKey]: !current[itemKey] }))} onCopy={item => void copy(item)} snapshotKey={snapshotKey}/>;
           })}
         </ol> : null}
       </section>

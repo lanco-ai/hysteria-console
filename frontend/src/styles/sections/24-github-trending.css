@@ -88,7 +88,7 @@ body.has-shell .trending-period button {
 body.has-shell .trending-period button[aria-pressed="true"] {
   background: var(--trending-accent);
   color: #fff;
-  box-shadow: 0 2px 5px rgba(81, 69, 212, .18);
+  box-shadow: 0 2px 5px color-mix(in srgb, var(--trending-accent) 18%, transparent);
 }
 body.has-shell .trending-controls > .btn {
   flex: 0 0 auto;
@@ -174,35 +174,71 @@ body.has-shell .trending-list-header {
 body.has-shell .trending-list-header strong { color: var(--trending-ink); font-size: var(--text-ui); font-weight: 700; }
 body.has-shell .trending-list-header span { color: var(--text-tertiary); font-size: var(--text-small); }
 
-body.has-shell .trending-list { list-style: none; }
-body.has-shell .trending-repo {
-  display: grid;
-  grid-template-columns: 30px 38px minmax(0, 1fr) minmax(250px, 280px);
-  grid-template-areas: "rank avatar main metrics" "rank avatar main actions";
-  align-items: center;
-  gap: 4px 12px;
-  min-width: 0;
-  padding: 13px 16px;
-  border-bottom: 1px solid var(--hairline);
-  transition: background var(--transition);
+body.has-shell .trending-period { position: relative; }
+body.has-shell .trending-period-indicator {
+  position: absolute;
+  inset: 3px auto 3px 3px;
+  width: calc(50% - 4px);
+  border-radius: 6px;
+  background: var(--trending-accent);
+  box-shadow: 0 2px 5px rgba(81, 69, 212, .18);
+  transition: transform 220ms ease;
 }
-body.has-shell .trending-repo:last-child { border-bottom: 0; }
-body.has-shell .trending-repo:hover { background: var(--bg-overlay); }
-body.has-shell .trending-rank {
-  grid-area: rank;
-  align-self: start;
-  padding-top: 8px;
-  color: var(--trending-accent);
-  font: 600 13px var(--font-num);
-  font-variant-numeric: tabular-nums;
+body.has-shell .trending-period.is-daily .trending-period-indicator { transform: translateX(calc(100% + 2px)); }
+body.has-shell .trending-period button { position: relative; z-index: 1; }
+body.has-shell .trending-period button[aria-pressed="true"] { background: transparent; box-shadow: none; }
+body.has-shell .trending-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+  list-style: none;
+}
+body.has-shell .trending-repo {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #e3e1f2;
+  border-radius: 11px;
+  background: #fff;
+  cursor: pointer;
+}
+body.has-shell .trending-repo:hover,
+body.has-shell .trending-repo:focus-within { border-color: color-mix(in srgb, var(--trending-accent) 32%, white); box-shadow: 0 7px 18px color-mix(in srgb, var(--trending-accent) 8%, transparent); }
+body.has-shell .trending-entry-toggle { position: absolute; z-index: 1; inset: 0; width: 100%; border: 0; background: transparent; cursor: pointer; }
+body.has-shell .trending-top-card {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-content: start;
+  gap: 12px 10px;
+  min-height: 245px;
+  padding: 20px;
+}
+body.has-shell .trending-top-card::before {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(220px circle at var(--pointer-x, 50%) var(--pointer-y, 50%), color-mix(in srgb, var(--trending-accent) 8%, transparent), transparent 75%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+  content: "";
+}
+body.has-shell .trending-top-card:hover::before { opacity: 1; }
+body.has-shell .trending-rank { color: var(--trending-accent); font: 700 13px var(--font-num); }
+body.has-shell .trending-top-card .trending-rank {
+  position: absolute;
+  top: 3px;
+  right: 12px;
+  color: color-mix(in srgb, var(--trending-accent) 8.5%, transparent);
+  font-size: 88px;
+  line-height: 1;
+  pointer-events: none;
 }
 body.has-shell .trending-avatar {
   display: grid;
-  grid-area: avatar;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  align-self: start;
+  width: 40px;
+  height: 40px;
   overflow: hidden;
   border: 1px solid #dfdcf6;
   border-radius: 10px;
@@ -210,128 +246,124 @@ body.has-shell .trending-avatar {
   color: var(--trending-accent);
   font: 700 17px var(--font-num);
 }
-body.has-shell .trending-repo-main { grid-area: main; min-width: 0; }
-body.has-shell .trending-repo-main h2 {
-  display: block;
-  color: var(--trending-ink);
-  font-size: 16px;
-  font-weight: 650;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-}
-body.has-shell .trending-repo-main p {
-  display: block;
-  margin: 4px 0 7px;
-  color: var(--text-secondary);
-  font-size: var(--text-ui);
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-body.has-shell .trending-language {
-  display: inline-block;
-  max-width: 100%;
-  color: var(--trending-accent);
-  font-size: var(--text-small);
-  font-weight: 600;
-  overflow-wrap: anywhere;
-  vertical-align: bottom;
-}
-body.has-shell .trending-repo.is-collapsible:not(.is-expanded) .trending-repo-main h2,
-body.has-shell .trending-repo.is-collapsible:not(.is-expanded) .trending-repo-main p {
+body.has-shell .trending-avatar img { width: 100%; height: 100%; object-fit: cover; }
+body.has-shell .trending-repo-main { min-width: 0; }
+body.has-shell .trending-repo-main h2 { color: var(--trending-ink); font-size: 16px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
+body.has-shell .trending-repo:not(.is-expanded) .trending-repo-main h2 { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+body.has-shell .trending-repo-main p { margin-top: 4px; color: var(--text-secondary); font-size: var(--text-ui); line-height: 1.4; overflow-wrap: anywhere; }
+body.has-shell .trending-top-card .trending-repo-main { grid-column: 2 / -1; padding-right: 92px; }
+body.has-shell .trending-top-card .trending-repo-main p {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
-body.has-shell .trending-repo.is-collapsible:not(.is-expanded) .trending-language {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+body.has-shell .trending-period-stat { grid-column: 1 / -1; align-self: end; margin-top: 10px; }
+body.has-shell .trending-period-stat small,
+body.has-shell .trending-row-period small { display: block; color: var(--text-tertiary); font-size: var(--text-caption); }
+body.has-shell .trending-period-stat strong { color: var(--trending-accent); font: 700 32px var(--font-num); font-variant-numeric: tabular-nums; }
+body.has-shell .trending-progress { display: block; width: 100%; height: 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--trending-accent-soft); }
+body.has-shell .trending-progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--trending-accent);
+  transform-origin: left;
+  animation: trending-bar-grow 650ms ease-out both;
 }
-body.has-shell .trending-language::before {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  content: "";
-  vertical-align: 1px;
-}
-body.has-shell .trending-metrics {
+body.has-shell .trending-progress-missing { color: var(--text-tertiary); font-size: var(--text-small); }
+body.has-shell .trending-top-card > .trending-progress,
+body.has-shell .trending-top-card > .trending-progress-missing { grid-column: 1 / -1; }
+body.has-shell .trending-secondary { display: flex; grid-column: 1 / -1; align-items: center; flex-wrap: wrap; gap: 7px 12px; color: var(--text-tertiary); font-size: var(--text-small); }
+body.has-shell .trending-secondary b,
+body.has-shell .trending-row-total b { color: var(--text-primary); font-family: var(--font-num); }
+body.has-shell .trending-language { color: var(--trending-accent); font-size: var(--text-small); font-weight: 600; overflow-wrap: anywhere; }
+body.has-shell .trending-secondary .trending-language { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.has-shell .trending-language::before { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; content: ""; vertical-align: 1px; }
+body.has-shell .trending-repo-row {
   display: grid;
-  grid-area: metrics;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
-  gap: 8px;
-  min-width: 0;
+  grid-column: 1 / -1;
+  grid-template-columns: 35px 38px minmax(0, 1fr) minmax(75px, .4fr) 110px 100px 72px;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 11px 14px;
 }
-body.has-shell .trending-metrics div { min-width: 0; text-align: right; }
-body.has-shell .trending-metrics dt { color: var(--text-tertiary); font-size: var(--text-caption); white-space: nowrap; }
-body.has-shell .trending-metrics dd {
-  color: var(--text-primary);
-  font: 650 14px var(--font-num);
-  font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
-}
-body.has-shell .trending-metric-period {
-  padding: 2px 5px;
-  border-radius: 7px;
-  background: var(--trending-accent-soft);
-}
-body.has-shell .trending-metric-period dt { color: var(--trending-accent); }
-body.has-shell .trending-metric-period dd { color: var(--trending-accent); font-size: 17px; }
-body.has-shell .trending-actions {
-  display: flex;
-  grid-area: actions;
-  justify-content: flex-end;
-  gap: 6px;
-  min-width: 0;
-  font-size: var(--text-small);
+body.has-shell .trending-repo-row .trending-avatar { width: 38px; height: 38px; }
+body.has-shell .trending-repo-row .trending-repo-main p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.has-shell .trending-repo-row .trending-language { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.has-shell .trending-row-period { min-width: 0; }
+body.has-shell .trending-row-period strong { color: var(--trending-accent); font: 700 17px var(--font-num); }
+body.has-shell .trending-row-period .trending-progress { height: 4px; margin-top: 4px; }
+body.has-shell .trending-row-total { color: var(--text-tertiary); font-size: var(--text-small); white-space: nowrap; }
+body.has-shell .trending-details { grid-column: 1 / -1; min-width: 0; padding: 11px 0 0; border-top: 1px solid var(--hairline); color: var(--text-secondary); font-size: var(--text-ui); overflow-wrap: anywhere; }
+body.has-shell .trending-details[hidden] { display: none; }
+body.has-shell .trending-details strong { color: var(--trending-ink); overflow-wrap: anywhere; }
+body.has-shell .trending-details dl { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 8px; }
+body.has-shell .trending-details dt { color: var(--text-tertiary); font-size: var(--text-caption); }
+body.has-shell .trending-details dd { color: var(--text-primary); font-weight: 600; }
+body.has-shell .trending-actions { position: relative; z-index: 2; display: flex; justify-content: flex-end; gap: 5px; opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
+body.has-shell .trending-top-card .trending-actions { position: absolute; top: 14px; right: 14px; }
+body.has-shell .trending-repo:focus-within .trending-actions { opacity: 1; }
+body.has-shell .trending-repo.is-expanded .trending-actions { opacity: 1; pointer-events: auto; }
+@media (hover: hover) and (pointer: fine) {
+  body.has-shell .trending-repo:hover .trending-actions,
+  body.has-shell .trending-repo:focus-within .trending-actions { opacity: 1; pointer-events: auto; }
 }
 body.has-shell .trending-actions a,
 body.has-shell .trending-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 11px;
-  cursor: pointer;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border: 1px solid #dedee8;
   border-radius: 7px;
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  font: 600 var(--text-small) var(--font-sans);
+  background: #fff;
+  color: var(--trending-accent);
+  cursor: pointer;
+  font: 700 18px var(--font-sans);
   text-decoration: none;
-  white-space: nowrap;
 }
-body.has-shell .trending-actions a { border-color: var(--trending-accent); background: var(--trending-accent-soft); color: var(--trending-accent); }
+body.has-shell .trending-top-card .trending-actions a,
+body.has-shell .trending-top-card .trending-actions button { width: 44px; height: 44px; }
 body.has-shell .trending-actions a:hover,
-body.has-shell .trending-actions button:hover { border-color: var(--trending-accent); background: var(--trending-accent-soft); color: var(--trending-accent); }
-body.has-shell .trending-actions a:hover { background: var(--trending-accent); color: #fff; }
-body.has-shell .trending-actions span { color: var(--text-tertiary); }
-body.has-shell .trending-actions .trending-disclosure { border-color: #d8d4fa; color: var(--trending-accent); }
+body.has-shell .trending-actions button:hover { border-color: var(--trending-accent); background: var(--trending-accent-soft); }
+body.has-shell .trending-actions span { color: var(--text-tertiary); font-size: var(--text-small); }
 body.has-shell .trending-page button:focus-visible,
 body.has-shell .trending-page a:focus-visible,
 body.has-shell .trending-page input:focus-visible,
-body.has-shell .trending-page select:focus-visible { outline: 2px solid var(--trending-accent); outline-offset: 2px; }
-
+body.has-shell .trending-page select:focus-visible,
+body.has-shell .trending-repo:focus-visible { outline: 2px solid var(--trending-accent); outline-offset: 2px; }
+@keyframes trending-bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @media (max-width: 1100px) {
   body.has-shell .trending-filters small { display: none; }
+  body.has-shell .trending-top-card .trending-repo-main { grid-column: 1 / -1; grid-row: 2; padding-right: 0; }
+  body.has-shell .trending-top-card .trending-actions { position: static; grid-column: 3; grid-row: 1; }
+  body.has-shell .trending-repo-row { grid-template-columns: 30px 38px minmax(0, 1fr) minmax(70px, .35fr) 100px 78px 72px; gap: 9px; }
 }
-
-@media (max-width: 700px) {
-  body.has-shell .trending-repo {
-    grid-template-columns: 30px 38px minmax(0, 1fr);
-    grid-template-areas: "rank avatar main" ". . metrics" ". . actions";
-    gap: 7px 10px;
-  }
-  body.has-shell .trending-metrics { justify-self: stretch; max-width: 310px; }
-  body.has-shell .trending-metrics div { text-align: left; }
-  body.has-shell .trending-actions { justify-content: flex-start; }
+@media (max-width: 850px) {
+  body.has-shell .trending-repo-row { grid-template-columns: 28px 38px minmax(0, 1fr) minmax(70px, .4fr) 88px 72px; }
+  body.has-shell .trending-repo-row .trending-row-total { display: none; }
 }
-
-@media (max-width: 700px) {
+@media (min-width: 720px) and (max-width: 850px) {
+  body.has-shell .trending-top-card { grid-template-columns: 40px minmax(0, 1fr) auto; }
+}
+@media (max-width: 719px) {
+  body.has-shell .trending-list { grid-template-columns: minmax(0, 1fr); padding: 10px; }
+  body.has-shell .trending-top-card { min-height: 200px; }
+  body.has-shell .trending-top-card .trending-repo-main { grid-column: 2 / -1; grid-row: auto; padding-right: 25px; }
+  body.has-shell .trending-top-card .trending-actions { display: none; grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
+  body.has-shell .trending-top-card:focus-within .trending-actions,
+  body.has-shell .trending-top-card.is-expanded .trending-actions { display: flex; }
+  body.has-shell .trending-repo-row { grid-template-columns: 26px 36px minmax(0, 1fr) 82px 72px; gap: 8px; padding: 10px; }
+  body.has-shell .trending-repo-row > .trending-language { display: none; }
+  body.has-shell .trending-repo-row .trending-avatar { width: 36px; height: 36px; }
+  body.has-shell .trending-repo-row .trending-actions a,
+  body.has-shell .trending-repo-row .trending-actions button { width: 34px; height: 36px; }
+  body.has-shell .trending-repo-row.is-expanded .trending-actions { grid-column: 1 / -1; justify-content: flex-start; }
+  body.has-shell .trending-repo-row.is-expanded .trending-actions a,
+  body.has-shell .trending-repo-row.is-expanded .trending-actions button { flex: 0 0 44px; height: 44px; }
   body.has-shell .trending-page { gap: 10px; }
   body.has-shell .trending-intro { display: block; padding: 0 1px; }
   body.has-shell .trending-eyebrow { margin-bottom: 5px; }
@@ -348,22 +380,28 @@ body.has-shell .trending-page select:focus-visible { outline: 2px solid var(--tr
   body.has-shell .trending-filters input,
   body.has-shell .trending-filters select { height: 44px; }
   body.has-shell .trending-status { padding: 7px 10px; }
-  body.has-shell .trending-repo { padding: 12px 10px; }
 }
-
-@media (max-width: 430px) {
-  body.has-shell .trending-repo {
-    grid-template-columns: 26px 32px minmax(0, 1fr);
-    gap: 7px 8px;
-  }
-  body.has-shell .trending-rank { font-size: 12px; }
-  body.has-shell .trending-avatar { width: 32px; height: 32px; border-radius: 8px; font-size: 15px; }
-  body.has-shell .trending-repo-main h2 { font-size: 15px; }
-  body.has-shell .trending-metrics { gap: 4px; }
-  body.has-shell .trending-metrics dt { font-size: 12px; }
-  body.has-shell .trending-metrics dd { font-size: 13px; }
-  body.has-shell .trending-metric-period dd { font-size: 16px; }
-  body.has-shell .trending-repo.is-collapsible .trending-actions { grid-column: 1 / -1; }
-  body.has-shell .trending-actions a,
-  body.has-shell .trending-actions button { min-height: 44px; padding-inline: 9px; }
+@media (max-width: 460px) {
+  body.has-shell .trending-repo-row { grid-template-columns: 25px 34px minmax(0, 1fr) 75px; }
+  body.has-shell .trending-repo-row .trending-actions { display: none; }
+  body.has-shell .trending-repo-row:focus-within .trending-actions,
+  body.has-shell .trending-repo-row.is-expanded .trending-actions { display: flex; grid-column: 1 / -1; justify-content: flex-start; }
+  body.has-shell .trending-top-card .trending-actions a,
+  body.has-shell .trending-top-card .trending-actions button,
+  body.has-shell .trending-repo-row .trending-actions a,
+  body.has-shell .trending-repo-row .trending-actions button { width: 44px; height: 44px; }
+}
+@media (max-width: 719px) and (hover: hover) and (pointer: fine) {
+  body.has-shell .trending-top-card:hover .trending-actions { display: flex; }
+}
+@media (max-width: 460px) and (hover: hover) and (pointer: fine) {
+  body.has-shell .trending-repo-row:hover .trending-actions { display: flex; grid-column: 1 / -1; justify-content: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.has-shell .trending-period-indicator,
+  body.has-shell .trending-repo,
+  body.has-shell .trending-actions { transition: none; }
+  body.has-shell .trending-top-card::before,
+  body.has-shell .trending-top-card:hover::before { opacity: 0; transition: none; }
+  body.has-shell .trending-progress-fill { animation: none; }
 }

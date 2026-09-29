@@ -311,6 +311,7 @@ def create_app(
     video_scheduler_interval=5.0,
     service_center_store=None,
     github_trending_store=None,
+    github_trending_avatar_proxy=None,
     github_trending_scheduler_enabled=False,
     plans_store=None,
     chat_settings_store=None,
@@ -515,6 +516,7 @@ def create_app(
         services,
         dispatch,
         store=github_trending_store,
+        avatar_proxy=github_trending_avatar_proxy,
         scheduler_enabled=github_trending_scheduler_enabled,
     )
     register_plans_routes(

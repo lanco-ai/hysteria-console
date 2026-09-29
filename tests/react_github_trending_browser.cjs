@@ -43,6 +43,10 @@ const snapshot = (period, overrides = {}) => ({
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/api/v1/github-trending**', async route => {
       const request = route.request();
+      if (new URL(request.url()).pathname.startsWith('/api/v1/github-trending/avatar/')) {
+        if (request.url().endsWith('/fallback')) return route.fulfill({ status: 502, contentType: 'application/json', body: '{}' });
+        return route.fulfill({ contentType: 'image/png', body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGMIdL2CFTEMLQkAPBVagW2PDnoAAAAASUVORK5CYII=', 'base64') });
+      }
       requests.push(`${request.method()} ${new URL(request.url()).pathname}${new URL(request.url()).search}`);
       if (request.method() === 'POST') {
         assert.deepEqual(request.postDataJSON(), { period: 'weekly' });
@@ -71,11 +75,66 @@ const snapshot = (period, overrides = {}) => ({
     await expect(page.getByRole('link', { name: '开源发现' })).toHaveAttribute('href', '/admin/github-trending');
     await expect(page.getByRole('button', { name: '周榜' })).toHaveAttribute('aria-pressed', 'true');
     await expect(page.locator('.trending-repo')).toHaveCount(3);
+    await expect(page.locator('.trending-top-card')).toHaveCount(1);
+    await expect(page.locator('.trending-top-card').first()).toContainText('#2');
+    await expect(page.locator('.trending-repo-row')).toHaveCount(2);
+    await expect(page.locator('.trending-top-card img')).toHaveAttribute('src', '/api/v1/github-trending/avatar/octocat');
+    await expect(page.locator('.trending-top-card .trending-progress-fill')).toHaveAttribute('data-ratio', '0');
+    await expect(page.locator('.trending-repo-row').first().locator('.trending-progress-fill')).toHaveAttribute('data-ratio', '1');
+    await expect(page.locator('.trending-repo-row').last().locator('.trending-progress-fill')).toHaveCount(0);
+    await page.locator('.trending-top-card .trending-entry-toggle').first().focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.trending-top-card .trending-entry-toggle').first()).toHaveAttribute('aria-expanded', 'true');
+    await page.keyboard.press('Space');
+    await expect(page.locator('.trending-top-card .trending-entry-toggle').first()).toHaveAttribute('aria-expanded', 'false');
+    const touchContext = await browser.newContext({ viewport: { width: 719, height: 900 }, hasTouch: true, permissions: ['clipboard-read', 'clipboard-write'] });
+    try {
+      await touchContext.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
+      const touchPage = await touchContext.newPage();
+      await touchPage.route('**/api/v1/github-trending**', route => {
+        if (new URL(route.request().url()).pathname.startsWith('/api/v1/github-trending/avatar/')) return route.fulfill({ status: 502, contentType: 'application/json', body: '{}' });
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify(snapshot('weekly')) });
+      });
+      await touchPage.goto(`${base}/admin/github-trending`);
+      const touchRow = touchPage.locator('.trending-repo-row').first();
+      await expect(touchRow).toContainText('openai/sample');
+      const hiddenLink = touchRow.locator('.trending-actions a');
+      const hiddenCopy = touchRow.locator('.trending-actions button');
+      const linkBox = await hiddenLink.boundingBox();
+      const copyBox = await hiddenCopy.boundingBox();
+      assert(linkBox && copyBox, 'hidden action target boxes should exist for hit testing');
+      const hitTargets = await touchPage.evaluate(({ link, copy }) => [link, copy].map(box => document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)?.className), { link: linkBox, copy: copyBox });
+      let popupCount = 0;
+      touchPage.on('popup', popup => { popupCount += 1; void popup.close(); });
+      await touchPage.touchscreen.tap(linkBox.x + linkBox.width / 2, linkBox.y + linkBox.height / 2);
+      await expect(touchRow.locator('.trending-entry-toggle')).toHaveAttribute('aria-expanded', 'true');
+      const tapExpanded = await touchRow.locator('.trending-entry-toggle').getAttribute('aria-expanded');
+      const touchActionSizes = await touchRow.locator('.trending-actions a, .trending-actions button').evaluateAll(elements => elements.map(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })));
+      const touchTargetsComfortable = touchActionSizes.every(size => size.width >= 44 && size.height >= 44);
+      const untouchedClipboard = await touchPage.evaluate(() => navigator.clipboard.readText());
+      await touchRow.getByRole('button', { name: /复制链接/ }).tap();
+      const copiedAfterExpansion = await touchPage.evaluate(() => navigator.clipboard.readText());
+      const actionScreenshots = process.env.REACT_TRENDING_SCREENSHOT_DIR || path.join(process.cwd(), '.astra-luna/screenshots');
+      fs.mkdirSync(actionScreenshots, { recursive: true });
+      await touchPage.screenshot({ path: path.join(actionScreenshots, 'github-trending-actions-719.png'), fullPage: true });
+      await touchPage.setViewportSize({ width: 390, height: 900 });
+      await touchPage.reload();
+      const compactRow = touchPage.locator('.trending-repo-row').first();
+      await compactRow.locator('.trending-entry-toggle').focus();
+      const focusedActionDisplay = await compactRow.locator('.trending-actions').evaluate(element => getComputedStyle(element).display);
+      await touchPage.screenshot({ path: path.join(actionScreenshots, 'github-trending-actions-390.png'), fullPage: true });
+      assert.deepEqual({ hitTargets, tapExpanded, popupCount, untouchedClipboard, copiedAfterExpansion, focusedActionDisplay, touchTargetsComfortable }, {
+        hitTargets: ['trending-entry-toggle', 'trending-entry-toggle'], tapExpanded: 'true', popupCount: 0, untouchedClipboard: '', copiedAfterExpansion: 'https://github.com/openai/sample', focusedActionDisplay: 'flex', touchTargetsComfortable: true,
+      }, 'hidden actions must pass touch hits to disclosure, while focused compact rows expose actions');
+      await compactRow.getByRole('button', { name: /复制链接/ }).focus();
+      await touchPage.keyboard.press('Enter');
+      assert.equal(await touchPage.evaluate(() => navigator.clipboard.readText()), 'https://github.com/openai/sample');
+    } finally { await touchContext.close(); }
     const desktopLayout = await page.evaluate(() => {
       const pageBox = document.querySelector('.trending-page').getBoundingClientRect();
       const contentBox = document.querySelector('.content').getBoundingClientRect();
       const title = document.querySelector('.trending-intro h2');
-      const row = document.querySelector('.trending-repo').getBoundingClientRect();
+      const row = document.querySelector('.trending-repo-row').getBoundingClientRect();
       const action = document.querySelector('.trending-actions a').getBoundingClientRect();
       return { left: pageBox.left, right: pageBox.right, width: pageBox.width, contentLeft: contentBox.left, contentRight: contentBox.right, titleSize: parseFloat(getComputedStyle(title).fontSize), rowHeight: row.height, actionHeight: action.height };
     });
@@ -86,22 +145,25 @@ const snapshot = (period, overrides = {}) => ({
     await expect(page.locator('.trending-repo').first()).toContainText('#2');
     await expect(page.locator('.trending-repo').first()).toContainText('1,200');
     await expect(page.locator('.trending-repo').first()).toContainText('0');
-    await expect(page.locator('.trending-repo').first().locator('.trending-metrics dd').nth(1)).toHaveText('0');
+    await expect(page.locator('.trending-repo').first().locator('.trending-period-stat strong')).toHaveText('0');
     await expect(page.locator('.trending-repo').nth(1)).toContainText('—');
     await expect(page.locator('.trending-repo').nth(1)).toContainText('<script>alert(1)</script> safe text');
     assert.equal(await page.locator('.trending-repo script').count(), 0);
-    await expect(page.locator('.trending-repo').nth(2).getByRole('link', { name: '在 GitHub 查看' })).toHaveCount(0);
-    await expect(page.locator('.trending-repo').first().getByRole('link', { name: '在 GitHub 查看' })).toHaveAttribute('rel', 'noopener noreferrer');
-    await page.locator('.trending-repo').first().getByRole('button', { name: '复制链接' }).click();
+    await expect(page.locator('.trending-repo').nth(2).getByRole('link', { name: /在 GitHub 查看/ })).toHaveCount(0);
+    await expect(page.locator('.trending-repo').first().getByRole('link', { name: /在 GitHub 查看/ })).toHaveAttribute('rel', 'noopener noreferrer');
+    await page.locator('.trending-repo').first().getByRole('button', { name: /复制链接/ }).click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), 'https://github.com/octocat/hello-world');
     await expect(page.getByRole('status')).toContainText('链接已复制');
 
     const beforeFilter = requests.length;
     await page.getByRole('searchbox', { name: '搜索仓库或简介' }).fill('safe text');
     await expect(page.locator('.trending-repo')).toHaveCount(1);
+    await expect(page.locator('.trending-top-card')).toHaveCount(0);
+    await expect(page.locator('.trending-repo-row .trending-progress-fill')).toHaveAttribute('data-ratio', '1');
     await page.getByRole('searchbox', { name: '搜索仓库或简介' }).fill('');
     await page.getByLabel('语言（本榜内筛选）').selectOption('TypeScript');
     await expect(page.locator('.trending-repo')).toHaveCount(1);
+    await expect(page.locator('.trending-top-card')).toHaveCount(0);
     await expect(page.locator('.trending-filters small')).toContainText('本榜内筛选');
     assert.equal(requests.length, beforeFilter, 'local filters must not issue API requests');
     await page.getByRole('searchbox', { name: '搜索仓库或简介' }).fill('nothing-matches');
@@ -111,6 +173,58 @@ const snapshot = (period, overrides = {}) => ({
     await expect(page.getByLabel('语言（本榜内筛选）')).toHaveValue('');
     await expect(page.locator('.trending-repo')).toHaveCount(3);
     assert.equal(requests.length, beforeFilter, 'clearing both filters must stay local');
+    weekly = snapshot('weekly', { fetched_at: '2026-09-29T00:00:00Z', items: [
+      item(1, 'fallback/first', 'Go', 'Fallback avatar', 100, 20, 4),
+      item(2, 'octocat/hello-world', 'TypeScript', 'A welcoming repository', 1200, 0, 14),
+      item(3, 'openai/sample', 'Python', 'Another focus card', 500, 40, 12),
+      item(4, 'other/fourth', 'Rust', 'First compact row', 90, 10, 2),
+    ] });
+    await page.reload();
+    await expect(page.locator('.trending-top-card')).toHaveCount(3);
+    await expect(page.locator('.trending-repo-row')).toHaveCount(1);
+    await expect(page.locator('.trending-top-card').first().locator('.trending-avatar')).toContainText('F');
+    await expect(page.locator('.trending-top-card').nth(2).locator('.trending-progress-fill')).toHaveAttribute('data-ratio', '1');
+    const focusBoxes = await page.locator('.trending-top-card').evaluateAll(elements => elements.map(element => ({ x: element.getBoundingClientRect().x, y: element.getBoundingClientRect().y })));
+    assert(focusBoxes.every(box => box.y === focusBoxes[0].y) && focusBoxes[0].x < focusBoxes[1].x && focusBoxes[1].x < focusBoxes[2].x, 'top ranks should occupy three desktop columns');
+    const focusScreenshots = process.env.REACT_TRENDING_SCREENSHOT_DIR || path.join(process.cwd(), '.astra-luna/screenshots');
+    fs.mkdirSync(focusScreenshots, { recursive: true });
+    await page.clock.runFor(700);
+    await expect(page.locator('.trending-top-card').nth(2).locator('.trending-period-stat strong')).toHaveText('40');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const reducedCard = page.locator('.trending-top-card').first();
+    const glowBefore = await reducedCard.evaluate(element => ({ x: element.style.getPropertyValue('--pointer-x'), y: element.style.getPropertyValue('--pointer-y') }));
+    const glowBox = await reducedCard.boundingBox();
+    assert(glowBox, 'focus card must have a box for reduced-motion hover');
+    await page.mouse.move(glowBox.x + 10, glowBox.y + 10);
+    await page.mouse.move(glowBox.x + glowBox.width - 10, glowBox.y + glowBox.height - 10);
+    const glowAfter = await reducedCard.evaluate(element => ({ opacity: getComputedStyle(element, '::before').opacity, x: element.style.getPropertyValue('--pointer-x'), y: element.style.getPropertyValue('--pointer-y') }));
+    assert.deepEqual({ opacity: glowAfter.opacity, tracked: glowAfter.x !== glowBefore.x || glowAfter.y !== glowBefore.y }, { opacity: '0', tracked: false }, 'reduced motion should disable the pointer glow and its tracking');
+    const reducedContentOpacity = await page.evaluate(() => ({
+      card: getComputedStyle(document.querySelector('.trending-top-card')).opacity,
+      row: getComputedStyle(document.querySelector('.trending-repo-row')).opacity,
+      periodIndicator: getComputedStyle(document.querySelector('.trending-period-indicator')).opacity,
+    }));
+    assert.deepEqual(reducedContentOpacity, { card: '1', row: '1', periodIndicator: '1' }, 'reduced motion must keep cards, rows, and controls visible');
+    await page.mouse.move(0, 0);
+    await page.screenshot({ path: path.join(focusScreenshots, 'github-trending-focus-1440.png'), fullPage: true });
+    await page.setViewportSize({ width: 390, height: 900 });
+    const mobileBoxes = await page.locator('.trending-top-card').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().y));
+    assert(mobileBoxes[0] < mobileBoxes[1] && mobileBoxes[1] < mobileBoxes[2], 'top ranks should stack on mobile');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'three focus cards should not overflow at 390px');
+    await page.screenshot({ path: path.join(focusScreenshots, 'github-trending-focus-390.png'), fullPage: true });
+    await page.setViewportSize({ width: 720, height: 900 });
+    const narrowDesktopBoxes = await page.locator('.trending-top-card').evaluateAll(elements => elements.map(element => ({ x: element.getBoundingClientRect().x, y: element.getBoundingClientRect().y })));
+    assert(narrowDesktopBoxes.every(box => box.y === narrowDesktopBoxes[0].y) && narrowDesktopBoxes[0].x < narrowDesktopBoxes[1].x && narrowDesktopBoxes[1].x < narrowDesktopBoxes[2].x, '720px should retain three focus columns');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'three focus cards should not overflow at 720px');
+    await page.screenshot({ path: path.join(focusScreenshots, 'github-trending-focus-720.png'), fullPage: true });
+    weekly = snapshot('weekly', { ...weekly, fetched_at: '2026-09-29T00:01:00Z' });
+    await page.reload();
+    await expect(page.locator('.trending-top-card').first().locator('.trending-period-stat strong')).toHaveText('20');
+    assert.equal(await page.locator('.trending-top-card .trending-progress-fill').first().evaluate(element => getComputedStyle(element).animationName), 'none', 'reduced motion should show final bars without animation');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    weekly = snapshot('weekly');
+    await page.reload();
     await page.getByRole('button', { name: '日榜' }).click();
     await expect(page.locator('.trending-repo')).toHaveCount(1);
     await expect(page.locator('.trending-repo').first()).toContainText('daily/today');
@@ -209,48 +323,99 @@ const snapshot = (period, overrides = {}) => ({
     await page.setViewportSize({ width: 390, height: 900 });
     await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), '390px stress content must not overflow');
-    await expect(page.locator('.trending-repo').nth(1).locator('.trending-metrics dd').first()).toHaveText('—');
+    await expect(page.locator('.trending-repo').nth(1).locator('.trending-secondary b').first()).toHaveText('—');
     const stressRow = page.locator('.trending-repo').nth(1);
-    await expect(page.locator('.trending-repo').first().getByRole('button', { name: /展开详情/ })).toHaveCount(0);
-    const disclosure = stressRow.getByRole('button', { name: /展开详情/ });
+    const disclosure = stressRow.locator('.trending-entry-toggle');
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
     await disclosure.focus();
     await page.keyboard.press('Enter');
-    await expect(stressRow.getByRole('button', { name: /收起详情/ })).toHaveAttribute('aria-expanded', 'true');
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
     const fullTextVisible = await stressRow.evaluate(element => {
-      const main = element.querySelector('.trending-repo-main');
-      return [...main.querySelectorAll('h2, p, .trending-language')].every(node => {
+      const details = element.querySelector('.trending-details');
+      return [...details.querySelectorAll('strong, p, dd')].every(node => {
         const box = node.getBoundingClientRect();
         const style = getComputedStyle(node);
-        return box.height > 0 && node.scrollHeight <= node.clientHeight + 1 && node.scrollWidth <= node.clientWidth + 1 && style.webkitLineClamp === 'none' && style.textOverflow !== 'ellipsis';
+        return box.height > 0 && node.scrollHeight <= node.clientHeight + 1 && node.scrollWidth <= node.clientWidth + 1 && style.textOverflow !== 'ellipsis';
       });
     });
     assert(fullTextVisible, 'expanded repository name, description, and language must render without clipping');
+    const topCardActionsClearName = await stressRow.evaluate(element => {
+      const name = element.querySelector('.trending-repo-main h2').getBoundingClientRect();
+      const actions = [...element.querySelectorAll('.trending-actions a, .trending-actions button')].map(node => node.getBoundingClientRect());
+      return actions.every(box => box.width >= 44 && box.height >= 44 && (box.right <= name.left || box.left >= name.right || box.bottom <= name.top || box.top >= name.bottom));
+    });
+    assert(topCardActionsClearName, 'expanded 390px top-card actions must be usable without covering the repository name');
+    await stressRow.getByRole('button', { name: /复制链接/ }).click();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `https://github.com/owner/${'x'.repeat(150)}`);
+    await disclosure.focus();
     assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'expanded 390px content must not overflow');
     await page.screenshot({ path: path.join(screenshotDir, 'github-trending-expanded-390.png'), fullPage: true });
     await page.keyboard.press('Space');
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-    await disclosure.click();
-    await expect(stressRow.getByRole('button', { name: /收起详情/ })).toHaveAttribute('aria-expanded', 'true');
+    await stressRow.click();
+    await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('Space');
     await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
-    assert(await page.locator('.trending-repo').nth(1).evaluate(element => element.getBoundingClientRect().height) < 260, 'unusually long repository values should not dominate a mobile page');
+    await disclosure.evaluate(element => element.blur());
+    await page.mouse.move(0, 0);
+    const collapsedHeight = await stressRow.evaluate(element => element.getBoundingClientRect().height);
+    assert(collapsedHeight < 320, `unusually long repository values should not dominate a mobile page (${collapsedHeight}px)`);
     await page.screenshot({ path: path.join(screenshotDir, 'github-trending-stress-390.png'), fullPage: true });
+    for (const width of [461, 719, 720, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await disclosure.focus();
+      await page.keyboard.press('Enter');
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+      const actionLayout = await stressRow.evaluate(element => {
+        const name = element.querySelector('.trending-repo-main h2').getBoundingClientRect();
+        const actions = [...element.querySelectorAll('.trending-actions a, .trending-actions button')].map(node => node.getBoundingClientRect());
+        const card = element.getBoundingClientRect();
+        return {
+          clear: actions.every(box => box.right <= name.left || box.left >= name.right || box.bottom <= name.top || box.top >= name.bottom),
+          tappable: actions.every(box => box.width >= 44 && box.height >= 44),
+          rightGap: card.right - actions.at(-1).right,
+          actionsAboveName: actions[0].top < name.top,
+        };
+      });
+      assert(actionLayout.clear, `expanded ${width}px top-card actions must not cover the repository name`);
+      assert(actionLayout.tappable, `expanded ${width}px top-card actions must retain 44px targets`);
+      if (width >= 720) assert(actionLayout.rightGap > 0 && actionLayout.rightGap < 26 && actionLayout.actionsAboveName, `${width}px desktop actions should reveal at the top right`);
+      await stressRow.getByRole('button', { name: /复制链接/ }).click();
+      assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `https://github.com/owner/${'x'.repeat(150)}`);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `expanded ${width}px content must not overflow`);
+      await page.evaluate(() => window.scrollTo(0, 0));
+      const firstCardLeft = await page.locator('.trending-top-card').first().evaluate(element => element.getBoundingClientRect().left);
+      assert(firstCardLeft >= 0, `expanded ${width}px layout must remain in the viewport (left: ${firstCardLeft}px)`);
+      await page.screenshot({ path: path.join(screenshotDir, `github-trending-expanded-${width}.png`), fullPage: true });
+      await disclosure.focus();
+      await page.keyboard.press('Space');
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      await disclosure.evaluate(element => element.blur());
+      await page.mouse.move(0, 0);
+      if (width < 720) assert.equal(await stressRow.locator('.trending-actions').evaluate(element => getComputedStyle(element).display), 'none', `${width}px collapsed actions should leave no blank row`);
+      else {
+        const actionRow = stressRow.locator('.trending-actions');
+        await expect.poll(() => actionRow.evaluate(element => getComputedStyle(element).opacity)).toBe('0');
+        assert.equal(await actionRow.evaluate(element => getComputedStyle(element).transitionProperty), 'opacity', `${width}px desktop actions should fade`);
+      }
+    }
     weekly = snapshot('weekly');
     await page.reload();
     await expect(page.locator('.trending-repo')).toHaveCount(3);
-    for (const width of [390, 768, 1440]) {
+    for (const width of [390, 719, 720, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       if (width < 880) await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${width}px page must not overflow`);
+      const firstToggle = page.locator('.trending-repo').first().locator('.trending-entry-toggle');
+      await firstToggle.focus();
       const targets = await page.locator('.trending-repo').first().locator('.trending-actions a, .trending-actions button').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().height));
       assert(targets.every(height => height >= (width === 390 ? 44 : 36)), `${width}px repository action targets should be comfortably tappable`);
-      if (width === 390) assert(await page.locator('.trending-repo').first().evaluate(element => element.getBoundingClientRect().top) < 460, 'mobile toolbar should expose the first repository without excess header height');
+      await firstToggle.evaluate(element => element.blur());
       if (width === 768) {
-        const rowLayout = await page.locator('.trending-repo').first().evaluate(element => ({
+        const rowLayout = await page.locator('.trending-repo-row').first().evaluate(element => ({
           height: element.getBoundingClientRect().height,
           mainRight: element.querySelector('.trending-repo-main').getBoundingClientRect().right,
-          metricsLeft: element.querySelector('.trending-metrics').getBoundingClientRect().left,
+          metricsLeft: element.querySelector('.trending-row-period').getBoundingClientRect().left,
         }));
         assert(rowLayout.height < 145 && rowLayout.metricsLeft >= rowLayout.mainRight, '768px repository metrics should sit beside the text in a compact row');
       }

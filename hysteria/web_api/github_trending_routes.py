@@ -8,17 +8,19 @@ from types import SimpleNamespace
 import http_utils
 import state_store
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
+from .github_trending_avatar import AvatarProxy, valid_owner
 from .github_trending_source import PERIODS
 from .github_trending_store import TrendingStore
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 
 
 def register_github_trending_routes(
-    app, services, dispatch, *, store=None, scheduler_enabled=False
+    app, services, dispatch, *, store=None, scheduler_enabled=False, avatar_proxy=None
 ):
     store = store or TrendingStore()
+    avatar_proxy = avatar_proxy or AvatarProxy()
     tasks = {}
 
     async def run(period, manual):
@@ -91,6 +93,19 @@ def register_github_trending_routes(
         if period not in PERIODS:
             return JSONResponse({'error': 'invalid_period'}, status_code=422)
         return await reply(period)
+
+    @app.get('/api/v1/github-trending/avatar/{owner}')
+    async def get_trending_avatar(owner: str, request: Request):
+        denied = await guard(request)
+        if denied is not None:
+            return denied
+        if not valid_owner(owner):
+            return JSONResponse({'error': 'invalid_owner'}, status_code=422)
+        image = await avatar_proxy.get(owner)
+        if image is None:
+            return JSONResponse({'error': 'avatar_unavailable'}, status_code=502, headers={'Cache-Control': 'private, max-age=60'})
+        body, media_type = image
+        return Response(body, media_type=media_type, headers={'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff'})
 
     @app.post('/api/v1/github-trending/refresh')
     async def refresh_trending(request: Request):
