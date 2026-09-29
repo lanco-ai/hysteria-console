@@ -1,5 +1,6 @@
 """Private multilingual semantic retrieval over persistent source chunks."""
 from array import array
+import heapq
 import json
 import math
 import os
@@ -78,21 +79,29 @@ class KnowledgeIndex:
             db.execute('UPDATE documents SET data=? WHERE id=?', (encoded(item), document_id))
 
     def search(self, query, project_id=None, document_ids=None):
+        conditions, parameters = ['v.model=?'], [MODEL_REVISION]
+        if project_id is not None:
+            conditions.append('d.project_id=?')
+            parameters.append(project_id)
+        if document_ids is not None:
+            if not document_ids:
+                return {'items': [], 'model': MODEL_REVISION}
+            conditions.append('v.document_id IN (' + ','.join('?' for _ in document_ids) + ')')
+            parameters.extend(document_ids)
+        sql = 'SELECT v.data,v.vector FROM document_vectors v JOIN documents d ON d.id=v.document_id WHERE ' + ' AND '.join(conditions)
         with self.store.db() as db:
-            rows = db.execute('SELECT v.data,v.vector,d.project_id FROM document_vectors v JOIN documents d ON d.id=v.document_id WHERE v.model=?', (MODEL_REVISION,)).fetchall()
-        allowed = set(document_ids) if document_ids is not None else None
-        candidates = []
-        for data, raw, project in rows:
-            chunk = json.loads(data)
-            if project_id is not None and project_id != project or allowed is not None and chunk['document_id'] not in allowed:
-                continue
-            candidates.append((chunk, array('f', raw)))
-        if not candidates:
-            return {'items': [], 'model': MODEL_REVISION}
+            if db.execute(sql + ' LIMIT 1', parameters).fetchone() is None:
+                return {'items': [], 'model': MODEL_REVISION}
         vector = self.embedder.embed([query], query=True)[0]
-        ranked = sorted(((sum(a * b for a, b in zip(vector, v)), c) for c, v in candidates), key=lambda pair: pair[0], reverse=True)
+        with self.store.db() as db:
+            # Stream the library and keep only the best candidates in memory.
+            # A filled knowledge base must not load all document text/vectors into the web process.
+            candidates = ((sum(a * b for a, b in zip(vector, array('f', raw))), data)
+                          for data, raw in db.execute(sql, parameters))
+            ranked = heapq.nlargest(64, candidates, key=lambda pair: pair[0])
         selected = []
-        for score, chunk in ranked:
+        for score, data in ranked:
+            chunk = json.loads(data)
             # Overlapping chunks should not crowd out distinct evidence.
             if any(c['document_id'] == chunk['document_id'] and c['page'] == chunk['page'] and abs(c['offset'] - chunk['offset']) < 480 for c in selected):
                 continue

@@ -136,8 +136,8 @@ class ToolService:
     def runs(self, conversation_id):
         with self.store.db() as db:
             self.store._get(db, 'conversations', conversation_id)
-            values = [json.loads(r[0]) for r in db.execute('SELECT data FROM tool_runs')]
-            items = [r for r in values if r['conversation_id'] == conversation_id]
+            rows = db.execute("SELECT data FROM tool_runs WHERE json_extract(data,'$.conversation_id')=? ORDER BY rowid DESC LIMIT 100", (conversation_id,))
+            items = list(reversed([json.loads(r[0]) for r in rows]))
             for item in items:
                 if item['status'] == 'running' and item['updatedAt'] < (time.time() - 600) * 1000:
                     item['status'] = 'uncertain'
