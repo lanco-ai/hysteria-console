@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { CodexShell } from '../../shared/CodexShell';
 import { loadPlanSnapshot, requestPlanAssistant, savePlanSnapshot, type PlanAssistantSuggestion, type PlanItem, type PlanQuadrant, type PlanSnapshot, type PlanStatus } from './plansApi';
 import { JournalPage } from './JournalPage';
-import { useInitialFragmentNavigation } from '../../shared/useInitialFragmentNavigation';
 
 const groups: Array<{ id: PlanQuadrant; title: string; hint: string }> = [
   { id: 'important_urgent', title: '重要且紧急', hint: '优先处理' },
@@ -11,7 +10,6 @@ const groups: Array<{ id: PlanQuadrant; title: string; hint: string }> = [
   { id: 'later', title: '不紧急不重要', hint: '延后或重新评估' },
 ];
 const statusLabels: Record<PlanStatus, string> = { todo: '待办', in_progress: '进行中', done: '已完成' };
-const dailySectionTargets = new Set(['daily-plans', 'daily-timeline', 'daily-review']);
 
 function localDate(timezone: string, date = new Date()): string {
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date);
@@ -94,7 +92,9 @@ export function PlansPage(): ReactElement {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
   }, []);
   const [selectedDate, setSelectedDate] = useState(() => localDate(timezone));
-  useInitialFragmentNavigation(dailySectionTargets);
+  const journalPanel = window.location.hash === '#daily-timeline' ? 'timeline' : window.location.hash === '#daily-review' ? 'review' : null;
+  const plansLinkRef = useRef<HTMLAnchorElement>(null);
+  const closeJournal = useCallback(() => { plansLinkRef.current?.click(); }, []);
   const [journalProtected, setJournalProtected] = useState(false);
   const [items, setItems] = useState<PlanItem[]>([]);
   const [revision, setRevision] = useState('');
@@ -304,7 +304,6 @@ export function PlansPage(): ReactElement {
 
   const changeItems = (next: PlanItem[]) => { editVersion.current += 1; replaceItems(next); setDirty(true); setSaveState(saveLock.current ? 'saving' : 'unsaved'); setFeedback(''); };
   const selectedItems = items.filter(item => item.plan_date === selectedDate);
-  const completed = selectedItems.filter(item => item.status === 'done').length;
   const suggestionIssues = new Map<string, string>();
   const suggestionWarnings = new Map<string, string>();
   const usedTargets = new Set<string>();
@@ -547,18 +546,17 @@ export function PlansPage(): ReactElement {
           <aside className="plans-quote" aria-label="今日寄语"><p>专注当下，持续积累，<br />让每一天都更有意义。</p><small>— Today is a new start —</small></aside>
         </div>
         <div className="plans-header-utility">
-          <p className="plans-summary">{completed} / {selectedItems.length} 项完成 · 时区 {timezone}</p>
           <div className="plans-header-controls"><nav className="plans-date-nav" aria-label="日期选择"><input aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} /></nav><div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button></div></div>
         </div>
       </header>
 
       <nav className="daily-section-nav" aria-label="今日页面内容">
-        <a href="#daily-timeline">时间线</a>
-        <a href="#daily-plans">今日计划</a>
-        <a href="#daily-review">回顾</a>
+        <a href="#daily-timeline" aria-haspopup="dialog" aria-controls="daily-journal-drawer">时间线 <span aria-hidden="true">↗</span></a>
+        <a href="#daily-plans" ref={plansLinkRef} aria-current={journalPanel ? undefined : "page"}>今日计划</a>
+        <a href="#daily-review" aria-haspopup="dialog" aria-controls="daily-journal-drawer">回顾 <span aria-hidden="true">↗</span></a>
       </nav>
 
-      <section className="daily-plans-section" id="daily-plans" aria-labelledby="daily-plans-heading" tabIndex={-1}>
+      <section className="daily-plans-section" id="plans-workspace" aria-labelledby="daily-plans-heading" tabIndex={-1}>
         <div className="daily-section-heading"><div><span>01 / PLAN</span><h2 id="daily-plans-heading">今日计划</h2></div><p>把重要的事放在眼前，逐项推进。</p></div>
 
       <form className="plans-create" onSubmit={addTask}>
@@ -611,7 +609,7 @@ export function PlansPage(): ReactElement {
       })}</div>}
       <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services?tab=ai">服务中心</a></footer>
       </section>
-      <JournalPage selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
+      <JournalPage panel={journalPanel} onClose={closeJournal} selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
     </section>
   </CodexShell>;
 }

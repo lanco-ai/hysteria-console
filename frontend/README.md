@@ -25,6 +25,16 @@ and language filtering apply only to the currently displayed snapshot. Manual
 refresh requests use the same-origin `/api/v1/github-trending/refresh` endpoint;
 its cooldown and upstream retry fields are authoritative.
 
+## Daily workspace
+
+`/admin/plans` keeps the shared date header and plan quadrants on the main page.
+The 时间线 and 回顾 links open a native modal side panel (full screen on phones),
+with browsing and writing as separate views. Existing `#daily-timeline` and
+`#daily-review` links also open the relevant panel; `#daily-plans` closes it.
+Escape and the close button return focus without scrolling the main page.
+Unsubmitted journal drafts remain in memory while the panel is closed; leaving
+or reloading the page still uses the existing unsaved-change guard.
+
 ## Asset ownership
 
 `frontend/src/styles/index.css` imports the ordered sections listed in

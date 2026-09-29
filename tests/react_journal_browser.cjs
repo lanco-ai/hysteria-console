@@ -11,35 +11,22 @@ const fs = require('node:fs');
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'America/Los_Angeles' });
     await context.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
     const page = await context.newPage();
+    async function openPanel(name) {
+      if (await page.locator('#daily-journal-drawer').isVisible()) await page.getByRole('button', { name: '关闭记录面板' }).click();
+      await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name }).click();
+    }
     async function checkJournalLayout(view, width) {
       await page.setViewportSize({ width, height: 900 });
-      const layout = await page.evaluate(currentView => {
-        const primary = document.querySelector(currentView === 'timeline' ? '.journal-timeline-primary' : '.journal-review').getBoundingClientRect();
-        const editor = document.querySelector('.journal-editor').getBoundingClientRect();
-        const search = document.querySelector('.journal-filters input[type="search"]')?.getBoundingClientRect();
-        return { primaryRight: primary.right, primaryBottom: primary.bottom, editorLeft: editor.left, editorTop: editor.top, searchRight: search?.right, scrollWidth: document.documentElement.scrollWidth };
-      }, view);
-      assert(layout.scrollWidth <= width, `${view} should fit ${width}px (scrollWidth ${layout.scrollWidth}px)`);
-      if (view === 'timeline') {
-        if (width < 1200) assert(layout.primaryBottom <= layout.editorTop, `timeline should stack before editor at ${width}px`);
-        else assert(layout.primaryRight < layout.editorLeft, `timeline should have separated desktop columns at ${width}px`);
-      } else assert(layout.primaryBottom > layout.editorTop, `review should follow the editor at ${width}px`);
-      if (view === 'timeline') assert(layout.searchRight <= layout.primaryRight + 1, `timeline filters should fit their column at ${width}px`);
-      if (process.env.REACT_SCREENSHOT_DIR && (width === 901 || width === 1100)) {
-        fs.mkdirSync(process.env.REACT_SCREENSHOT_DIR, { recursive: true });
-        await page.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, `journal-${view}-${width}.png`), fullPage: true });
-      }
+      const layout = await page.locator('#daily-journal-drawer').evaluate(element => ({
+        width: element.scrollWidth, clientWidth: element.clientWidth,
+        right: element.getBoundingClientRect().right, bottom: element.getBoundingClientRect().bottom,
+      }));
+      assert(layout.width <= layout.clientWidth && layout.right <= width && layout.bottom <= 900, `${view} drawer should fit ${width}px`);
+      await expect(page.locator(view === 'timeline' ? '.journal-timeline-primary' : '.journal-review')).toBeVisible();
     }
-    await page.goto(`${base}/admin/plans`);
-    await expect(page.locator('#daily-timeline')).toBeVisible();
+    await page.goto(`${base}/admin/plans#daily-timeline`);
+    await expect(page.getByRole('dialog', { name: '生活与学习时间线' })).toBeVisible();
     await expect(page.locator('.journal-timeline-primary')).toHaveCount(1);
-    const timelineLayout = await page.evaluate(() => {
-      const primary = document.querySelector('.journal-timeline-primary').getBoundingClientRect();
-      const editor = document.querySelector('.journal-editor').getBoundingClientRect();
-      return { primary, editor };
-    });
-    assert(timelineLayout.primary.right < timelineLayout.editor.left, 'timeline filters and records should lead the desktop layout');
-    assert(timelineLayout.editor.width >= 320 && timelineLayout.editor.width <= 380, 'quick entry should be a compact side column');
     for (const width of [901, 1024, 1100, 1280]) await checkJournalLayout('timeline', width);
     const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
     await page.setViewportSize({ width: 390, height: 840 });
@@ -51,6 +38,7 @@ const fs = require('node:fs');
       await page.screenshot({ path: path.join(screenshotDir, 'journal-timeline-mobile-clean.png'), fullPage: true });
     }
     await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole('button', { name: '写记录', exact: true }).click();
     const extraFields = page.locator('.journal-extra-fields');
     await expect(extraFields).not.toHaveAttribute('open', '');
     await expect(page.getByLabel('记录标题')).toBeHidden();
@@ -86,13 +74,7 @@ const fs = require('node:fs');
     await expect(page.locator('.journal-timeline').getByText('IELTS listening drill')).toBeVisible();
     await page.getByLabel('搜索记录').fill('absent phrase');
     await expect(page.locator('.journal-timeline').getByText('IELTS listening drill')).toHaveCount(0);
-    await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '回顾' }).click();
-    const reviewLayout = await page.evaluate(() => {
-      const primary = document.querySelector('.journal-review').getBoundingClientRect();
-      const editor = document.querySelector('.journal-editor').getBoundingClientRect();
-      return { primary, editor };
-    });
-    assert(reviewLayout.primary.top > reviewLayout.editor.top, 'weekly review should follow the timeline and editor');
+    await openPanel('回顾');
     for (const width of [901, 1024, 1100, 1280]) await checkJournalLayout('review', width);
     await expect(page.locator('.journal-review-list')).toContainText('IELTS listening drill');
     if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, 'journal-review-desktop.png'), fullPage: true });
@@ -108,10 +90,11 @@ const fs = require('node:fs');
     await page.getByRole('textbox', { name: '支持这个判断的证据' }).fill('Reconstructed the example without notes');
     await page.getByRole('button', { name: '保存记录' }).click();
     await expect(page.locator('.journal-review-list')).toContainText('Focused after explaining the idea aloud');
-    await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '时间线' }).click();
+    await openPanel('时间线');
     await page.getByLabel('搜索记录').fill('Reconstructed');
     await expect(page.locator('.journal-timeline')).toContainText('支持这个判断的证据');
     await expect(page.locator('.journal-timeline')).toContainText('Reconstructed the example without notes');
+    await page.getByRole('button', { name: '写记录', exact: true }).click();
     await page.getByLabel('记录内容').fill('Unsaved conflict note');
     await page.route('**/api/journal', async route => {
       if (route.request().method() === 'POST') {
@@ -129,10 +112,11 @@ const fs = require('node:fs');
       const editor = document.querySelector('.journal-editor').getBoundingClientRect();
       return { primary, editor, scrollWidth: document.documentElement.scrollWidth };
     });
-    assert(mobileLayout.primary.bottom <= mobileLayout.editor.top, 'timeline should stack records before editor on mobile');
+    await expect(page.locator('.journal-timeline-primary')).toBeHidden();
+    assert(mobileLayout.editor.top < 260, 'mobile editor opens directly inside the drawer');
     assert(mobileLayout.scrollWidth <= 390, 'journal mobile layout should not overflow');
     if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, 'journal-timeline-mobile.png'), fullPage: true });
-    await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '今日计划' }).click();
+    await page.getByRole('button', { name: '关闭记录面板' }).click();
     await expect(page.locator('.plans-grid')).toBeVisible();
     assert.equal(await page.locator('.plans-quadrant').count(), 4);
     console.log('PASS: journal create, reload, edit, search and plan view');

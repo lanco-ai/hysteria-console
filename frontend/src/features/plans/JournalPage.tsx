@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from 'react';
+import { JournalDrawer } from './JournalDrawer';
 import { createJournal, deleteJournal, downloadJournal, listJournal, loadJournalSummary, updateJournal, type JournalDraft, type JournalKind, type JournalRecord, type JournalSummary } from './journalApi';
 
 const labels: Record<JournalKind, string> = {
@@ -76,7 +77,8 @@ function weeklyOccurrence(selectedWeek: string, timezone: string): string {
     : new Date(`${selectedWeek}T12:00:00`).toISOString();
 }
 
-export function JournalPage({ selectedDate, onSelectDate, timezone, onDraftProtectionChange }: {
+export function JournalPage({ panel, onClose, selectedDate, onSelectDate, timezone, onDraftProtectionChange }: {
+  panel: 'timeline' | 'review' | null; onClose: () => void;
   selectedDate: string; onSelectDate: (day: string) => void; timezone: string;
   onDraftProtectionChange: (protectedDraft: boolean) => void;
 }): ReactElement {
@@ -95,8 +97,17 @@ export function JournalPage({ selectedDate, onSelectDate, timezone, onDraftProte
   const [summaryErrorWeek, setSummaryErrorWeek] = useState<string | null>(null);
   const [reviewWeek, setReviewWeek] = useState(() => weekStart(selectedDate));
   const readGeneration = useRef(0);
-  const editorRef = useRef<HTMLFormElement>(null);
+  const [showEditor, setShowEditor] = useState(false);
   const editorKindRef = useRef<HTMLSelectElement>(null);
+  const composeRef = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+
+  useEffect(() => { setShowEditor(false); }, [panel]);
+  useEffect(() => {
+    if (showEditor) editorKindRef.current?.focus({ preventScroll: true });
+    else if (wasEditing.current && panel) composeRef.current?.focus({ preventScroll: true });
+    wasEditing.current = showEditor;
+  }, [showEditor, panel]);
 
   useEffect(() => { setReviewWeek(weekStart(selectedDate)); }, [selectedDate]);
 
@@ -178,13 +189,7 @@ export function JournalPage({ selectedDate, onSelectDate, timezone, onDraftProte
 
   function startReview(kind: 'daily_review' | 'weekly_review') {
     if (!selectKind(kind, true)) return;
-    window.requestAnimationFrame(() => {
-      editorRef.current?.scrollIntoView({
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-        block: 'start',
-      });
-      editorKindRef.current?.focus({ preventScroll: true });
-    });
+    setShowEditor(true);
   }
 
   async function save(event: FormEvent) {
@@ -209,6 +214,7 @@ export function JournalPage({ selectedDate, onSelectDate, timezone, onDraftProte
       setTimeMode('now');
       onSelectDate(result.item.local_date);
       setNotice('记录已保存。');
+      setShowEditor(false);
       await reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '保存失败；草稿已保留。');
@@ -220,10 +226,7 @@ export function JournalPage({ selectedDate, onSelectDate, timezone, onDraftProte
     const { id: _id, revision: _revision, local_date: _localDate, created_at: _createdAt, updated_at: _updatedAt, chat_source: _chatSource, ...values } = item;
     setDraft(values); setEditing(item); setError(''); setNotice('');
     setTimeMode('manual');
-    window.requestAnimationFrame(() => editorRef.current?.scrollIntoView({
-      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-      block: 'start',
-    }));
+    setShowEditor(true);
   }
 
   async function remove(item: JournalRecord) {
@@ -253,19 +256,22 @@ export function JournalPage({ selectedDate, onSelectDate, timezone, onDraftProte
             ? <div className="journal-fields">{textField('本周收获', 'takeaway')}{textField('支持判断的证据', 'evidence')}{textField('下周验证', 'next_check')}</div>
             : null;
 
-  return <div className="journal-page">
+  return <JournalDrawer open={panel !== null} onClose={onClose} viewKey={`${panel}-${showEditor}`} title={showEditor ? (editing ? '编辑记录' : labels[draft.kind]) : panel === 'review' ? '回顾' : '生活与学习时间线'}>
+    <div className="journal-page">
+    <div className="journal-drawer-toolbar">
+      {showEditor ? <><button className="btn btn-secondary btn-sm" type="button" onClick={() => setShowEditor(false)}>← 返回{panel === 'review' ? '回顾' : '时间线'}</button><span>关闭面板后，草稿会保留在当前页面。</span></> : <><p className="journal-privacy-note">记录存于本机私人空间；正文不会发送给 AI 服务。</p><button ref={composeRef} className="btn btn-primary" type="button" onClick={() => setShowEditor(true)}>{hasDraftContent ? '继续填写' : '写记录'}</button></>}
+    </div>
     {error ? <p className="journal-message journal-error" role="alert">{error}</p> : null}
     {notice ? <p className="journal-message" role="status">{notice}</p> : null}
-    <section className="daily-timeline-section" id="daily-timeline" aria-labelledby="daily-timeline-heading" tabIndex={-1}>
-      <div className="daily-section-heading"><div><span>02 / JOURNAL</span><h2 id="daily-timeline-heading">生活与学习时间线</h2></div><button className="btn btn-secondary" type="button" onClick={() => void downloadJournal().catch(cause => setError(cause instanceof Error ? cause.message : '导出失败'))}>导出 JSON</button></div>
-      <p className="journal-privacy-note">记录存于本机私人空间；正文不会发送给 AI 服务。</p>
-    <div className="journal-layout">
+    <section className="daily-timeline-section" aria-label="时间线记录" hidden={showEditor || panel !== 'timeline'}>
     <div className="journal-timeline-primary">
       <div className="journal-filters"><label>查看日期<input aria-label="记录日期" type="date" value={selectedDate} onChange={event => onSelectDate(event.target.value)} /></label><label>分类<select aria-label="筛选分类" value={kindFilter} onChange={event => setKindFilter(event.target.value)}><option value="">全部</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>搜索<input aria-label="搜索记录" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="标题、正文或结构化内容" /></label></div>
       {query || kindFilter ? <p className="journal-filter-note">搜索范围为全部日期；清空搜索与分类后按日期查看。</p> : null}
       {loading ? <p>正在读取记录…</p> : readFailed ? <div className="journal-read-failed"><p>当前筛选的记录暂时无法显示。</p><button className="btn btn-secondary" type="button" onClick={() => void reload()}>重试读取记录</button></div> : items.length ? <ol className="journal-timeline">{items.map(item => <li key={item.id}><article><header><div><time dateTime={item.occurred_at}>{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.occurred_at))}</time><span className="journal-kind">{labels[item.kind]}</span></div><div><button className="btn btn-ghost btn-sm" type="button" onClick={() => edit(item)} aria-label={`编辑 ${item.title || labels[item.kind]}`} disabled={busy}>编辑</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => void remove(item)} aria-label={`删除 ${item.title || labels[item.kind]}`} disabled={busy}>删除</button></div></header>{item.chat_source ? <a href={`/admin/chat?conversation=${encodeURIComponent(item.chat_source.conversation_id)}`}>来自 AI 对话：{item.chat_source.title}</a> : null}{item.title ? <h3>{item.title}</h3> : null}{item.body ? <p>{item.body}</p> : null}{recordDetails(item).length ? <dl className="journal-details">{recordDetails(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}{item.ended_at ? <small>结束：{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, timeStyle: 'short' }).format(new Date(item.ended_at))}</small> : null}</article></li>)}</ol> : <p className="journal-empty">这一天暂无记录。可以先记下一件小事。</p>}
     </div>
-    <form className="journal-editor" ref={editorRef} onSubmit={event => void save(event)}>
+    <button className="btn btn-ghost btn-sm journal-export" type="button" onClick={() => void downloadJournal().catch(cause => setError(cause instanceof Error ? cause.message : '导出失败'))}>导出 JSON</button>
+    </section>
+    <form className="journal-editor" hidden={!showEditor} onSubmit={event => void save(event)}>
       <fieldset className="journal-editor-fieldset" disabled={busy}>
       <div className="journal-editor-heading"><h3>{editing ? '编辑记录' : draft.kind === 'daily_review' ? '写每日复盘' : draft.kind === 'weekly_review' ? '写每周回顾' : '快速记录'}</h3>{editing ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => { if (confirmDiscardDraft()) { setEditing(null); setDraft(blankDraft(timezone)); setTimeMode('now'); } }}>取消编辑</button> : null}</div>
       <div className="journal-core-fields"><label className="journal-field">记录类型<select ref={editorKindRef} aria-label="记录类型" value={draft.kind} onChange={event => selectKind(event.target.value as JournalKind)}>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
@@ -278,11 +284,8 @@ export function JournalPage({ selectedDate, onSelectDate, timezone, onDraftProte
       <div className="journal-editor-actions"><button className="btn btn-primary" type="submit" disabled={busy}>{busy ? '保存中…' : editing ? '保存修改' : '保存记录'}</button><span>时间与至少一项内容必填。</span></div>
       </fieldset>
     </form>
-    </div>
-    </section>
-    <section className="daily-review-section" id="daily-review" aria-labelledby="daily-review-heading" tabIndex={-1}>
-      <div className="daily-section-heading"><div><span>03 / REFLECT</span><h2 id="daily-review-heading">回顾</h2></div><p>看见这一周留下的线索。</p></div>
+    <section className="daily-review-section" aria-label="每周回顾" hidden={showEditor || panel !== 'review'}>
       <div className="journal-review"><div className="journal-review-actions"><button className="btn btn-secondary" type="button" onClick={() => startReview('daily_review')} disabled={busy}>写每日复盘</button><button className="btn btn-secondary" type="button" onClick={() => startReview('weekly_review')} disabled={busy}>写每周回顾</button></div><div className="journal-week-nav"><button className="btn btn-ghost" type="button" onClick={() => setReviewWeek(day => shiftWeek(day, -1))}>上周</button><strong>{reviewWeek} — {weekEnd(reviewWeek)}</strong><button className="btn btn-ghost" type="button" onClick={() => setReviewWeek(day => shiftWeek(day, 1))}>下周</button></div><h3>本周记录</h3>{summaryErrorWeek === reviewWeek ? <p className="journal-message journal-error" role="alert">本周记录读取失败</p> : visibleSummary ? <><p>共 {visibleSummary.total} 条；只统计记录数量，不把篇数当作学习进步。</p><ul className="journal-counts">{Object.entries(visibleSummary.counts).map(([kind, count]) => <li key={kind}>{labels[kind as JournalKind]}：{count}</li>)}</ul><ul className="journal-review-list">{visibleSummary.items.map(item => <li key={item.id}><span>{item.local_date} · {labels[item.kind]}</span><strong>{recordSummary(item)}</strong></li>)}</ul></> : <p>正在读取本周记录…</p>}</div>
     </section>
-  </div>;
+  </div></JournalDrawer>;
 }

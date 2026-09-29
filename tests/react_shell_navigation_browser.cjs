@@ -28,7 +28,10 @@ async function main() {
       const page = await context.newPage();
     const failures = [];
       page.on('pageerror', error => failures.push(error.message));
-      await page.route('**/api/chat/**', route => route.fulfill({ json: route.request().url().endsWith('/models') ? [] : { api_key_configured: false, base_url: '', temperature: 0.7 } }));
+      // Workspace list endpoints use the isolated preview backend; only model
+      // configuration needs a stub for this navigation/layout test.
+      await page.route('**/api/chat/models', route => route.fulfill({ json: [] }));
+      await page.route('**/api/chat/settings', route => route.fulfill({ json: { api_key_configured: false, base_url: '', temperature: 0.7 } }));
       await page.route('**/api/video/**', route => route.fulfill({ json: route.request().url().endsWith('/workflows') ? { workflows: [] } : { image_models: [], video_models: [], first_last_frame: { supported: false } } }));
       await page.route('**/api/plans', route => route.fulfill({ json: { revision: '0'.repeat(64), items: [] } }));
       await page.route('**/api/plans/reminders', route => route.fulfill({ json: { items: [] } }));

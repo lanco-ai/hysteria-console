@@ -14,11 +14,17 @@ const { expect } = require('@playwright/test');
     catch (error) { failures.push(name); console.error(`FAIL: ${name}: ${error.message}`); }
     finally { await context.close(); }
   }
+  async function openPanel(page, name) {
+    if (await page.locator('#daily-journal-drawer').isVisible()) await page.getByRole('button', { name: '关闭记录面板' }).click();
+    await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name }).click();
+  }
   try {
     await scenario('failed journal draft guards navigation', async page => {
       await page.goto(`${base}/admin/services`);
       await page.getByRole('link', { name: '今日计划' }).click();
-      await expect(page).toHaveURL(/\/admin\/plans$/);
+      await expect(page).toHaveURL(/\/admin\/plans(?:#daily-plans)?$/);
+      await openPanel(page, '时间线');
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await page.getByLabel('记录内容').fill('Keep this failed draft');
       await page.route('**/api/journal', async route => {
         if (route.request().method() === 'POST') await route.fulfill({ status: 409, json: { error: 'revision_conflict' } });
@@ -31,10 +37,14 @@ const { expect } = require('@playwright/test');
         window.dispatchEvent(event);
         return event.defaultPrevented;
       }), true);
+      await page.getByRole('button', { name: '关闭记录面板' }).click();
       page.once('dialog', dialog => dialog.dismiss());
       await page.getByRole('link', { name: '服务中心' }).first().click();
-      await expect(page).toHaveURL(/\/admin\/plans$/);
+      await expect(page).toHaveURL(/\/admin\/plans(?:#daily-plans)?$/);
       await expect(page.getByLabel('记录内容')).toHaveValue('Keep this failed draft');
+      await page.goBack();
+      await expect(page.locator('#daily-journal-drawer')).toBeVisible();
+      await page.goBack();
       page.once('dialog', dialog => dialog.dismiss());
       await page.goBack();
       await expect(page).toHaveURL(/\/admin\/plans$/);
@@ -42,7 +52,8 @@ const { expect } = require('@playwright/test');
     });
 
     await scenario('save disables edits while request is pending', async page => {
-      await page.goto(`${base}/admin/plans`);
+      await page.goto(`${base}/admin/plans#daily-timeline`);
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await page.getByLabel('记录内容').fill('Submitted text');
       let release;
       await page.route('**/api/journal', async route => {
@@ -60,7 +71,8 @@ const { expect } = require('@playwright/test');
 
     await scenario('automatic quick-note time refreshes at save', async page => {
       await page.clock.install({ time: new Date('2026-09-29T17:00:00Z') });
-      await page.goto(`${base}/admin/plans`);
+      await page.goto(`${base}/admin/plans#daily-timeline`);
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await expect(page.getByLabel('开始时间')).toHaveValue('2026-09-29T10:00');
       await page.clock.setFixedTime(new Date('2026-09-30T17:00:00Z'));
       let savedTime = '';
@@ -76,8 +88,9 @@ const { expect } = require('@playwright/test');
 
     await scenario('past weekly review belongs to selected week', async page => {
       await page.clock.install({ time: new Date('2026-09-29T17:00:00Z') });
-      await page.goto(`${base}/admin/plans`);
-      await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '回顾' }).click();
+      await page.goto(`${base}/admin/plans#daily-timeline`);
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
+      await openPanel(page, '回顾');
       await page.getByRole('button', { name: '上周' }).click();
       await page.getByRole('button', { name: '写每周回顾' }).click();
       await expect(page.getByLabel('开始时间')).toHaveValue(/^2026-09-21T/);
@@ -91,7 +104,8 @@ const { expect } = require('@playwright/test');
 
     await scenario('late old-date read cannot replace saved new-date timeline', async page => {
       await page.clock.install({ time: new Date('2026-11-10T17:00:00Z') });
-      await page.goto(`${base}/admin/plans`);
+      await page.goto(`${base}/admin/plans#daily-timeline`);
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await expect(page.getByText('正在读取记录…')).toHaveCount(0);
       let releaseOld;
       await page.route('**/api/journal?*', async route => {
@@ -114,6 +128,7 @@ const { expect } = require('@playwright/test');
         await oldResponse;
         await expect(page.locator('.journal-timeline')).toContainText('New date survives old read');
         await page.getByLabel('搜索记录').fill('Second same-date note');
+        await page.getByRole('button', { name: '写记录', exact: true }).click();
         await page.getByLabel('开始时间').fill('2026-11-11T20:00');
         await page.getByLabel('记录内容').fill('Second same-date note');
         await page.getByRole('button', { name: '保存记录' }).click();
@@ -123,7 +138,8 @@ const { expect } = require('@playwright/test');
 
     await scenario('automatic time visibly updates after overnight open', async page => {
       await page.clock.install({ time: new Date('2026-09-29T17:00:00Z') });
-      await page.goto(`${base}/admin/plans`);
+      await page.goto(`${base}/admin/plans#daily-timeline`);
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await expect(page.getByLabel('开始时间')).toHaveValue('2026-09-29T10:00');
       await expect(page.getByText('自动使用保存时的当前时间')).toBeVisible();
       await page.clock.setFixedTime(new Date('2026-09-30T17:00:00Z'));
@@ -137,10 +153,11 @@ const { expect } = require('@playwright/test');
 
     await scenario('weekly navigation hides old counts during delayed failure', async page => {
       await page.clock.install({ time: new Date('2027-01-05T17:00:00Z') });
-      await page.goto(`${base}/admin/plans`);
+      await page.goto(`${base}/admin/plans#daily-timeline`);
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await page.getByLabel('记录内容').fill('Current week only');
       await page.getByRole('button', { name: '保存记录' }).click();
-      await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '回顾' }).click();
+      await openPanel(page, '回顾');
       await expect(page.locator('.journal-counts')).toContainText('生活：1');
       let releaseSummary;
       await page.route('**/api/journal/summary?*', async route => {
@@ -163,13 +180,16 @@ const { expect } = require('@playwright/test');
 
     await scenario('failed date and search reads hide stale records and preserve draft', async page => {
       await page.clock.install({ time: new Date('2027-04-10T17:00:00Z') });
-      await page.goto(`${base}/admin/plans`);
+      await page.goto(`${base}/admin/plans#daily-timeline`);
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await page.getByText('更多记录选项').click();
       await page.getByLabel('记录标题').fill('Old day entry');
       await page.getByLabel('记录内容').fill('Saved on April 10');
       await page.getByRole('button', { name: '保存记录' }).click();
       await expect(page.locator('.journal-timeline')).toContainText('Old day entry');
+      await page.getByRole('button', { name: '写记录', exact: true }).click();
       await page.getByLabel('记录内容').fill('Unsaved draft must remain');
+      await page.getByRole('button', { name: '← 返回时间线' }).click();
 
       let failDate = true;
       let failSearch = false;
