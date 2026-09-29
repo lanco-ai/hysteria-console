@@ -15,7 +15,8 @@ from stat import S_IMODE
 def probe_auth_readiness(
     *,
     host='127.0.0.1',
-    port=8082,
+    # Authentication and panel probes now share the unified FastAPI listener.
+    port=8083,
     path='/readyz',
     timeout=3,
     connection_factory=http.client.HTTPConnection,

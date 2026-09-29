@@ -102,6 +102,57 @@ def test_react_systemd_unit_is_loopback_staged_and_single_worker():
     unit = (ROOT / 'systemd/hysteria-react.service').read_text(encoding='utf-8')
     assert '--host 127.0.0.1 --port 8083 --workers 1' in unit
     assert 'WorkingDirectory=/root/hysteria' in unit
-    assert 'Requires=hysteria-subscription.service' in unit
+    assert 'Requires=hysteria-subscription.service' not in unit
     assert 'TasksMax=32' in unit
     assert 'deploy.sh' in unit
+
+
+def test_unified_lifespan_runs_migrations_revocations_and_video_scheduler(monkeypatch, tmp_path):
+    import threading
+
+    from fastapi.testclient import TestClient
+    from web_api import create_app
+
+    module = _load_entrypoint()
+    monkeypatch.setattr(
+        module.subscription_service, 'USERS_FILE', tmp_path / 'users.json', raising=False
+    )
+    events = []
+    ticked = threading.Event()
+    worker_started = threading.Event()
+
+    def revoke(stop_event):
+        worker_started.set()
+        stop_event.wait(5)
+        events.append('revocation_stopped')
+
+    class PendingRuns:
+        def resume_pending(self):
+            return [{'id': 'pending'}]
+
+        def tick(self, run_id):
+            assert run_id == 'pending'
+            ticked.set()
+
+    for name in ('load_meta', 'migrate_plaintext_passwords', 'migrate_admin_password'):
+        monkeypatch.setattr(
+            module.subscription_service, name, lambda name=name: events.append(name), raising=False
+        )
+    monkeypatch.setattr(
+        module.subscription_service, '_revocation_worker_loop', revoke, raising=False
+    )
+
+    def isolated_app(*args, **kwargs):
+        kwargs['video_run_service'] = PendingRuns()
+        return create_app(*args, **kwargs)
+
+    monkeypatch.setattr(module, 'create_app', isolated_app)
+    app = module.build_app()
+    with TestClient(app):
+        assert events[:3] == ['load_meta', 'migrate_plaintext_passwords', 'migrate_admin_password']
+        assert worker_started.wait(1)
+        assert ticked.wait(1), 'video scheduler must run alongside the subscription lifespan'
+        task = app.state.video_scheduler_task
+        assert not task.done()
+    assert task.done()
+    assert events[-1] == 'revocation_stopped'

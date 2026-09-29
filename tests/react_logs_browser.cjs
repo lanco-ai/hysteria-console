@@ -13,6 +13,7 @@ const navigation = [
   ['工作台', null],
   ['用户', '/admin'],
   ['今日计划', '/admin/plans'],
+  ['开源发现', '/admin/github-trending'],
   ['AI 工具', null],
   ['AI 对话', '/admin/chat'],
   ['AI 视频', '/admin/video'],

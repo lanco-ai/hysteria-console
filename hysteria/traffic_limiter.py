@@ -398,7 +398,7 @@ def restart_subscription_async():
         subprocess.Popen(
             ['systemd-run', '--no-block', '--on-active=2s',
              '--unit', f'hy2-subscription-restart-auto-{int(datetime.utcnow().timestamp())}',
-             'systemctl', 'restart', 'hysteria-subscription.service'],
+             'systemctl', 'restart', 'hysteria-react.service'],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
     except Exception:

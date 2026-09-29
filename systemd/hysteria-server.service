@@ -1,19 +1,14 @@
 [Unit]
 Description=Hysteria Server Service (config.yaml)
 Wants=network-online.target
-Requires=hysteria-auth.service
-BindsTo=hysteria-auth.service
-PartOf=hysteria-auth.service
-After=network-online.target hysteria-auth.service
+After=network-online.target
 StartLimitIntervalSec=60
 StartLimitBurst=5
 
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/hysteria server --config /root/hysteria/config.yaml
-ExecStartPost=/usr/bin/curl --fail --silent --show-error --noproxy * --max-time 3 --retry 5 --retry-delay 1 --retry-connrefused http://127.0.0.1:8082/readyz
-ExecStartPost=/usr/local/sbin/hysteria-auth-recover.sh mark
-ExecStopPost=/usr/local/sbin/hysteria-auth-recover.sh clear-if-manual
+ExecStartPost=/usr/bin/curl --fail --silent --show-error --noproxy * --max-time 3 --retry 5 --retry-delay 1 --retry-connrefused http://127.0.0.1:8083/readyz
 WorkingDirectory=/root
 User=root
 Group=root

@@ -57,6 +57,11 @@ def test_backup_excludes_live_login_sessions(tmp_path):
         '{"version":1,"nodes":{}}', encoding='utf-8',
     )
     (state_dir / 'usage.json').write_text('{}')
+    journal_dir = state_dir / 'journal'
+    journal_dir.mkdir(mode=0o700)
+    (journal_dir / 'entries.json').write_text('{"schema_version":1,"items":[]}')
+    (journal_dir / 'entries.json.lock').touch()
+    (journal_dir / 'unrelated.json').write_text('{}')
     (state_dir / 'panel_sessions.json').write_text('{"sid":{"exp":9999999999}}')
     (state_dir / 'user_panel_sessions.json').write_text('{"usid":{"exp":9999999999}}')
     (state_dir / 'credential_rotation_receipts.json').write_text(
@@ -82,6 +87,10 @@ def test_backup_excludes_live_login_sessions(tmp_path):
     assert any(name.endswith('/users.json') for name in names)
     assert any(name.endswith('/landing_egresses.json') for name in names)
     assert any(name.endswith('/state/usage.json') for name in names)
+    assert any(name.endswith('/state/journal/entries.json') for name in names)
+    assert not any(name.endswith('/state/journal/entries.json.lock') for name in names)
+    assert not any(name.endswith('/state/journal/unrelated.json') for name in names)
+    assert Path(archive).stat().st_mode & 0o777 == 0o600
     assert not any(name.endswith('/state/panel_sessions.json') for name in names)
     assert not any(name.endswith('/state/user_panel_sessions.json') for name in names)
     assert not any(

@@ -1,14 +1,16 @@
 """Side-effect-free FastAPI application factory."""
 
 import threading
+from contextlib import asynccontextmanager
 from functools import partial
 from types import SimpleNamespace
+from urllib.parse import urlencode
 
 import anyio
 import auth_views
 import http_utils
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from starlette.datastructures import MutableHeaders
 from starlette.exceptions import HTTPException
 
@@ -17,6 +19,7 @@ from .agent_routes import register_agent_routes
 from .ai.gemini import GeminiAdapter
 from .ai.routes import register_ai_service_routes
 from .ai.service_store import AIServiceStore
+from .auth_routes import register_auth_routes
 from .chat_routes import register_chat_routes
 from .compat_routes import register_compatibility_routes
 from .config_models import (
@@ -25,6 +28,7 @@ from .config_models import (
     TemplateMutationResponse,
 )
 from .document_routes import register_react_document_routes
+from .github_trending_routes import register_github_trending_routes
 from .health_models import AdminHealthResponse
 from .health_routes import register_health_routes
 from .incident_models import AdminIncidentResponse
@@ -52,6 +56,7 @@ from .requests import FormReadTimeout, RequestHeaders, read_form
 from .rules_routes import register_rules_routes
 from .service_center import register_service_center_routes
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
+from .subscription_routes import register_subscription_routes
 from .usage_models import (
     AdminUsageHistoryResponse,
     AdminUsageResponse,
@@ -204,9 +209,24 @@ def _login_response(reply):
     return JSONResponse(status_code=status, content=model.model_dump(), headers=headers)
 
 
+def _legacy_login_redirect(reply):
+    """Keep old form POSTs usable without bringing back server-rendered HTML."""
+    result = reply.result
+    if result.outcome == 'success':
+        headers = {'Set-Cookie': reply.cookie} if reply.cookie is not None else None
+        return RedirectResponse(result.redirect_to, status_code=303, headers=headers)
+    query = urlencode({'msg': result.outcome})
+    headers = {'Retry-After': str(result.retry_after)} if result.outcome == 'throttled' else None
+    return RedirectResponse(f'/login?{query}', status_code=303, headers=headers)
+
+
 def _logout_response(reply):
     model = LogoutResponse(ok=True, redirect_to='/login')
     return JSONResponse(model.model_dump(), headers={'Set-Cookie': reply.cookie})
+
+
+def _legacy_logout_redirect(reply):
+    return RedirectResponse('/login', status_code=303, headers={'Set-Cookie': reply.cookie})
 
 
 def _password_change_response(reply, *, realm):
@@ -245,6 +265,27 @@ def _password_change_response(reply, *, realm):
     raise ValueError('invalid password-change result')
 
 
+def _legacy_password_redirect(reply, *, realm):
+    result = reply.result
+    if result.outcome == 'success':
+        destination = '/admin/settings?msg=password+changed' if realm == 'admin' else '/user/panel'
+        return RedirectResponse(
+            destination,
+            status_code=303,
+            headers={'Set-Cookie': reply.cookie} if reply.cookie is not None else None,
+        )
+    if result.outcome in ('login_required', 'forbidden'):
+        headers = {'Set-Cookie': reply.cookie} if reply.cookie is not None else None
+        return RedirectResponse('/login', status_code=303, headers=headers)
+    if result.outcome in ('disabled', 'expired'):
+        return RedirectResponse('/user/panel', status_code=303)
+    target = '/admin/settings' if realm == 'admin' else '/user/change-password'
+    return RedirectResponse(
+        f'{target}?{urlencode({"msg": result.code or result.outcome})}',
+        status_code=303,
+    )
+
+
 def _read_error_response(exc):
     if isinstance(exc, LoginRequired):
         return JSONResponse(status_code=401, content={'error': 'login_required'})
@@ -261,6 +302,7 @@ def create_app(
     *,
     max_requests=32,
     react_dist=None,
+    lifespan=None,
     video_settings_store=None,
     video_provider_factory=None,
     video_workflow_store=None,
@@ -269,6 +311,8 @@ def create_app(
     video_scheduler_enabled=False,
     video_scheduler_interval=5.0,
     service_center_store=None,
+    github_trending_store=None,
+    github_trending_scheduler_enabled=False,
     plans_store=None,
     journal_store=None,
     chat_settings_store=None,
@@ -295,6 +339,17 @@ def create_app(
         openapi_url=None,
         redirect_slashes=False,
     )
+    if lifespan is not None:
+        route_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def combined_lifespan(app):
+            # Keep route-owned workers inside the domain service's lifecycle.
+            async with lifespan(app) as state:
+                async with route_lifespan(app):
+                    yield state
+
+        app.router.lifespan_context = combined_lifespan
     app.add_middleware(_SecurityAndErrorBoundary)
     capacity = threading.BoundedSemaphore(max_requests)
 
@@ -433,6 +488,7 @@ def create_app(
     register_health_routes(app, services, dispatch_form_write)
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
+    register_subscription_routes(app, services, dispatch)
     register_chat_routes(
         app,
         services,
@@ -456,6 +512,13 @@ def create_app(
     )
     register_agent_routes(app, services, dispatch)
     register_service_center_routes(app, services, dispatch, service_center_store)
+    register_github_trending_routes(
+        app,
+        services,
+        dispatch,
+        store=github_trending_store,
+        scheduler_enabled=github_trending_scheduler_enabled,
+    )
     register_plans_routes(
         app,
         services,
@@ -477,6 +540,10 @@ def create_app(
         )
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
+    # Register the loopback auth transport after React documents so the
+    # GET/HEAD `/auth` document is selected while POST `/auth` remains owned by
+    # the auth service route.
+    register_auth_routes(app)
 
     @app.post('/api/v1/login')
     async def login(request: Request):
@@ -486,12 +553,37 @@ def create_app(
             _login_response,
         )
 
+    @app.post('/login')
+    async def legacy_login(request: Request):
+        return await dispatch_form_write(
+            services.submit_login,
+            request,
+            _legacy_login_redirect,
+        )
+
+    @app.post('/user/login')
+    async def legacy_user_login(request: Request):
+        return await dispatch_form_write(
+            services.submit_login,
+            request,
+            _legacy_login_redirect,
+        )
+
     @app.post('/api/v1/logout')
     async def logout(request: Request):
         return await dispatch_form_write(
             services.submit_logout,
             request,
             _logout_response,
+            realm='admin',
+        )
+
+    @app.post('/logout')
+    async def legacy_logout(request: Request):
+        return await dispatch_form_write(
+            services.submit_logout,
+            request,
+            _legacy_logout_redirect,
             realm='admin',
         )
 
@@ -504,6 +596,15 @@ def create_app(
             realm='user',
         )
 
+    @app.post('/user/logout')
+    async def legacy_user_logout(request: Request):
+        return await dispatch_form_write(
+            services.submit_logout,
+            request,
+            _legacy_logout_redirect,
+            realm='user',
+        )
+
     @app.post('/api/v1/admin/change-password')
     async def admin_change_password(request: Request):
         return await dispatch_form_write(
@@ -513,12 +614,30 @@ def create_app(
             realm='admin',
         )
 
+    @app.post('/admin/change-password')
+    async def legacy_admin_change_password(request: Request):
+        return await dispatch_form_write(
+            services.submit_password_change,
+            request,
+            partial(_legacy_password_redirect, realm='admin'),
+            realm='admin',
+        )
+
     @app.post('/api/v1/user/change-password')
     async def user_change_password(request: Request):
         return await dispatch_form_write(
             services.submit_password_change,
             request,
             partial(_password_change_response, realm='user'),
+            realm='user',
+        )
+
+    @app.post('/user/change-password')
+    async def legacy_user_change_password(request: Request):
+        return await dispatch_form_write(
+            services.submit_password_change,
+            request,
+            partial(_legacy_password_redirect, realm='user'),
             realm='user',
         )
 

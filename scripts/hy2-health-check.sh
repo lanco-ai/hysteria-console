@@ -20,7 +20,7 @@ fi
 ok() { printf 'OK: %s\n' "$*"; }
 bad() { printf 'ERROR: %s\n' "$*" >&2; failed=1; }
 
-for unit in hysteria-auth.service hysteria-server.service hysteria-subscription.service tuic-server.service xray.service nginx.service; do
+for unit in hysteria-react.service hysteria-server.service tuic-server.service xray.service nginx.service; do
   if systemctl is-active --quiet "$unit"; then
     ok "$unit active"
   else
@@ -30,7 +30,7 @@ done
 
 if curl --fail --silent --show-error --noproxy '*' \
   --connect-timeout 1 --max-time 3 \
-  http://127.0.0.1:8082/readyz >/dev/null; then
+  http://127.0.0.1:8083/readyz >/dev/null; then
   ok "hysteria authentication dependencies ready"
 else
   bad "hysteria authentication dependencies are not ready"

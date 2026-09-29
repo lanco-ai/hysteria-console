@@ -1,8 +1,7 @@
 [Unit]
-Description=Hysteria React/FastAPI Panel (opt-in)
+Description=Hysteria Unified FastAPI Panel
 Wants=network-online.target
-After=network-online.target hysteria-subscription.service
-Requires=hysteria-subscription.service
+After=network-online.target
 
 [Service]
 Type=simple
@@ -33,8 +32,9 @@ TasksMax=32
 MemoryHigh=384M
 MemoryMax=512M
 
-# deploy.sh installs and enables this unit only when HY_ENABLE_REACT_PANEL=1.
-# The flag stages the runtime and keeps nginx on the legacy route; switching
-# public documents remains a separate, explicitly approved operation.
+# This is the sole application HTTP service.  Subscription and authentication
+# domain functions are imported in-process; no legacy HTTP listener is needed.
 [Install]
 WantedBy=multi-user.target
+
+# Installed and activated atomically by deploy.sh.

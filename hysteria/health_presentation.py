@@ -50,7 +50,7 @@ class HealthPresentation:
     def _health_probe_specs(self):
         return (
             ('CRON 心跳', self.probe_cron_heartbeat),
-            ('鉴权服务', lambda: self.probe_systemd('hysteria-auth.service')),
+            ('统一 FastAPI', lambda: self.probe_systemd('hysteria-react.service')),
             ('鉴权依赖', self.probe_auth_readiness),
             ('Hysteria', lambda: self.probe_systemd('hysteria-server.service')),
             ('Xray', lambda: self.probe_systemd('xray.service')),
@@ -92,7 +92,7 @@ class HealthPresentation:
     def _probe_overall_status(self):
         """Healthy if all core services are up and no certs are expiring."""
         checks = [
-            ('鉴权服务', lambda: self.probe_systemd('hysteria-auth.service')),
+            ('统一 FastAPI', lambda: self.probe_systemd('hysteria-react.service')),
             ('Hysteria', lambda: self.probe_systemd('hysteria-server.service')),
             ('Xray', lambda: self.probe_systemd('xray.service')),
             ('TUIC', lambda: self.probe_systemd('tuic-server.service')),

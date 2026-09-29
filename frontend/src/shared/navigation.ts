@@ -19,6 +19,7 @@ export const navigationGroups: NavigationGroup[] = [
     items: [
       { key: 'dashboard', href: '/admin', label: '用户', icon: 'dashboard' },
       { key: 'plans', href: '/admin/plans', label: '今日计划', icon: 'calendar' },
+      { key: 'github-trending', href: '/admin/github-trending', label: '开源发现', icon: 'dashboard' },
     ],
   },
   {

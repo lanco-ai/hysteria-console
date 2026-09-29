@@ -20,6 +20,8 @@ from preview_http_server import managed_preview_http_server
 from preview_http_server import read_request_body as _read_request_body
 from web_api import create_app
 from web_api.ai.service_store import AIServiceStore
+from web_api.github_trending_source import SourceError
+from web_api.github_trending_store import TrendingStore
 from web_api.plans_service import PlanStore
 from web_api.journal_service import JournalStore
 from web_api.service_center import ServiceCenterStore
@@ -29,6 +31,8 @@ from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
+    '/__react/admin/github-trending': ('GitHub 热榜', 'has-shell'),
+    '/admin/github-trending': ('GitHub 热榜', 'has-shell'),
     '/__react/admin/services': ('服务中心', 'has-shell'),
     '/admin/services': ('服务中心', 'has-shell'),
     '/__react/admin/plans': ('今日计划', 'has-shell'),
@@ -126,6 +130,10 @@ class PreviewGeminiAdapter:
                 }
             ],
         }
+
+
+async def _offline_trending_fetcher(_period):
+    raise SourceError('upstream_unavailable')
 
 
 def _manifest_assets(dist):
@@ -512,6 +520,10 @@ def preview_server(port=0, *, overview_fixture=False):
                 service.USER_SESSION_PANEL_PASSWORD,
             )
             preview_ai_root = Path(directory) / 'ai'
+            trending_store = TrendingStore(
+                Path(directory) / 'github-trending.json',
+                fetcher=_offline_trending_fetcher,
+            )
             app = create_app(
                 LegacyPanelServices(service),
                 max_requests=4,
@@ -524,12 +536,14 @@ def preview_server(port=0, *, overview_fixture=False):
                 ),
                 plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
                 journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
+                github_trending_store=trending_store,
                 gemini_adapter=PreviewGeminiAdapter(),
             )
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
                 handler = _handler(api_client, allowed_assets)
                 with managed_preview_http_server(('127.0.0.1', port), handler) as server:
                     server.preview_admin_cookie = admin_cookie
+                    server.preview_trending_store = trending_store
                     server.preview_admin_other_cookie = admin_other_cookie
                     server.preview_user_cookie = user_cookie
                     server.preview_user_other_cookie = user_other_cookie

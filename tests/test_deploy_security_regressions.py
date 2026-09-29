@@ -923,7 +923,7 @@ def test_https_deploy_preserves_live_vhosts_and_http_mode_removes_tls_link():
     deploy = _read(DEPLOY)
 
     preserve_branch = re.search(
-        r'(?ms)^if \[\[ "\$HY_ENABLE_HTTPS" == "1" &&\n'
+        r'(?ms)^elif \[\[ "\$HY_ENABLE_HTTPS" == "1" &&\n'
         r'.*?^elif \[\[ "\$HY_ENABLE_HTTPS" == "1" \]\]; then',
         deploy,
     )
@@ -934,21 +934,19 @@ def test_https_deploy_preserves_live_vhosts_and_http_mode_removes_tls_link():
     nginx_start = deploy.index(
         'log "Installing nginx site for hysteria-panel..."'
     )
-    nginx_end = deploy.index("symlink_atomic", nginx_start)
-    http_branch = re.search(
-        r'(?ms)^else\n(?P<body>.*?)^fi$',
-        deploy[nginx_start:nginx_end],
+    nginx_end = deploy.index(
+        "# ---------- 10. Systemd units ----------", nginx_start
     )
-    assert http_branch
+    nginx_section = deploy[nginx_start:nginx_end]
     assert (
         "durable_remove_artifact \\\n"
         "    /etc/nginx/sites-enabled/hysteria-panel-https.conf"
-        in http_branch.group("body")
+        in nginx_section
     )
     assert (
         'render "$REPO_DIR/nginx/hysteria-panel.conf" '
         "/etc/nginx/sites-available/hysteria-panel.conf"
-        in http_branch.group("body")
+        in nginx_section
     )
 
 

@@ -1,3 +1,4 @@
+import asyncio
 import http.client
 import json
 import os
@@ -6,13 +7,25 @@ import subprocess
 import sys
 import threading
 from contextlib import contextmanager
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 import pytest
+from web_api.github_trending_source import SourceError
 
 from tests import react_preview_server as preview
+
+
+def test_trending_preview_store_is_temporary_and_offline(tmp_path, monkeypatch):
+    monkeypatch.setattr(preview, 'DIST', running_preview_dist(tmp_path))
+    with preview.preview_server() as server:
+        store = server.preview_trending_store
+        assert store.path.parent != Path('/root/hysteria/state')
+        assert store.path.name == 'github-trending.json'
+        with pytest.raises(SourceError, match='upstream_unavailable'):
+            asyncio.run(store.fetcher('weekly'))
 
 
 def running_preview_dist(tmp_path):
