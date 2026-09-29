@@ -185,6 +185,20 @@ class GeminiAdapter:
             if not isinstance(message, dict) or message.get('role') not in ('system', 'user', 'assistant'):
                 raise ChatSettingsError('message is invalid')
             text = message.get('content')
+            if isinstance(text, list) and message['role'] == 'user':
+                parts = []
+                for part in text:
+                    if part.get('type') == 'text' and isinstance(part.get('text'), str):
+                        parts.append({'text': part['text']})
+                    elif part.get('type') == 'image_url':
+                        url = part.get('image_url', {}).get('url', '')
+                        if not isinstance(url, str) or not url.startswith('data:image/jpeg;base64,') or len(url) > 8_000_000:
+                            raise ChatSettingsError('image is invalid')
+                        parts.append({'inlineData': {'mimeType': 'image/jpeg', 'data': url.split(',', 1)[1]}})
+                    else:
+                        raise ChatSettingsError('message part is invalid')
+                contents.append({'role': 'user', 'parts': parts})
+                continue
             if not isinstance(text, str) or not text or len(text) > 32_768:
                 raise ChatSettingsError('message is invalid')
             if message['role'] == 'system':
@@ -234,8 +248,11 @@ class GeminiAdapter:
         *,
         temperature: float = 0.7,
         reasoning_effort: str = 'auto',
+        max_output_tokens: int | None = None,
     ) -> dict[str, object]:
         path, payload = self._chat_request(model, messages, temperature)
+        if max_output_tokens is not None:
+            payload['generationConfig']['maxOutputTokens'] = max_output_tokens
         if reasoning_effort not in ('auto', 'low', 'medium', 'high'):
             raise ChatSettingsError('reasoning_effort is invalid')
         response = self._request('POST', f'{path}:generateContent', profile, payload=payload)

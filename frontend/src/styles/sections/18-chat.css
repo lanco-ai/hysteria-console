@@ -950,3 +950,22 @@
 .chat-message-content h1, .chat-message-content h2, .chat-message-content h3 { margin: 16px 0 10px; line-height: 1.5; }
 .chat-message-content > :first-child { margin-top: 0; }
 .personal-workspace .chat-composer { padding-right: 56px; }
+.workspace-context-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
+.workspace-context-scope select { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; background: var(--bg-surface); color: var(--text-primary); }
+.workspace-dialog > textarea { width: 100%; box-sizing: border-box; }
+.workspace-tool-run { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin: 14px 0; }
+.workspace-tool-run pre, .workspace-tool-output pre, .workspace-dialog details > pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 260px; font-size: 12px; line-height: 1.6; padding: 10px; background: var(--bg-subtle); border-radius: 8px; }
+.workspace-tool-output img { display: block; max-width: 100%; max-height: 320px; height: auto; border-radius: 8px; margin: 10px 0; }
+.workspace-tool-options { display: grid; gap: 8px; max-height: 200px; overflow-y: auto; margin: 14px 0; }
+.workspace-tool-file { display: block; margin-block: 10px; font-size: 12px; overflow-wrap: anywhere; }
+.workspace-tool-file small { display: block; }
+.workspace-code-editor { font-family: var(--font-mono, monospace); font-size: 12px; }
+.workspace-message-attachments { display: flex; flex-wrap: wrap; gap: 12px; margin: 12px 0; }
+.workspace-message-attachments a { display: grid; gap: 6px; max-width: 240px; overflow-wrap: anywhere; font-size: 12px; }
+.workspace-message-attachments img { max-width: 100%; max-height: 180px; object-fit: contain; border-radius: 8px; }
+.workspace-paper small { white-space: normal; }
+@media (width <= 700px) {
+  .personal-workspace .chat-thread-heading { flex-wrap: wrap; }
+  .chat-message-heading > .workspace-actions { gap: 2px; }
+  .chat-message-heading .btn { padding-inline: 6px; }
+}

@@ -4,6 +4,7 @@ import asyncio
 import json
 import sqlite3
 from functools import partial
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote
 
@@ -13,6 +14,9 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .chat_documents import MAX_UPLOAD, extract
+from .chat_document_jobs import DocumentJobs
+from .chat_context import prepare_context
+from .chat_tool_routes import register_tool_routes
 from .chat_routes import _require_admin, _same_origin
 from .chat_service import ChatSettingsStore, ChatSettingsError, forward_chat_stream
 from .chat_workspace_store import WorkspaceError, WorkspaceStore, digest
@@ -54,10 +58,34 @@ class Turn(Revision):
     model: str = Field(min_length=1, max_length=256)
     reasoning_effort: Literal['auto', 'low', 'medium', 'high'] = 'auto'
     document_ids: list[str] = Field(default_factory=list, max_length=8)
+    knowledge_scope: Literal['none', 'project', 'all'] = 'none'
+    tool_run_ids: list[str] = Field(default_factory=list, max_length=3)
+
+
+class KnowledgeSearch(Input):
+    query: str = Field(min_length=1, max_length=2000)
+    project_id: str | None = Field(default=None, max_length=80)
+
+
+class Memory(Revision):
+    text: str = Field(min_length=1, max_length=800)
+    source_conversation_id: str | None = Field(default=None, max_length=80)
+    source_message_id: str | None = Field(default=None, max_length=80)
+
+
+class SummaryEdit(Revision):
+    text: str = Field(max_length=4000)
 
 
 class Stop(Input):
     request_id: str = Field(min_length=8, max_length=80)
+
+
+class Branch(Revision):
+    request_id: str = Field(min_length=8, max_length=80, pattern=r'^[a-zA-Z0-9_-]+$')
+    message_id: str = Field(min_length=1, max_length=80)
+    mode: Literal['continue', 'edit', 'regenerate']
+    content: str = Field(default='', max_length=12000)
 
 
 class LegacyMessage(Input):
@@ -92,6 +120,8 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
     store = store or WorkspaceStore()
     settings = settings or ChatSettingsStore()
     journal = journal or JournalStore()
+    document_jobs = DocumentJobs(store)
+    knowledge = document_jobs.knowledge
 
     async def guard(request):
         if request.method != 'GET' and not _same_origin(request):
@@ -128,6 +158,8 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
     async def workspace_error(_request, exc):
         return JSONResponse({'error': exc.code}, status_code=exc.status, headers={'Cache-Control': 'no-store'})
 
+    register_tool_routes(app, guard, run, data, store, settings)
+
     @app.get('/api/chat/projects')
     async def projects(request: Request):
         await guard(request)
@@ -147,6 +179,21 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
     async def delete_project(request: Request, project_id: str):
         await guard(request)
         return await run(request, store.delete_project, project_id, (await data(request, Revision))['revision'])
+
+    @app.post('/api/chat/projects/{project_id}/memories')
+    async def add_memory(request: Request, project_id: str):
+        await guard(request)
+        return await run(request, store.save_memory, project_id, await data(request, Memory))
+
+    @app.patch('/api/chat/projects/{project_id}/memories/{memory_id}')
+    async def edit_memory(request: Request, project_id: str, memory_id: str):
+        await guard(request)
+        return await run(request, store.save_memory, project_id, await data(request, Memory), memory_id)
+
+    @app.delete('/api/chat/projects/{project_id}/memories/{memory_id}')
+    async def remove_memory(request: Request, project_id: str, memory_id: str):
+        await guard(request)
+        return await run(request, store.delete_memory, project_id, memory_id, (await data(request, Revision))['revision'])
 
     @app.get('/api/chat/conversations')
     async def conversations(request: Request, q: str = '', project_id: str | None = None):
@@ -190,10 +237,49 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
         await guard(request)
         return await run(request, store.delete, conversation_id, (await data(request, Revision))['revision'])
 
+    @app.post('/api/chat/conversations/{conversation_id}/branches')
+    async def branch_conversation(request: Request, conversation_id: str):
+        await guard(request)
+        values = await data(request, Branch)
+        if values['mode'] == 'edit' and not values['content'].strip():
+            raise WorkspaceError('empty_message')
+        return await run(request, store.fork, conversation_id, values)
+
+    @app.patch('/api/chat/conversations/{conversation_id}/context')
+    async def edit_context(request: Request, conversation_id: str):
+        await guard(request)
+        return await run(request, store.edit_summary, conversation_id, await data(request, SummaryEdit))
+
     @app.get('/api/chat/projects/{project_id}/documents')
     async def documents(request: Request, project_id: str):
         await guard(request)
+        document_jobs.resume()
         return await run(request, store.documents, project_id)
+
+    @app.get('/api/chat/knowledge/documents')
+    async def library(request: Request):
+        await guard(request)
+        document_jobs.resume()
+        return await run(request, store.documents, None)
+
+    @app.get('/api/chat/knowledge/status')
+    async def knowledge_status(request: Request):
+        await guard(request)
+        document_jobs.resume()
+        return await run(request, knowledge.status)
+
+    @app.post('/api/chat/knowledge/search')
+    async def knowledge_search(request: Request):
+        await guard(request)
+        values = await data(request, KnowledgeSearch)
+        return await run(request, knowledge.search, values['query'], values.get('project_id'))
+
+    @app.post('/api/chat/documents/{document_id}/reindex')
+    async def reindex(request: Request, document_id: str):
+        await guard(request)
+        result = await run(request, store.reindex_document, document_id)
+        document_jobs.resume()
+        return result
 
     @app.post('/api/chat/documents/upload')
     async def upload(request: Request, project_id: str, filename: str):
@@ -208,9 +294,24 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
             if len(raw) > MAX_UPLOAD:
                 raise WorkspaceError('file_too_large', 413)
         def save():
+            if Path(filename).suffix.lower() in ('.pdf', '.docx', '.png', '.jpg', '.jpeg', '.webp'):
+                if not raw:
+                    raise WorkspaceError('invalid_document')
+                item = store.add_document(project_id, filename, bytes(raw), [], 'application/octet-stream', 'queued')
+                document_jobs.resume()
+                return item
             pages, media_type = extract(filename, bytes(raw))
-            return store.add_document(project_id, filename, bytes(raw), pages, media_type)
+            item = store.add_document(project_id, filename, bytes(raw), pages, media_type)
+            document_jobs.resume()
+            return item
         return await run(request, save)
+
+    @app.post('/api/chat/documents/{document_id}/retry')
+    async def retry_document(request: Request, document_id: str):
+        await guard(request)
+        result = await run(request, store.retry_document, document_id)
+        document_jobs.resume()
+        return result
 
     @app.get('/api/chat/documents/{document_id}/file')
     async def document_file(request: Request, document_id: str):
@@ -250,7 +351,17 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
     async def turn(request: Request, conversation_id: str):
         await guard(request)
         values = await data(request, Turn)
-        item, messages = await run(request, store.begin, conversation_id, values)
+        replay = await run(request, store.turn_replay, conversation_id, values)
+        if replay:
+            return StreamingResponse(iter([sse({'type': 'snapshot', 'conversation': replay}), sse({'type': 'done'})]), media_type='text/event-stream')
+        semantic = None
+        if values['knowledge_scope'] != 'none':
+            conversation = await run(request, store.get, conversation_id)
+            if values['knowledge_scope'] == 'project' and not conversation['project_id']:
+                raise WorkspaceError('knowledge_project_required')
+            result = await run(request, knowledge.search, values['content'], conversation['project_id'] if values['knowledge_scope'] == 'project' else None)
+            semantic = result['items']
+        item, messages = await run(request, store.begin, conversation_id, values, semantic)
         if messages is None:
             return StreamingResponse(iter([sse({'type': 'snapshot', 'conversation': item}), sse({'type': 'done'})]), media_type='text/event-stream')
 
@@ -263,10 +374,15 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
             upstream = None
             try:
                 yield sse({'type': 'snapshot', 'conversation': item})
+                prepared, incomplete = await anyio.to_thread.run_sync(partial(prepare_context, store, settings, conversation_id, values['request_id'], values['model'], messages))
+                if prepared is None:
+                    return
+                if incomplete:
+                    yield sse({'type': 'notice', 'notice': 'context_summary_incomplete'})
                 if callable(getattr(settings, 'stream', None)):
-                    upstream = settings.stream(messages, model=values['model'], reasoning_effort=values['reasoning_effort'])
+                    upstream = settings.stream(prepared, model=values['model'], reasoning_effort=values['reasoning_effort'])
                 else:
-                    upstream = forward_chat_stream(settings.read(), messages, model=values['model'], reasoning_effort=values['reasoning_effort'])
+                    upstream = forward_chat_stream(settings.read(), prepared, model=values['model'], reasoning_effort=values['reasoning_effort'])
                 buffer = ''
                 async with asyncio.timeout(480):
                     async for chunk in upstream:

@@ -133,6 +133,17 @@ declare -a REACT_WEB_API_MODULES=(
   chat_workspace_routes.py
   chat_documents.py
   chat_pdf_worker.py
+  chat_context.py
+  chat_document_jobs.py
+  chat_document_worker.py
+  chat_embedding_worker.py
+  chat_knowledge.py
+  chat_python_sandbox.py
+  chat_search_worker.py
+  chat_tool_network.py
+  chat_tool_routes.py
+  chat_tools.py
+  chat_schema_worker.py
   compat_routes.py
   config_models.py
   document_routes.py
@@ -383,6 +394,17 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/chat_workspace_routes.py"
   add_durable_artifact "$HY_DIR/web_api/chat_documents.py"
   add_durable_artifact "$HY_DIR/web_api/chat_pdf_worker.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_context.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_document_jobs.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_document_worker.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_embedding_worker.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_knowledge.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_python_sandbox.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_search_worker.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_tool_network.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_tool_routes.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_tools.py"
+  add_durable_artifact "$HY_DIR/web_api/chat_schema_worker.py"
   add_durable_artifact "$HY_DIR/web_api/compat_routes.py"
   add_durable_artifact "$HY_DIR/web_api/config_models.py"
   add_durable_artifact "$HY_DIR/web_api/document_routes.py"
@@ -2163,6 +2185,17 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/chat_workspace_routes.py" "$HY_DIR/web_api/chat_workspace_routes.py"
   render "$REPO_DIR/hysteria/web_api/chat_documents.py" "$HY_DIR/web_api/chat_documents.py"
   render "$REPO_DIR/hysteria/web_api/chat_pdf_worker.py" "$HY_DIR/web_api/chat_pdf_worker.py"
+  render "$REPO_DIR/hysteria/web_api/chat_context.py" "$HY_DIR/web_api/chat_context.py"
+  render "$REPO_DIR/hysteria/web_api/chat_document_jobs.py" "$HY_DIR/web_api/chat_document_jobs.py"
+  render "$REPO_DIR/hysteria/web_api/chat_document_worker.py" "$HY_DIR/web_api/chat_document_worker.py"
+  render "$REPO_DIR/hysteria/web_api/chat_embedding_worker.py" "$HY_DIR/web_api/chat_embedding_worker.py"
+  render "$REPO_DIR/hysteria/web_api/chat_knowledge.py" "$HY_DIR/web_api/chat_knowledge.py"
+  render "$REPO_DIR/hysteria/web_api/chat_python_sandbox.py" "$HY_DIR/web_api/chat_python_sandbox.py"
+  render "$REPO_DIR/hysteria/web_api/chat_search_worker.py" "$HY_DIR/web_api/chat_search_worker.py"
+  render "$REPO_DIR/hysteria/web_api/chat_tool_network.py" "$HY_DIR/web_api/chat_tool_network.py"
+  render "$REPO_DIR/hysteria/web_api/chat_tool_routes.py" "$HY_DIR/web_api/chat_tool_routes.py"
+  render "$REPO_DIR/hysteria/web_api/chat_tools.py" "$HY_DIR/web_api/chat_tools.py"
+  render "$REPO_DIR/hysteria/web_api/chat_schema_worker.py" "$HY_DIR/web_api/chat_schema_worker.py"
   render "$REPO_DIR/hysteria/web_api/compat_routes.py" "$HY_DIR/web_api/compat_routes.py"
   render "$REPO_DIR/hysteria/web_api/config_models.py" "$HY_DIR/web_api/config_models.py"
   render "$REPO_DIR/hysteria/web_api/document_routes.py" "$HY_DIR/web_api/document_routes.py"

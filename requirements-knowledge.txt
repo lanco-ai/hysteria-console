@@ -1,0 +1,4 @@
+# Isolated worker environment; the web process never imports these libraries.
+onnxruntime==1.30.0
+sentencepiece==0.2.2
+numpy==2.5.3

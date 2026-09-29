@@ -616,6 +616,7 @@ def build_upstream_request(
     *,
     model: str,
     reasoning_effort: str = 'auto',
+    max_output_tokens: int | None = None,
 ) -> urllib.request.Request:
     if not settings.api_key:
         raise ChatSettingsError('api key is not configured')
@@ -633,6 +634,8 @@ def build_upstream_request(
     }
     if reasoning_effort != 'auto':
         payload['reasoning_effort'] = reasoning_effort
+    if max_output_tokens is not None:
+        payload['max_completion_tokens'] = max_output_tokens
     body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
     request = urllib.request.Request(url, data=body, method='POST')
     request.add_header('Authorization', f'Bearer {settings.api_key}')
@@ -648,14 +651,15 @@ def forward_chat(
     model: str,
     reasoning_effort: str = 'auto',
     opener=None,
+    max_output_tokens: int | None = None,
 ) -> dict[str, object]:
-    request = build_upstream_request(settings, messages, model=model, reasoning_effort=reasoning_effort)
+    request = build_upstream_request(settings, messages, model=model, reasoning_effort=reasoning_effort, max_output_tokens=max_output_tokens)
     try:
         return _read_json_request(request, opener=opener, timeout=120)
     except ChatUpstreamError as error:
         if reasoning_effort == 'auto' or not error.reasoning_unsupported:
             raise
-        fallback_request = build_upstream_request(settings, messages, model=model, reasoning_effort='auto')
+        fallback_request = build_upstream_request(settings, messages, model=model, reasoning_effort='auto', max_output_tokens=max_output_tokens)
         result = _read_json_request(fallback_request, opener=opener, timeout=120)
         result['chat_notice'] = 'reasoning_unsupported'
         return result

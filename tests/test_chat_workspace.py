@@ -40,9 +40,28 @@ class Provider:
         return generate()
 
 
+class TestEmbedder:
+    """Cheap deterministic fixture; real semantic inference has its own integration test."""
+    def available(self):
+        return True
+
+    def embed(self, texts, *, query=False):
+        import hashlib
+        from math import sqrt
+        result = []
+        for text in texts:
+            vector = [0.] * 384
+            for word in text.lower().split():
+                vector[int(hashlib.sha256(word.encode()).hexdigest()[:8], 16) % 384] += 1
+            norm = sqrt(sum(v * v for v in vector)) or 1
+            result.append([v / norm for v in vector])
+        return result
+
+
 @pytest.fixture
 def env(tmp_path):
     store = WorkspaceStore(tmp_path / 'chat' / 'workspace.sqlite3')
+    store.embedder = TestEmbedder()
     journal = JournalStore(tmp_path / 'journal' / 'entries.json')
     provider = Provider()
     app = create_app(Services(), chat_workspace_store=store, journal_store=journal, chat_settings_store=provider)

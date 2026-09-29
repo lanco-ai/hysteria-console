@@ -74,7 +74,7 @@ class ChatSettingsAdapter:
             error.status, retry_after=error.retry_after, code=error.code,
         ) from None
 
-    def complete(self, messages, *, model, reasoning_effort='auto'):
+    def complete(self, messages, *, model, reasoning_effort='auto', max_output_tokens=None):
         profile = self._profile()
         if not profile['api_key']:
             raise ChatSettingsError('api key is not configured')
@@ -83,12 +83,14 @@ class ChatSettingsAdapter:
                 return self.gemini.generate_chat(
                     profile, model, messages, temperature=profile['temperature'],
                     reasoning_effort=reasoning_effort,
+                    **({'max_output_tokens': max_output_tokens} if max_output_tokens is not None else {}),
                 )
             except GeminiUpstreamError as exc:
                 self._translate_gemini_error(exc)
         return forward_chat(
             self._as_chat_settings(profile), messages, model=model,
             reasoning_effort=reasoning_effort,
+            max_output_tokens=max_output_tokens,
         )
 
     def stream(self, messages, *, model, reasoning_effort='auto'):
