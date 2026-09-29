@@ -72,13 +72,29 @@ PREVIEW_MUST_CHANGE_PASSWORD = 'preview-change-required-password'
 RECEIPT_TIMEOUT = 10
 
 
+class PreviewWorkspaceStore(WorkspaceStore):
+    def __init__(self, path):
+        super().__init__(path)
+        self.embedder = self
+
+    def available(self):
+        return True
+
+    def embed(self, texts, **kwargs):
+        return [[1.] + [0.] * 383 for _ in texts]
+
+
 class PreviewWorkspaceProvider:
     """Fictional streaming answers; cannot access any external provider."""
+
+    def complete(self, messages, **kwargs):
+        content = json.dumps({'calls': [{'tool': 'python', 'arguments': {'code': 'print(2.0)'}}]}) if 'calls' in messages[0]['content'] else '预览摘要：已经讨论写入放大，后续通过实验验证。'
+        return {'choices': [{'message': {'content': content}}], 'usage': {'prompt_tokens': 20, 'completion_tokens': 10}}
 
     def stream(self, messages, **_kwargs):
         from web_api.chat_workspace_routes import sse
         async def generate():
-            yield sse({'type': 'delta', 'text': '### 理解与验证\n\nLSM Tree 将随机写入变成顺序写入。 [S1]\n\n| 项目 | 观察 |\n| --- | --- |\n| 写入放大 | 需要测量 |\n\n$E = mc^2$\n\n' + messages[-1]['content']})
+            yield sse({'type': 'delta', 'text': '### 理解与验证\n\nLSM Tree 将随机写入变成顺序写入。 [S1]\n\n| 项目 | 观察 |\n| --- | --- |\n| 写入放大 | 需要测量 |\n\n$E = mc^2$\n\n' + (messages[-1]['content'] if isinstance(messages[-1]['content'], str) else messages[-1]['content'][0]['text'])})
             yield sse({'type': 'usage', 'usage': {'prompt_tokens': 42, 'completion_tokens': 24}})
             yield sse({'type': 'done'})
         return generate()
@@ -438,6 +454,19 @@ def preview_server(port=0, *, overview_fixture=False):
         legacy_preview.pytest.MonkeyPatch.context() as patch,
     ):
         service = legacy_preview.ss
+        import base64
+        import web_api.chat_tools as chat_tools
+        from jsonschema import Draft202012Validator
+        from referencing import Registry
+        def preview_validate(schema, arguments):
+            def refuse(uri):
+                raise ValueError('Preview forbids schema networking')
+            Draft202012Validator(schema, registry=Registry(retrieve=refuse)).validate(arguments)
+        async def preview_python(code, files):
+            # UI fixture only. Real container behavior is verified separately.
+            return {'stdout': 'mean = 2.0', 'error': None, 'files': [{'name': 'mean.txt', 'data': base64.b64encode(b'mean=2.0').decode()}]}
+        patch.setattr(chat_tools, 'validate_arguments', preview_validate)
+        patch.setattr(chat_tools, 'run_python', preview_python)
         # Only the controlled React preview doubles external effects. Accounting,
         # account state, session invalidation and revocation WAL still use real
         # services in the temporary directory under the unchanged outer guards.
@@ -559,7 +588,7 @@ def preview_server(port=0, *, overview_fixture=False):
                 ),
                 plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
                 journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
-                chat_workspace_store=WorkspaceStore(Path(directory) / 'chat' / 'workspace.sqlite3'),
+                chat_workspace_store=PreviewWorkspaceStore(Path(directory) / 'chat' / 'workspace.sqlite3'),
                 chat_workspace_settings=PreviewWorkspaceProvider(),
                 github_trending_store=trending_store,
                 gemini_adapter=PreviewGeminiAdapter(),

@@ -64,7 +64,7 @@ def retrieve(query, documents):
                     continue
                 score = len(query_terms & terms(quote))
                 candidates.append((score, {'document_id': metadata['id'], 'title': metadata['title'],
-                                           'sha256': metadata['sha256'], 'page': page, 'quote': quote}))
+                                           'sha256': metadata['sha256'], 'page': page, 'quote': quote, 'location_kind': 'page' if metadata.get('media_type') == 'application/pdf' else 'section'}))
     candidates.sort(key=lambda pair: pair[0], reverse=True)
     selected, represented = [], set()
     # Give every selected document a source, then fill with the best remaining matches.
