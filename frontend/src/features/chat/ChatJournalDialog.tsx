@@ -24,6 +24,6 @@ export function ChatJournalDialog({ conversation, message, onClose }: { conversa
     <label>标题<input className="input" value={title} maxLength={160} onChange={e => setTitle(e.target.value)} /></label>
     <label>我的学习记录<textarea className="input" value={body} maxLength={12000} rows={10} required onChange={e => setBody(e.target.value)} /></label>
     <label>下一次如何验证或复习<textarea className="input" value={next} maxLength={2000} rows={2} onChange={e => setNext(e.target.value)} /></label>
-    {feedback && <p role="status">{feedback}</p>}<div className="workspace-actions"><button className="btn btn-primary" disabled={busy || saved || !body.trim()}>确认保存到日记</button><a href="/admin/plans?tab=journal" className="btn btn-secondary">查看日记</a></div>
+    {feedback && <p role="status">{feedback}</p>}<div className="workspace-actions"><button className="btn btn-primary" disabled={busy || saved || !body.trim()}>确认保存到日记</button><a href="/admin/plans#daily-timeline" className="btn btn-secondary">查看日记</a></div>
   </form></WorkspaceDialog>;
 }

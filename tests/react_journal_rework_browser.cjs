@@ -54,8 +54,8 @@ const { expect } = require('@playwright/test');
       try {
         await expect(page.getByLabel('记录内容')).toBeDisabled();
         await expect(page.getByLabel('开始时间')).toBeDisabled();
-      } finally { if (release) release(); await expect(page.getByRole('status')).toContainText('记录已保存'); }
-      await expect(page.getByRole('status')).toContainText('记录已保存');
+      } finally { if (release) release(); await expect(page.locator('.journal-message[role="status"]')).toContainText('记录已保存'); }
+      await expect(page.locator('.journal-message[role="status"]')).toContainText('记录已保存');
     });
 
     await scenario('automatic quick-note time refreshes at save', async page => {
@@ -70,14 +70,14 @@ const { expect } = require('@playwright/test');
       });
       await page.getByLabel('记录内容').fill('Note after overnight open');
       await page.getByRole('button', { name: '保存记录' }).click();
-      await expect(page.getByRole('status')).toContainText('记录已保存');
+      await expect(page.locator('.journal-message[role="status"]')).toContainText('记录已保存');
       assert.equal(savedTime, '2026-09-30T17:00:00.000Z');
     });
 
     await scenario('past weekly review belongs to selected week', async page => {
       await page.clock.install({ time: new Date('2026-09-29T17:00:00Z') });
       await page.goto(`${base}/admin/plans`);
-      await page.getByRole('tab', { name: '回顾' }).click();
+      await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '回顾' }).click();
       await page.getByRole('button', { name: '上周' }).click();
       await page.getByRole('button', { name: '写每周回顾' }).click();
       await expect(page.getByLabel('开始时间')).toHaveValue(/^2026-09-21T/);
@@ -140,7 +140,7 @@ const { expect } = require('@playwright/test');
       await page.goto(`${base}/admin/plans`);
       await page.getByLabel('记录内容').fill('Current week only');
       await page.getByRole('button', { name: '保存记录' }).click();
-      await page.getByRole('tab', { name: '回顾' }).click();
+      await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '回顾' }).click();
       await expect(page.locator('.journal-counts')).toContainText('生活：1');
       let releaseSummary;
       await page.route('**/api/journal/summary?*', async route => {

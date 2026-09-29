@@ -58,7 +58,7 @@ async function main() {
         await page.locator(`.sidebar a[href="${path}"]`).click();
         await expect(page).toHaveURL(`${baseUrl}/__react${path}`);
         await expect(page.locator(`.sidebar a[href="${path}"]`)).toHaveAttribute('aria-current', 'page');
-        if (path === '/admin/plans') await expect(page.getByRole('heading', { name: '今日计划' })).toBeVisible();
+        if (path === '/admin/plans') await expect(page.getByRole('heading', { name: '今日计划', level: 1 })).toBeVisible();
         if (mobile) {
           await page.locator('#sidebar-toggle').click();
           await expect.poll(async () => Math.round((await page.locator('.sidebar').boundingBox()).x)).toBe(0);
