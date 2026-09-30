@@ -143,3 +143,36 @@ def test_journal_orders_by_instant_across_different_timestamp_offsets(tmp_path):
     store.create({'kind': 'life', 'occurred_at': '2026-09-29T19:00:00-07:00',
                   'timezone': 'America/Los_Angeles', 'body': 'Later'})
     assert [item['body'] for item in store.read(date='2026-09-29')['items']] == ['Later', 'Earlier']
+
+
+def test_journal_autosave_create_retry_has_only_one_persisted_record(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from uuid import uuid4
+    from web_api.journal_service import JournalStore
+
+    store = JournalStore(tmp_path / 'journal.json')
+    key = str(uuid4())
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(lambda _: store.create(paper(), idempotency_key=key), range(4)))
+    assert len({result['item']['id'] for result in results}) == 1
+    first = results[0]['item']
+    updated = store.update(first['id'], {**paper(body='Continued typing'), 'revision': 1})['item']
+    retried = store.create(paper(), idempotency_key=key)['item']
+    assert (retried['id'], retried['revision'], retried['body']) == (updated['id'], 2, 'Continued typing')
+    assert len(JournalStore(store.path).read()['items']) == 1
+
+
+def test_journal_optional_create_key_validates_after_auth_and_origin(tmp_path):
+    from uuid import uuid4
+    from web_api.journal_service import JournalStore
+
+    with TestClient(create_app(Sessions(), journal_store=JournalStore(tmp_path / 'journal.json'))) as client:
+        for key in ['', 'arbitrary-url', 'x' * 300, '00000000-0000-0000-0000-000000000000']:
+            assert client.post('/api/journal', headers={**HEADERS, 'Idempotency-Key': key}, json=paper()).status_code == 422
+        keyed = {**HEADERS, 'Idempotency-Key': str(uuid4())}
+        first = client.post('/api/journal', headers=keyed, json=paper()).json()['item']
+        assert client.post('/api/journal', headers=keyed, json=paper()).json()['item']['id'] == first['id']
+        assert client.post('/api/journal', headers={'Idempotency-Key': keyed['Idempotency-Key']}, json=paper()).status_code == 401
+        assert client.post('/api/journal', headers={**keyed, 'Sec-Fetch-Site': 'cross-site'}, json=paper()).status_code == 403
+        # Existing clients without a key still create distinct entries.
+        assert client.post('/api/journal', headers=HEADERS, json=paper()).json()['item']['id'] != first['id']

@@ -58,8 +58,8 @@ export function listJournal(filters: { date?: string | undefined; kind?: string 
   return journalRequest<JournalList>(`/api/journal${query.size ? `?${query}` : ''}`, signal ? { signal } : {});
 }
 
-export function createJournal(draft: JournalDraft): Promise<{ item: JournalRecord }> {
-  return journalRequest('/api/journal', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(draft) });
+export function createJournal(draft: JournalDraft, createKey?: string): Promise<{ item: JournalRecord }> {
+  return journalRequest('/api/journal', { method: 'POST', headers: { 'Content-Type': 'application/json', ...(createKey ? { 'Idempotency-Key': createKey } : {}) }, body: JSON.stringify(draft) });
 }
 
 export function updateJournal(id: string, draft: JournalDraft, revision: number): Promise<{ item: JournalRecord }> {

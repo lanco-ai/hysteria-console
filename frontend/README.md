@@ -29,15 +29,32 @@ its cooldown and upstream retry fields are authoritative.
 
 `/admin/plans` keeps the shared date header and plan quadrants on the main page.
 The 时间线 and 回顾 links open a native modal side panel (full screen on phones),
-with record browsing above an inline writing form in the same view. The heading
-and filters stay available while writing; saving updates the list in place.
-The review panel uses the same form and record type selector for daily and weekly
-recaps. Chat's “保存到记录” action saves to this same timeline and retains the
-source conversation link. Existing `#daily-timeline` and
-`#daily-review` links also open the relevant panel; `#daily-plans` closes it.
-Escape and the close button return focus without scrolling the main page.
-Unsubmitted journal drafts remain in memory while the panel is closed; leaving
-or reloading the page still uses the existing unsaved-change guard.
+with direct writing in the timeline content box. The separate record form,
+record-type/time fields, optional-field controls, and save button have been removed.
+Typing pauses for 1.2 seconds or leaving the box saves automatically; Ctrl/Cmd+Enter
+also saves immediately. Continued typing updates the same record. The small plus
+control after a successful save starts another entry. New entries use the selected
+date and category (all categories defaults to life); the review box creates a
+weekly recap in the selected week. Older structured fields and chat provenance
+remain intact when editing a record's body. Search and category filtering still
+read all dates, as the toolbar note states.
+
+Chat's “保存到记录” action saves to the same timeline with its source link.
+Existing `#daily-timeline` and `#daily-review` links open the relevant panel;
+`#daily-plans` closes it. Escape and close return focus to the main page.
+Unsaved text remains in memory while closed; failed saves stop automatic retries
+and retain the text for explicit retry. Leaving/reloading before a save finishes
+uses the existing unsaved-change guard. After a failed save, “重新读取” requires
+confirmation before discarding unsaved text and loading the server's records.
+Saved text persists on the server;
+unsaved text is not stored in browser storage.
+
+Autosave serializes requests and uses an optional UUID-v4 `Idempotency-Key` on
+journal creation. The server deduplicates keyed creates under the existing file
+lock without a separate cache; existing clients without a key retain their API
+behavior. Updates keep the existing revision check. A lost update response is
+reconciled only when the server record exactly matches the submitted fields.
+No journal text is sent to an AI service.
 
 ## Asset ownership
 

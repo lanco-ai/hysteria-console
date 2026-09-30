@@ -111,7 +111,8 @@ def register_journal_routes(app, services, dispatch, *, store=None):
         payload = await parse_json(request, JournalInput)
         if isinstance(payload, JSONResponse):
             return payload
-        return await execute(request, call_store(store.create, values=payload.model_dump(mode='json')), created=True)
+        return await execute(request, call_store(store.create, values=payload.model_dump(mode='json'),
+                                                idempotency_key=request.headers.get('idempotency-key')), created=True)
 
     @app.put('/api/journal/{record_id}')
     async def update_journal(request: Request, record_id: str):

@@ -3,7 +3,7 @@
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import state_store
@@ -169,17 +169,23 @@ class JournalStore:
         records.sort(key=lambda item: (datetime.fromisoformat(item['occurred_at']).timestamp(), item['id']), reverse=True)
         return {'items': records}
 
-    def create(self, values):
-        return self._create(values)
+    def create(self, values, idempotency_key=None):
+        return self._create(values, idempotency_key=idempotency_key)
 
     def create_from_chat(self, values, provenance):
         return self._create(values, provenance)
 
-    def _create(self, values, provenance=None):
+    def _create(self, values, provenance=None, idempotency_key=None):
         item = JournalInput.model_validate(values)
+        record_id = str(uuid4())
+        if idempotency_key is not None:
+            key = UUID(idempotency_key)
+            if key.version != 4 or str(key) != idempotency_key:
+                raise ValueError('invalid create key')
+            record_id = str(key)
         now = datetime.now(timezone.utc).isoformat()
         record = {
-            **item.model_dump(mode='json'), 'id': str(uuid4()),
+            **item.model_dump(mode='json'), 'id': record_id,
             'local_date': item.occurred_at.astimezone(ZoneInfo(item.timezone)).date().isoformat(),
             'created_at': now, 'updated_at': now, 'revision': 1,
         }
@@ -187,6 +193,11 @@ class JournalStore:
             record['chat_source'] = provenance
         with state_store.file_lock(self._lock_path(), timeout=3):
             records = self._all()
+            # A lost response must not create another autosaved entry on retry.
+            if idempotency_key is not None:
+                for old in records:
+                    if old['id'] == record_id:
+                        return {'item': old}
             if provenance:
                 for old in records:
                     source = old.get('chat_source') or {}
