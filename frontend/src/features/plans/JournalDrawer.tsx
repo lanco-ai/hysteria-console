@@ -1,8 +1,9 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 /** A native modal keeps the background inert and traps keyboard focus. */
-export function JournalDrawer({ open, title, onClose, viewKey, children }: {
+export function JournalDrawer({ open, title, onClose, viewKey, children, tools, footer }: {
   open: boolean; title: string; onClose: () => void; viewKey: string; children: ReactNode;
+  tools?: ReactNode; footer?: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -38,8 +39,10 @@ export function JournalDrawer({ open, title, onClose, viewKey, children }: {
     }}
     onCancel={event => { event.preventDefault(); onClose(); }}>
     <header className="journal-drawer-header"><div><span>我的记录</span><h2 id="journal-drawer-title">{title}</h2></div>
-      <button ref={closeRef} className="btn btn-secondary btn-sm" type="button" aria-label="关闭记录面板" onClick={onClose}>关闭 <span aria-hidden="true">×</span></button>
+      <button ref={closeRef} className="btn btn-secondary btn-sm" type="button" aria-label="关闭记录面板" onClick={onClose}><span className="journal-drawer-close-label">关闭 </span><span aria-hidden="true">×</span></button>
     </header>
+    {tools ? <div className="journal-drawer-tools">{tools}</div> : null}
     <div className="journal-drawer-body" ref={bodyRef}>{children}</div>
+    {footer ? <footer className="journal-drawer-footer">{footer}</footer> : null}
   </dialog>;
 }

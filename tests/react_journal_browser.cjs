@@ -23,12 +23,30 @@ const fs = require('node:fs');
       }));
       assert(layout.width <= layout.clientWidth && layout.right <= width && layout.bottom <= 900, `${view} drawer should fit ${width}px`);
       await expect(page.locator(view === 'timeline' ? '.journal-timeline-primary' : '.journal-review')).toBeVisible();
+      const positions = await page.locator('#daily-journal-drawer').evaluate(element => {
+        const drawer = element.getBoundingClientRect();
+        const title = element.querySelector('#journal-drawer-title').getBoundingClientRect();
+        const compose = Array.from(element.querySelectorAll('button')).find(button => button.textContent === '写记录').getBoundingClientRect();
+        return { titleCenter: title.left + title.width / 2, drawerCenter: drawer.left + drawer.width / 2, composeBottom: compose.bottom, drawerBottom: drawer.bottom };
+      });
+      assert(Math.abs(positions.titleCenter - positions.drawerCenter) < 2, `${view} title should be centered at ${width}px`);
+      assert(positions.drawerBottom - positions.composeBottom < 60, `${view} compose action should stay at the bottom at ${width}px`);
+      if (view === 'timeline') {
+        const date = await page.getByLabel('记录日期').boundingBox();
+        const kind = await page.getByLabel('筛选分类').boundingBox();
+        assert(Math.abs(date.y - kind.y) < 2, `date and category should share a compact row at ${width}px`);
+        if (width > 680) assert(date.x > positions.drawerCenter - 100, 'date and category should sit at the upper right');
+      }
     }
     await page.goto(`${base}/admin/plans#daily-timeline`);
     await expect(page.getByRole('dialog', { name: '生活与学习时间线' })).toBeVisible();
     await expect(page.locator('.journal-timeline-primary')).toHaveCount(1);
-    for (const width of [901, 1024, 1100, 1280]) await checkJournalLayout('timeline', width);
+    for (const width of [390, 768, 901, 1024, 1100, 1280, 1440]) await checkJournalLayout('timeline', width);
     const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
+    if (screenshotDir) {
+      fs.mkdirSync(screenshotDir, { recursive: true });
+      await page.screenshot({ path: path.join(screenshotDir, 'journal-timeline-desktop-clean.png') });
+    }
     await page.setViewportSize({ width: 390, height: 840 });
     await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThan(1);
     const cleanMobileWidth = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -39,6 +57,15 @@ const fs = require('node:fs');
     }
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByRole('button', { name: '写记录', exact: true }).click();
+    for (const width of [390, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const kind = await page.getByLabel('记录类型').boundingBox();
+      const time = await page.getByLabel('开始时间').boundingBox();
+      assert(Math.abs(kind.y - time.y) < 2 && Math.abs(kind.height - time.height) < 2, `record type and start time should align at ${width}px`);
+      assert(await page.locator('.journal-drawer-body').evaluate(element => element.scrollWidth <= element.clientWidth), `editor should fit ${width}px`);
+      if (screenshotDir && width === 390) await page.screenshot({ path: path.join(screenshotDir, 'journal-editor-mobile-aligned.png') });
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
     const extraFields = page.locator('.journal-extra-fields');
     await expect(extraFields).not.toHaveAttribute('open', '');
     await expect(page.getByLabel('记录标题')).toBeHidden();
@@ -52,11 +79,25 @@ const fs = require('node:fs');
     await page.getByLabel('开始时间').fill('2026-09-29T19:00');
     await page.getByLabel('结束时间').fill('2026-09-29T19:30');
     await page.getByLabel('记录标题').fill('IELTS listening drill');
-    await page.getByLabel('记录内容').fill('Transcribed one clip');
+    await page.getByLabel('记录内容').fill(`Transcribed one clip\n${'A line of listening notes.\n'.repeat(60)}`);
     await page.getByLabel('练习项目').selectOption('listening');
     await page.getByLabel('纠错').fill('Review plural endings');
     await page.getByRole('button', { name: '保存记录' }).click();
     await expect(page.locator('.journal-timeline').getByText('IELTS listening drill')).toBeVisible();
+    if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, 'journal-timeline-desktop-populated.png') });
+    const dateBeforeScroll = await page.getByLabel('记录日期').boundingBox();
+    const composeBeforeScroll = await page.getByRole('button', { name: '写记录', exact: true }).boundingBox();
+    const scrollTop = await page.locator('.journal-drawer-body').evaluate(element => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    });
+    assert(scrollTop > 0, 'long records should scroll inside the content area');
+    assert.equal((await page.getByLabel('记录日期').boundingBox()).y, dateBeforeScroll.y, 'filters should remain visible while records scroll');
+    assert.equal((await page.getByRole('button', { name: '写记录', exact: true }).boundingBox()).y, composeBeforeScroll.y, 'compose should remain visible while records scroll');
+    await page.getByRole('button', { name: '写记录', exact: true }).focus();
+    await page.getByRole('button', { name: '写记录', exact: true }).press('Tab');
+    await expect(page.getByRole('button', { name: '关闭记录面板' })).toBeFocused();
+    await page.locator('.journal-drawer-body').evaluate(element => { element.scrollTop = 0; });
     await page.reload();
     await expect(page.locator('.journal-timeline').getByText('IELTS listening drill')).toBeVisible();
     await page.setViewportSize({ width: 390, height: 840 });
@@ -75,7 +116,7 @@ const fs = require('node:fs');
     await page.getByLabel('搜索记录').fill('absent phrase');
     await expect(page.locator('.journal-timeline').getByText('IELTS listening drill')).toHaveCount(0);
     await openPanel('回顾');
-    for (const width of [901, 1024, 1100, 1280]) await checkJournalLayout('review', width);
+    for (const width of [390, 768, 901, 1024, 1100, 1280, 1440]) await checkJournalLayout('review', width);
     await expect(page.locator('.journal-review-list')).toContainText('IELTS listening drill');
     if (screenshotDir) await page.screenshot({ path: path.join(screenshotDir, 'journal-review-desktop.png'), fullPage: true });
     await page.setViewportSize({ width: 390, height: 840 });
