@@ -16,7 +16,7 @@ export function ChatMessage({ message, pending = false, onJournal, onMemory, onB
   return <article className={`chat-message chat-message-${message.role}`}>
     <div className="chat-message-heading"><strong>{message.role === 'user' ? '你' : message.role === 'system' ? '系统' : 'Lanco AI'}</strong><div className="workspace-actions">
       {message.content && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { void navigator.clipboard.writeText(message.content).then(() => { setCopied(true); setCopyError(false); }).catch(() => setCopyError(true)); }}>{copyError ? '复制失败，请手动选择' : copied ? '已复制' : '复制'}</button>}
-      {onJournal && message.content && status !== 'streaming' && <button type="button" className="btn btn-ghost btn-sm" onClick={onJournal}>存入学习日记</button>}
+      {onJournal && message.content && status !== 'streaming' && <button type="button" className="btn btn-ghost btn-sm" onClick={onJournal}>保存到记录</button>}
       {onMemory && message.content && status === 'completed' && <button className="btn btn-ghost btn-sm" disabled={disabled} onClick={onMemory}>记入项目</button>}
       {onBranch && status !== 'streaming' && <>
         {message.role === 'user' && <button className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => onBranch('edit')}>编辑问题</button>}

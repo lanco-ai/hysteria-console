@@ -29,7 +29,11 @@ its cooldown and upstream retry fields are authoritative.
 
 `/admin/plans` keeps the shared date header and plan quadrants on the main page.
 The 时间线 and 回顾 links open a native modal side panel (full screen on phones),
-with browsing and writing as separate views. Existing `#daily-timeline` and
+with record browsing above an inline writing form in the same view. The heading
+and filters stay available while writing; saving updates the list in place.
+The review panel uses the same form and record type selector for daily and weekly
+recaps. Chat's “保存到记录” action saves to this same timeline and retains the
+source conversation link. Existing `#daily-timeline` and
 `#daily-review` links also open the relevant panel; `#daily-plans` closes it.
 Escape and the close button return focus without scrolling the main page.
 Unsubmitted journal drafts remain in memory while the panel is closed; leaving
