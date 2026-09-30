@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from test_chat_workspace import env, turn
+from tests.test_chat_workspace import env, turn
 from web_api.chat_tools import ToolService, validate_arguments
 from web_api.chat_workspace_store import WorkspaceError
 from web_api.chat_tool_network import MCPClient, pinned_request

@@ -20,10 +20,10 @@ from preview_http_server import managed_preview_http_server
 from preview_http_server import read_request_body as _read_request_body
 from web_api import create_app
 from web_api.ai.service_store import AIServiceStore
+from web_api.chat_workspace_store import WorkspaceStore
 from web_api.github_trending_source import SourceError
 from web_api.github_trending_store import TrendingStore
 from web_api.journal_service import JournalStore
-from web_api.chat_workspace_store import WorkspaceStore
 from web_api.plans_service import PlanStore
 from web_api.service_center import ServiceCenterStore
 from web_api.services import LegacyPanelServices
@@ -81,22 +81,41 @@ class PreviewWorkspaceStore(WorkspaceStore):
         return True
 
     def embed(self, texts, **kwargs):
-        return [[1.] + [0.] * 383 for _ in texts]
+        return [[1.0] + [0.0] * 383 for _ in texts]
 
 
 class PreviewWorkspaceProvider:
     """Fictional streaming answers; cannot access any external provider."""
 
     def complete(self, messages, **kwargs):
-        content = json.dumps({'calls': [{'tool': 'python', 'arguments': {'code': 'print(2.0)'}}]}) if 'calls' in messages[0]['content'] else '预览摘要：已经讨论写入放大，后续通过实验验证。'
-        return {'choices': [{'message': {'content': content}}], 'usage': {'prompt_tokens': 20, 'completion_tokens': 10}}
+        content = (
+            json.dumps({'calls': [{'tool': 'python', 'arguments': {'code': 'print(2.0)'}}]})
+            if 'calls' in messages[0]['content']
+            else '预览摘要：已经讨论写入放大，后续通过实验验证。'
+        )
+        return {
+            'choices': [{'message': {'content': content}}],
+            'usage': {'prompt_tokens': 20, 'completion_tokens': 10},
+        }
 
     def stream(self, messages, **_kwargs):
         from web_api.chat_workspace_routes import sse
+
         async def generate():
-            yield sse({'type': 'delta', 'text': '### 理解与验证\n\nLSM Tree 将随机写入变成顺序写入。 [S1]\n\n| 项目 | 观察 |\n| --- | --- |\n| 写入放大 | 需要测量 |\n\n$E = mc^2$\n\n' + (messages[-1]['content'] if isinstance(messages[-1]['content'], str) else messages[-1]['content'][0]['text'])})
+            yield sse(
+                {
+                    'type': 'delta',
+                    'text': '### 理解与验证\n\nLSM Tree 将随机写入变成顺序写入。 [S1]\n\n| 项目 | 观察 |\n| --- | --- |\n| 写入放大 | 需要测量 |\n\n$E = mc^2$\n\n'
+                    + (
+                        messages[-1]['content']
+                        if isinstance(messages[-1]['content'], str)
+                        else messages[-1]['content'][0]['text']
+                    ),
+                }
+            )
             yield sse({'type': 'usage', 'usage': {'prompt_tokens': 42, 'completion_tokens': 24}})
             yield sse({'type': 'done'})
+
         return generate()
 
 
@@ -275,7 +294,11 @@ def _handler(api_client, allowed_assets):
             try:
                 raw_length = self.headers.get('Content-Length', '')
                 length = int(raw_length)
-                if length < 0 or length > (10 * 1024 * 1024 if urlsplit(self.path).path == '/api/chat/documents/upload' else 128 * 1024):
+                if length < 0 or length > (
+                    10 * 1024 * 1024
+                    if urlsplit(self.path).path == '/api/chat/documents/upload'
+                    else 128 * 1024
+                ):
                     raise ValueError
             except (TypeError, ValueError):
                 self._json_error(400, 'bad_request')
@@ -404,13 +427,18 @@ def _handler(api_client, allowed_assets):
                 self._form_api()
                 return
             request_path = urlsplit(self.path).path
-            if request_path in {
-                '/api/chat/completions',
-                '/api/v1/admin/services/probe',
-                '/api/journal',
-            } or request_path.startswith('/api/chat/') or (
-                request_path.startswith('/api/ai/services/')
-                and request_path.endswith(('/test', '/test/generation', '/test/structured'))
+            if (
+                request_path
+                in {
+                    '/api/chat/completions',
+                    '/api/v1/admin/services/probe',
+                    '/api/journal',
+                }
+                or request_path.startswith('/api/chat/')
+                or (
+                    request_path.startswith('/api/ai/services/')
+                    and request_path.endswith(('/test', '/test/generation', '/test/structured'))
+                )
             ):
                 self._json_api()
                 return
@@ -455,16 +483,25 @@ def preview_server(port=0, *, overview_fixture=False):
     ):
         service = legacy_preview.ss
         import base64
+
         import web_api.chat_tools as chat_tools
         from jsonschema import Draft202012Validator
         from referencing import Registry
+
         def preview_validate(schema, arguments):
             def refuse(uri):
                 raise ValueError('Preview forbids schema networking')
+
             Draft202012Validator(schema, registry=Registry(retrieve=refuse)).validate(arguments)
+
         async def preview_python(code, files):
             # UI fixture only. Real container behavior is verified separately.
-            return {'stdout': 'mean = 2.0', 'error': None, 'files': [{'name': 'mean.txt', 'data': base64.b64encode(b'mean=2.0').decode()}]}
+            return {
+                'stdout': 'mean = 2.0',
+                'error': None,
+                'files': [{'name': 'mean.txt', 'data': base64.b64encode(b'mean=2.0').decode()}],
+            }
+
         patch.setattr(chat_tools, 'validate_arguments', preview_validate)
         patch.setattr(chat_tools, 'run_python', preview_python)
         # Only the controlled React preview doubles external effects. Accounting,
@@ -588,7 +625,9 @@ def preview_server(port=0, *, overview_fixture=False):
                 ),
                 plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
                 journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
-                chat_workspace_store=PreviewWorkspaceStore(Path(directory) / 'chat' / 'workspace.sqlite3'),
+                chat_workspace_store=PreviewWorkspaceStore(
+                    Path(directory) / 'chat' / 'workspace.sqlite3'
+                ),
                 chat_workspace_settings=PreviewWorkspaceProvider(),
                 github_trending_store=trending_store,
                 gemini_adapter=PreviewGeminiAdapter(),

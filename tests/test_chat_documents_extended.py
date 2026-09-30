@@ -9,7 +9,7 @@ import zipfile
 from PIL import Image, ImageDraw, ImageFont
 import pytest
 
-from test_chat_workspace import env, project, turn
+from tests.test_chat_workspace import env, project, turn
 from web_api.ai.gemini import GeminiAdapter
 from web_api.chat_workspace_store import WorkspaceError, WorkspaceStore
 

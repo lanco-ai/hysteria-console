@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -134,50 +133,45 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
 
 def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authenticated():
     """Anonymous chat must not read browser history or invoke the chat proxy."""
-    page = source("frontend/src/features/chat/ChatPage.tsx")
-    sidebar = source("frontend/src/features/chat/ChatSidebar.tsx")
-    api = source("frontend/src/features/chat/chatApi.ts")
-    styles = source("frontend/src/styles/sections/18-chat.css")
-    browser = source("tests/react_chat_browser.cjs")
+    page = source('frontend/src/features/chat/ChatPage.tsx')
+    api = source('frontend/src/features/chat/chatApi.ts')
+    styles = source('frontend/src/styles/sections/18-chat.css')
+    browser = source('tests/react_chat_browser.cjs')
 
-    assert "export type ChatPageProps" in page
-    assert "authenticated?: boolean" in page
-    assert "onUnauthenticated?: () => void" in page
-    assert "import { CodexShell }" in page
-    assert "import { ChatSidebar," in page
-    assert "<ChatSidebar" in page
-    assert "chat-history-panel" in page
-    assert "historyOpen" in page
-    assert "<AdminShell" not in page
-    assert "chat-sidebar" not in page
-    assert "if (!authenticated) return;" in page
-    assert "disabled={!authenticated || busy}" in page
-    assert "onUnauthenticated?.()" in page
-    assert "setSessions([]);" in page
-    assert "setActiveId('');" in page
-    assert "setLocalStateReady(false);" in page
-    assert "fetch('/api/v1/session'" in page
-    assert "setContextMax(model?.context_window ?? null);" in page
-    assert "export type ChatSidebarProps" in sidebar
-    assert "sessions: ChatSession[]" in sidebar
-    assert "onRename: (session: ChatSession) => void" in sidebar
-    assert "onDelete: (session: ChatSession) => void" in sidebar
-    assert "reasoning_unsupported" in page
-    assert "draft?: string" in sidebar
-    assert "model?: string" in sidebar
-    assert "onClose?: () => void" in sidebar
-    message = source("frontend/src/features/chat/ChatMessage.tsx")
-    assert "safeHref" in message
-    assert "dangerouslySetInnerHTML" not in message
-    assert "没有可用容量" in api
+    assert 'export type ChatPageProps' in page
+    assert 'authenticated?: boolean' in page
+    assert 'onUnauthenticated?: () => void' in page
+    assert 'import { CodexShell }' in page
+    assert 'chat-history-panel' in page
+    assert 'historyOpen' in page
+    assert '<AdminShell' not in page
+    assert 'historyOpen && authenticated' in page
+    assert (
+        'if (!authenticated) { setSessions([]); accept(null); setProjects([]); setPapers([]);'
+        in page
+    )
+    assert 'setReady(false); controller.current?.abort(); return;' in page
+    assert "api<{ items: LearningProject[] }>('/projects')" in page
+    assert "api<{ items: Conversation[] }>('/conversations')" in page
+    assert page.index('if (!authenticated) { setSessions([])') < page.index(
+        'localStorage.getItem(DRAFT_KEY)'
+    )
+    assert 'if (authRef.current) { try {' in page
+    assert 'disabled={!authenticated || !ready || busy' in page
+    assert 'onUnauthenticated?.()' in page
+    message = source('frontend/src/features/chat/ChatMessage.tsx')
+    assert 'import ReactMarkdown' in message
+    assert 'rel="noopener noreferrer"' in message
+    assert 'dangerouslySetInnerHTML' not in message
+    assert '没有可用容量' in api
     assert "reasoning_effort !== 'auto'" in api
-    assert "ChatApiError" in api
-    assert ".sidebar-top" in styles
-    assert ".chat-history" in styles
-    assert ".sidebar.collapsed .sidebar-top" in styles
-    assert "anonymousContext" in browser
-    assert "anonymousChatRequests" in browser
-    assert "anonymousStorageCalls" in browser
+    assert 'ChatApiError' in api
+    assert '.sidebar-top' in styles
+    assert '.chat-history' in styles
+    assert '.sidebar.collapsed .sidebar-top' in styles
+    assert 'anonymousContext' in browser
+    assert 'anonymousChatRequests' in browser
+    assert 'anonymousStorageCalls' in browser
 
 
 def test_router_composes_every_workbench_alias_through_the_session_gate():

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from test_chat_workspace import env, project, turn
+from tests.test_chat_workspace import env, project, turn
 from web_api.chat_context import prepare_context
 from web_api.chat_knowledge import KnowledgeIndex
 from web_api.chat_workspace_store import WorkspaceError

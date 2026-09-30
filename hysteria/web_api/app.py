@@ -536,8 +536,16 @@ def create_app(
     )
     register_journal_routes(app, services, dispatch, store=journal_store)
     from .chat_workspace_routes import register_workspace_routes
-    register_workspace_routes(app, services, dispatch, dispatch_stream,
-                              store=chat_workspace_store, settings=chat_workspace_settings or chat_settings_store, journal=journal_store)
+
+    register_workspace_routes(
+        app,
+        services,
+        dispatch,
+        dispatch_stream,
+        store=chat_workspace_store,
+        settings=chat_workspace_settings or chat_settings_store,
+        journal=journal_store,
+    )
     if ai_services_store is not None:
         register_ai_service_routes(
             app,

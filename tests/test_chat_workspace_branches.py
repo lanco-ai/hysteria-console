@@ -1,7 +1,7 @@
 """Branching must preserve provenance, retries and source conversation isolation."""
 import pytest
 
-from test_chat_workspace import env, turn
+from tests.test_chat_workspace import env, turn
 from web_api.chat_workspace_store import WorkspaceError
 
 

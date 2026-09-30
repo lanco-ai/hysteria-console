@@ -20,7 +20,9 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-ALLOWED_SUFFIXES = frozenset({'.css', '.html', '.ico', '.js', '.json', '.png', '.svg', '.woff2', '.woff', '.ttf'})
+ALLOWED_SUFFIXES = frozenset(
+    {'.css', '.html', '.ico', '.js', '.json', '.png', '.svg', '.woff2', '.woff', '.ttf'}
+)
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_RELEASE_BYTES = 64 * 1024 * 1024
 RELEASE_ID_RE = re.compile(r'[0-9a-f]{24}')
