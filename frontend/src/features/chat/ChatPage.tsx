@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CodexShell } from '../../shared/CodexShell';
+import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
+import { CodexShell, type CodexShellProps } from '../../shared/CodexShell';
 import { ChatMessage } from './ChatMessage';
 import { ChatSettings } from './ChatSettings';
 import { ChatJournalDialog } from './ChatJournalDialog';
@@ -11,11 +11,19 @@ import { WorkspaceDialog } from './WorkspaceDialog';
 import { loadChatModels, loadChatSettings, saveChatSettings, type ChatModel, type ChatSettings as Settings, type ReasoningEffort } from './chatApi';
 import { workspaceRequest as api, streamTurn, uploadPaper, saveDownload, WorkspaceApiError, type Conversation, type LearningProject, type Paper, type WorkspaceMessage } from './workspaceApi';
 
-export type ChatPageProps = { publicHost: string; authenticated?: boolean; onUnauthenticated?: () => void };
+export type ChatPageProps = { publicHost: string; authenticated?: boolean; onUnauthenticated?: () => void; shell?: ComponentType<CodexShellProps> };
 const LEGACY_KEY = 'hy2.chat.sessions.v1';
 const DRAFT_KEY = 'hy2.chat.unsent.v2';
 
-export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticated }: ChatPageProps) {
+function replaceConversationLocation(id?: string) {
+  const query = new URLSearchParams();
+  if (new URLSearchParams(window.location.search).get('view') === 'chat') query.set('view', 'chat');
+  if (id) query.set('conversation', id);
+  const suffix = query.toString();
+  window.history.replaceState(window.history.state, '', `${window.location.pathname}${suffix ? `?${suffix}` : ''}`);
+}
+
+export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticated, shell: Shell = CodexShell }: ChatPageProps) {
   const [fallbackAuth, setFallbackAuth] = useState(false);
   const authenticated = authProp ?? fallbackAuth;
   const [sessions, setSessions] = useState<Conversation[]>([]);
@@ -159,12 +167,12 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     try {
       await saveDraft(); const item = await api<Conversation>(`/conversations/${id}`);
       accept(item); changeDraft(item.draft); setProjectId(item.project_id || ''); if (item.model) setModel(item.model); setReasoning(item.reasoningEffort); setSelectedPapers(item.draft_document_ids || []); setToolRuns(item.draft_tool_run_ids || []); setHistoryOpen(false); setError(''); setNotice(''); requestRef.current = null; follow.current = true;
-      window.history.replaceState(null, '', `${window.location.pathname}?conversation=${id}`);
+      replaceConversationLocation(id);
     } catch (e) { report(e); }
   };
   const newConversation = async (nextProject = projectId) => {
     if (busyRef.current) return;
-    try { await saveDraft(); if (!activeRef.current && draftRef.current.trim() && !window.confirm('新建对话会清空当前未发送的草稿，继续吗？')) return; accept(null); changeDraft(''); setProjectId(nextProject); if (!nextProject && knowledgeScope === 'project') setKnowledgeScope('none'); setSelectedPapers([]); setToolRuns([]); setError(''); setNotice(''); requestRef.current = null; window.history.replaceState(null, '', window.location.pathname); setHistoryOpen(false); } catch (e) { report(e); }
+    try { await saveDraft(); if (!activeRef.current && draftRef.current.trim() && !window.confirm('新建对话会清空当前未发送的草稿，继续吗？')) return; accept(null); changeDraft(''); setProjectId(nextProject); if (!nextProject && knowledgeScope === 'project') setKnowledgeScope('none'); setSelectedPapers([]); setToolRuns([]); setError(''); setNotice(''); requestRef.current = null; replaceConversationLocation(); setHistoryOpen(false); } catch (e) { report(e); }
   };
   const openTools = async () => {
     if (busyRef.current || !authenticated || !ready) return;
@@ -222,7 +230,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
       await saveDraft(); const source = activeRef.current!;
       next = await api<Conversation>(`/conversations/${source.id}/branches`, 'POST', { revision: source.revision, request_id: branch.requestId, message_id: branch.message.id, mode: branch.mode, content: branch.text });
       accept(next); changeDraft(next.draft); setSelectedPapers(next.draft_document_ids || []); setToolRuns(next.draft_tool_run_ids || []); requestRef.current = null;
-      window.history.replaceState(null, '', `${window.location.pathname}?conversation=${next.id}`);
+      replaceConversationLocation(next.id);
       setBranch(null); await refreshList();
     } catch (e) { report(e); } finally { busyRef.current = false; setBusy(false); }
     if (next && branch.mode !== 'continue') await send(next.draft_document_ids || [], next.draft_tool_run_ids || []);
@@ -245,7 +253,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     <button className="btn btn-ghost btn-sm" aria-label="设置" onClick={() => setSettingsOpen(true)} disabled={!authenticated}>设置</button>
   </div>;
 
-  return <CodexShell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar} agentEnabled={authenticated}>
+  return <Shell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar} agentEnabled={authenticated}>
     <section className="chat-page personal-workspace">
       <div className="workspace-project-bar"><label>学习项目<select className="input" aria-label="学习项目" value={projectId} disabled={locked} onChange={e => { void newConversation(e.target.value); }}><option value="">全部 / 自由对话</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
         <div className="workspace-actions"><button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setKnowledgeOpen(true)}>知识库</button>{project && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => { setMemorySource(null); setMemoryOpen(true); }}>项目记忆</button>}<button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setProjectEditor('new')}>＋ 项目</button>{project && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setProjectEditor(project)}>项目目标</button>}<button className="btn btn-secondary btn-sm" disabled={locked || !projectId} onClick={() => setPapersOpen(!papersOpen)}>论文资料 · {papers.length}</button><button className="btn btn-primary btn-sm" disabled={locked} onClick={() => { void newConversation(); }}>新对话</button></div>
@@ -279,5 +287,5 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     {branch && authenticated && <WorkspaceDialog title={branch.mode === 'edit' ? '编辑问题' : branch.mode === 'regenerate' ? '重新生成回答' : '从这里继续'} onClose={() => { if (!busy) setBranch(null); }}><p>原对话会保留，新分支只带入此处之前的对话内容。</p>{branch.mode === 'edit' && <textarea className="input" aria-label="修改问题" rows={6} maxLength={12000} value={branch.text} disabled={busy} onChange={e => setBranch({ ...branch, text: e.target.value, requestId: crypto.randomUUID() })} />}<button className="btn btn-primary" disabled={busy || (branch.mode === 'edit' && !branch.text.trim())} onClick={() => { void createBranch(); }}>{busy ? '正在创建…' : branch.mode === 'continue' ? '创建分支' : '创建分支并生成'}</button></WorkspaceDialog>}
     {usage && <WorkspaceDialog title="AI 用量" onClose={() => setUsage(null)}><p>已保存对话中的请求：{usage.requests} 次</p><p>输入 tokens：{usage.prompt_tokens.toLocaleString()} · 输出 tokens：{usage.completion_tokens.toLocaleString()}</p><p className="workspace-muted">其中 {usage.reported_requests} 次由服务返回了用量。包含自动摘要和工具建议请求，分支共用的历史只计一次。未返回的用量不估算；不包含导入的旧记录与已删除的对话。</p></WorkspaceDialog>}
     {settingsOpen && <WorkspaceDialog title="设置" onClose={() => setSettingsOpen(false)}><ChatSettings settings={settings} busy={busy} feedback="" onSave={async values => { try { setSettings(await saveChatSettings(values)); setNotice('设置已保存'); return true; } catch (e) { report(e); return false; } }} onExport={() => { void api<unknown>('/workspace/export').then(value => saveDownload(JSON.stringify(value, null, 2), 'learning-workspace.json')).catch(report); }} /></WorkspaceDialog>}
-  </CodexShell>;
+  </Shell>;
 }

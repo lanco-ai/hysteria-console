@@ -14,9 +14,6 @@ const navigation = [
   ['用户', '/admin'],
   ['今日计划', '/admin/plans'],
   ['开源发现', '/admin/github-trending'],
-  ['AI 工具', null],
-  ['AI 对话', '/admin/chat'],
-  ['AI 视频', '/admin/video'],
   ['网络管理', null],
   ['流量分析', '/admin/usage'],
   ['模板与路由', '/admin/config'],
@@ -271,7 +268,11 @@ async function verifyShellKeyboardAndPreferences(browser) {
   await toggle.click();
   await mobilePage.waitForFunction(() => document.activeElement?.id === 'sidebar-close');
   await mobilePage.keyboard.press('Shift+Tab');
+  assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '返回首页');
+  await mobilePage.keyboard.press('Shift+Tab');
   assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '退出登录');
+  await mobilePage.keyboard.press('Tab');
+  assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '返回首页');
   await mobilePage.keyboard.press('Tab');
   assert.equal(await mobilePage.evaluate(() => document.activeElement?.id), 'sidebar-close');
   await mobilePage.keyboard.press('Escape');

@@ -119,10 +119,14 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     for href in (
         "/admin", "/admin/usage", "/admin/health",
         "/admin/settings", "/admin/config",
-        "/admin/landing-egresses", "/admin/chat", "/admin/plans",
-        "/admin/video", "/admin/services",
+        "/admin/landing-egresses", "/admin/plans", "/admin/services",
     ):
         assert href in navigation
+    portal = source("frontend/src/features/public/PortalShell.tsx")
+    for route, view in (("/admin/chat", "chat"), ("/admin/video", "video")):
+        assert route in routes, "old AI bookmarks must remain reachable"
+        assert route not in navigation, "AI entries have moved out of the admin sidebar"
+        assert f'href="/?view={view}"' in portal
     for route, tab in (("/admin/health", "health"), ("/admin/incidents", "incidents"), ("/admin/logs", "logs")):
         assert f"'{route}':" in routes
         assert f"key: '{tab}'" in operations
@@ -141,7 +145,9 @@ def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authent
     assert 'export type ChatPageProps' in page
     assert 'authenticated?: boolean' in page
     assert 'onUnauthenticated?: () => void' in page
-    assert 'import { CodexShell }' in page
+    assert 'import { CodexShell, type CodexShellProps }' in page
+    assert 'shell: Shell = CodexShell' in page
+    assert '<Shell active="chat"' in page
     assert 'chat-history-panel' in page
     assert 'historyOpen' in page
     assert '<AdminShell' not in page

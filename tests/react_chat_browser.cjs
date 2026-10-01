@@ -27,7 +27,7 @@ async function main() {
     if (new URL(request.url()).pathname.startsWith('/api/chat/')) anonymousChatRequests += 1;
   });
   const anonymousSession = anonymousPage.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/session');
-  await anonymousPage.goto(`${baseUrl}/__react/admin/chat`);
+  await anonymousPage.goto(`${baseUrl}/__react/?view=chat`);
   assert.equal((await anonymousSession).status(), 401);
   await expect(anonymousPage.locator('.chat-composer textarea')).toBeDisabled();
   await expect(anonymousPage.locator('.chat-history-panel')).toHaveCount(0);

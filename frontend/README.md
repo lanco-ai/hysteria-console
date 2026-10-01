@@ -5,6 +5,33 @@ authentication, administrator console, and authenticated user panel. The
 document routes are served by the FastAPI adapter on port 8083 and use the
 immutable assets under `/static/react/assets/`.
 
+## Public shopping and AI entry
+
+The home page uses a shared public header with 购物, AI 对话 and AI 视频.
+Shopping is the default view; `/?view=chat` and `/?view=video` select the existing
+AI interfaces. `/login` and `/auth` open the existing administrator login modal
+over this entry; `/user/login` retains the existing user login realm.
+The authenticated header has a management-console link, and the console logo
+returns to this public entry. AI links no longer appear in the admin sidebar.
+
+The product source is still pending. The shopping directory honestly displays
+暂无商品; no example products, prices, inventory or sales counts are published.
+The category/search layout is ready for the later catalogue integration; there
+is no new checkout, payment, registration or order-query subsystem.
+
+The original chat and video components run inside the public page shell after
+administrator login, using unchanged APIs and stores. Guests can see the chat
+layout and video introduction but cannot access histories, projects, workflows,
+generation APIs or provider settings. The exact `/admin/chat` and `/admin/video`
+documents remain administrator guarded for compatibility, including bookmarked
+conversation IDs; unsafe login query parameters are still discarded.
+Unknown paths retain their 404 behavior. The HTTPS template serves `/` from the
+same FastAPI document service rather than redirecting it away from this entry.
+When publishing this change, install the updated document router together with
+the built frontend, and verify that the active HTTPS root route proxies to
+port 8083. This keeps initial document metadata and bookmarked login returns
+aligned with the new public entry.
+
 ## Document routes
 
 The explicit React document allow-list covers:

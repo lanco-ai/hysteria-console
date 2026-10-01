@@ -17,6 +17,9 @@ import { ServicesPage } from './features/services/ServicesPage';
 import { VideoPage } from './features/video/VideoPage';
 import { PlansPage } from './features/plans/PlansPage';
 import { GithubTrendingPage } from './features/github-trending/GithubTrendingPage';
+import { PortalSessionContext, PortalShell } from './features/public/PortalShell';
+import { ShopPage } from './features/public/ShopPage';
+import { VideoAccessState } from './features/public/VideoAccessState';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
@@ -26,25 +29,25 @@ const appRoot = root;
 const reactRoot = createRoot(appRoot);
 const REACT_PREVIEW_PREFIX = '/__react';
 
-const WORKBENCH_ROUTES = new Set(['/', '/auth', '/login', '/user/login', '/admin/chat']);
+const WORKBENCH_ROUTES = new Set(['/', '/auth', '/login', '/user/login', '/admin/chat', '/admin/video']);
 const LOGIN_ROUTES = new Set(['/auth', '/login', '/user/login']);
 const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
-  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/video', '/admin/services',
+  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/services',
   '/admin/plans',
   '/admin/github-trending',
 ]);
-const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter']);
+const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter', 'view', 'conversation']);
 const REACT_DOCUMENT_ROUTES = new Set([
   ...WORKBENCH_ROUTES, '/logout', '/user/logout', '/user/change-password', '/user/panel', ...ADMIN_ROUTES,
 ]);
 
 type RouteMetadata = { title: string; bodyClass: string; shell?: boolean };
 const ROUTE_METADATA: Record<string, RouteMetadata> = {
-  '/': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
-  '/auth': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
-  '/login': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
-  '/user/login': { title: 'Hysteria 工作台', bodyClass: 'has-shell page-workbench', shell: true },
+  '/': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
+  '/auth': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
+  '/login': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
+  '/user/login': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
   '/admin': { title: '用户', bodyClass: 'has-shell', shell: true },
   '/admin/logs': { title: '运维', bodyClass: 'has-shell', shell: true },
   '/admin/settings': { title: '设置', bodyClass: 'has-shell', shell: true },
@@ -54,9 +57,9 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/config': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/rules': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
-  '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
+  '/admin/chat': { title: 'AI 对话', bodyClass: 'page-portal page-workbench' },
   '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
-  '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell', shell: true },
+  '/admin/video': { title: 'AI 视频', bodyClass: 'page-portal page-workbench' },
   '/admin/plans': { title: '今日计划', bodyClass: 'has-shell', shell: true },
   '/admin/github-trending': { title: 'GitHub 热榜', bodyClass: 'has-shell', shell: true },
   '/user/change-password': { title: '修改面板密码', bodyClass: 'page-auth' },
@@ -193,7 +196,9 @@ function applyRouteDocument(route: string): void {
     ? { title: `${decodeRouteSegment(detail[1] || '')} · 用量画像`, bodyClass: 'has-shell', shell: true }
     : ROUTE_METADATA[route];
   if (!metadata) return;
-  document.title = metadata.title;
+  const view = new URLSearchParams(window.location.search).get('view');
+  document.title = route === '/' && (view === 'chat' || view === 'video')
+    ? `${view === 'chat' ? 'AI 对话' : 'AI 视频'} · Hysteria` : metadata.title;
   if (metadata.bodyClass) document.body.className = metadata.bodyClass;
   else document.body.removeAttribute('class');
   if (metadata.shell) applyInitialShellPreferences();
@@ -250,14 +255,18 @@ function AdminRoute({ route, locationKey, publicHost, authenticated, status }: {
   return <LandingPage publicHost={publicHost}/>;
 }
 
-function WorkbenchRoute({ route, publicHost, authenticated, loginOpen, onAuthenticated, onUnauthenticated, onClose }: {
-  route: string; publicHost: string; authenticated: boolean; loginOpen: boolean; onAuthenticated: (returnTo?: string) => Promise<void>; onUnauthenticated: () => void; onClose: () => void;
+function WorkbenchRoute({ route, publicHost, authenticated, status, loginOpen, onAuthenticated, onUnauthenticated, onClose }: {
+  route: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'authenticated' | 'unavailable'; loginOpen: boolean; onAuthenticated: (returnTo?: string) => Promise<void>; onUnauthenticated: () => void; onClose: () => void;
 }) {
-  const returnTo = sanitizeReturnTo(new URL(window.location.href).searchParams.get('next') || undefined);
-  return <>
-    <ChatPage publicHost={publicHost} authenticated={authenticated} onUnauthenticated={onUnauthenticated}/>
+  const location = new URL(window.location.href);
+  const view = route === '/admin/chat' ? 'chat' : route === '/admin/video' ? 'video' : location.searchParams.get('view');
+  const returnTo = sanitizeReturnTo(location.searchParams.get('next') || (!LOGIN_ROUTES.has(route) ? `${route}${location.search}` : undefined));
+  return <PortalSessionContext.Provider value={{ authenticated, status, onLogin: onUnauthenticated }}>
+    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}>{view === 'chat' ? <ChatPage publicHost={publicHost} authenticated={authenticated} onUnauthenticated={onUnauthenticated} shell={PortalShell}/>
+      : view === 'video' ? authenticated ? <VideoPage publicHost={publicHost} shell={PortalShell}/> : <VideoAccessState/>
+        : <ShopPage/>}</div>
     <LoginModal open={loginOpen} realm={route === '/user/login' ? 'user' : 'admin'} passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
-  </>;
+  </PortalSessionContext.Provider>;
 }
 
 function App() {
@@ -272,7 +281,7 @@ function App() {
   const authenticated = session.status === 'authenticated' && session.role === 'admin';
   const sessionStatus = session.status === 'authenticated' ? 'anonymous' : session.status;
   const needsAdminLogin = isProtectedAdminRoute && !authenticated && session.status !== 'loading';
-  const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/' || route === '/admin/chat') && session.status === 'anonymous') || needsAdminLogin;
+  const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/admin/chat' || route === '/admin/video') && !authenticated && session.status !== 'loading') || needsAdminLogin;
   const protectedReturnTo = protectedRouteReturnTo(route, location.search);
 
   const navigate = useCallback((path: string) => { pushReactHistory(path); setLocationKey(currentLocationKey()); }, []);
@@ -288,11 +297,11 @@ function App() {
     setLocationKey(currentLocationKey());
   }, [route, session]);
 
-  useLayoutEffect(() => { applyRouteDocument(route); }, [route]);
+  useLayoutEffect(() => { applyRouteDocument(route); }, [route, location.search]);
   useEffect(() => installClientNavigation(() => setLocationKey(currentLocationKey())), []);
   useEffect(() => { if (LOGIN_ROUTES.has(route)) setLoginRequested(true); }, [route]);
 
-  if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
+  if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} status={authenticated ? 'authenticated' : sessionStatus} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
   if (isProtectedAdminRoute) return <><AdminRoute route={route} locationKey={locationKey} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
   if (route === '/user/change-password') return <UserPasswordPage publicHost={publicHost}/>;
   if (route === '/user/panel') return <UserPanelPage publicHost={publicHost}/>;

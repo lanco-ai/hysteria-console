@@ -1,6 +1,6 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactElement } from 'react';
 import type { Connection, Edge, Node, NodeChange } from '@xyflow/react';
-import { CodexShell } from '../../shared/CodexShell';
+import { CodexShell, type CodexShellProps } from '../../shared/CodexShell';
 import { createRun, loadWorkflowById, loadVideoCapabilities, loadWorkflows, saveWorkflow, uploadAsset } from './videoApi';
 import { VideoRunPanel } from './VideoRunPanel';
 import type { VideoCapabilities, VideoRun, VideoWorkflow } from './videoTypes';
@@ -85,7 +85,7 @@ function assetUrlFromRef(ref: string) {
   return ref.startsWith('asset://') ? `/api/video/assets/${encodeURIComponent(ref.slice(8))}/content` : '';
 }
 
-export function VideoPage({ publicHost }: { publicHost: string }): ReactElement {
+export function VideoPage({ publicHost, shell: Shell = CodexShell }: { publicHost: string; shell?: ComponentType<CodexShellProps> }): ReactElement {
   void publicHost;
   const [nodes, setNodes] = useState<Node[]>([initialNode]);
   const [edges, setEdges] = useState<Edge[]>([]);
@@ -445,7 +445,7 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
   const modelOptions = selectedNode?.type === 'text_to_image' ? capabilities?.image_models || [] : capabilities?.video_models || [];
   const selectedModel = String(inspectorData.model || '');
   const options = [...new Set([selectedModel, ...modelOptions].filter(Boolean))];
-  return <CodexShell active="video" pageTitle="AI 视频" authStatus="authenticated" subtitle="节点视频工作台">
+  return <Shell active="video" pageTitle="AI 视频" authStatus="authenticated" subtitle="节点视频工作台">
     <section className="video-workspace">
       <header className="video-toolbar video-primary-toolbar">
         <div className="video-primary-toolbar-meta">
@@ -489,5 +489,5 @@ export function VideoPage({ publicHost }: { publicHost: string }): ReactElement 
       </div>
       <VideoRunPanel runId={runId} onRunChange={handleRunUpdate} />
     </section>
-  </CodexShell>;
+  </Shell>;
 }

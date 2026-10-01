@@ -23,13 +23,6 @@ export const navigationGroups: NavigationGroup[] = [
     ],
   },
   {
-    label: 'AI 工具',
-    items: [
-      { key: 'chat', href: '/admin/chat', label: 'AI 对话', icon: 'chat' },
-      { key: 'video', href: '/admin/video', label: 'AI 视频', icon: 'video' },
-    ],
-  },
-  {
     label: '网络管理',
     items: [
       { key: 'usage', href: '/admin/usage', label: '流量分析', icon: 'traffic' },

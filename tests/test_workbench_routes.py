@@ -17,8 +17,8 @@ def test_auth_alias_uses_workbench_bootstrap(tmp_path):
     assert 'data-public-host="panel.example.test"' in response.text
     assert 'data-public-host="panel.example.test"' in login.text
     assert 'data-public-host="panel.example.test"' in user_login.text
-    assert '<body class="has-shell page-workbench">' in login.text
-    assert '<body class="has-shell page-workbench">' in user_login.text
+    assert '<body class="page-portal page-workbench">' in login.text
+    assert '<body class="page-portal page-workbench">' in user_login.text
 
 
 def test_anonymous_admin_document_preserves_safe_return_path(tmp_path):

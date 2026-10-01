@@ -11,9 +11,12 @@ def test_admin_video_is_an_exact_react_document_route():
     assert "'/admin/video'" in (ROOT / 'frontend/src/main.tsx').read_text()
 
 
-def test_navigation_contains_ai_video_target():
-    source = (ROOT / 'frontend/src/shared/navigation.ts').read_text()
-    assert "href: '/admin/video'" in source
+def test_public_navigation_contains_ai_video_target():
+    portal = (ROOT / 'frontend/src/features/public/PortalShell.tsx').read_text()
+    sidebar = (ROOT / 'frontend/src/shared/navigation.ts').read_text()
+    assert 'href="/?view=video"' in portal
+    assert 'AI 视频' in portal
+    assert "href: '/admin/video'" not in sidebar
 
 
 def test_video_client_does_not_store_api_keys():

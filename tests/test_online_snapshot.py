@@ -37,6 +37,8 @@ def _patch_paths(tmp_path, monkeypatch):
     paths["META_FILE"].write_text('{"settlement_day":1}')
     paths["USAGE_FILE"].write_text("{}")
     paths["USAGE_DAILY_FILE"].write_text("{}")
+    # The collector requires canonical reset state on the settlement day.
+    paths["RESET_STATE_FILE"].write_text("{}")
     return paths["ONLINE_SNAPSHOT_FILE"]
 
 

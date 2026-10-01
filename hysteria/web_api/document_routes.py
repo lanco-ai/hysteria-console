@@ -19,16 +19,18 @@ from .services import LoginRequired, StateUnavailable, UserAccessDenied
 _BODY_RE = re.compile(r'<body(?:\s+class="[^"]*")?>')
 _TITLE_RE = re.compile(r'<title>[^<]*</title>')
 _ROOT_RE = re.compile(r'<div id="root" data-public-host="[^"]*"')
-_SAFE_LOGIN_QUERY_KEYS = frozenset({'msg', 'tab', 'range', 'window', 'page', 'filter'})
+_SAFE_LOGIN_QUERY_KEYS = frozenset(
+    {'msg', 'tab', 'range', 'window', 'page', 'filter', 'conversation'}
+)
 
 # Keep this list deliberately exact.  Compatibility documents such as
 # ``/admin/daily`` and subscription/CSV/evidence downloads stay on their
 # established handlers until their own cutover contracts are approved.
 REACT_DOCUMENTS = {
-    '/': ('Hysteria 工作台', 'has-shell page-workbench', None),
-    '/auth': ('Hysteria 工作台', 'has-shell page-workbench', None),
-    '/login': ('Hysteria 工作台', 'has-shell page-workbench', None),
-    '/user/login': ('Hysteria 工作台', 'has-shell page-workbench', None),
+    '/': ('购物 · Hysteria', 'page-portal page-workbench', None),
+    '/auth': ('购物 · Hysteria', 'page-portal page-workbench', None),
+    '/login': ('购物 · Hysteria', 'page-portal page-workbench', None),
+    '/user/login': ('购物 · Hysteria', 'page-portal page-workbench', None),
     '/logout': ('确认退出', '', 'admin'),
     '/user/logout': ('确认退出', '', 'user'),
     '/user/change-password': ('修改面板密码', 'page-auth', 'user-password'),
@@ -42,11 +44,11 @@ REACT_DOCUMENTS = {
     '/admin/config': ('模板与路由', 'has-shell', 'admin'),
     '/admin/rules': ('模板与路由', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
-    '/admin/chat': ('AI 对话', 'has-shell page-workbench', 'admin'),
+    '/admin/chat': ('AI 对话', 'page-portal page-workbench', 'admin'),
     '/admin/services': ('服务中心', 'has-shell', 'admin'),
     '/admin/plans': ('今日计划', 'has-shell', 'admin'),
     '/admin/github-trending': ('GitHub 热榜', 'has-shell', 'admin'),
-    '/admin/video': ('AI 视频', 'has-shell', 'admin'),
+    '/admin/video': ('AI 视频', 'page-portal page-workbench', 'admin'),
 }
 
 

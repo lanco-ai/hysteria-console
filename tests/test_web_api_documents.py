@@ -128,19 +128,26 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         chat_anonymous = client.get('/admin/chat', follow_redirects=False)
         assert chat_anonymous.status_code == 303
         assert chat_anonymous.headers['location'] == '/login?next=%2Fadmin%2Fchat'
+        bookmarked = client.get(
+            '/admin/chat?conversation=conversation-id&api_key=secret', follow_redirects=False
+        )
+        assert (
+            bookmarked.headers['location']
+            == '/login?next=%2Fadmin%2Fchat%3Fconversation%3Dconversation-id'
+        )
         chat = client.get('/admin/chat', headers={'Cookie': 'sid=admin'})
         assert chat.status_code == 200
         assert '<title>AI 对话</title>' in chat.text
 
         user_login = client.get('/user/login')
         assert user_login.status_code == 200
-        assert '<title>Hysteria 工作台</title>' in user_login.text
-        assert '<body class="has-shell page-workbench">' in user_login.text
+        assert '<title>购物 · Hysteria</title>' in user_login.text
+        assert '<body class="page-portal page-workbench">' in user_login.text
         assert 'data-password-max-length="128"' in user_login.text
 
         auth_login = client.get('/auth')
         assert auth_login.status_code == 200
-        assert '<body class="has-shell page-workbench">' in auth_login.text
+        assert '<body class="page-portal page-workbench">' in auth_login.text
 
         token_login = client.get('/admin?token=admin-token&msg=from-link', follow_redirects=False)
         assert token_login.status_code == 303
