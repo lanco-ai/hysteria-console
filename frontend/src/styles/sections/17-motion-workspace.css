@@ -72,9 +72,10 @@
   }
 }
 
-/* Workspace redesign: scoped to authenticated surfaces. Public home/login
-   remain independent. Keep the complete five-column management table. */
+/* Shared workspace palette for the admin, user panel and public AI entry.
+   Management layout rules below remain scoped to authenticated surfaces. */
 body.has-shell,
+body.page-portal,
 .wrap.user-panel {
   --bg-page: #f7f6f2;
   --bg-surface: #ffffff;
