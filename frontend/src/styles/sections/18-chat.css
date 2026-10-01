@@ -913,10 +913,16 @@
 .workspace-paper { border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
 .workspace-paper > label { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
 .workspace-paper small { color: var(--text-tertiary); white-space: nowrap; }
-.workspace-dialog { color: var(--text-primary); background: var(--bg-overlay, #fff); width: min(640px, calc(100vw - 32px)); max-height: 88dvh; padding: 24px; border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 90px #0003; }
+.workspace-dialog { position: fixed; inset: 0; margin: auto; color: var(--text-primary); background: var(--bg-surface); width: min(640px, calc(100vw - 32px)); height: fit-content; max-height: calc(100dvh - 32px); padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 20px 90px #0003; }
+.workspace-dialog[open] { display: flex; flex-direction: column; }
 .workspace-dialog::backdrop { background: #0006; }
-.workspace-dialog > header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.workspace-dialog > header { display: flex; flex: 0 0 auto; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--hairline); }
+.workspace-dialog > header > .btn { flex: 0 0 auto; width: 36px; height: 36px; padding: 0; font-size: 22px; }
 .workspace-dialog h2 { margin: 0; font-size: 20px; }
+.workspace-dialog-body { display: flex; flex-direction: column; gap: 18px; min-height: 0; padding: 24px; overflow-y: auto; overscroll-behavior: contain; overflow-wrap: anywhere; }
+.workspace-dialog-body > .btn { align-self: flex-start; max-width: 100%; }
+.workspace-dialog-body .workspace-form > .btn { justify-self: start; max-width: 100%; }
+.workspace-dialog-body > .workspace-tool-run { display: grid; gap: 12px; margin: 0; }
 .workspace-form { display: grid; gap: 18px; }
 .workspace-form > label { display: grid; gap: 8px; font-size: 13px; }
 .workspace-form textarea { resize: vertical; line-height: 1.7; }
@@ -938,7 +944,8 @@
   .workspace-project-bar > label { flex: 1; }
   .workspace-project-bar select { min-width: 0; width: 100%; }
   .workspace-project-bar > .workspace-actions { width: 100%; justify-content: flex-end; }
-  .workspace-dialog { padding: 18px; }
+  .workspace-dialog > header { padding: 14px 18px; }
+  .workspace-dialog-body { padding: 18px; }
   .chat-message-heading { flex-wrap: wrap; gap: 6px; }
   .personal-workspace .chat-thread-heading { align-items: flex-start; }
 }
@@ -949,10 +956,16 @@
 .chat-message-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
 .chat-message-content h1, .chat-message-content h2, .chat-message-content h3 { margin: 16px 0 10px; line-height: 1.5; }
 .chat-message-content > :first-child { margin-top: 0; }
-.personal-workspace .chat-composer { padding-right: 56px; }
+.personal-workspace .chat-composer { padding: 14px 16px 16px; }
+.chat-composer-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; margin-bottom: 6px; padding-bottom: 10px; border-bottom: 1px solid var(--hairline); }
+.chat-composer-toolbar > .workspace-actions { min-width: 0; }
+.chat-composer-toolbar > .workspace-actions > .btn:first-child { border-color: var(--border); background: var(--bg-surface); }
+.chat-composer > small { display: block; margin-bottom: 6px; color: var(--text-secondary); font-size: 11px; }
 .workspace-context-scope { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; }
 .workspace-context-scope select { max-width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; background: var(--bg-surface); color: var(--text-primary); }
-.workspace-dialog > textarea { width: 100%; box-sizing: border-box; }
+.chat-composer-toolbar .workspace-context-scope { min-width: 0; flex-wrap: nowrap; margin-bottom: 0; }
+.chat-composer-toolbar .workspace-context-scope select { min-width: 0; }
+.workspace-dialog-body > textarea { width: 100%; box-sizing: border-box; }
 .workspace-tool-run { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin: 14px 0; }
 .workspace-tool-run pre, .workspace-tool-output pre, .workspace-dialog details > pre { white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; max-height: 260px; font-size: 12px; line-height: 1.6; padding: 10px; background: var(--bg-subtle); border-radius: 8px; }
 .workspace-tool-output img { display: block; max-width: 100%; max-height: 320px; height: auto; border-radius: 8px; margin: 10px 0; }
@@ -968,4 +981,10 @@
   .personal-workspace .chat-thread-heading { flex-wrap: wrap; }
   .chat-message-heading > .workspace-actions { gap: 2px; }
   .chat-message-heading .btn { padding-inline: 6px; }
+}
+
+@media (width <= 620px) {
+  .chat-composer-toolbar > .workspace-actions { width: 100%; }
+  .chat-composer-toolbar .workspace-context-scope { width: 100%; }
+  .chat-composer-toolbar .workspace-context-scope select { flex: 1; }
 }

@@ -15,7 +15,7 @@ export function ToolOutput({ result, artifacts = [] }: { result?: Record<string,
   </div>;
 }
 
-export function ToolsDialog({ conversation, question, model, papers, attached, onClose, onAttach }: { conversation: Conversation; question: string; model: string; papers: Paper[]; attached: string[]; onClose: () => void; onAttach: (ids: string[]) => void }) {
+export function ToolsDialog({ conversation, question, model, papers, attached, onClose, onAttach, returnFocusTo }: { conversation: Conversation; question: string; model: string; papers: Paper[]; attached: string[]; onClose: () => void; onAttach: (ids: string[]) => void; returnFocusTo: HTMLElement | null }) {
   const [catalog, setCatalog] = useState<Tool[]>([]);
   const [runs, setRuns] = useState<ToolRun[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
@@ -44,7 +44,7 @@ export function ToolsDialog({ conversation, question, model, papers, attached, o
   useEffect(() => { let live = true; void Promise.all([api<{ items: Tool[] }>('/tools/catalog'), api<{ items: ToolRun[] }>(`/conversations/${conversation.id}/tools`), api<{ items: Server[] }>('/tools/servers')]).then(([c, r, s]) => { if (live) { setCatalog(c.items); setRuns(r.items); setServers(s.items); } }).catch(e => { if (live) report(e); }); return () => { live = false; }; }, [conversation.id]);
   const act = async (action: () => Promise<void>) => { setBusy(true); setError(''); setNotice(''); try { await action(); } catch (e) { report(e); } finally { setBusy(false); } };
   const current = catalog.find(t => t.id === tool);
-  return <WorkspaceDialog title="搜索与工具" onClose={() => { if (!busy) onClose(); }}>
+  return <WorkspaceDialog title="搜索与工具" returnFocusTo={returnFocusTo} onClose={() => { if (!busy) onClose(); }}>
     <div className="workspace-actions"><button className={`btn ${connections ? 'btn-ghost' : 'btn-secondary'}`} disabled={busy} onClick={() => setConnections(false)}>本次工具</button><button className={`btn ${connections ? 'btn-secondary' : 'btn-ghost'}`} disabled={busy} onClick={() => setConnections(true)}>MCP 连接</button></div>
     {connections ? <>
       <p>连接使用 Streamable HTTP 的 MCP 服务。凭据只保存在服务器，不会发给聊天模型。调用前会显示工具名称和参数，需你确认执行。</p>
