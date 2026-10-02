@@ -5,6 +5,7 @@ users must keep this file in sync with users.json. We reuse each user's VLESS
 UUID as the TUIC UUID and the Hysteria credential (`username:sub_token`) as the
 TUIC password so subscriptions stay simple.
 """
+import copy
 import json
 import secrets
 import subprocess
@@ -15,6 +16,7 @@ from pathlib import Path
 import static_access
 import state_store
 import user_compat
+import tuic_user_meter
 
 USERS_FILE = Path('/root/hysteria/users.json')
 CONFIG_FILE = Path('/root/hysteria/tuic.json')
@@ -225,16 +227,9 @@ def sync_all(*, users=None, path=None):
         users = state_store.load_json_strict(
             USERS_FILE, {}, required=True,
         )
-    rendered = render_from_users(
-        users,
-        locked_user_file=_locked_user_file_for_config(p),
-    )
     with state_store.file_lock(_config_lock_path(p)):
         current = _load_runtime_config(p)
-        desired = _base_config()
-        if current is not None:
-            desired.update(current)
-        desired['users'] = rendered['users']
+        desired = _render_for_runtime(current, users, None, p)
         if current == desired:
             return _has_reload_pending(p)
         _mark_reload_pending(p)
@@ -262,17 +257,9 @@ def render_from_user_plan(users, plan, *, locked_user_file=None):
 
 def sync_user_plan(users, plan, *, path=None):
     p = Path(path) if path else CONFIG_FILE
-    rendered = render_from_user_plan(
-        users,
-        plan,
-        locked_user_file=_locked_user_file_for_config(p),
-    )
     with state_store.file_lock(_config_lock_path(p)):
         current = _load_runtime_config(p)
-        desired = _base_config()
-        if current is not None:
-            desired.update(current)
-        desired['users'] = rendered['users']
+        desired = _render_for_runtime(current, users, plan, p)
         if current == desired:
             return _has_reload_pending(p)
         _mark_reload_pending(p)
@@ -284,6 +271,9 @@ def _run_reload_worker(path, expected_token):
     """Restart TUIC and ACK only the exact config generation it loaded."""
     p = Path(path)
     if not _is_live_config_path(p):
+        return False
+    if accounting_fault_path(p).exists():
+        _fail_closed_reload(p, 'TUIC accounting fault requires operator recovery')
         return False
     try:
         result = subprocess.run(
@@ -387,6 +377,138 @@ def _main(argv=None):
     if len(args) != 3 or args[0] != RELOAD_WORKER_FLAG:
         return 2
     return 0 if _run_reload_worker(args[1], args[2] or None) else 1
+
+
+
+def metered_parts(cfg):
+    """Detect explicit sing-box mode; malformed mode never falls back to legacy."""
+    if cfg is None or 'inbounds' not in cfg:
+        return None
+    try:
+        inbounds = cfg['inbounds']
+        if not isinstance(inbounds, list) or len(inbounds) != 1 or inbounds[0]['type'] != 'tuic':
+            raise ValueError('expected a dedicated TUIC inbound')
+        inbound = inbounds[0]
+        api = cfg['experimental']['v2ray_api']
+        tuic_user_meter.validate_endpoint(api['listen'])
+        if api['stats']['enabled'] is not True or not isinstance(api['stats']['users'], list):
+            raise ValueError('TUIC user stats must be enabled')
+        if not isinstance(inbound['users'], list):
+            raise ValueError('named TUIC users required')
+        names = [row['name'] for row in inbound['users']]
+        stats_names = api['stats']['users']
+        if (any(not user_compat.is_valid_username(name) for name in names + stats_names)
+                or len(set(names)) != len(names)
+                or len(set(stats_names)) != len(stats_names)
+                or set(names) != set(stats_names)):
+            raise ValueError('every authenticated TUIC user must have unique stats')
+        return inbound, api
+    except (KeyError, TypeError, ValueError) as exc:
+        raise state_store.CriticalStateUnavailable('invalid metered TUIC config') from exc
+
+
+def canonical_identities(users):
+    return {name: tuic_user_meter.credential_id(name, str(user['vless_uuid']), f"{name}:{user['sub_token']}")
+            for name, user in users.items()
+            if isinstance(user, dict) and user.get('vless_uuid') and user.get('sub_token')}
+
+
+def validate_named_identities(cfg, users):
+    parts = metered_parts(cfg)
+    if parts is None:
+        raise state_store.CriticalStateUnavailable('named TUIC runtime is missing')
+    canonical = canonical_identities(users)
+    result = {}
+    try:
+        for row in parts[0]['users']:
+            name = row['name']
+            identity = tuic_user_meter.credential_id(name, row['uuid'], row['password'])
+            if canonical.get(name) != identity:
+                raise ValueError('runtime credential is not the canonical named identity')
+            result[name] = identity
+    except (KeyError, TypeError, ValueError) as exc:
+        raise state_store.CriticalStateUnavailable('TUIC named identity mismatch') from exc
+    return result
+
+
+def _render_for_runtime(current, users, plan, path, *, offline=False):
+    mode = 'legacy' if offline else tuic_user_meter.accounting_mode(Path(path).parent / 'state')
+    if mode == 'active' and metered_parts(current) is None:
+        raise state_store.CriticalStateUnavailable('active TUIC runtime config is missing')
+    if metered_parts(current) is not None:
+        cfg = copy.deepcopy(current)
+        inbound, api = metered_parts(cfg)
+        if not offline and accounting_fault_path(path).exists():
+            plan = {}
+        if plan is None:
+            plan = {name: user.get('vless_uuid') for name, user in users.items()
+                    if isinstance(user, dict) and not user_compat.is_inactive(user)
+                    and not user_compat.is_metered(user)
+                    and not user_compat.authorization_config_error(user)}
+        named = []
+        for name, uid in sorted(plan.items()):
+            user = users.get(name)
+            if uid and isinstance(user, dict) and user_compat.tuic_enabled(user) and user.get('sub_token'):
+                named.append({'name': name, 'uuid': str(uid),
+                              'password': f"{name}:{user['sub_token']}"})
+        inbound['users'] = named
+        api['stats']['users'] = [row['name'] for row in named]
+        return cfg
+    render = render_from_users if plan is None else render_from_user_plan
+    args = (users,) if plan is None else (users, plan)
+    rendered = render(*args, locked_user_file=_locked_user_file_for_config(path))
+    desired = _base_config()
+    if current is not None:
+        desired.update(current)
+    desired['users'] = rendered['users']
+    return desired
+
+
+def render_metered_runtime(legacy, users, plan, *, endpoint='127.0.0.1:10086', accept_runtime_defaults=False):
+    """Offline migration candidate. Reject tuning without an exact mapping."""
+    import ipaddress
+    supported = {'server', 'users', 'certificate', 'private_key', 'congestion_control',
+                 'alpn', 'zero_rtt_handshake', 'dual_stack', 'udp_relay_ipv6',
+                 'auth_timeout', 'log_level'}
+    unknown = set(legacy) - supported
+    if accept_runtime_defaults:
+        defaults = _base_config()
+        unknown = {key for key in unknown
+                   if key not in defaults or legacy[key] != defaults[key]}
+    if unknown:
+        raise state_store.InvalidJsonState('unmapped legacy TUIC settings: ' + ', '.join(sorted(unknown)))
+    tuic_user_meter.validate_endpoint(endpoint)
+    host, _, port = str(legacy.get('server', '[::]:9443')).rpartition(':')
+    try:
+        host = str(ipaddress.ip_address(host.strip('[]')))
+        port = int(port)
+        if not 1 <= port <= 65535:
+            raise ValueError('invalid port')
+    except ValueError as exc:
+        raise state_store.InvalidJsonState('invalid legacy TUIC bind') from exc
+    if legacy.get('dual_stack', True) is not True:
+        raise state_store.InvalidJsonState('dual_stack=false has no verified mapping')
+    if legacy.get('zero_rtt_handshake', False) is not False:
+        raise state_store.InvalidJsonState('zero RTT must remain disabled')
+    inbound = {
+        'type': 'tuic', 'tag': 'tuic-in', 'listen': host, 'listen_port': port,
+        'users': [], 'congestion_control': legacy.get('congestion_control', 'bbr'),
+        'zero_rtt_handshake': False, 'auth_timeout': legacy.get('auth_timeout', '3s'),
+        'tls': {'enabled': True, 'alpn': legacy.get('alpn', ['h3']),
+                'certificate_path': legacy.get('certificate', '/root/hysteria/server.crt'),
+                'key_path': legacy.get('private_key', '/root/hysteria/server.key')},
+    }
+    cfg = {'log': {'level': legacy.get('log_level', 'warn')}, 'inbounds': [inbound],
+           'outbounds': [{'type': 'direct', 'tag': 'direct'}],
+           'route': {'rules': []},
+           'experimental': {'v2ray_api': {'listen': endpoint, 'stats': {'enabled': True, 'users': []}}}}
+    if legacy.get('udp_relay_ipv6', False) is False:
+        cfg['route']['rules'].append({'network': 'udp', 'ip_version': 6, 'action': 'reject'})
+    return _render_for_runtime(cfg, users, plan, CONFIG_FILE, offline=True)
+
+
+def accounting_fault_path(path):
+    return Path(str(path) + '.accounting-failed')
 
 
 if __name__ == '__main__':

@@ -187,6 +187,7 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/xray_config.py",
     "/root/hysteria/tuic_config.py",
     "/root/hysteria/tuic_meter.py",
+    "/root/hysteria/tuic_user_meter.py",
     "/root/hysteria/usage_dashboard.py",
     "/root/hysteria/public_views.py",
     "/root/hysteria/auth_views.py",
