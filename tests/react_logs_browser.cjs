@@ -13,6 +13,7 @@ const navigation = [
   ['工作台', null],
   ['用户', '/admin'],
   ['今日计划', '/admin/plans'],
+  ['商品管理', '/admin/shop'],
   ['开源发现', '/admin/github-trending'],
   ['网络管理', null],
   ['流量分析', '/admin/usage'],

@@ -28,6 +28,7 @@ def main():
     browser_tests = (
         'react_logs_browser.cjs',
         'react_home_browser.cjs',
+        'react_shop_browser.cjs',
         'react_login_browser.cjs',
         'react_logout_browser.cjs',
         'react_password_pages_browser.cjs',

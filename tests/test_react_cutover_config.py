@@ -29,6 +29,7 @@ REACT_DOCUMENTS = (
     '/admin/plans',
     '/admin/video',
     '/admin/github-trending',
+    '/admin/shop',
 )
 
 

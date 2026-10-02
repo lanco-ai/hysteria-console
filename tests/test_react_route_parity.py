@@ -8,6 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REACT_PREVIEW_PREFIX = '/__react'
 REACT_ONLY_DOCUMENTS = {
     '/admin/github-trending',
+    '/admin/shop',
     '/admin/chat',
     '/admin/plans',
     '/admin/services',

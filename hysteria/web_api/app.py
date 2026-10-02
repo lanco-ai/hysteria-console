@@ -56,6 +56,7 @@ from .requests import FormReadTimeout, RequestHeaders, read_form
 from .rules_routes import register_rules_routes
 from .service_center import register_service_center_routes
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
+from .shop_routes import register_shop_routes
 from .subscription_routes import register_subscription_routes
 from .usage_models import (
     AdminUsageHistoryResponse,
@@ -311,6 +312,8 @@ def create_app(
     video_scheduler_enabled=False,
     video_scheduler_interval=5.0,
     service_center_store=None,
+    shop_store=None,
+    shop_scheduler_enabled=False,
     github_trending_store=None,
     github_trending_avatar_proxy=None,
     github_trending_scheduler_enabled=False,
@@ -518,6 +521,9 @@ def create_app(
     )
     register_agent_routes(app, services, dispatch)
     register_service_center_routes(app, services, dispatch, service_center_store)
+    register_shop_routes(
+        app, services, dispatch, store=shop_store, scheduler_enabled=shop_scheduler_enabled
+    )
     register_github_trending_routes(
         app,
         services,

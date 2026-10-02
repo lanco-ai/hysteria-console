@@ -121,6 +121,7 @@ def build_app():
         lifespan=lifespan,
         video_scheduler_enabled=True,
         github_trending_scheduler_enabled=True,
+        shop_scheduler_enabled=True,
         chat_settings_store=ChatSettingsAdapter(ai_services, gemini),
         video_settings_store=VideoSettingsAdapter(ai_services),
         ai_services_store=ai_services,

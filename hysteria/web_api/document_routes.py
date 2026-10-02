@@ -47,6 +47,7 @@ REACT_DOCUMENTS = {
     '/admin/chat': ('AI 对话', 'page-portal page-workbench', 'admin'),
     '/admin/services': ('服务中心', 'has-shell', 'admin'),
     '/admin/plans': ('今日计划', 'has-shell', 'admin'),
+    '/admin/shop': ('商品管理', 'has-shell', 'admin'),
     '/admin/github-trending': ('GitHub 热榜', 'has-shell', 'admin'),
     '/admin/video': ('AI 视频', 'page-portal page-workbench', 'admin'),
 }

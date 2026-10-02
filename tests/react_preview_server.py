@@ -1,5 +1,6 @@
 """Loopback-only built React preview backed by the real FastAPI adapter."""
 
+import asyncio
 import html
 import json
 import mimetypes
@@ -27,12 +28,17 @@ from web_api.journal_service import JournalStore
 from web_api.plans_service import PlanStore
 from web_api.service_center import ServiceCenterStore
 from web_api.services import LegacyPanelServices
+from web_api.shop_source import normalize_products
+from web_api.shop_store import ShopStore
+from web_api.video_service import AssetStore, VideoSettingsStore, WorkflowStore
 
 from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
     '/__react/admin/github-trending': ('GitHub 热榜', 'has-shell'),
+    '/__react/admin/shop': ('商品管理', 'has-shell'),
+    '/admin/shop': ('商品管理', 'has-shell'),
     '/admin/github-trending': ('GitHub 热榜', 'has-shell'),
     '/__react/admin/services': ('服务中心', 'has-shell'),
     '/admin/services': ('服务中心', 'has-shell'),
@@ -431,6 +437,7 @@ def _handler(api_client, allowed_assets):
                 request_path
                 in {
                     '/api/chat/completions',
+                    '/api/v1/shop/refresh',
                     '/api/v1/admin/services/probe',
                     '/api/journal',
                 }
@@ -448,6 +455,7 @@ def _handler(api_client, allowed_assets):
             request_path = urlsplit(self.path).path
             if request_path in {
                 '/api/chat/settings',
+                '/api/v1/shop/admin',
                 '/api/v1/admin/services',
                 '/api/ai/service-bindings',
             } or request_path.startswith(('/api/ai/services/', '/api/journal/', '/api/chat/')):
@@ -613,6 +621,13 @@ def preview_server(port=0, *, overview_fixture=False):
                 Path(directory) / 'github-trending.json',
                 fetcher=_offline_trending_fetcher,
             )
+
+            async def shop_fetcher():
+                fixture = Path(__file__).parent / 'fixtures' / 'shop' / 'products.json'
+                return normalize_products(json.loads(fixture.read_text())['data'])
+
+            shop_store = ShopStore(Path(directory) / 'shop-source.json', fetcher=shop_fetcher)
+            asyncio.run(shop_store.refresh())
             app = create_app(
                 LegacyPanelServices(service),
                 max_requests=4,
@@ -630,6 +645,10 @@ def preview_server(port=0, *, overview_fixture=False):
                 ),
                 chat_workspace_settings=PreviewWorkspaceProvider(),
                 github_trending_store=trending_store,
+                shop_store=shop_store,
+                video_settings_store=VideoSettingsStore(preview_ai_root / 'video-settings.json'),
+                video_workflow_store=WorkflowStore(preview_ai_root / 'video-workflows.json'),
+                video_asset_store=AssetStore(preview_ai_root / 'video-assets'),
                 gemini_adapter=PreviewGeminiAdapter(),
             )
             with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
