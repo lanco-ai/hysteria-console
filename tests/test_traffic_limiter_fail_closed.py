@@ -643,3 +643,285 @@ def test_lock_contention_skips_tick_without_revoking_static_access(
         tl.main()
 
     assert fail_closed_reasons == []
+
+
+@pytest.mark.parametrize('day', [1, 3])
+def test_tuic_payload_credits_quota_once_without_wire_double_count(tmp_path, monkeypatch, day):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    paths = _configure_state(tmp_path, monkeypatch)
+    users = json.loads(paths['USERS_FILE'].read_text())
+    users['alice']['sub_token'] = 'fixture'
+    _write(paths['USERS_FILE'], users)
+    cfg = metered_config()
+    cfg['inbounds'][0]['users'] = [{'name': 'alice', 'uuid': users['alice']['vless_uuid'], 'password': 'alice:fixture'}]
+    cfg['experimental']['v2ray_api']['stats']['users'] = ['alice']
+    _write(tmp_path / 'tuic.json', cfg)
+    _write(paths['RESET_STATE_FILE'], {})
+    meter.initialize(tmp_path, activated_at='2026-07-01T00:00:00+08:00')
+    now = datetime(2026, 7, day, 12)
+    monkeypatch.setattr(tl, 'local_now', lambda: now)
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('a', {'alice': {'tx': 200, 'rx': 300}}))
+    monkeypatch.setattr(tl, 'get', lambda path: {})
+    monkeypatch.setattr(tl, 'post', lambda *a: None)
+    monkeypatch.setattr(tl, 'get_xray_traffic', lambda: {})
+    monkeypatch.setattr(tl, 'get_tuic_traffic', lambda: {'tx': 9000, 'rx': 1000})
+    plans, costs = [], []
+    monkeypatch.setattr(tl, '_apply_static_access_plan', lambda u, p: (plans.append(p) or False, False))
+    monkeypatch.setattr(tl.cost_calibrator, 'update_sample', lambda *a, **k: costs.append(k['app_raw_bytes']))
+    monkeypatch.setattr(tl.cost_calibrator, 'maybe_auto_adjust', lambda *a, **k: {})
+    monkeypatch.setattr(tl, 'check_alerts', lambda *a, **k: None)
+    tl.main()
+    assert json.loads(paths['USAGE_DAILY_FILE'].read_text())[now.strftime('%Y-%m-%d')]['alice']['total'] == 500
+    assert json.loads(paths['USAGE_FILE'].read_text())['2026-07']['alice']['total'] == 500
+    assert plans[0]['alice'] is None  # 500 * 2.28 exceeds 1024 quota
+    assert costs == [500]
+    tl.main()
+    assert costs == [500]  # Existing calibrator skips a zero-byte tick.
+    assert json.loads(paths['USAGE_DAILY_FILE'].read_text())[now.strftime('%Y-%m-%d')]['alice']['total'] == 500
+
+
+@pytest.mark.parametrize('failure', ['api', 'decrease', 'config'])
+def test_tuic_source_failure_does_not_clear_or_stop_other_protocols(tmp_path, monkeypatch, failure):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    paths = _configure_state(tmp_path, monkeypatch)
+    cfg = metered_config()
+    if failure == 'config':
+        cfg['experimental']['v2ray_api']['listen'] = '0.0.0.0:10086'
+    _write(tmp_path / 'tuic.json', cfg)
+    meter.initialize(tmp_path, activated_at='2026-07-03T00:00:00+08:00')
+    if failure == 'decrease':
+        _write(tmp_path / meter.STATE_NAME, {'version': 1, 'activated_at': '2026-07-03',
+               'generation': 'a', 'counters': {'alice': {'rx': 10, 'tx': 10}}, 'identities': {'alice': 'a' * 64}, 'reload_wait': None})
+    stopped, reads = [], []
+    monkeypatch.setattr(tl, '_stop_static_service', lambda service, **k: stopped.append(service))
+    monkeypatch.setattr(tl, 'local_now', lambda: datetime(2026, 7, 3, 12))
+    def observe(*args):
+        if failure == 'api':
+            raise state_store.CriticalStateUnavailable('fixture API failure')
+        return 'a', {'alice': {'rx': 9, 'tx': 10}}
+    monkeypatch.setattr(meter, 'observe', observe)
+    monkeypatch.setattr(tl, 'get', lambda path: reads.append(path) or ({'alice': {'tx': 1, 'rx': 2}} if path == '/traffic?clear=1' else {}))
+    monkeypatch.setattr(tl, 'get_xray_traffic', lambda: {})
+    monkeypatch.setattr(tl, 'get_tuic_traffic', lambda: {})
+    monkeypatch.setattr(tl, '_apply_static_access_plan', lambda *a: (False, False))
+    monkeypatch.setattr(tl.cost_calibrator, 'update_sample', lambda *a, **k: {})
+    monkeypatch.setattr(tl.cost_calibrator, 'maybe_auto_adjust', lambda *a, **k: {})
+    monkeypatch.setattr(tl, 'check_alerts', lambda *a, **k: None)
+    tl.main()
+    assert stopped == ['tuic-server.service']
+    assert '/traffic?clear=1' in reads
+    assert json.loads(paths['USAGE_DAILY_FILE'].read_text())['2026-07-03']['alice']['total'] == 3
+    assert (tmp_path / 'tuic.json.accounting-failed').exists()
+
+
+@pytest.mark.parametrize('kind', ['missing-config', 'flat-config', 'missing-state', 'corrupt-mode', 'missing-mode'])
+def test_activated_tuic_never_silently_falls_back_to_aggregate(tmp_path, monkeypatch, kind):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    _configure_state(tmp_path, monkeypatch)
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    config = tmp_path / 'tuic.json'
+    _write(config, metered_config())
+    if kind == 'missing-config':
+        config.unlink()
+    elif kind == 'flat-config':
+        _write(config, {'users': {}})
+    elif kind == 'missing-state':
+        (tmp_path / meter.STATE_NAME).unlink()
+    elif kind == 'corrupt-mode':
+        (tmp_path / meter.MODE_NAME).write_text('{}')
+    else:
+        (tmp_path / meter.MODE_NAME).unlink()
+    stopped = []
+    monkeypatch.setattr(tl, '_stop_static_service', lambda service, **k: stopped.append(service))
+    assert tl._collect_tuic_users_locked({}, datetime(2026, 7, 3)) == (True, {}, True)
+    assert stopped == ['tuic-server.service']
+
+
+def test_explicit_tuic_rollback_allows_retained_checkpoint_and_legacy_config(tmp_path, monkeypatch):
+    import tuic_user_meter as meter
+    paths = _configure_state(tmp_path, monkeypatch)
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    meter.deactivate_locked(paths['USAGE_DAILY_FILE'], paths['USAGE_FILE'])
+    _write(tmp_path / 'tuic.json', {'users': {}})
+    assert tl._collect_tuic_users_locked({}, datetime(2026, 7, 3)) == (False, {}, False)
+
+
+def test_pending_restart_failure_recovers_without_permanent_inhibition(tmp_path, monkeypatch):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    paths = _configure_state(tmp_path, monkeypatch)
+    users = json.loads(paths['USERS_FILE'].read_text())
+    users['alice']['sub_token'] = 'fixture'
+    cfg = metered_config()
+    cfg['inbounds'][0]['users'] = [{'name': 'alice', 'uuid': users['alice']['vless_uuid'], 'password': 'alice:fixture'}]
+    cfg['experimental']['v2ray_api']['stats']['users'] = ['alice']
+    config = tmp_path / 'tuic.json'
+    _write(config, cfg)
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    token = tl.tuic_config._mark_reload_pending(config)
+    def unavailable(*args):
+        raise state_store.CriticalStateUnavailable('restart in progress')
+    monkeypatch.setattr(meter, 'observe', unavailable)
+    assert tl._collect_tuic_users_locked(users, datetime(2026, 7, 3)) == (True, {}, False)
+    assert not tl.tuic_config.accounting_fault_path(config).exists()
+    tl.tuic_config._clear_reload_pending(config, token)
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('new-G', {'alice': {'rx': 2, 'tx': 3}}))
+    assert tl._collect_tuic_users_locked(users, datetime(2026, 7, 3)) == (True, {'alice': {'rx': 2, 'tx': 3}}, False)
+
+
+def test_delete_drain_recreate_before_restart_never_charges_replacement(tmp_path, monkeypatch):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    paths = _configure_state(tmp_path, monkeypatch)
+    users = json.loads(paths['USERS_FILE'].read_text())
+    users['alice']['sub_token'] = 'old'
+    config = tmp_path / 'tuic.json'
+    def render(current):
+        cfg = metered_config()
+        cfg['inbounds'][0]['users'] = [{'name': name, 'uuid': user['vless_uuid'], 'password': f"{name}:{user['sub_token']}"} for name, user in current.items()]
+        cfg['experimental']['v2ray_api']['stats']['users'] = list(current)
+        _write(config, cfg)
+    render(users)
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    now = datetime(2026, 7, 3)
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('old-G', {'alice': {'rx': 10, 'tx': 20}}))
+    assert tl._collect_tuic_users_locked(users, now)[1]['alice'] == {'rx': 10, 'tx': 20}
+    render({})
+    token = tl.tuic_config._mark_reload_pending(config)
+    _write(paths['USAGE_DAILY_FILE'], {})
+    _write(paths['USAGE_FILE'], {})
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('old-G', {'alice': {'rx': 15, 'tx': 25}}))
+    assert tl._collect_tuic_users_locked({}, now) == (True, {}, False)
+    replacement = {'alice': {**users['alice'], 'vless_uuid': '22222222-2222-4222-8222-222222222222', 'sub_token': 'new'}}
+    render(replacement)
+    token = tl.tuic_config._mark_reload_pending(config)
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('old-G', {'alice': {'rx': 20, 'tx': 30}}))
+    assert tl._collect_tuic_users_locked(replacement, now) == (True, {}, False)
+    assert json.loads(paths['USAGE_DAILY_FILE'].read_text()) == {}
+    assert meter.load_state(tmp_path)['generation'] == 'old-G'
+    tl.tuic_config._clear_reload_pending(config, token)
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('new-G', {'alice': {'rx': 1, 'tx': 2}}))
+    assert tl._collect_tuic_users_locked(replacement, now) == (True, {'alice': {'rx': 1, 'tx': 2}}, False)
+    assert json.loads(paths['USAGE_DAILY_FILE'].read_text())['2026-07-03']['alice']['total'] == 3
+
+
+def test_reload_ack_racing_observation_defers_identity_binding(tmp_path, monkeypatch):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    _configure_state(tmp_path, monkeypatch)
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    config = tmp_path / 'tuic.json'
+    _write(config, metered_config())
+    token = tl.tuic_config._mark_reload_pending(config)
+    def observe(*args):
+        tl.tuic_config._clear_reload_pending(config, token)
+        return 'new-G', {}
+    monkeypatch.setattr(meter, 'observe', observe)
+    assert tl._collect_tuic_users_locked({}, datetime(2026, 7, 3)) == (True, {}, False)
+    assert meter.load_state(tmp_path)['generation'] is None
+    assert not tl.tuic_config.accounting_fault_path(config).exists()
+
+
+@pytest.mark.parametrize('scenario', ['api', 'new-generation', 'token-churn', 'config-churn', 'old-drain'])
+def test_reload_wait_has_one_durable_deadline_across_all_deferrals(tmp_path, monkeypatch, scenario):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    _configure_state(tmp_path, monkeypatch)
+    users = {'alice': {'vless_uuid': '11111111-1111-4111-8111-111111111111', 'sub_token': 'fixture'}}
+    config = tmp_path / 'tuic.json'
+    cfg = metered_config()
+    cfg['inbounds'][0]['users'] = [{'name': 'alice', 'uuid': users['alice']['vless_uuid'], 'password': 'alice:fixture'}]
+    cfg['experimental']['v2ray_api']['stats']['users'] = ['alice']
+    _write(config, cfg)
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    clock = {'boot': 'fixture-boot', 'wall': 100., 'monotonic': 100.}
+    monkeypatch.setattr(meter, 'wait_clock', lambda: dict(clock))
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('old-G', {'alice': {'rx': 1, 'tx': 2}}))
+    now = datetime(2026, 7, 3)
+    if scenario == 'old-drain':
+        assert not tl._collect_tuic_users_locked(users, now)[2]
+    tl.tuic_config._mark_reload_pending(config)
+    stopped = []
+    monkeypatch.setattr(tl, '_stop_static_service', lambda service, **k: stopped.append(service))
+    def observe(*args):
+        if scenario == 'api':
+            raise state_store.CriticalStateUnavailable('API unavailable')
+        if scenario == 'token-churn':
+            tl.tuic_config._mark_reload_pending(config)
+        if scenario == 'config-churn':
+            cfg['log'] = {'level': 'warn', 'timestamp': clock['wall']}
+            _write(config, cfg)
+        return ('old-G' if scenario == 'old-drain' else 'new-G'), {'alice': {'rx': 1, 'tx': 2}}
+    monkeypatch.setattr(meter, 'observe', observe)
+    for instant in (100., 219.):
+        clock.update(wall=instant, monotonic=instant)
+        tl.tuic_config._mark_reload_pending(config)  # refreshed tokens cannot extend grace
+        assert tl._collect_tuic_users_locked(users, now)[2] is False
+        assert meter.load_state(tmp_path)['reload_wait']['wall'] == 100.
+    clock.update(wall=220., monotonic=220.)
+    assert tl._collect_tuic_users_locked(users, now) == (True, {}, True)
+    assert stopped == ['tuic-server.service']
+    assert tl.tuic_config.accounting_fault_path(config).exists()
+
+
+def test_observation_time_counts_toward_reload_deadline(tmp_path, monkeypatch):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    _configure_state(tmp_path, monkeypatch)
+    config = tmp_path / 'tuic.json'
+    _write(config, metered_config())
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    tl.tuic_config._mark_reload_pending(config)
+    clock = {'boot': 'fixture', 'wall': 100., 'monotonic': 100.}
+    monkeypatch.setattr(meter, 'wait_clock', lambda: dict(clock))
+    def slow_observe(*args):
+        clock.update(wall=221., monotonic=221.)
+        return 'G', {}
+    monkeypatch.setattr(meter, 'observe', slow_observe)
+    monkeypatch.setattr(tl, '_stop_static_service', lambda *a, **k: None)
+    assert tl._collect_tuic_users_locked({}, datetime(2026, 7, 3)) == (True, {}, True)
+
+
+@pytest.mark.parametrize('bad_wait', [[], 'invalid', {}, {'boot': 'fixture', 'wall': -1, 'monotonic': 1}])
+def test_corrupt_reload_wait_stops_only_tuic(tmp_path, monkeypatch, bad_wait):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    _configure_state(tmp_path, monkeypatch)
+    _write(tmp_path / 'tuic.json', metered_config())
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    state = meter.load_state(tmp_path)
+    state['reload_wait'] = bad_wait
+    _write(tmp_path / meter.STATE_NAME, state)
+    stopped = []
+    monkeypatch.setattr(tl, '_stop_static_service', lambda service, **k: stopped.append(service))
+    assert tl._collect_tuic_users_locked({}, datetime(2026, 7, 3)) == (True, {}, True)
+    assert stopped == ['tuic-server.service']
+
+
+def test_acked_recovery_within_grace_credits_once_and_clears_wait(tmp_path, monkeypatch):
+    import tuic_user_meter as meter
+    from tests.test_tuic_config import metered_config
+    paths = _configure_state(tmp_path, monkeypatch)
+    users = {'alice': {'vless_uuid': '11111111-1111-4111-8111-111111111111', 'sub_token': 'fixture'}}
+    cfg = metered_config()
+    cfg['inbounds'][0]['users'] = [{'name': 'alice', 'uuid': users['alice']['vless_uuid'], 'password': 'alice:fixture'}]
+    cfg['experimental']['v2ray_api']['stats']['users'] = ['alice']
+    config = tmp_path / 'tuic.json'
+    _write(config, cfg)
+    meter.initialize(tmp_path, activated_at='2026-07-03')
+    clock = {'boot': 'fixture', 'wall': 100., 'monotonic': 100.}
+    monkeypatch.setattr(meter, 'wait_clock', lambda: dict(clock))
+    token = tl.tuic_config._mark_reload_pending(config)
+    monkeypatch.setattr(meter, 'observe', lambda *a: ('new-G', {'alice': {'rx': 10, 'tx': 20}}))
+    now = datetime(2026, 7, 3)
+    assert tl._collect_tuic_users_locked(users, now) == (True, {}, False)
+    assert meter.load_state(tmp_path)['reload_wait']['wall'] == 100.
+    clock.update(wall=219., monotonic=219.)
+    tl.tuic_config._clear_reload_pending(config, token)
+    assert tl._collect_tuic_users_locked(users, now) == (True, {'alice': {'rx': 10, 'tx': 20}}, False)
+    assert meter.load_state(tmp_path)['reload_wait'] is None
+    assert tl._collect_tuic_users_locked(users, now) == (True, {}, False)
+    assert json.loads(paths['USAGE_DAILY_FILE'].read_text())['2026-07-03']['alice']['total'] == 30

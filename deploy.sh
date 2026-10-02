@@ -27,6 +27,9 @@ fi
 /usr/bin/python3 -I "$REPO_DIR/scripts/hy2-render-template.py" \
   --verify-exec-env-file "$ENV_FILE"
 
+# Refuse before any lock, recovery, installation, or unit replacement.
+/usr/bin/python3 -I "$REPO_DIR/scripts/tuic/guard-legacy-deploy.py" "$HY_DIR/tuic.json"
+
 DEPLOY_SUCCEEDED=0
 SERVICE_STATE_CAPTURED=0
 XRAY_CANDIDATE=""
@@ -372,6 +375,7 @@ build_durable_artifact_set() {
     xray_config.py \
     tuic_config.py \
     tuic_meter.py \
+    tuic_user_meter.py \
     usage_dashboard.py \
     user_compat.py \
     hysteria_update.py \
@@ -1961,6 +1965,7 @@ for artifact in \
   "$HY_DIR/xray_config.py" \
   "$HY_DIR/tuic_config.py" \
   "$HY_DIR/tuic_meter.py" \
+  "$HY_DIR/tuic_user_meter.py" \
   "$HY_DIR/usage_dashboard.py" \
   "$HY_DIR/user_compat.py" \
   "$HY_DIR/display.py" \
@@ -2163,6 +2168,7 @@ render "$REPO_DIR/hysteria/subscription_profiles.py" "$HY_DIR/subscription_profi
 render "$REPO_DIR/hysteria/xray_config.py"           "$HY_DIR/xray_config.py"
 render "$REPO_DIR/hysteria/tuic_config.py"           "$HY_DIR/tuic_config.py"
 render "$REPO_DIR/hysteria/tuic_meter.py"            "$HY_DIR/tuic_meter.py"
+render "$REPO_DIR/hysteria/tuic_user_meter.py"            "$HY_DIR/tuic_user_meter.py"
 render "$REPO_DIR/hysteria/usage_dashboard.py"       "$HY_DIR/usage_dashboard.py"
 render "$REPO_DIR/hysteria/user_compat.py"           "$HY_DIR/user_compat.py"
 render "$REPO_DIR/hysteria/hysteria_update.py"       "$HY_DIR/hysteria_update.py"
@@ -2311,6 +2317,7 @@ chmod 700 \
   "$HY_DIR/xray_config.py" \
   "$HY_DIR/tuic_config.py" \
   "$HY_DIR/tuic_meter.py" \
+  "$HY_DIR/tuic_user_meter.py" \
   "$HY_DIR/usage_dashboard.py" \
   "$HY_DIR/user_compat.py" \
   "$HY_DIR/display.py" \

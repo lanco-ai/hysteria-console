@@ -77,6 +77,7 @@ import static_access
 import state_store
 import subscription_profiles as profile_defs
 import tuic_config
+import tuic_user_meter
 import usage_dashboard
 import user_compat
 import xray_config
@@ -358,6 +359,7 @@ def usage_lock():
         USAGE_LOCK_FILE,
         timeout=STATE_LOCK_TIMEOUT_SECONDS,
     ):
+        tuic_user_meter.recover_locked(USAGE_DAILY_FILE, USAGE_FILE)
         yield
 
 

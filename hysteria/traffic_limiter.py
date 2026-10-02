@@ -22,6 +22,7 @@ import anomaly as _anomaly
 import static_access
 import tuic_meter
 import tuic_config
+import tuic_user_meter
 import user_compat
 import xray_config
 
@@ -119,6 +120,7 @@ def save_json(path, data):
 @contextmanager
 def usage_lock():
     with state_store.file_lock(USAGE_LOCK_FILE, timeout=30.0):
+        tuic_user_meter.recover_locked(USAGE_DAILY_FILE, USAGE_FILE)
         yield
 
 
@@ -923,6 +925,92 @@ def _commit_core_and_enforce(traffic, *, now):
         return _commit_core_and_enforce_locked(traffic, now=now)
 
 
+def _collect_tuic_users_locked(users, now):
+    path = (Path(tuic_config.CONFIG_FILE) if _using_live_core_state()
+            else Path(USERS_FILE).parent / 'tuic.json')
+    try:
+        mode = tuic_user_meter.accounting_mode(Path(USAGE_DAILY_FILE).parent)
+        cfg = tuic_config._load_runtime_config(path)
+        parts = tuic_config.metered_parts(cfg)
+        if mode == 'legacy' and parts is None:
+            return False, {}, False
+        if mode != 'active' or parts is None:
+            tuic_user_meter.invalid('active mode and named runtime config are required together')
+        checkpoint = tuic_user_meter.load_state(Path(USAGE_DAILY_FILE).parent)
+        if tuic_config.accounting_fault_path(path).exists():
+            tuic_user_meter.invalid('accounting fault requires operator recovery')
+        attempt_clock = tuic_user_meter.wait_clock()
+        tuic_user_meter.check_reload_wait(checkpoint, clock=attempt_clock)
+        identities = tuic_config.validate_named_identities(cfg, users)
+        pending = tuic_config._read_reload_pending(path)
+        if tuic_config._has_reload_pending(path) and not tuic_config._valid_reload_token(pending):
+            tuic_user_meter.invalid('reload intent is not trustworthy')
+        if pending is not None:
+            checkpoint = tuic_user_meter.begin_reload_wait(
+                Path(USAGE_DAILY_FILE).parent, checkpoint, attempt_clock,
+            )
+        try:
+            generation, counters = tuic_user_meter.observe(
+                parts[1]['listen'], set(identities) | set(checkpoint['identities']),
+            )
+        except (state_store.StateStoreError, OSError):
+            # A managed restart can briefly remove the API or change invocation
+            # during the query. Its pending intent already drives bounded retry
+            # and readiness/stop logic; do not permanently inhibit routine edits.
+            current_pending = tuic_config._read_reload_pending(path)
+            if pending is not None or tuic_config._valid_reload_token(current_pending):
+                tuic_user_meter.begin_reload_wait(
+                    Path(USAGE_DAILY_FILE).parent, checkpoint, attempt_clock,
+                )
+                return True, {}, False
+            raise
+        tuic_user_meter.check_reload_wait(checkpoint)
+        # The reload worker ACKs under its own config lock. A file/token change
+        # across the sample means neither snapshot can identify the loaded file.
+        # Defer this sample; cumulative counters remain available without reset.
+        if (tuic_config._load_runtime_config(path) != cfg
+                or tuic_config._read_reload_pending(path) != pending):
+            tuic_user_meter.begin_reload_wait(
+                Path(USAGE_DAILY_FILE).parent, checkpoint, attempt_clock,
+            )
+            return True, {}, False
+        binding = tuic_user_meter.bind_observation(
+            checkpoint, generation, counters, runtime_identities=identities,
+            canonical_identities=tuic_config.canonical_identities(users),
+            pending=pending is not None,
+        )
+        if binding is None:
+            tuic_user_meter.begin_reload_wait(
+                Path(USAGE_DAILY_FILE).parent, checkpoint, attempt_clock,
+            )
+            return True, {}, False
+        owners, identities = binding
+        credited_users = {name: users[name] for name in owners}
+        tuic_user_meter.calculate_delta(checkpoint, generation, counters, credited_users)
+        tuic_user_meter.check_reload_wait(checkpoint)
+    except (state_store.StateStoreError, OSError) as exc:
+        # Persist the inhibition so unrelated admin/config reloads cannot
+        # reopen unmetered access. Recovery requires an explicit operator.
+        state_store.save_json(tuic_config.accounting_fault_path(path), {'error': str(exc)})
+        _stop_static_service(tuic_config.RELOAD_SERVICE, reason=exc)
+        _warn_optional_state('TUIC user accounting; access stopped', exc)
+        return True, {}, True
+    meta = load_json(META_FILE, {}, required=True)
+    day = cycle_util.settlement_day_from_meta(meta)
+    month = billing_month_key(now, day=day)
+    usage = load_json(USAGE_FILE, {}, required=True)
+    # Legacy cycle reset must happen before TUIC's fresh credit, including
+    # its durable reset marker, or the subsequent core commit could erase it.
+    maybe_reset_all_usage_on_day_21(now, users, usage, month, day=day)
+    delta = tuic_user_meter.credit_locked(
+        daily_path=USAGE_DAILY_FILE, usage_path=USAGE_FILE,
+        now=now, month_key=month, generation=generation,
+        counters=counters, users=credited_users, identities=identities,
+        clear_reload_wait=pending is None,
+    )
+    return True, delta, False
+
+
 def main():
     now = local_now()
     # Hold one canonical lock from preflight through both destructive source
@@ -936,6 +1024,7 @@ def main():
             users = load_json(USERS_FILE, {}, required=True)
             _validate_users(users, path=USERS_FILE)
             resume_expired_temporary_disables(users, now)
+            tuic_metered, tuic_users_delta, tuic_failed = _collect_tuic_users_locked(users, now)
 
             # Either source returning None / {} is fine — accumulate whatever
             # delta was available and try the other source again next tick.
@@ -983,9 +1072,8 @@ def main():
         _fail_closed_static_access(exc)
         raise
 
-    # TUIC counters are non-destructive and are not part of per-user quota
-    # accounting, so their auxiliary baseline update stays outside the
-    # canonical lock.
+    # Port counters remain independent wire diagnostics. They never enter
+    # user quotas or cost samples when authenticated payload accounting is on.
     if _optional_unavailable(unavailable_optional, tuic_meter.STATE_FILE):
         _warn_optional_state("tuic metering")
         tuic_delta = {}
@@ -998,8 +1086,10 @@ def main():
         post("/kick", to_kick)
     if xray_changed and _using_live_core_state():
         xray_config.reload_async()
-    if tuic_changed and _using_live_core_state():
+    if tuic_changed and not tuic_failed and _using_live_core_state():
         tuic_config.reload_async()
+
+    merge_traffic(traffic, tuic_users_delta)
 
     # Everything below is auxiliary. Each feature gets its own error boundary
     # and writes atomically, so a broken cache remains available for operator
@@ -1017,7 +1107,9 @@ def main():
         "xray": xray_delta,
     }
     tuic_entry = normalize_usage_entry(tuic_delta)
-    if tuic_entry["total"] > 0:
+    if tuic_metered:
+        protocol_traffic["tuic"] = tuic_users_delta
+    elif tuic_entry["total"] > 0:
         protocol_traffic["tuic"] = {"_tuic": tuic_entry}
     _run_auxiliary(
         "protocol usage",
@@ -1027,7 +1119,7 @@ def main():
         ),
     )
 
-    app_raw_bytes = traffic_totals(traffic)["total"] + tuic_entry["total"]
+    app_raw_bytes = traffic_totals(traffic)["total"] + (0 if tuic_metered else tuic_entry["total"])
     calibration_paths = (
         COST_CALIBRATION_FILE,
         DISPLAY_MULTIPLIER_STATE_FILE,

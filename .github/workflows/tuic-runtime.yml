@@ -1,0 +1,43 @@
+name: Build TUIC accounting runtime (reviewed branch)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/tuic-traffic-accounting]
+    paths:
+      - .github/workflows/tuic-runtime.yml
+      - scripts/tuic/build-runtime.sh
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Go toolchain on the builder
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.8'
+          cache: false
+      - name: Build pinned source with QUIC and user statistics
+        run: bash scripts/tuic/build-runtime.sh "$RUNNER_TEMP/tuic-build"
+      - name: Package artifact and provenance (not runtime approval)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tuic-accounting-sing-box-1.14.2-linux-amd64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            ${{ runner.temp }}/tuic-build/sing-box
+            ${{ runner.temp }}/tuic-build/SHA256SUMS
+            ${{ runner.temp }}/tuic-build/version.txt
+            ${{ runner.temp }}/tuic-build/go-build-info.txt
+            ${{ runner.temp }}/tuic-build/source.tar.gz
+      - name: State remaining release gate
+        run: echo 'Artifact only. Run scripts/tuic/runtime-gate.py on isolated ports with the verified Xray CLI before migration.'

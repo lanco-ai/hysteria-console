@@ -29,7 +29,7 @@ LINE_PROTOCOLS = {
         'label': 'TUIC UDP',
         'unit': 'tuic-server.service',
         'profile': 'game',
-        'note': '端口级总量计量，不参与单用户额度',
+        'note': '旧模式：端口级总量计量；启用用户计量后计入额度',
     },
 }
 
