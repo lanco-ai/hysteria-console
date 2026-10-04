@@ -3,7 +3,7 @@ import { AdminShell } from '../../shared/AdminShell';
 import { money, priceCents, shopRequest } from './catalog';
 
 type Setting = { price_cents: number | null; published: boolean };
-type SourceItem = { key: string; title: string; label: string; cost_cents: number; available: boolean };
+type SourceItem = { key: string; product_id: string; title: string; label: string; cost_cents: number; available: boolean };
 type Merchant = { revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean }>;
 function draftFor(value: Merchant): Draft {
@@ -71,19 +71,31 @@ export function ShopAdminPage() {
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
-  return <AdminShell active="shop" pageTitle="商品管理" subtitle="独立售价 · 人工确认与交付">
+  const products = new Map<string, SourceItem[]>();
+  for (const item of state?.items ?? []) {
+    const group = products.get(item.product_id) ?? [];
+    group.push(item);
+    products.set(item.product_id, group);
+  }
+  return <AdminShell active="shop" pageTitle="商品管理" topbarExtra={<div className="shop-admin-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void refresh()}>刷新来源</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void reload()}>重新读取</button></div>}>
     <section className="shop-admin-panel">
-      <p className="shop-note">成本仅管理员可见。新规格默认草稿，填写售价并勾选上架后才会展示给客户。来源刷新不会覆盖售价。</p>
-      <div className="shop-admin-toolbar"><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void refresh()}>刷新来源</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void reload()}>重新读取</button><button type="button" className="btn btn-primary" disabled={busy || !state} onClick={() => void save()}>{busy ? '处理中…' : '保存商品设置'}</button></div>
-      {error ? <p role="alert">{error}</p> : null}<p role="status">{notice}</p>
+      {error ? <p role="alert" className="shop-admin-feedback">{error}</p> : null}<p role="status" className="shop-admin-feedback">{notice}</p>
       {state ? <>
-        <p className="shop-note">最近成功更新：{state.last_success ? new Date(state.last_success * 1000).toLocaleString('zh-CN') : '尚未更新'}{state.is_stale ? ' · 商品信息待更新，客户暂不能购买' : ''}{state.error ? ' · 来源暂不可用，稍后自动重试' : ''}</p>
-        {state.retry_after_seconds > 0 || state.cooldown_seconds > 0 ? <p className="shop-note">读取时刷新等待：{Math.max(state.retry_after_seconds, state.cooldown_seconds)} 秒。重复点击不会绕过等待。</p> : null}
-        <label className="shop-telegram-field">商家 Telegram 用户名<input value={telegram} disabled={busy} placeholder="不含 @，例如 my_shop" autoComplete="off" onChange={event => { setTelegram(event.target.value.trim()); setDirty(true); setNotice(''); }}/><small>填写你自己的收款与交付联系人。留空时客户无法联系购买。</small></label>
-        <div className="shop-admin-products">{state.items.map(item => <article key={item.key} className="shop-admin-row"><div><h2>{item.title}</h2><p>{item.label} · {item.available ? '来源可用（数量未公开）' : '来源售罄'} · {draft[item.key]?.published ? '已选上架' : '草稿'}</p><p>成本：<strong>{money(item.cost_cents)}</strong> <small>仅管理员可见</small></p></div><label>售价（元）<input aria-label={`售价 ${item.key}`} inputMode="decimal" value={draft[item.key]?.price ?? ''} disabled={busy} placeholder="待填写" onChange={event => edit(item.key, { price: event.target.value })}/></label><label className="shop-publish"><input aria-label={`上架 ${item.key}`} type="checkbox" checked={draft[item.key]?.published ?? false} disabled={busy} onChange={event => edit(item.key, { published: event.target.checked })}/>上架</label></article>)}</div>
+        <div className="shop-admin-source-status shop-note">最近成功更新：{state.last_success ? new Date(state.last_success * 1000).toLocaleString('zh-CN') : '尚未更新'}{state.is_stale ? ' · 商品信息待更新，客户暂不能购买' : ''}{state.error ? ' · 来源暂不可用，稍后自动重试' : ''}{state.retry_after_seconds > 0 || state.cooldown_seconds > 0 ? ` · 刷新等待 ${Math.max(state.retry_after_seconds, state.cooldown_seconds)} 秒` : ''}</div>
+        <div className="shop-admin-contact"><label className="shop-telegram-field">商家 Telegram 用户名<input value={telegram} disabled={busy} placeholder="不含 @，例如 my_shop" autoComplete="off" onChange={event => { setTelegram(event.target.value.trim()); setDirty(true); setNotice(''); }}/></label><small>客户将通过此用户名联系商家；留空时无法联系购买。</small></div>
+        <div className="shop-admin-products">{Array.from(products, ([productId, items]) => <section key={productId} className="shop-admin-product">
+          <header className="shop-admin-product-header"><h2>{items[0]?.title}</h2><span>{items.length} 个规格</span></header>
+          <div className="shop-admin-columns" aria-hidden="true"><span>规格</span><span>成本</span><span>售价（元）</span><span>上架</span></div>
+          {items.map(item => <article key={item.key} className="shop-admin-row">
+            <div className="shop-admin-spec"><strong>{item.label}</strong><small>SKU {item.key} · {item.available ? '来源可用' : '来源售罄'} · {draft[item.key]?.published ? '已选上架' : '草稿'}</small></div>
+            <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
+            <label className="shop-admin-price"><span className="shop-admin-mobile-label">售价（元）</span><input aria-label={`售价 ${item.key}`} inputMode="decimal" value={draft[item.key]?.price ?? ''} disabled={busy} placeholder="待填写" onChange={event => edit(item.key, { price: event.target.value })}/></label>
+            <label className="shop-publish"><input aria-label={`上架 ${item.key}`} type="checkbox" checked={draft[item.key]?.published ?? false} disabled={busy} onChange={event => edit(item.key, { published: event.target.checked })}/>上架</label>
+          </article>)}
+        </section>)}</div>
         {!state.items.length ? <p>尚无来源商品，请刷新来源。获取到的商品会先保存为草稿。</p> : null}
-        <p className="shop-note">{dirty ? '有尚未保存的修改。' : '设置已与服务器同步。'}</p>
       </> : <p>正在读取商品管理数据…</p>}
+      {state ? <div className="shop-admin-savebar"><span className="shop-note">{dirty ? '有尚未保存的修改。' : '设置已与服务器同步。'}</span><button type="button" className="btn btn-primary" disabled={busy} onClick={() => void save()}>{busy ? '处理中…' : '保存商品设置'}</button></div> : null}
     </section>
   </AdminShell>;
 }

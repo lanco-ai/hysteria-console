@@ -192,27 +192,45 @@ body.page-portal {
 .shop-purchase h3 { margin-top: 18px; margin-bottom: 8px; }
 .shop-purchase > p { margin-bottom: 14px; line-height: 1.7; }
 .shop-purchase label,
-.shop-telegram-field,
-.shop-admin-row > label { display: grid; gap: 9px; margin-top: 16px; font-size: 13px; }
+.shop-telegram-field { display: grid; gap: 9px; margin-top: 16px; font-size: 13px; }
 .shop-purchase select,
 .shop-purchase input,
 .shop-purchase textarea,
 .shop-telegram-field input,
-.shop-admin-row input:not([type="checkbox"]) { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-page); color: var(--text-primary); font: inherit; }
+.shop-admin-price input { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-page); color: var(--text-primary); font: inherit; }
 .shop-total { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; }
 .shop-total strong { font-size: 26px; font-variant-numeric: tabular-nums; }
-.shop-purchase-actions,
-.shop-admin-toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 18px; }
+.shop-purchase-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-block: 18px; }
 .shop-purchase summary { cursor: pointer; font-size: 12px; }
 .shop-purchase textarea { margin-top: 10px; resize: vertical; }
-.shop-admin-panel { padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); }
-.shop-telegram-field { max-width: 460px; margin-block: 24px; }
-.shop-telegram-field small { color: var(--text-secondary); line-height: 1.7; }
-.shop-admin-row { display: grid; grid-template-columns: minmax(0, 1fr) 150px 75px; align-items: center; gap: 20px; padding-block: 22px; border-top: 1px solid var(--hairline); }
-.shop-admin-row h2 { font-size: 16px; line-height: 1.6; }
-.shop-admin-row p { margin-top: 8px; color: var(--text-secondary); font-size: 12px; }
-.shop-admin-row > label { margin: 0; }
-.shop-admin-row .shop-publish { display: flex; align-items: center; gap: 8px; }
+.shop-admin-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.shop-admin-panel { min-width: 0; padding: 24px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); }
+.shop-admin-feedback:empty { display: none; }
+.shop-admin-feedback:not(:empty) { margin-bottom: 12px; }
+.shop-admin-source-status { margin-bottom: 18px; }
+.shop-admin-contact { display: flex; align-items: end; flex-wrap: wrap; gap: 8px 24px; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--hairline); }
+.shop-telegram-field { flex: 1 1 300px; max-width: 460px; min-width: 0; margin: 0; }
+.shop-admin-contact > small { flex: 1 1 220px; padding-bottom: 10px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.shop-admin-products { display: grid; gap: 18px; min-width: 0; }
+.shop-admin-product { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); }
+.shop-admin-product-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-width: 0; padding: 18px 20px; }
+.shop-admin-product-header h2 { min-width: 0; font-size: 16px; line-height: 1.55; overflow-wrap: anywhere; }
+.shop-admin-product-header > span { flex: 0 0 auto; color: var(--text-tertiary); font-size: 12px; }
+.shop-admin-columns,
+.shop-admin-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(92px, .32fr) minmax(130px, .42fr) 72px; align-items: center; gap: 16px; }
+.shop-admin-columns { padding: 10px 20px; border-top: 1px solid var(--hairline); background: var(--bg-subtle); color: var(--text-tertiary); font-size: 12px; }
+.shop-admin-row { min-width: 0; padding: 14px 20px; border-top: 1px solid var(--hairline); }
+.shop-admin-spec { min-width: 0; }
+.shop-admin-spec strong { display: block; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.shop-admin-spec small { display: block; margin-top: 4px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.shop-admin-cost { min-width: 0; font-size: 13px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.shop-admin-price { min-width: 0; }
+.shop-admin-row .shop-publish { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; white-space: nowrap; }
+.shop-admin-row input { scroll-margin-bottom: 110px; }
+.shop-admin-mobile-label { display: none; }
+.shop-admin-savebar { position: sticky; z-index: 2; bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; margin-top: 24px; padding: 12px 60px 12px 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-overlay); box-shadow: var(--shadow-xs); }
+.shop-admin-savebar .shop-note { min-width: 0; }
+.shop-admin-savebar .btn { flex: 0 0 auto; }
 
 @media (max-width: 1000px) {
   .shop-product-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -235,7 +253,20 @@ body.page-portal {
   .shop-product-action .btn { padding-inline: 12px; font-size: 12px; }
   .shop-purchase { padding: 20px; }
   .shop-purchase-actions > * { flex: 1; }
+}
+
+@media (max-width: 720px) {
+  .shop-admin-actions .btn { min-height: 36px; padding-inline: 10px; font-size: 12px; }
   .shop-admin-panel { padding: 16px; }
-  .shop-admin-row { grid-template-columns: minmax(0, 1fr) 75px; }
-  .shop-admin-row > div { grid-column: 1 / -1; }
+  .shop-admin-contact { margin-bottom: 16px; padding-bottom: 16px; }
+  .shop-admin-contact > small { padding-bottom: 0; }
+  .shop-admin-product-header { padding: 16px; }
+  .shop-admin-columns { display: none; }
+  .shop-admin-row { grid-template-columns: minmax(0, 1fr) minmax(108px, .65fr); gap: 12px 16px; padding: 16px; }
+  .shop-admin-spec { grid-column: 1 / -1; }
+  .shop-admin-cost { align-self: start; }
+  .shop-admin-price { grid-column: 1; }
+  .shop-admin-row .shop-publish { grid-column: 2; align-self: end; min-height: 44px; }
+  .shop-admin-mobile-label { display: block; margin-bottom: 5px; color: var(--text-tertiary); font-size: 12px; }
+  .shop-admin-savebar { bottom: 8px; margin-top: 16px; padding: 10px 60px 10px 12px; }
 }
