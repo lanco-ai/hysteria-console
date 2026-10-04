@@ -126,7 +126,7 @@ function sanitizeReturnTo(value?: string): string | undefined {
   const destination = new URL(sameOrigin, window.location.origin);
   const query = new URLSearchParams();
   for (const [key, item] of destination.searchParams) {
-    if (SAFE_LOGIN_QUERY_KEYS.has(key)) query.append(key, item);
+    if (SAFE_LOGIN_QUERY_KEYS.has(key) || (key === 'product' && /^[1-9]\d{0,15}$/.test(item))) query.append(key, item);
   }
   const suffix = query.toString();
   return `${destination.pathname}${suffix ? `?${suffix}` : ''}`;
@@ -269,7 +269,7 @@ function WorkbenchRoute({ route, publicHost, authenticated, status, loginOpen, o
   return <PortalSessionContext.Provider value={{ authenticated, status, onLogin: onUnauthenticated }}>
     <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}>{view === 'chat' ? <ChatPage publicHost={publicHost} authenticated={authenticated} onUnauthenticated={onUnauthenticated} shell={PortalShell}/>
       : view === 'video' ? authenticated ? <VideoPage publicHost={publicHost} shell={PortalShell}/> : <VideoAccessState/>
-        : <ShopPage/>}</div>
+        : <ShopPage key={location.search}/>}</div>
     <LoginModal open={loginOpen} realm={route === '/user/login' ? 'user' : 'admin'} passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
   </PortalSessionContext.Provider>;
 }

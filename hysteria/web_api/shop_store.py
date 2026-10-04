@@ -1,6 +1,7 @@
 """Private source snapshot and separately revisioned merchant settings."""
 
 import asyncio
+import json
 import math
 import re
 import time
@@ -26,7 +27,8 @@ def _integer(value, minimum, maximum):
 def validate_settings(value):
     if (
         not isinstance(value, dict)
-        or set(value) != {'revision', 'telegram', 'skus'}
+        or not {'revision', 'telegram', 'skus'} <= set(value)
+        or set(value) - {'revision', 'telegram', 'skus', 'products'}
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
         or (
@@ -47,6 +49,21 @@ def validate_settings(value):
             or (item['published'] and item['price_cents'] is None)
         ):
             raise ValueError('invalid SKU settings')
+    metadata = value.get('products', {})
+    if not isinstance(metadata, dict) or len(metadata) > MAX_ROWS:
+        raise ValueError('invalid product copy')
+    for key, item in metadata.items():
+        if (
+            not isinstance(key, str)
+            or not re.fullmatch(r'[1-9]\d{0,15}', key)
+            or not isinstance(item, dict)
+            or set(item) != {'description', 'after_sales'}
+            or any(not isinstance(text, str) or len(text) > 4000 for text in item.values())
+        ):
+            raise ValueError('invalid product copy')
+    # Match the route body limit, including preserved metadata from legacy clients.
+    if len(json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')) > 65536:
+        raise ValueError('settings too large')
     return value
 
 
@@ -163,6 +180,7 @@ class ShopStore:
         )
         return {
             **settings,
+            'products': settings.get('products', {}),
             **source,
             'is_stale': stale,
             'retry_after_seconds': max(0, math.ceil(source['retry_after'] - now)),
@@ -185,6 +203,12 @@ class ShopStore:
                     'id': row['product_id'],
                     'title': row['public_title'],
                     'category': 'GPT',
+                    'description': state['products']
+                    .get(row['product_id'], {})
+                    .get('description', ''),
+                    'after_sales': state['products']
+                    .get(row['product_id'], {})
+                    .get('after_sales', ''),
                     'variants': [],
                 },
             )
@@ -217,9 +241,13 @@ class ShopStore:
             known = {row['key'] for row in self._source()['items']} | set(current['skus'])
             if set(payload['skus']) - known:
                 raise ValueError('unknown SKU')
-            state_store.save_json(
-                self.settings_path, {**payload, 'revision': current['revision'] + 1}
-            )
+            products = payload.get('products', current.get('products', {}))
+            known_products = {key.split(':')[0] for key in known} | set(current.get('products', {}))
+            if set(products) - known_products:
+                raise ValueError('unknown product')
+            saved = {**payload, 'products': products, 'revision': current['revision'] + 1}
+            validate_settings(saved)
+            state_store.save_json(self.settings_path, saved)
         return self._admin()
 
     async def update(self, payload):

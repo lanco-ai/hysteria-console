@@ -215,3 +215,79 @@ def test_clock_rollback_does_not_make_inventory_indefinitely_fresh(tmp_path):
         assert (await store.public())['status'] == 'stale'
 
     asyncio.run(run())
+
+
+def test_merchant_product_copy_migration_projection_and_legacy_writer(tmp_path):
+    async def run():
+        store = make_store(tmp_path)
+        await store.refresh()
+        legacy = json.dumps({'revision': 0, 'telegram': '', 'skus': {}})
+        store.settings_path.write_text(legacy)
+        assert (await store.admin())['products'] == {}
+        assert store.settings_path.read_text() == legacy  # Reading never rewrites old files.
+        copy_text = {
+            'description': '<script>alert(1)</script>\n商家说明',
+            'after_sales': '联系本店确认售后',
+        }
+        payload = {
+            'revision': 0,
+            'telegram': 'my_shop',
+            'skus': {'2:7': {'price_cents': 12345, 'published': True}},
+            'products': {'2': copy_text, '1': {'description': '草稿不可见', 'after_sales': ''}},
+        }
+        await store.update(payload)
+        assert (await store.public())['products'][0]['description'] == copy_text['description']
+        assert '草稿不可见' not in json.dumps(await store.public(), ensure_ascii=False)
+        # Old clients omit products entirely and cannot erase existing copy.
+        await store.update({'revision': 1, 'telegram': 'my_shop', 'skus': payload['skus']})
+        assert (await store.admin())['products']['2'] == copy_text
+        store.clock = lambda: 100000000000
+        await store.refresh()
+        assert (await store.public())['products'][0]['after_sales'] == copy_text['after_sales']
+        assert (await store.admin())['products']['2'] == copy_text
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    'metadata',
+    [
+        None,
+        [],
+        {'99': {'description': '', 'after_sales': ''}},
+        {'2': {'description': 1, 'after_sales': ''}},
+        {'2': {'description': 'x' * 4001, 'after_sales': ''}},
+        {'2': {'description': '', 'after_sales': '', 'html': ''}},
+        {'02': {'description': '', 'after_sales': ''}},
+    ],
+)
+def test_product_copy_rejects_invalid_or_unknown_metadata(tmp_path, metadata):
+    async def run():
+        store = make_store(tmp_path)
+        await store.refresh()
+        with pytest.raises(ValueError):
+            await store.update({'revision': 0, 'telegram': '', 'skus': {}, 'products': metadata})
+        assert (await store.admin())['revision'] == 0
+
+    asyncio.run(run())
+
+
+def test_product_copy_total_utf8_budget(tmp_path):
+    async def run():
+        store = make_store(tmp_path)
+        await store.refresh()
+        text = {'description': '中' * 4000, 'after_sales': '文' * 4000}
+        with pytest.raises(ValueError, match='too large'):
+            await store.update(
+                {
+                    'revision': 0,
+                    'telegram': '',
+                    'skus': {},
+                    'products': {key: text for key in ['1', '2', '5']},
+                }
+            )
+        assert (await store.admin())['revision'] == 0
+        await store.update({'revision': 0, 'telegram': '', 'skus': {}, 'products': {'2': text}})
+        assert (await store.admin())['products']['2'] == text
+
+    asyncio.run(run())

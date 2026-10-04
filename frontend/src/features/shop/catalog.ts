@@ -1,5 +1,5 @@
 export type Variant = { id: string; label: string; price_cents: number; available: boolean; quantity: null; sales: null };
-export type Product = { id: string; title: string; category: string; variants: Variant[] };
+export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; variants: Variant[] };
 export type Catalog = { currency: 'CNY'; telegram: string; products: Product[]; status: 'ready' | 'stale' | 'unavailable'; updated_at: number | null };
 export function money(cents: number): string { return `¥${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`; }
 export function priceCents(value: string): number | null {

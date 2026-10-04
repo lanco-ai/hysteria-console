@@ -4,7 +4,8 @@ import { money, priceCents, shopRequest } from './catalog';
 
 type Setting = { price_cents: number | null; published: boolean };
 type SourceItem = { key: string; product_id: string; title: string; label: string; cost_cents: number; available: boolean };
-type Merchant = { revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type ProductCopy = Record<string, { description: string; after_sales: string }>;
+type Merchant = { products?: ProductCopy; revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean }>;
 function draftFor(value: Merchant): Draft {
   const draft: Draft = {};
@@ -17,11 +18,12 @@ export function ShopAdminPage() {
   const [state, setState] = useState<Merchant | null>(null);
   const [telegram, setTelegram] = useState('');
   const [draft, setDraft] = useState<Draft>({});
+  const [copy, setCopy] = useState<ProductCopy>({});
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setDraft(draftFor(value)); setDirty(false); }
+  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setDraft(draftFor(value)); setCopy(value.products ?? {}); setDirty(false); }
   useEffect(() => {
     let active = true;
     void shopRequest<Merchant>('admin').then(value => { if (active) accept(value); }).catch(reason => { if (active) setError(String(reason.message)); });
@@ -64,9 +66,14 @@ export function ShopAdminPage() {
       skus[key] = { price_cents: price, published: value.published };
     }
     if (telegram && !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(telegram)) { setError('请输入 5–32 位 Telegram 用户名，不包含 @ 或链接。'); return; }
+    const settings = { revision: state.revision, telegram, skus, products: copy };
+    const body = JSON.stringify(settings);
+    const savedBody = JSON.stringify({ ...settings, revision: state.revision + 1 });
+    const encoder = new TextEncoder();
+    if (encoder.encode(body).length > 65536 || encoder.encode(savedBody).length > 65536) { setError('商品设置总内容过长，请缩短商品说明或售后条款后保存。'); return; }
     setBusy(true);
     try {
-      accept(await shopRequest<Merchant>('admin', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ revision: state.revision, telegram, skus }) }));
+      accept(await shopRequest<Merchant>('admin', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body }));
       setNotice('商品设置已保存。');
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -85,6 +92,10 @@ export function ShopAdminPage() {
         <div className="shop-admin-contact"><label className="shop-telegram-field">商家 Telegram 用户名<input value={telegram} disabled={busy} placeholder="不含 @，例如 my_shop" autoComplete="off" onChange={event => { setTelegram(event.target.value.trim()); setDirty(true); setNotice(''); }}/></label><small>客户将通过此用户名联系商家；留空时无法联系购买。</small></div>
         <div className="shop-admin-products">{Array.from(products, ([productId, items]) => <section key={productId} className="shop-admin-product">
           <header className="shop-admin-product-header"><h2>{items[0]?.title}</h2><span>{items.length} 个规格</span></header>
+          <details className="shop-copy-editor"><summary>商品说明与售后条款</summary>
+            <p className="shop-note">上架后展示给客户，每项最多 4000 字。请填写本店实际提供的说明与条款。</p>
+            {(['description', 'after_sales'] as const).map(field => <label key={field}>{field === 'description' ? '商品说明' : '售后条款'}<textarea aria-label={`${field === 'description' ? '商品说明' : '售后条款'} ${productId}`} rows={5} maxLength={4000} disabled={busy} value={copy[productId]?.[field] ?? ''} onChange={event => { setCopy(old => ({ ...old, [productId]: { description: '', after_sales: '', ...old[productId], [field]: event.target.value } })); setDirty(true); setNotice(''); }}/></label>)}
+          </details>
           <div className="shop-admin-columns" aria-hidden="true"><span>规格</span><span>成本</span><span>售价（元）</span><span>上架</span></div>
           {items.map(item => <article key={item.key} className="shop-admin-row">
             <div className="shop-admin-spec"><strong>{item.label}</strong><small>SKU {item.key} · {item.available ? '来源可用' : '来源售罄'} · {draft[item.key]?.published ? '已选上架' : '草稿'}</small></div>

@@ -62,6 +62,12 @@ async function main() {
     await page.getByRole('button', { name: '登录', exact: true }).click();
     await expect(page).toHaveURL(`${baseUrl}/__react/`);
 
+    await page.goto(`${baseUrl}/__react/login?next=${encodeURIComponent('/?product=2&secret=private-copy')}`);
+    await page.locator('#login-modal-username').fill('admin');
+    await page.locator('#login-modal-password').fill(fixturePassword);
+    await page.getByRole('button', { name: '登录', exact: true }).click();
+    await expect(page).toHaveURL(`${baseUrl}/__react/?product=2`);
+
     await page.goto(`${baseUrl}/__react/user/login`);
     await expect(page.getByRole('dialog', { name: '登录用户面板' })).toBeVisible();
     await context.close();

@@ -6,6 +6,7 @@ const { expect } = require('@playwright/test');
 const base = process.env.PREVIEW_BASE_URL;
 
 async function main() {
+  if (process.env.REACT_SHOP_SCREENSHOT_DIR) fs.mkdirSync(process.env.REACT_SHOP_SCREENSHOT_DIR, { recursive: true });
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   try {
     const context = await browser.newContext();
@@ -52,99 +53,202 @@ async function main() {
     await manager.getByRole('button', { name: '保存商品设置' }).focus();
     await manager.keyboard.press('Enter');
     await expect(manager.getByRole('status')).toContainText('已保存');
+    await page.goto(`${base}/?product=2`);
+    await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeVisible();
     const response = await page.request.get(`${base}/api/v1/shop/catalog`);
     assert.equal(response.status(), 200);
     const publicText = await response.text();
     assert.equal(/cost_cents|qiangyunai|source_url|cnadsiuvhga/.test(publicText), false);
-    for (const width of [390, 719, 768, 1440]) {
+    await manager.locator('.shop-copy-editor summary').first().click();
+    await manager.getByLabel('商品说明 2').fill('<img src=x onerror=alert(1)>\n商家自填说明');
+    await manager.getByLabel('售后条款 2').fill('本店售后请联系商家确认。');
+    await manager.getByRole('button', { name: '保存商品设置' }).click();
+    await expect(manager.getByRole('status')).toContainText('已保存');
+    for (const width of [390, 768, 1440]) {
       await manager.setViewportSize({ width, height: 900 });
       assert.equal(await manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await manager.getByLabel('售价 1:4').scrollIntoViewIfNeeded();
       await manager.getByLabel('售价 1:4').focus();
-      const focusPlacement = await manager.evaluate(() => {
-        const field = document.activeElement;
-        const bar = document.querySelector('.shop-admin-savebar');
-        return field instanceof HTMLElement && bar instanceof HTMLElement ? { fieldBottom: field.getBoundingClientRect().bottom, barTop: bar.getBoundingClientRect().top } : null;
+      const clearance = await manager.evaluate(() => {
+        const field = document.activeElement.getBoundingClientRect();
+        const bar = document.querySelector('.shop-admin-savebar').getBoundingClientRect();
+        const save = document.querySelector('.shop-admin-savebar button').getBoundingClientRect();
+        const launcher = document.querySelector('.lanco-agent-launcher').getBoundingClientRect();
+        return { fieldBottom: field.bottom, barTop: bar.top, saveRight: save.right, launcherLeft: launcher.left };
       });
-      assert.ok(focusPlacement && focusPlacement.fieldBottom <= focusPlacement.barTop, JSON.stringify({ width, focusPlacement }));
+      assert.ok(clearance.fieldBottom <= clearance.barTop && clearance.saveRight <= clearance.launcherLeft, JSON.stringify({ width, clearance }));
       await manager.evaluate(() => scrollTo(0, 0));
-      const saveClearance = await manager.evaluate(() => {
-        const save = document.querySelector('.shop-admin-savebar button');
-        const launcher = document.querySelector('.lanco-agent-launcher');
-        return save instanceof HTMLElement && launcher instanceof HTMLElement ? {
-          saveRight: save.getBoundingClientRect().right,
-          launcherLeft: launcher.getBoundingClientRect().left,
-        } : null;
-      });
-      assert.ok(saveClearance && saveClearance.saveRight <= saveClearance.launcherLeft, JSON.stringify({ width, saveClearance }));
-      if (process.env.REACT_SHOP_SCREENSHOT_DIR) {
-        await manager.screenshot({ path: path.join(process.env.REACT_SHOP_SCREENSHOT_DIR, `admin-overview-${width}.png`) });
-        await manager.screenshot({ path: path.join(process.env.REACT_SHOP_SCREENSHOT_DIR, `admin-shop-${width}.png`), fullPage: true });
-      }
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${base}/`);
-      await expect(page.getByRole('heading', { name: 'ChatGPT Pro 200' })).toBeVisible();
-      await expect(page.getByRole('button', { name: '已售罄' })).toBeDisabled();
+      await page.getByRole('link', { name: 'ChatGPT Pro 200', exact: true }).click();
+      await expect(page).toHaveURL(/product=2/);
+      await expect(page.getByRole('heading', { name: '商品说明', exact: true })).toBeVisible();
+      await expect(page.getByText('<img src=x onerror=alert(1)>', { exact: false })).toBeVisible();
+      await expect(page.locator('.shop-detail-copy img')).toHaveCount(0);
+      await page.getByRole('button', { name: '续费卡密不可新开', exact: true }).click();
+      await page.getByLabel('购买数量', { exact: true }).fill('3');
+      await expect(page.getByTestId('purchase-total')).toHaveText('¥3600.06');
+      await page.getByRole('button', { name: '立即购买', exact: true }).click();
+      const dialog = page.getByRole('dialog', { name: '购买信息' });
+      await expect(dialog.getByLabel('可复制的购买信息')).toHaveValue(/合计：¥3600.06 CNY/);
+      await dialog.getByRole('button', { name: '复制购买信息' }).click();
+      await expect(dialog).toContainText('购买信息已复制');
+      assert.match(await page.evaluate(() => navigator.clipboard.readText()), /合计：¥3600.06 CNY/);
+      if (process.env.REACT_SHOP_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.REACT_SHOP_SCREENSHOT_DIR, `checkout-${width}.png`), fullPage: true });
+      await page.keyboard.press('Escape');
+      await expect(dialog).toHaveCount(0);
+      await expect(page.getByRole('button', { name: '立即购买', exact: true })).toBeFocused();
+      await page.getByLabel('购买数量', { exact: true }).fill('0');
+      await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeDisabled();
+      await page.getByLabel('购买数量', { exact: true }).fill('3');
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      const detailLayout = await page.evaluate(() => {
+        const image = document.querySelector('.shop-detail-image').getBoundingClientRect();
+        const info = document.querySelector('.shop-detail-info').getBoundingClientRect();
+        return { imageRight: image.right, imageBottom: image.bottom, infoLeft: info.left, infoTop: info.top };
+      });
+      if (width >= 1000) assert.ok(detailLayout.imageRight <= detailLayout.infoLeft, JSON.stringify(detailLayout));
+      if (width < 720) assert.ok(detailLayout.imageBottom <= detailLayout.infoTop, JSON.stringify(detailLayout));
       const shots = process.env.REACT_SHOP_SCREENSHOT_DIR;
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });
-        await page.screenshot({ path: path.join(shots, `shop-${width}.png`), fullPage: true });
+        await page.screenshot({ path: path.join(shots, `detail-${width}.png`), fullPage: true });
+        await manager.screenshot({ path: path.join(shots, `admin-copy-${width}.png`), fullPage: true });
       }
-      await page.getByRole('button', { name: '购买', exact: true }).click();
-      const dialog = page.getByRole('dialog', { name: '购买信息' });
-      await expect(dialog).toBeVisible();
-      await dialog.getByLabel('商品规格').selectOption('2:2');
-      await dialog.getByLabel('购买数量').fill('3');
-      await expect(dialog.getByTestId('purchase-total')).toHaveText('¥3600.06');
-      await expect(dialog.getByRole('link', { name: '联系商家 Telegram' })).toHaveAttribute('href', 'https://t.me/shop_owner');
-      await expect(dialog).toContainText('待商家人工确认');
-      await dialog.getByRole('button', { name: '复制购买信息' }).click();
-      assert.match(await page.evaluate(() => navigator.clipboard.readText()), /合计：¥3600.06 CNY/);
-      await dialog.getByLabel('购买数量').fill('0');
-      await expect(dialog.getByRole('link', { name: '联系商家 Telegram' })).toHaveCount(0);
-      await dialog.getByLabel('购买数量').fill('3');
-      if (shots) await page.screenshot({ path: path.join(shots, `purchase-${width}.png`), fullPage: true });
-      await page.keyboard.press('Escape');
-      await expect(dialog).toHaveCount(0);
-      await expect(page.getByRole('button', { name: '购买', exact: true })).toBeFocused();
+      await page.getByRole('button', { name: '加入购物车', exact: true }).click();
+      await page.getByRole('button', { name: '加入购物车', exact: true }).click();
+      await page.getByRole('link', { name: /^购物车（/ }).click();
+      await expect(page).toHaveURL(/view=cart/);
+      await expect(page.getByLabel('数量 2:2', { exact: true })).toHaveValue('6');
+      await page.reload();
+      await expect(page.getByTestId('cart-total')).toHaveText('¥7200.12');
+      const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem('hysteria.shop.cart.v1')));
+      assert.deepEqual(persisted, [{ id: '2:2', quantity: 6 }]);
+      if (shots) await page.screenshot({ path: path.join(shots, `cart-${width}.png`), fullPage: true });
+      await page.goBack();
+      await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeVisible();
+      await page.goForward();
+      await expect(page.getByRole('heading', { name: '购物车', exact: true })).toBeVisible();
+      await page.getByLabel('数量 2:2', { exact: true }).fill('2');
+      await expect(page.getByTestId('cart-total')).toHaveText('¥2400.04');
+      await page.getByRole('button', { name: '清空购物车' }).click();
+      await expect(page.getByRole('heading', { name: '购物车还是空的' })).toBeVisible();
     }
+    // Multiple SKUs, fresh prices, and a failure must never expose a stale summary.
+    await page.goto(`${base}/?product=2`);
+    await page.getByRole('button', { name: '加入购物车', exact: true }).click();
+    await page.getByRole('button', { name: '续费卡密不可新开', exact: true }).click();
+    await page.getByRole('button', { name: '加入购物车', exact: true }).click();
+    await page.getByRole('link', { name: /^购物车（/ }).click();
+    const fresh = JSON.parse(publicText);
+    fresh.products[0].variants[0].price_cents = 150001;
+    let catalogMode = 'fresh';
+    let releaseRequest;
+    await page.route('**/api/v1/shop/catalog', async route => {
+      if (catalogMode === 'held') await new Promise(resolve => { releaseRequest = resolve; });
+      if (catalogMode === 'failure') return route.fulfill({ status: 503, json: {} });
+      const value = structuredClone(fresh);
+      if (catalogMode === 'removed') value.products = [];
+      if (catalogMode === 'soldout') value.products[0].variants[0].available = false;
+      if (catalogMode === 'stale') value.status = 'stale';
+      if (catalogMode === 'no-contact') value.telegram = '';
+      await route.fulfill({ json: value });
+    });
+    await page.getByRole('button', { name: '确认购买信息' }).click();
+    await expect(page.getByLabel('可复制的购买信息')).toHaveValue(/合计：¥2700.03 CNY/);
+    fresh.products[0].variants[0].price_cents = 160001;
+    await page.getByRole('button', { name: '复制购买信息' }).click();
+    await expect(page.getByRole('dialog')).toContainText('商品价格或联系方式已更新');
+    await expect(page.getByLabel('可复制的购买信息')).toHaveValue(/合计：¥2800.03 CNY/);
+    await page.keyboard.press('Escape');
+    for (const mode of ['failure', 'removed', 'soldout', 'stale', 'no-contact']) {
+      catalogMode = mode;
+      await page.getByRole('button', { name: '确认购买信息' }).click();
+      await expect(page.getByRole('dialog')).toContainText('本次购买未生成');
+      await expect(page.getByRole('link', { name: '联系商家 Telegram' })).toHaveCount(0);
+      await expect(page.getByLabel('可复制的购买信息')).toHaveCount(0);
+      await page.keyboard.press('Escape');
+    }
+    catalogMode = 'held';
+    await page.getByRole('button', { name: '确认购买信息' }).click();
+    await expect(page.getByRole('dialog')).toContainText('正在核对');
+    await expect.poll(() => typeof releaseRequest).toBe('function');
+    await page.keyboard.press('Escape');
+    await page.getByRole('link', { name: '商品目录', exact: true }).first().click();
+    catalogMode = 'fresh'; releaseRequest();
+    await expect(page.getByRole('heading', { name: '商品目录', exact: true })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.unroute('**/api/v1/shop/catalog');
     await page.getByRole('searchbox', { name: '搜索商品' }).fill('nothing');
     await expect(page.getByRole('heading', { name: '没有匹配的商品' })).toBeVisible();
-    await manager.getByLabel('商家 Telegram 用户名').fill('');
-    await manager.getByRole('button', { name: '保存商品设置' }).click();
-    await expect(manager.getByRole('status')).toContainText('已保存');
-    await page.goto(`${base}/`);
-    await page.getByRole('button', { name: '购买', exact: true }).click();
-    await expect(page.getByRole('dialog')).toContainText('商家尚未配置联系方式');
-    await expect(page.getByRole('link', { name: '联系商家 Telegram' })).toHaveCount(0);
-    await page.keyboard.press('Escape');
+    await page.evaluate(() => localStorage.setItem('hysteria.shop.cart.v1', JSON.stringify([{ id: '2:7', quantity: 99, price: 1 }, { id: '2:7', quantity: 99 }, { id: '2:2', quantity: 0 }, { id: 'evil', quantity: 2 }])));
+    await page.goto(`${base}/?view=cart`);
+    await expect(page.getByLabel('数量 2:7', { exact: true })).toHaveValue('99');
+    await expect(page.locator('.shop-cart-row')).toHaveCount(1);
+    await expect(page.getByTestId('cart-total')).toHaveText('¥108900.99');
+    await page.getByRole('button', { name: '移除 2:7', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '购物车还是空的' })).toBeVisible();
+    await page.goto(`${base}/?product=99999`);
+    await expect(page.getByRole('heading', { name: '商品不存在或已下架' })).toBeVisible();
+    await page.goto(`${base}/?product=1`);
+    await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeDisabled();
+    // Refresh/revision failures preserve both kinds of merchant drafts.
     await manager.getByLabel('售价 2:7').fill('999.99');
+    await manager.getByLabel('商品说明 2').fill('未保存的商家说明');
     const changedCost = { ...adminSnapshot, items: adminSnapshot.items.map(item => item.key === '2:7' ? { ...item, cost_cents: item.cost_cents + 200 } : item) };
     await manager.route('**/api/v1/shop/refresh', route => route.fulfill({ json: changedCost }));
     await manager.getByRole('button', { name: '刷新来源' }).click();
     await expect(manager.getByRole('status')).toContainText('售价和未保存输入已保留');
     await expect(manager.getByLabel('售价 2:7')).toHaveValue('999.99');
+    await expect(manager.getByLabel('商品说明 2')).toHaveValue('未保存的商家说明');
     await expect(manager.locator('.shop-admin-product').first()).toContainText('¥1002.00');
     await manager.unroute('**/api/v1/shop/refresh');
     await manager.route('**/api/v1/shop/admin', route => route.request().method() === 'PUT' ? route.fulfill({ status: 409, json: { error: 'revision_conflict' } }) : route.continue());
     await manager.getByRole('button', { name: '保存商品设置' }).click();
     await expect(manager.getByRole('alert')).toContainText('设置已被其他页面修改');
     await expect(manager.getByLabel('售价 2:7')).toHaveValue('999.99');
-    const stale = JSON.parse(publicText);
-    stale.status = 'stale';
-    for (const product of stale.products) for (const variant of product.variants) variant.available = false;
-    await page.route('**/api/v1/shop/catalog', route => route.fulfill({ json: stale }));
-    await page.reload();
-    await expect(page.getByText('商品信息正在等待更新，暂时无法购买，请稍后再试。')).toBeVisible();
-    await expect(page.getByRole('button', { name: '购买', exact: true })).toHaveCount(0);
-    await page.unroute('**/api/v1/shop/catalog');
-    await page.route('**/api/v1/shop/catalog', route => route.fulfill({ status: 503, json: { error: 'storage_unavailable' } }));
-    await page.reload();
-    await expect(page.getByRole('alert')).toContainText('商品暂时无法加载');
+    await expect(manager.getByLabel('商品说明 2')).toHaveValue('未保存的商家说明');
+    manager.once('dialog', dialog => dialog.dismiss());
+    await manager.getByRole('button', { name: '重新读取' }).click();
+    await expect(manager.getByLabel('商品说明 2')).toHaveValue('未保存的商家说明');
     assert.equal((await manager.goto(`${base}/admin/shop/unknown`)).status(), 404);
+    // A revision rollover adds one byte to the saved canonical settings.
+    const boundary = await admin.newPage();
+    const boundaryProducts = Object.fromEntries(Array.from({ length: 8 }, (_, index) => [String(index + 1), { description: 'a'.repeat(4000), after_sales: 'b'.repeat(3950) }]));
+    const boundarySkus = Object.fromEntries(adminSnapshot.items.map(item => [item.key, { price_cents: null, published: false }]));
+    const boundaryPayload = { revision: 9, telegram: '', skus: boundarySkus, products: boundaryProducts };
+    const boundaryBytes = () => Buffer.byteLength(JSON.stringify(boundaryPayload), 'utf8');
+    const headroom = 65536 - boundaryBytes();
+    assert.ok(headroom > 0 && headroom < 8000);
+    const chinese = Math.floor(headroom / 2);
+    boundaryProducts['1'].description = '中'.repeat(chinese) + 'a'.repeat(4000 - chinese);
+    if (headroom % 2) boundaryProducts['1'].after_sales += 'z';
+    assert.equal(boundaryBytes(), 65536);
+    let sentOversize = false;
+    await boundary.route('**/api/v1/shop/admin', route => {
+      if (route.request().method() === 'GET') return route.fulfill({ json: { ...adminSnapshot, revision: 9, products: boundaryProducts } });
+      sentOversize = true;
+      return route.fulfill({ status: 200, json: { ...adminSnapshot, revision: 10, products: boundaryProducts } });
+    });
+    await boundary.goto(`${base}/admin/shop`);
+    await expect(boundary.getByRole('heading', { name: /^商品管理/ })).toBeVisible();
+    await boundary.getByRole('button', { name: '保存商品设置' }).click();
+    await expect(boundary.getByRole('alert')).toContainText('商品设置总内容过长');
+    assert.equal(sentOversize, false);
+    await boundary.close();
+    if (process.env.REACT_SHOP_SCREENSHOT_DIR) {
+      const preview = structuredClone(fresh);
+      preview.products[0].description = '此处展示商家填写的商品说明。\n购买前请联系商家确认商品规格、账号适用条件与交付方式。';
+      preview.products[0].after_sales = '此处展示商家填写的售后条款。请在购买前联系商家了解详情。';
+      await page.route('**/api/v1/shop/catalog', route => route.fulfill({ json: preview }));
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await page.goto(`${base}/?product=2`);
+      await expect(page.getByText('此处展示商家填写的商品说明。', { exact: false })).toBeVisible();
+      await page.screenshot({ path: path.join(process.env.REACT_SHOP_SCREENSHOT_DIR, 'detail-preview-1440.png'), fullPage: true });
+    }
     await context.close();
     await admin.close();
+    console.log('PASS: detail/cart/history/current checkout, responsive layout, merchant copy/privacy/drafts');
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });
