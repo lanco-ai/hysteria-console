@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import brandImage from '../../assets/shop-chatgpt.png';
 import { PortalShell, ShopIcon } from './PortalShell';
 import { money, shopRequest, type Catalog, type Product } from '../shop/catalog';
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
 import { PurchaseDialog } from './ShopPurchase';
 import { ProductDetail, CartView } from './ShopProductDetail';
 
-function ProductRow({ product }: { product: Product }) {
+function ProductRow({ product, catalogReady }: { product: Product; catalogReady: boolean }) {
   const prices = product.variants.map(item => item.price_cents);
   const minimum = Math.min(...prices), maximum = Math.max(...prices);
-  const available = product.variants.some(item => item.available);
+  const available = catalogReady && product.variants.some(item => item.available);
   return <article className="shop-product-row">
-    <div className="shop-product-name"><span className="shop-gpt-badge" aria-hidden="true">GPT</span><div><h2><a href={`/?product=${product.id}`}>{product.title}</a></h2><p>充值卡密 · {product.variants.length} 种规格</p><p className="shop-spec-preview">{product.variants.map(item => item.label).join(' / ')}</p></div></div>
+    <div className="shop-product-name"><img className="shop-product-thumbnail" src={brandImage} alt="ChatGPT" width="64" height="64"/><div><h2><a href={`/?product=${product.id}`}>{product.title}</a></h2><div className="shop-product-tags"><span>人工交付</span>{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}</div></div></div>
     <div className="shop-product-price"><span className="shop-mobile-label">售价</span><strong>{money(minimum)}{maximum !== minimum ? `–${money(maximum)}` : ''}</strong></div>
-    <div className="shop-product-stock"><span className="shop-mobile-label">库存</span>{available ? '可咨询购买' : '暂不可购买'}<small>数量未公开</small></div>
-    <div className="shop-product-sales"><span className="shop-mobile-label">销量</span>—</div>
-    <div className="shop-product-action"><a className="btn btn-primary" href={`/?product=${product.id}`}>查看商品</a></div>
+    <div className="shop-product-stock"><span className="shop-mobile-label">库存</span><span className={`shop-stock-status${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span><small>数量未公开</small></div>
+    <div className="shop-product-sales"><span className="shop-mobile-label">销量</span>未公开</div>
+    <div className="shop-product-action"><a className={`btn ${available ? 'btn-primary' : 'btn-secondary'}`} href={`/?product=${product.id}`}>{available ? <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M5 7h14l1 14H4L5 7Z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/></svg> : null}{available ? '购买' : '查看详情'}</a></div>
   </article>;
 }
 
@@ -77,7 +78,7 @@ export function ShopPage() {
         {catalog?.status === 'stale' ? <p className="shop-notice" role="status">商品信息正在等待更新，暂时无法购买，请稍后再试。</p> : null}
         <div className="shop-catalog-body">
           <div className="shop-table-head" aria-hidden="true"><span>商品</span><span>价格</span><span>库存</span><span>销量</span><span></span></div>
-          {products.length ? products.map(product => <ProductRow key={product.id} product={product}/>) : <div className="shop-empty" role="status"><span className="shop-empty-icon"><ShopIcon/></span><h2>{!catalog && !error ? '正在加载商品' : search.trim() ? '没有匹配的商品' : '暂无商品'}</h2><p>{search.trim() ? '试试其他关键词，或清除搜索。' : '商品上架后会显示在这里。'}</p>{search.trim() ? <button className="btn btn-secondary" type="button" onClick={() => setSearch('')}>清除搜索</button> : null}</div>}
+          {products.length ? products.map(product => <ProductRow key={product.id} product={product} catalogReady={catalog?.status === 'ready'}/>) : <div className="shop-empty" role="status"><span className="shop-empty-icon"><ShopIcon/></span><h2>{!catalog && !error ? '正在加载商品' : search.trim() ? '没有匹配的商品' : '暂无商品'}</h2><p>{search.trim() ? '试试其他关键词，或清除搜索。' : '商品上架后会显示在这里。'}</p>{search.trim() ? <button className="btn btn-secondary" type="button" onClick={() => setSearch('')}>清除搜索</button> : null}</div>}
         </div>
       </section>
     </div>}
