@@ -341,3 +341,7 @@ body.page-portal {
   .shop-cart-footer { align-items: stretch; flex-direction: column; }
   .shop-copy-editor { margin-inline: 12px; padding: 12px; }
 }
+
+.shop-category-group + .shop-category-group { margin-top: 26px; }
+.shop-product-thumbnail img.shop-brand-square { width: 76px; height: 76px; object-fit: cover; }
+.shop-detail-image img.shop-brand-square { width: min(100%, 400px); height: auto; }

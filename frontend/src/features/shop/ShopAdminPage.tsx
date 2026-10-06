@@ -5,7 +5,8 @@ import { money, priceCents, shopRequest } from './catalog';
 type Setting = { price_cents: number | null; published: boolean };
 type SourceItem = { key: string; product_id: string; title: string; label: string; cost_cents: number; available: boolean };
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
-type Merchant = { products?: ProductCopy; revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean }>;
 function draftFor(value: Merchant): Draft {
   const draft: Draft = {};
@@ -50,9 +51,9 @@ export function ShopAdminPage() {
     try {
       const value = await shopRequest<Merchant>('refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       // Keep the merchant revision and all unsaved values: source refresh is not a save.
-      setState(old => old ? { ...old, items: value.items, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds } : value);
+      setState(old => old ? { ...old, sources: value.sources ?? { gpt: value }, items: value.items, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds } : value);
       setDraft(old => { const next = { ...old }; for (const item of value.items) next[item.key] ??= { price: '', published: false }; return next; });
-      setNotice(value.error ? '来源暂不可用，保留上次商品与售价。' : '来源检查完成；售价和未保存输入已保留。');
+      setNotice(value.error ? '部分来源暂不可用；售价和未保存输入已保留。' : '来源检查完成；售价和未保存输入已保留。');
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
@@ -88,7 +89,7 @@ export function ShopAdminPage() {
     <section className="shop-admin-panel">
       {error ? <p role="alert" className="shop-admin-feedback">{error}</p> : null}<p role="status" className="shop-admin-feedback">{notice}</p>
       {state ? <>
-        <div className="shop-admin-source-status shop-note">最近成功更新：{state.last_success ? new Date(state.last_success * 1000).toLocaleString('zh-CN') : '尚未更新'}{state.is_stale ? ' · 商品信息待更新，客户暂不能购买' : ''}{state.error ? ' · 来源暂不可用，稍后自动重试' : ''}{state.retry_after_seconds > 0 || state.cooldown_seconds > 0 ? ` · 刷新等待 ${Math.max(state.retry_after_seconds, state.cooldown_seconds)} 秒` : ''}</div>
+        <div className="shop-admin-source-status shop-note">{Object.entries(state.sources ?? { gpt: state }).map(([provider, source]) => <p key={provider}><strong>{provider === 'anli' ? 'Claude / Grok' : 'GPT'}</strong> · 最近成功更新：{source.last_success ? new Date(source.last_success * 1000).toLocaleString('zh-CN') : '尚未更新'}{source.is_stale ? ' · 商品信息待更新，此来源商品暂不能购买' : ' · 商品信息已更新'}{source.error ? ' · 来源暂不可用，稍后自动重试' : ''}{source.retry_after_seconds > 0 || source.cooldown_seconds > 0 ? ` · 刷新等待 ${Math.max(source.retry_after_seconds, source.cooldown_seconds)} 秒` : ''}</p>)}</div>
         <div className="shop-admin-contact"><label className="shop-telegram-field">商家 Telegram 用户名<input value={telegram} disabled={busy} placeholder="不含 @，例如 my_shop" autoComplete="off" onChange={event => { setTelegram(event.target.value.trim()); setDirty(true); setNotice(''); }}/></label><small>客户将通过此用户名联系商家；留空时无法联系购买。</small></div>
         <div className="shop-admin-products">{Array.from(products, ([productId, items]) => <section key={productId} className="shop-admin-product">
           <header className="shop-admin-product-header"><h2>{items[0]?.title}</h2><span>{items.length} 个规格</span></header>

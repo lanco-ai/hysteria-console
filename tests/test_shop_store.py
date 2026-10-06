@@ -291,3 +291,163 @@ def test_product_copy_total_utf8_budget(tmp_path):
         assert (await store.admin())['products']['2'] == text
 
     asyncio.run(run())
+
+
+def anli_rows():
+    from web_api.shop_anli_source import normalize_products as normalize_anli
+
+    data = json.loads((Path(__file__).parent / 'fixtures/shop/anli-products.json').read_text())
+    return normalize_anli(data, {row['id']: {**row, 'config': []} for row in data['data']})
+
+
+def test_separate_feeds_keep_numeric_identity_private_cost_and_legacy_snapshot(tmp_path):
+    async def run():
+        legacy = make_store(tmp_path, clock=lambda: 1000)
+        await legacy.refresh()
+        original = legacy.path.read_bytes()
+        before = await legacy.admin()
+        original_key = next(row['key'] for row in before['items'] if row['product_id'] == '5')
+        old_copy = {'description': '原 GPT 说明', 'after_sales': '原 GPT 售后'}
+        await legacy.update(
+            {
+                'revision': 0,
+                'telegram': 'my_shop',
+                'skus': {
+                    original_key: {'price_cents': 77777, 'published': True},
+                },
+                'products': {'5': old_copy},
+            }
+        )
+        merchant = legacy.settings_path.read_bytes()
+
+        async def anli():
+            return anli_rows()
+
+        store = make_store(tmp_path, clock=lambda: 1000, secondary_fetcher=anli)
+        admin = await store.refresh()
+        assert len(admin['items']) == 12
+        assert legacy.path.read_bytes() == original
+        assert legacy.settings_path.read_bytes() == merchant
+        assert all(row['key'] not in admin['skus'] for row in anli_rows())
+        settings = {
+            'revision': 1,
+            'telegram': 'my_shop',
+            'skus': {
+                original_key: {'price_cents': 77777, 'published': True},
+                '1000000000005:1': {'price_cents': 15432, 'published': True},
+            },
+            'products': {
+                '5': old_copy,
+                '1000000000005': {'description': '本店 Claude', 'after_sales': '本店售后'},
+            },
+        }
+        await store.update(settings)
+        public = await store.public()
+        assert [(row['id'], row['category']) for row in public['products']] == [
+            ('5', 'GPT'),
+            ('1000000000005', 'Claude'),
+        ]
+        assert [row['variants'][0]['price_cents'] for row in public['products']] == [77777, 15432]
+        assert public['products'][0]['description'] == old_copy['description']
+        assert public['products'][1]['description'] == '本店 Claude'
+        for private in [
+            'cost_cents',
+            'source_url',
+            'faka.anligpt',
+            'supplier marketing',
+            '13300',
+            'sources',
+        ]:
+            assert private not in json.dumps(public)
+        # The old reader ignores the new sibling and accepts shared numeric settings.
+        old_public = await legacy.public()
+        assert len(old_public['products']) == 1 and old_public['products'][0]['id'] == '5'
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('failed_provider', ['gpt', 'anli'])
+def test_failed_feed_does_not_gate_fresh_other_feed_and_has_own_backoff(tmp_path, failed_provider):
+    async def run():
+        now = [1000]
+        calls = {'gpt': 0, 'anli': 0}
+        fail = set()
+
+        async def gpt():
+            calls['gpt'] += 1
+            if 'gpt' in fail:
+                raise SourceError('private failure')
+            return normalize_products(products())
+
+        async def anli():
+            calls['anli'] += 1
+            if 'anli' in fail:
+                raise SourceError('private failure')
+            return anli_rows()
+
+        store = make_store(tmp_path, fetcher=gpt, secondary_fetcher=anli, clock=lambda: now[0])
+        await store.refresh()
+        await store.update(
+            {
+                'revision': 0,
+                'telegram': '',
+                'skus': {
+                    '2:7': {'price_cents': 12345, 'published': True},
+                    '1000000000005:1': {'price_cents': 23456, 'published': True},
+                    '1000000000008:1': {'price_cents': 34567, 'published': True},
+                },
+            }
+        )
+        fail.add(failed_provider)
+        now[0] += 61
+        admin = await store.refresh(manual=True)
+        assert admin['sources'][failed_provider]['is_stale'] is True
+        fresh_provider = 'anli' if failed_provider == 'gpt' else 'gpt'
+        assert admin['sources'][fresh_provider]['is_stale'] is False
+        public = await store.public()
+        assert public['status'] == 'ready'
+        variants = {
+            item['id']: item for product in public['products'] for item in product['variants']
+        }
+        assert variants['2:7']['available'] is (failed_provider != 'gpt')
+        assert variants['1000000000005:1']['available'] is (failed_provider != 'anli')
+        assert variants['1000000000008:1']['available'] is False
+        now[0] += 61
+        await store.refresh(manual=True)
+        assert calls[failed_provider] == 2 and calls[fresh_provider] == 3
+        assert json.loads(store.path.read_text()).keys() == {
+            'items',
+            'last_success',
+            'error',
+            'retry_after',
+            'manual_after',
+        }
+
+    asyncio.run(run())
+
+
+def test_reserved_namespace_and_secondary_snapshot_validation(tmp_path):
+    async def run():
+        async def anli():
+            return anli_rows()
+
+        store = make_store(tmp_path, secondary_fetcher=anli)
+        await store.refresh()
+        value = json.loads(store.secondary_path.read_text())
+        value['items'][0]['source_url'] = 'https://evil.test/item/5'
+        store.secondary_path.write_text(json.dumps(value))
+        # A corrupt second cache is ignored independently, never projected.
+        public = await store.public()
+        assert public['status'] == 'ready'
+        assert (await store.admin())['sources']['anli']['is_stale'] is True
+        from web_api.shop_store import validate_items
+
+        row = {
+            **normalize_products(products())[0],
+            'key': '1000000000005:7',
+            'product_id': '1000000000005',
+        }
+        with pytest.raises(ValueError):
+            validate_items([row])
+
+    asyncio.run(run())

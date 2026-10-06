@@ -9,6 +9,8 @@ from pathlib import Path
 
 import state_store
 
+from .shop_anli_source import ORIGIN as ANLI_ORIGIN
+from .shop_anli_source import PRODUCT_BASE, SELECTED
 from .shop_source import MAX_CENTS, MAX_ROWS, ORIGIN, fetch_catalog
 
 TTL = 900
@@ -67,7 +69,7 @@ def validate_settings(value):
     return value
 
 
-def validate_items(items):
+def validate_items(items, provider='gpt'):
     if not isinstance(items, list) or len(items) > MAX_ROWS:
         raise ValueError('invalid source items')
     seen = set()
@@ -97,16 +99,35 @@ def validate_items(items):
             or row['sales'] is not None
         ):
             raise ValueError('invalid source identity or price')
+        product_number = int(row['product_id'])
+        if provider == 'gpt':
+            if product_number >= PRODUCT_BASE:
+                raise ValueError('reserved product namespace')
+        elif provider == 'anli':
+            external = product_number - PRODUCT_BASE
+            if (
+                external not in SELECTED
+                or key != f'{product_number}:1'
+                or row['source_url'] != f'{ANLI_ORIGIN}/item/{external}'
+                or row['public_title'] != SELECTED[external]
+                or row['label'] != '标准规格'
+            ):
+                raise ValueError('invalid secondary source identity')
+        else:
+            raise ValueError('unknown source')
         seen.add(key)
         if (
             not isinstance(row['title'], str)
             or not 0 < len(row['title']) <= 2000
             or not isinstance(row['source_url'], str)
             or len(row['source_url']) > 3000
-            or not row['source_url'].startswith(ORIGIN + '/products/')
+            or (provider == 'gpt' and not row['source_url'].startswith(ORIGIN + '/products/'))
             or not isinstance(row['public_title'], str)
-            or not re.fullmatch(
-                r'(ChatGPT (Plus|Go|Pro(?: \d{1,6})?)|数字商品)', row['public_title']
+            or (
+                provider == 'gpt'
+                and not re.fullmatch(
+                    r'(ChatGPT (Plus|Go|Pro(?: \d{1,6})?)|数字商品)', row['public_title']
+                )
             )
             or not isinstance(row['label'], str)
             or not re.fullmatch(
@@ -124,27 +145,37 @@ class ShopStore:
         path='/root/hysteria/state/shop/source.json',
         *,
         fetcher=fetch_catalog,
+        secondary_fetcher=None,
         clock=time.time,
     ):
         self.path = Path(path)
         self.settings_path = self.path.with_name(self.path.stem + '-merchant.json')
         self.fetcher, self.clock = fetcher, clock
+        self.secondary_fetcher = secondary_fetcher
+        self.secondary_path = self.path.with_name(self.path.stem + '-anli.json')
 
-    def _source(self):
+    def _feed_ids(self):
+        return ('gpt', 'anli') if self.secondary_fetcher is not None else ('gpt',)
+
+    @staticmethod
+    def _empty_source():
+        return {
+            'items': [],
+            'last_success': None,
+            'error': None,
+            'retry_after': 0,
+            'manual_after': 0,
+        }
+
+    def _source(self, provider='gpt'):
         value = state_store.load_json_strict(
-            self.path,
-            {
-                'items': [],
-                'last_success': None,
-                'error': None,
-                'retry_after': 0,
-                'manual_after': 0,
-            },
+            self.path if provider == 'gpt' else self.secondary_path,
+            self._empty_source(),
         )
         try:
             if set(value) != {'items', 'last_success', 'error', 'retry_after', 'manual_after'}:
                 raise ValueError('invalid snapshot')
-            validate_items(value['items'])
+            validate_items(value['items'], provider)
             for field in ('last_success', 'retry_after', 'manual_after'):
                 number = value[field]
                 if number is None and field == 'last_success':
@@ -171,20 +202,57 @@ class ShopStore:
         except (ValueError, TypeError) as exc:
             raise state_store.InvalidJsonState('invalid merchant settings') from exc
 
+    def _sources(self):
+        sources = {}
+        for provider in self._feed_ids():
+            try:
+                sources[provider] = self._source(provider)
+            except state_store.InvalidJsonState:
+                if self.secondary_fetcher is None:
+                    raise
+                # Ignore untrusted cache bytes independently; another fresh feed
+                # stays readable. A successful refresh can replace this cache.
+                sources[provider] = {**self._empty_source(), 'error': 'source_unavailable'}
+        return sources
+
+    def _feed_status(self, source):
+        now = self.clock()
+        return {
+            'last_success': source['last_success'],
+            'error': source['error'],
+            'is_stale': (
+                source['error'] is not None
+                or source['last_success'] is None
+                or not 0 <= now - source['last_success'] < TTL
+            ),
+            'retry_after_seconds': max(0, math.ceil(source['retry_after'] - now)),
+            'cooldown_seconds': max(0, math.ceil(source['manual_after'] - now)),
+        }
+
     def _admin(self):
-        source, settings, now = self._source(), self._settings(), self.clock()
-        stale = (
-            source['error'] is not None
-            or source['last_success'] is None
-            or not 0 <= now - source['last_success'] < TTL
-        )
+        sources, settings = self._sources(), self._settings()
+        statuses = {provider: self._feed_status(source) for provider, source in sources.items()}
+        successes = [
+            source['last_success']
+            for source in sources.values()
+            if source['last_success'] is not None
+        ]
         return {
             **settings,
             'products': settings.get('products', {}),
-            **source,
-            'is_stale': stale,
-            'retry_after_seconds': max(0, math.ceil(source['retry_after'] - now)),
-            'cooldown_seconds': max(0, math.ceil(source['manual_after'] - now)),
+            'items': [row for source in sources.values() for row in source['items']],
+            'sources': statuses,
+            'last_success': max(successes, default=None),
+            'error': 'source_unavailable'
+            if any(source['error'] for source in sources.values())
+            else None,
+            'retry_after': min(source['retry_after'] for source in sources.values()),
+            'manual_after': min(source['manual_after'] for source in sources.values()),
+            'is_stale': all(status['is_stale'] for status in statuses.values()),
+            'retry_after_seconds': min(
+                status['retry_after_seconds'] for status in statuses.values()
+            ),
+            'cooldown_seconds': min(status['cooldown_seconds'] for status in statuses.values()),
         }
 
     async def admin(self):
@@ -192,17 +260,21 @@ class ShopStore:
 
     async def public(self):
         state = await self.admin()
-        groups = {}
+        groups, applicable = {}, set()
         for row in state['items']:
             merchant = state['skus'].get(row['key'], {})
             if not merchant.get('published'):
                 continue
+            provider = 'anli' if int(row['product_id']) >= PRODUCT_BASE else 'gpt'
+            applicable.add(provider)
             group = groups.setdefault(
                 row['product_id'],
                 {
                     'id': row['product_id'],
                     'title': row['public_title'],
-                    'category': 'GPT',
+                    'category': ('Claude' if row['public_title'].startswith('Claude ') else 'Grok')
+                    if provider == 'anli'
+                    else 'GPT',
                     'description': state['products']
                     .get(row['product_id'], {})
                     .get('description', ''),
@@ -217,19 +289,24 @@ class ShopStore:
                     'id': row['key'],
                     'label': row['label'],
                     'price_cents': merchant['price_cents'],
-                    'available': row['available'] and not state['is_stale'],
+                    'available': row['available'] and not state['sources'][provider]['is_stale'],
                     'quantity': None,
                     'sales': None,
                 }
             )
+        relevant = [
+            state['sources'][provider] for provider in (applicable or set(state['sources']))
+        ]
+        ready = any(not status['is_stale'] for status in relevant)
+        successes = [
+            status['last_success'] for status in relevant if status['last_success'] is not None
+        ]
         return {
             'currency': 'CNY',
             'telegram': state['telegram'],
             'products': list(groups.values()),
-            'status': ('unavailable' if state['last_success'] is None else 'stale')
-            if state['is_stale']
-            else 'ready',
-            'updated_at': state['last_success'],
+            'status': 'ready' if ready else ('stale' if successes else 'unavailable'),
+            'updated_at': max(successes, default=None),
         }
 
     def _update(self, payload):
@@ -238,7 +315,9 @@ class ShopStore:
             current = self._settings()
             if payload['revision'] != current['revision']:
                 raise Conflict('settings changed; reload before saving')
-            known = {row['key'] for row in self._source()['items']} | set(current['skus'])
+            known = {
+                row['key'] for source in self._sources().values() for row in source['items']
+            } | set(current['skus'])
             if set(payload['skus']) - known:
                 raise ValueError('unknown SKU')
             products = payload.get('products', current.get('products', {}))
@@ -282,26 +361,29 @@ class ShopStore:
         if lock is None:
             return await self.admin()
         try:
-            current = await self.admin()
-            if (
-                current['retry_after_seconds']
-                or (manual and current['cooldown_seconds'])
-                or (not manual and not current['is_stale'])
-            ):
-                return current
-            source = await asyncio.to_thread(self._source)
-            source['manual_after'] = self.clock() + MANUAL_COOLDOWN
-            # Persist cooldown before network so cancellation/crashes cannot busy-loop.
-            source['retry_after'] = self.clock() + BACKOFF
-            await self._finish_thread(state_store.save_json, self.path, source)
-            try:
-                async with asyncio.timeout(30):
-                    items = await self.fetcher()
-                validate_items(items)
-                source.update(items=items, last_success=self.clock(), error=None, retry_after=0)
-            except Exception:
-                source.update(error='source_unavailable', retry_after=self.clock() + BACKOFF)
-            await self._finish_thread(state_store.save_json, self.path, source)
+            for provider in self._feed_ids():
+                source = (await asyncio.to_thread(self._sources))[provider]
+                status = self._feed_status(source)
+                if (
+                    status['retry_after_seconds']
+                    or (manual and status['cooldown_seconds'])
+                    or (not manual and not status['is_stale'])
+                ):
+                    continue
+                path = self.path if provider == 'gpt' else self.secondary_path
+                fetcher = self.fetcher if provider == 'gpt' else self.secondary_fetcher
+                source['manual_after'] = self.clock() + MANUAL_COOLDOWN
+                # Persist before acquisition so cancellation cannot busy-loop.
+                source['retry_after'] = self.clock() + BACKOFF
+                await self._finish_thread(state_store.save_json, path, source)
+                try:
+                    async with asyncio.timeout(30):
+                        items = await fetcher()
+                    validate_items(items, provider)
+                    source.update(items=items, last_success=self.clock(), error=None, retry_after=0)
+                except Exception:
+                    source.update(error='source_unavailable', retry_after=self.clock() + BACKOFF)
+                await self._finish_thread(state_store.save_json, path, source)
             return await self.admin()
         finally:
             lock.__exit__(None, None, None)

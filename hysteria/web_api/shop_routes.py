@@ -11,11 +11,12 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
+from .shop_anli_source import fetch_catalog as fetch_anli_catalog
 from .shop_store import Conflict, ShopStore
 
 
 def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabled=False):
-    store = store or ShopStore()
+    store = store or ShopStore(secondary_fetcher=fetch_anli_catalog)
 
     async def scheduler():
         while True:

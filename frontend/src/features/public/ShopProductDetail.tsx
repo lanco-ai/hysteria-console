@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import brandImage from '../../assets/shop-chatgpt.png';
+import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { money, type Catalog } from '../shop/catalog';
 import { findSku, type CartItem } from '../shop/cart';
 
@@ -25,8 +25,8 @@ export function ProductDetail({ productId, catalog, error, onAdd, onBuy, onRetry
     <nav className="shop-breadcrumb" aria-label="面包屑"><a href="/">首页</a><span>/</span><a href="/">商品目录</a><span>/</span><span>{product?.title ?? '商品详情'}</span></nav>
     <CatalogNotice catalog={catalog} error={error} onRetry={onRetry}/>
     {product ? <><section className="shop-detail portal-card">
-      <div className="shop-detail-image"><img src={brandImage} alt="ChatGPT" width="531" height="422"/></div>
-      <div className="shop-detail-info"><p className="portal-eyebrow">GPT · 充值卡密</p><h1 ref={title} tabIndex={-1}>{product.title}</h1>
+      <div className="shop-detail-image"><ShopBrandImage category={product.category}/></div>
+      <div className="shop-detail-info"><p className="portal-eyebrow">{product.category} · 人工交付</p><h1 ref={title} tabIndex={-1}>{product.title}</h1>
         <p className="shop-detail-price"><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>
         <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <button key={item.id} type="button" aria-pressed={variantId === item.id} onClick={() => setSelection(item.id)}>{item.label}{!item.available ? ' · 暂不可购买' : ''}</button>)}</fieldset>
         <div className="shop-detail-quantity"><span>购买数量</span><Quantity value={quantity} onChange={setQuantity}/><small>每次 1–99 件</small></div>
@@ -48,7 +48,7 @@ export function CartView({ cart, catalog, error, onChange, onBuy, onRetry }: { c
   return <section className="shop-cart portal-card"><header><div><p className="portal-eyebrow">SHOPPING CART</p><h1 ref={title} tabIndex={-1}>购物车</h1></div>{cart.length ? <button type="button" className="btn btn-secondary" onClick={() => onChange([])}>清空购物车</button> : null}</header>
     <CatalogNotice catalog={catalog} error={error} onRetry={onRetry}/>
     {!cart.length ? <div className="shop-empty"><h2>购物车还是空的</h2><p>挑选商品后，点击加入购物车。</p><a className="btn btn-primary" href="/">去选购</a></div> : <>
-      <div className="shop-cart-items">{rows.map(({ item, row }) => <article key={item.id} className="shop-cart-row"><img src={brandImage} alt="" width="80" height="64"/><div><h2>{row ? <a href={`/?product=${row.product.id}`}>{row.product.title}</a> : '商品已下架或暂不可用'}</h2><p>{row?.variant.label ?? `规格 ${item.id}`}</p><p>{row ? money(row.variant.price_cents) : '—'}{row && !row.variant.available ? ' · 暂不可购买' : ''}</p></div><Quantity label={`数量 ${item.id}`} value={String(item.quantity)} onChange={value => { if (/^\d{1,2}$/.test(value) && Number(value) >= 1) onChange(cart.map(current => current.id === item.id ? { ...current, quantity: Number(value) } : current)); }}/><strong>{row ? money(row.variant.price_cents * item.quantity) : '—'}</strong><button type="button" className="btn btn-secondary" aria-label={`移除 ${item.id}`} onClick={() => onChange(cart.filter(current => current.id !== item.id))}>移除</button></article>)}</div>
+      <div className="shop-cart-items">{rows.map(({ item, row }) => <article key={item.id} className="shop-cart-row"><ShopBrandImage category={row?.product.category ?? 'GPT'}/><div><h2>{row ? <a href={`/?product=${row.product.id}`}>{row.product.title}</a> : '商品已下架或暂不可用'}</h2><p>{row?.variant.label ?? `规格 ${item.id}`}</p><p>{row ? money(row.variant.price_cents) : '—'}{row && !row.variant.available ? ' · 暂不可购买' : ''}</p></div><Quantity label={`数量 ${item.id}`} value={String(item.quantity)} onChange={value => { if (/^\d{1,2}$/.test(value) && Number(value) >= 1) onChange(cart.map(current => current.id === item.id ? { ...current, quantity: Number(value) } : current)); }}/><strong>{row ? money(row.variant.price_cents * item.quantity) : '—'}</strong><button type="button" className="btn btn-secondary" aria-label={`移除 ${item.id}`} onClick={() => onChange(cart.filter(current => current.id !== item.id))}>移除</button></article>)}</div>
       <footer className="shop-cart-footer"><p>合计 <strong data-testid="cart-total">{catalog && rows.every(({ row }) => row) ? money(total) : '—'}</strong></p><button type="button" className="btn btn-primary" disabled={!valid} onClick={onBuy}>确认购买信息</button></footer>
       <p className="shop-note">结算前会重新核对售价和库存，最终价格及交付由商家人工确认。</p>
       {catalog && !catalog.telegram ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}

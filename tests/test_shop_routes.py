@@ -192,3 +192,53 @@ def test_scheduler_failure_keeps_startup_and_public_reads_available(tmp_path):
             assert client.get('/api/v1/shop/catalog').status_code == 200
     assert len(calls) == 1
     assert asyncio.run(store.public())['status'] == 'unavailable'
+
+
+def test_two_sources_keep_admin_private_and_public_variant_freshness(tmp_path):
+    from web_api.shop_anli_source import normalize_products as normalize_anli
+
+    async def gpt():
+        return normalize_products(
+            json.loads((Path(__file__).parent / 'fixtures/shop/products.json').read_text())['data']
+        )
+
+    async def anli():
+        value = json.loads((Path(__file__).parent / 'fixtures/shop/anli-products.json').read_text())
+        return normalize_anli(value, {row['id']: {**row, 'config': []} for row in value['data']})
+
+    store = ShopStore(tmp_path / 'source.json', fetcher=gpt, secondary_fetcher=anli)
+    asyncio.run(store.refresh())
+    app = create_app(
+        Sessions(),
+        shop_store=store,
+        video_settings_store=VideoSettingsStore(tmp_path / 'video/settings.json'),
+        video_workflow_store=WorkflowStore(tmp_path / 'video/workflows.json'),
+        video_asset_store=AssetStore(tmp_path / 'video/assets'),
+    )
+    with TestClient(app) as client:
+        assert client.get('/api/v1/shop/catalog').json()['products'] == []
+        assert client.get('/api/v1/shop/admin').status_code == 401
+        state = client.get('/api/v1/shop/admin', headers=HEADERS).json()
+        assert len(state['items']) == 12 and set(state['sources']) == {'gpt', 'anli'}
+        payload = {
+            'revision': 0,
+            'telegram': '',
+            'skus': {'1000000000011:1': {'price_cents': 23456, 'published': True}},
+            'products': {'1000000000011': {'description': '本店说明', 'after_sales': '本店条款'}},
+        }
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json=payload).status_code == 200
+        response = client.get('/api/v1/shop/catalog')
+        product = response.json()['products'][0]
+        assert product['category'] == 'Grok' and product['variants'][0]['id'] == '1000000000011:1'
+        assert product['variants'][0]['price_cents'] == 23456
+        assert product['description'] == '本店说明'
+        for private in [
+            'sources',
+            'cost_cents',
+            'source_url',
+            'faka.anligpt',
+            '19000',
+            '19500',
+            'supplier marketing',
+        ]:
+            assert private not in response.text
