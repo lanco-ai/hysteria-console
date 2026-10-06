@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AdminShell } from '../../shared/AdminShell';
 import { money, priceCents, shopRequest } from './catalog';
+import { isClaudeNoticeProduct } from './ShopNotice';
 
 type Setting = { price_cents: number | null; published: boolean };
 type SourceItem = { key: string; product_id: string; title: string; label: string; cost_cents: number; available: boolean };
@@ -53,6 +54,9 @@ export function ShopAdminPage() {
       // Keep the merchant revision and all unsaved values: source refresh is not a save.
       setState(old => old ? { ...old, sources: value.sources ?? { gpt: value }, items: value.items, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds } : value);
       setDraft(old => { const next = { ...old }; for (const item of value.items) next[item.key] ??= { price: '', published: false }; return next; });
+      // Newly discovered products receive effective defaults; existing dirty or
+      // explicitly cleared input continues to win over the refreshed response.
+      setCopy(old => ({ ...value.products, ...old }));
       setNotice(value.error ? '部分来源暂不可用；售价和未保存输入已保留。' : '来源检查完成；售价和未保存输入已保留。');
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -95,6 +99,7 @@ export function ShopAdminPage() {
           <header className="shop-admin-product-header"><h2>{items[0]?.title}</h2><span>{items.length} 个规格</span></header>
           <details className="shop-copy-editor"><summary>商品说明与售后条款</summary>
             <p className="shop-note">上架后展示给客户，每项最多 4000 字。请填写本店实际提供的说明与条款。</p>
+            {isClaudeNoticeProduct(productId) && <p className="shop-note">支持 Markdown 标题、列表和强调；须知中的三张示例图使用固定本地图别名。清空并保存后，客户将看到未填写提示。</p>}
             {(['description', 'after_sales'] as const).map(field => <label key={field}>{field === 'description' ? '商品说明' : '售后条款'}<textarea aria-label={`${field === 'description' ? '商品说明' : '售后条款'} ${productId}`} rows={5} maxLength={4000} disabled={busy} value={copy[productId]?.[field] ?? ''} onChange={event => { setCopy(old => ({ ...old, [productId]: { description: '', after_sales: '', ...old[productId], [field]: event.target.value } })); setDirty(true); setNotice(''); }}/></label>)}
           </details>
           <div className="shop-admin-columns" aria-hidden="true"><span>规格</span><span>成本</span><span>售价（元）</span><span>上架</span></div>

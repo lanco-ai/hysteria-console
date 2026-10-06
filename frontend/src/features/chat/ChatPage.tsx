@@ -4,6 +4,7 @@ import { ChatMessage } from './ChatMessage';
 import { ChatSettings } from './ChatSettings';
 import { ChatJournalDialog } from './ChatJournalDialog';
 import { ProjectDialog } from './ProjectDialog';
+import { ProjectSelectorDialog } from './ProjectSelectorDialog';
 import { KnowledgeDialog } from './KnowledgeDialog';
 import { MemoryDialog } from './MemoryDialog';
 import { ToolsDialog } from './ToolsDialog';
@@ -47,6 +48,11 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
   const [toolRuns, setToolRuns] = useState<string[]>([]);
   const [usage, setUsage] = useState<{ requests: number; reported_requests: number; prompt_tokens: number; completion_tokens: number } | null>(null);
   const [projectEditor, setProjectEditor] = useState<LearningProject | 'new' | null>(null);
+  const [projectSelectorOpen, setProjectSelectorOpen] = useState(false);
+  const [projectSwitchPending, setProjectSwitchPending] = useState(false);
+  const projectSwitchRef = useRef(false);
+  const projectButtonRef = useRef<HTMLButtonElement>(null);
+  const projectEditorFocus = useRef<HTMLElement | null>(null);
   const [journalMessage, setJournalMessage] = useState<WorkspaceMessage | null>(null);
   const [branch, setBranch] = useState<{ message: WorkspaceMessage; mode: 'edit' | 'regenerate' | 'continue'; text: string; requestId: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -97,7 +103,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
 
   useEffect(() => { if (authProp !== undefined) return; let live = true; void fetch('/api/session', { credentials: 'same-origin' }).then(r => r.json()).then((value: { role?: string }) => { if (live) setFallbackAuth(value.role === 'admin'); }).catch(() => {}); return () => { live = false; }; }, [authProp]);
   useEffect(() => {
-    if (!authenticated) { setSessions([]); accept(null); setProjects([]); setPapers([]); setLegacy([]); setProjectEditor(null); setJournalMessage(null); setBranch(null); setKnowledgeOpen(false); setToolsOpen(false); setToolRuns([]); setMemoryOpen(false); setMemorySource(null); setSummaryEditor(null); setSettingsOpen(false); setUsage(null); setError(''); setNotice(''); setDraftConflict(false); draftConflictRef.current = false; setDraft(''); draftRef.current = ''; setReady(false); controller.current?.abort(); return; }
+    if (!authenticated) { setSessions([]); accept(null); setProjects([]); setPapers([]); setLegacy([]); setProjectEditor(null); setProjectSelectorOpen(false); setJournalMessage(null); setBranch(null); setKnowledgeOpen(false); setToolsOpen(false); setToolRuns([]); setMemoryOpen(false); setMemorySource(null); setSummaryEditor(null); setSettingsOpen(false); setUsage(null); setError(''); setNotice(''); setDraftConflict(false); draftConflictRef.current = false; setDraft(''); draftRef.current = ''; setReady(false); controller.current?.abort(); return; }
     let live = true;
     void Promise.all([api<{ items: LearningProject[] }>('/projects'), api<{ items: Conversation[] }>('/conversations')]).then(async ([p, c]) => {
       if (!live) return; setProjects(p.items); setSessions(c.items);
@@ -171,9 +177,17 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
       replaceConversationLocation(id);
     } catch (e) { report(e); }
   };
-  const newConversation = async (nextProject = projectId) => {
-    if (busyRef.current) return;
-    try { await saveDraft(); if (!activeRef.current && draftRef.current.trim() && !window.confirm('新建对话会清空当前未发送的草稿，继续吗？')) return; accept(null); changeDraft(''); setProjectId(nextProject); if (!nextProject && knowledgeScope === 'project') setKnowledgeScope('none'); setSelectedPapers([]); setToolRuns([]); setError(''); setNotice(''); requestRef.current = null; replaceConversationLocation(); setHistoryOpen(false); } catch (e) { report(e); }
+  const newConversation = async (nextProject = projectId): Promise<boolean> => {
+    if (busyRef.current || projectSwitchRef.current || !authenticated || !ready || uploading) return false;
+    projectSwitchRef.current = true; setProjectSwitchPending(true);
+    try {
+      await saveDraft();
+      if (!authRef.current) return false;
+      if (!activeRef.current && draftRef.current.trim() && !window.confirm('新建对话会清空当前未发送的草稿，继续吗？')) return false;
+      accept(null); changeDraft(''); setProjectId(nextProject); if (!nextProject && knowledgeScope === 'project') setKnowledgeScope('none'); setSelectedPapers([]); setToolRuns([]); setError(''); setNotice(''); requestRef.current = null; replaceConversationLocation(); setHistoryOpen(false);
+      return true;
+    } catch (e) { report(e); return false; }
+    finally { projectSwitchRef.current = false; setProjectSwitchPending(false); }
   };
   const openTools = async () => {
     if (busyRef.current || !authenticated || !ready) return;
@@ -245,7 +259,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     const text = `# ${active.title}\n\n` + active.messages.map(m => `## ${m.role === 'user' ? '你' : 'AI'}\n\n${m.content}\n\n${m.citations.map(c => `[${c.id}] ${c.title} · 第 ${c.page} 页\n> ${c.quote.replaceAll('\n', '\n> ')}`).join('\n\n')}`).join('\n\n');
     saveDownload(text, 'learning-conversation.md', 'text/markdown');
   };
-  const locked = !authenticated || !ready || busy || uploading;
+  const locked = !authenticated || !ready || busy || uploading || projectSwitchPending;
   const toolbar = <div className="chat-topbar-controls">
     <button className="btn btn-ghost btn-sm chat-history-toggle" aria-label={historyOpen ? '关闭历史记录' : '打开历史记录'} aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)} disabled={!authenticated}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.4 5.2h11.2M4.4 10h11.2M4.4 14.8h7.2" /></svg><span>历史</span><span className="chat-history-count">{sessions.length}</span></button>
     <label><span className="sr-only">当前模型</span><input className="chat-toolbar-select chat-toolbar-model-input" aria-label="当前模型" list="workspace-models" value={model} onChange={e => setModel(e.target.value)} disabled={locked} placeholder="选择或输入模型" /><datalist id="workspace-models">{models.map(m => <option value={m.id} key={m.id}>{m.name}</option>)}</datalist></label>
@@ -256,7 +270,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
 
   return <Shell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar} agentEnabled={authenticated}>
     <section className="chat-page personal-workspace">
-      <div className="workspace-project-bar"><label>学习项目<select className="input" aria-label="学习项目" value={projectId} disabled={locked} onChange={e => { void newConversation(e.target.value); }}><option value="">全部 / 自由对话</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <div className="workspace-project-bar"><button ref={projectButtonRef} type="button" className="workspace-project-trigger" aria-label={`选择学习项目：${project?.name || '自由对话'}`} aria-haspopup="dialog" aria-expanded={projectSelectorOpen} disabled={locked} onClick={() => setProjectSelectorOpen(true)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6a1.5 1.5 0 0 1 1.5-1.5h4l2 2h6a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 15Z" /></svg><span>{project?.name || '自由对话'}</span><span className="workspace-project-chevron" aria-hidden="true">⌄</span></button>
         <div className="workspace-actions"><button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setKnowledgeOpen(true)}>知识库</button>{project && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => { setMemorySource(null); setMemoryOpen(true); }}>项目记忆</button>}<button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setProjectEditor('new')}>＋ 项目</button>{project && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setProjectEditor(project)}>项目目标</button>}<button className="btn btn-secondary btn-sm" disabled={locked || !projectId} onClick={() => setPapersOpen(!papersOpen)}>论文资料 · {papers.length}</button><button className="btn btn-primary btn-sm" disabled={locked} onClick={() => { void newConversation(); }}>新对话</button></div>
       </div>
       {project?.goal && <p className="workspace-goal">{project.goal}</p>}
@@ -279,7 +293,8 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
       {draftConflict && <div className="workspace-banner" role="alert"><span>另一处修改了草稿。本机文字已保留，请选择：</span><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { void resolveDraft(true); }}>保留本机草稿并保存</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { void resolveDraft(false); }}>使用服务器草稿</button></div>}
       {notice && <div className="chat-notice" role="status">{notice}</div>}{error && <div className="err" role="alert">{error}</div>}
     </section>
-    {projectEditor && <ProjectDialog project={projectEditor === 'new' ? null : projectEditor} onClose={() => setProjectEditor(null)} onSaved={p => { setProjectEditor(null); void api<{ items: LearningProject[] }>('/projects').then(r => setProjects(r.items)).catch(report); if (p && projectEditor === 'new') void newConversation(p.id); if (!p) void newConversation(''); }} />}
+    {projectSelectorOpen && authenticated && <ProjectSelectorDialog projects={projects} currentId={projectId} disabled={locked} returnFocusTo={projectButtonRef.current} onClose={() => setProjectSelectorOpen(false)} onSelect={newConversation} onCreate={() => { setProjectSelectorOpen(false); projectEditorFocus.current = projectButtonRef.current; setProjectEditor('new'); }} />}
+    {projectEditor && <ProjectDialog project={projectEditor === 'new' ? null : projectEditor} {...(projectEditorFocus.current ? { returnFocusTo: projectEditorFocus.current } : {})} onClose={() => { setProjectEditor(null); projectEditorFocus.current = null; }} onSaved={p => { setProjectEditor(null); projectEditorFocus.current = null; void api<{ items: LearningProject[] }>('/projects').then(r => setProjects(r.items)).catch(report); if (p && projectEditor === 'new') void newConversation(p.id); if (!p) void newConversation(''); }} />}
     {journalMessage && active && <ChatJournalDialog conversation={active} message={journalMessage} onClose={() => setJournalMessage(null)} />}
     {knowledgeOpen && authenticated && <KnowledgeDialog projectId={projectId} onClose={() => setKnowledgeOpen(false)} />}
     {toolsOpen && active && authenticated && <ToolsDialog returnFocusTo={toolsButtonRef.current} conversation={active} question={draft} model={model} papers={papers} attached={toolRuns} onClose={() => setToolsOpen(false)} onAttach={ids => { setToolRuns(ids); setToolsOpen(false); }} />}

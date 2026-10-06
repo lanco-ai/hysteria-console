@@ -171,6 +171,8 @@ declare -a REACT_WEB_API_MODULES=(
   services.py
   shop_routes.py
   shop_source.py
+  shop_anli_source.py
+  shop_notices.py
   shop_store.py
   subscription_routes.py
   usage_models.py
@@ -435,6 +437,8 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/services.py"
   add_durable_artifact "$HY_DIR/web_api/shop_routes.py"
   add_durable_artifact "$HY_DIR/web_api/shop_source.py"
+  add_durable_artifact "$HY_DIR/web_api/shop_anli_source.py"
+  add_durable_artifact "$HY_DIR/web_api/shop_notices.py"
   add_durable_artifact "$HY_DIR/web_api/shop_store.py"
   add_durable_artifact "$HY_DIR/web_api/subscription_routes.py"
   add_durable_artifact "$HY_DIR/web_api/usage_models.py"
@@ -2229,6 +2233,8 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/services.py" "$HY_DIR/web_api/services.py"
   render "$REPO_DIR/hysteria/web_api/shop_routes.py" "$HY_DIR/web_api/shop_routes.py"
   render "$REPO_DIR/hysteria/web_api/shop_source.py" "$HY_DIR/web_api/shop_source.py"
+  render "$REPO_DIR/hysteria/web_api/shop_anli_source.py" "$HY_DIR/web_api/shop_anli_source.py"
+  render "$REPO_DIR/hysteria/web_api/shop_notices.py" "$HY_DIR/web_api/shop_notices.py"
   render "$REPO_DIR/hysteria/web_api/shop_store.py" "$HY_DIR/web_api/shop_store.py"
   render "$REPO_DIR/hysteria/web_api/subscription_routes.py" "$HY_DIR/web_api/subscription_routes.py"
   render "$REPO_DIR/hysteria/web_api/usage_models.py" "$HY_DIR/web_api/usage_models.py"

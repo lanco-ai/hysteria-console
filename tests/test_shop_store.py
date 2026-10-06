@@ -451,3 +451,122 @@ def test_reserved_namespace_and_secondary_snapshot_validation(tmp_path):
             validate_items([row])
 
     asyncio.run(run())
+
+
+def test_claude_defaults_only_fill_source_present_absent_copy_without_persisting(tmp_path):
+    async def run():
+        async def anli():
+            return anli_rows()
+
+        store = make_store(tmp_path, secondary_fetcher=anli, clock=lambda: 1000)
+        await store.refresh()
+        original = {
+            'revision': 3,
+            'telegram': 'my_shop',
+            'skus': {row['key']: {'price_cents': 77777, 'published': True}
+                     for row in (await store.admin())['items']},
+            'products': {'5': {'description': '原 GPT 说明', 'after_sales': '原 GPT 售后'},
+                         '1000000000011': {'description': '原 Grok 说明', 'after_sales': ''}},
+        }
+        store.settings_path.write_text(json.dumps(original, ensure_ascii=False))
+        before = store.settings_path.read_bytes()
+        admin = await store.admin()
+        ids = {'1000000000005', '1000000000007', '1000000000008'}
+        assert set(admin['products']) == ids | set(original['products'])
+        from web_api.shop_notices import CLAUDE_NOTICE
+        assert all(admin['products'][key] == CLAUDE_NOTICE for key in ids)
+        public = await store.public()
+        for product in public['products']:
+            if product['id'] in ids:
+                assert {field: product[field] for field in CLAUDE_NOTICE} == CLAUDE_NOTICE
+            else:
+                assert product['description'] == original['products'].get(
+                    product['id'], {}
+                ).get('description', '')
+            assert all(variant['price_cents'] == 77777 for variant in product['variants'])
+        assert admin['revision'] == 3 and admin['telegram'] == 'my_shop'
+        assert store.settings_path.read_bytes() == before
+        # Modifying a caller's projection must not change another default or future reads.
+        admin['products']['1000000000005']['description'] = 'caller mutation'
+        assert admin['products']['1000000000007'] == CLAUDE_NOTICE
+        assert (await store.admin())['products']['1000000000005'] == CLAUDE_NOTICE
+        # Persisted metadata survives removal, but absent products acquire no default.
+        source = json.loads(store.secondary_path.read_text())
+        source['items'] = [row for row in source['items'] if row['product_id'] != '1000000000007']
+        store.secondary_path.write_text(json.dumps(source))
+        assert '1000000000007' not in (await store.admin())['products']
+        assert store.settings_path.read_bytes() == before
+
+    asyncio.run(run())
+
+
+def test_claude_defaults_can_save_override_clear_and_survive_legacy_updates(tmp_path):
+    async def run():
+        async def anli():
+            return anli_rows()
+
+        store = make_store(tmp_path, secondary_fetcher=anli)
+        await store.refresh()
+        admin = await store.admin()
+        expected = copy.deepcopy(admin['products'])
+        assert len(expected) == 3
+        payload = {key: admin[key] for key in ('revision', 'telegram', 'skus', 'products')}
+        await store.update(payload)
+        assert json.loads(store.settings_path.read_text())['products'] == expected
+        expected['1000000000005'] = {'description': '本店自定义', 'after_sales': '自定义售后'}
+        expected['1000000000007'] = {'description': '', 'after_sales': ''}
+        await store.update({**payload, 'revision': 1, 'products': expected})
+        await store.update({'revision': 2, 'telegram': '', 'skus': {}})
+        current = await store.admin()
+        assert current['revision'] == 3 and current['products'] == expected
+        assert json.loads(store.settings_path.read_text())['products'] == expected
+
+    asyncio.run(run())
+
+
+def test_claude_copy_exact_multilingual_content_and_unchanged_field_limit():
+    import hashlib
+    from web_api.shop_notices import CLAUDE_NOTICE
+    from web_api.shop_store import validate_settings
+
+    expected = {
+        'description': (1351, '6dfa19a21f4ae4ce39a644c3ad7e29a75c7b8c288c8e587e21077f7017098bd7'),
+        'after_sales': (210, '453b2bad66e56451bf3816597e84fc75862b6f20ebcb9fc69cd6c3e93148e097'),
+    }
+    for field, (length, digest) in expected.items():
+        assert len(CLAUDE_NOTICE[field]) == length
+        assert hashlib.sha256(CLAUDE_NOTICE[field].encode()).hexdigest() == digest
+    for field in expected:
+        value = {'revision': 0, 'telegram': '', 'skus': {},
+                 'products': {'1000000000005': {**CLAUDE_NOTICE, field: 'x' * 4000}}}
+        validate_settings(value)
+        value['products']['1000000000005'][field] += 'x'
+        with pytest.raises(ValueError, match='invalid product copy'):
+            validate_settings(value)
+
+
+def test_copy_size_limit_includes_incremented_revision_without_writing(tmp_path):
+    async def run():
+        store = make_store(tmp_path)
+        await store.refresh()
+        metadata = {str(i): {'description': 'x' * 4000, 'after_sales': 'x' * 4000}
+                    for i in range(1, 10)}
+        payload = {'revision': 9, 'telegram': '', 'skus': {}, 'products': metadata}
+        # Tune the legitimate persisted legacy metadata to exactly the request limit.
+        while len(json.dumps(payload, separators=(',', ':')).encode()) > 65536:
+            last = next(reversed(metadata))
+            if metadata[last]['after_sales']:
+                metadata[last]['after_sales'] = metadata[last]['after_sales'][:-1]
+            elif metadata[last]['description']:
+                metadata[last]['description'] = metadata[last]['description'][:-1]
+            else:
+                del metadata[last]
+        assert len(json.dumps(payload, separators=(',', ':')).encode()) == 65536
+        store.settings_path.write_text(json.dumps(payload, separators=(',', ':')))
+        before = store.settings_path.read_bytes()
+        with pytest.raises(ValueError, match='too large'):
+            await store.update(payload)
+        assert store.settings_path.read_bytes() == before
+        assert (await store.admin())['revision'] == 9
+
+    asyncio.run(run())

@@ -21,7 +21,7 @@ const fs = require('node:fs');
     await page.getByRole('button', { name: 'AI 与存储', exact: true }).click();
     await page.getByRole('button', { name: '保存项目', exact: true }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByLabel('学习项目')).not.toHaveValue('');
+    await expect(page.getByRole('button', { name: '选择学习项目：AI 与存储', exact: true })).toBeVisible();
     await page.getByRole('button', { name: /论文资料/ }).click();
     await page.getByLabel('上传论文', { exact: true }).setInputFiles({ name: 'storage-paper.txt', mimeType: 'text/plain', buffer: Buffer.from('LSM Tree turns random writes into sequential writes. Measure write amplification.') });
     await expect(page.getByText('资料已保存，处理完成后可勾选提问。')).toBeVisible();

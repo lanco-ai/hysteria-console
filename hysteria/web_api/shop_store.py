@@ -11,6 +11,7 @@ import state_store
 
 from .shop_anli_source import ORIGIN as ANLI_ORIGIN
 from .shop_anli_source import PRODUCT_BASE, SELECTED
+from .shop_notices import CLAUDE_NOTICE, CLAUDE_PRODUCT_IDS
 from .shop_source import MAX_CENTS, MAX_ROWS, ORIGIN, fetch_catalog
 
 TTL = 900
@@ -231,6 +232,12 @@ class ShopStore:
 
     def _admin(self):
         sources, settings = self._sources(), self._settings()
+        items = [row for source in sources.values() for row in source['items']]
+        products = dict(settings.get('products', {}))
+        for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
+            # A saved custom or explicitly empty copy always wins. Defaults only
+            # belong to this read projection, never the persisted merchant state.
+            products.setdefault(product_id, dict(CLAUDE_NOTICE))
         statuses = {provider: self._feed_status(source) for provider, source in sources.items()}
         successes = [
             source['last_success']
@@ -239,8 +246,8 @@ class ShopStore:
         ]
         return {
             **settings,
-            'products': settings.get('products', {}),
-            'items': [row for source in sources.values() for row in source['items']],
+            'products': products,
+            'items': items,
             'sources': statuses,
             'last_success': max(successes, default=None),
             'error': 'source_unavailable'

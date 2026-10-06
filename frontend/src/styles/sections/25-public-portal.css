@@ -306,9 +306,18 @@ body.page-portal {
 .shop-detail-quantity { flex-wrap: wrap; }
 .shop-detail-actions > .btn { flex: 1; min-height: 46px; }
 .shop-detail-copy { margin-top: 24px; padding: 28px; }
-.shop-detail-copy h2 { font-size: 20px; margin: 0 0 16px; }
-.shop-detail-copy h2:not(:first-child) { border-top: 1px solid #e5e7e1; margin-top: 28px; padding-top: 28px; }
+.shop-detail-copy > h2 { font-size: 20px; margin: 0 0 16px; }
+.shop-detail-copy > h2:not(:first-child) { border-top: 1px solid #e5e7e1; margin-top: 28px; padding-top: 28px; }
 .shop-detail-copy p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.shop-notice { min-width: 0; line-height: 1.8; overflow-wrap: anywhere; }
+.shop-notice > :first-child { margin-top: 0; }
+.shop-notice > :last-child { margin-bottom: 0; }
+.shop-notice h1, .shop-notice h2 { font-size: clamp(18px, 2vw, 23px); line-height: 1.5; margin: 28px 0 14px; }
+.shop-notice h3, .shop-notice h4, .shop-notice h5, .shop-notice h6 { font-size: 17px; line-height: 1.6; margin: 22px 0 12px; }
+.shop-notice p { white-space: normal; margin: 14px 0; }
+.shop-notice ol, .shop-notice ul { padding-left: 24px; margin: 14px 0; }
+.shop-notice li + li { margin-top: 6px; }
+.shop-notice img { display: block; width: 100%; max-width: 960px; height: auto; margin: 18px 0; border-radius: 10px; }
 .shop-cart { padding: 28px; }
 .shop-cart-row { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto auto auto; gap: 20px; align-items: center; padding: 24px 0; border-bottom: 1px solid #e5e7e1; }
 .shop-cart-row img { width: 80px; height: auto; border-radius: 8px; }

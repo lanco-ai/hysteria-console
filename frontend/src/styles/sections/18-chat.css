@@ -904,8 +904,22 @@
 .personal-workspace { gap: 12px; }
 .workspace-project-bar, .workspace-actions, .workspace-banner, .workspace-paper { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .workspace-project-bar { justify-content: space-between; }
-.workspace-project-bar > label { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 13px; }
-.workspace-project-bar select { min-width: 180px; max-width: 300px; }
+.workspace-project-trigger { display: inline-flex; align-items: center; gap: 9px; min-width: 0; max-width: min(320px, 100%); padding: 8px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.workspace-project-trigger > svg { width: 19px; height: 19px; flex: 0 0 auto; fill: none; stroke: currentcolor; stroke-width: 1.4; }
+.workspace-project-trigger > span:not(.workspace-project-chevron) { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.workspace-project-chevron { margin-left: auto; color: var(--text-secondary); }
+.workspace-project-trigger:hover:not(:disabled), .workspace-project-card:hover:not(:disabled) { border-color: var(--text-secondary); background: var(--bg-subtle); }
+.workspace-project-trigger:focus-visible, .workspace-project-card:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.workspace-project-trigger:disabled, .workspace-project-card:disabled { opacity: 0.55; cursor: default; }
+.workspace-project-search, .workspace-project-search > input { display: block; width: 100%; min-width: 0; }
+.workspace-project-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.workspace-project-card { display: flex; flex-direction: column; gap: 9px; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.workspace-project-card[aria-pressed="true"] { border-color: var(--text-primary); background: var(--bg-subtle); box-shadow: inset 0 0 0 1px var(--text-primary); }
+.workspace-project-card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; font-size: 14px; line-height: 1.5; }
+.workspace-project-card-heading > strong { min-width: 0; overflow-wrap: anywhere; }
+.workspace-project-selected { flex: 0 0 auto; padding: 2px 7px; border-radius: 5px; background: var(--text-primary); color: var(--bg-surface); font-size: 10px; }
+.workspace-project-card-goal { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; color: var(--text-secondary); font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
+.workspace-project-selector-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .workspace-goal, .workspace-muted { color: var(--text-secondary); font-size: 12px; line-height: 1.7; margin: 0; }
 .workspace-banner { padding: 12px 16px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 12px; font-size: 13px; justify-content: space-between; }
 .workspace-papers { padding: 16px; display: grid; gap: 12px; }
@@ -941,8 +955,8 @@
 .personal-workspace .chat-composer textarea { max-height: 220px; }
 @media (width <= 700px) {
   .workspace-project-bar { align-items: stretch; }
-  .workspace-project-bar > label { flex: 1; }
-  .workspace-project-bar select { min-width: 0; width: 100%; }
+  .workspace-project-trigger { max-width: 100%; }
+  .workspace-project-grid { grid-template-columns: minmax(0, 1fr); }
   .workspace-project-bar > .workspace-actions { width: 100%; justify-content: flex-end; }
   .workspace-dialog > header { padding: 14px 18px; }
   .workspace-dialog-body { padding: 18px; }
@@ -950,7 +964,6 @@
   .personal-workspace .chat-thread-heading { align-items: flex-start; }
 }
 
-.workspace-project-bar > label { white-space: nowrap; }
 .workspace-papers { flex: 0 0 auto; max-height: 240px; overflow-y: auto !important; }
 .workspace-project-bar, .workspace-goal, .workspace-banner { flex-shrink: 0; }
 .chat-message-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }

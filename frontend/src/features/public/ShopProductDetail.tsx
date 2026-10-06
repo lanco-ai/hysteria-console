@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
+import { isClaudeNoticeProduct, ShopNotice } from '../shop/ShopNotice';
 import { money, type Catalog } from '../shop/catalog';
 import { findSku, type CartItem } from '../shop/cart';
 
@@ -36,7 +37,7 @@ export function ProductDetail({ productId, catalog, error, onAdd, onBuy, onRetry
         {!catalog?.telegram ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}
         <p className="shop-note">购买信息需由商家人工确认。请在付款前确认账号条件、价格和交付方式。</p>
       </div>
-    </section><section className="shop-detail-copy portal-card"><h2>商品说明</h2><p>{product.description || '商家暂未填写商品说明，请联系商家了解详情。'}</p><h2>售后条款</h2><p>{product.after_sales || '商家暂未填写售后条款，请在购买前与商家确认。'}</p></section></> : catalog ? <section className="shop-empty portal-card"><h1>商品不存在或已下架</h1><p>可以返回商品目录查看其他商品。</p><a className="btn btn-primary" href="/">返回商品目录</a></section> : null}
+    </section><section className="shop-detail-copy portal-card"><h2>商品说明</h2>{product.description && isClaudeNoticeProduct(product.id) ? <ShopNotice text={product.description} /> : <p>{product.description || '商家暂未填写商品说明，请联系商家了解详情。'}</p>}<h2>售后条款</h2>{product.after_sales && isClaudeNoticeProduct(product.id) ? <ShopNotice text={product.after_sales} /> : <p>{product.after_sales || '商家暂未填写售后条款，请在购买前与商家确认。'}</p>}</section></> : catalog ? <section className="shop-empty portal-card"><h1>商品不存在或已下架</h1><p>可以返回商品目录查看其他商品。</p><a className="btn btn-primary" href="/">返回商品目录</a></section> : null}
   </>;
 }
 export function CartView({ cart, catalog, error, onChange, onBuy, onRetry }: { cart: CartItem[]; catalog: Catalog | null; error: boolean; onChange: (cart: CartItem[]) => void; onBuy: () => void; onRetry: () => void }) {
