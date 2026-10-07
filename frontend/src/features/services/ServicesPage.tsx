@@ -4,7 +4,6 @@ import { Icon } from '../../shared/icons';
 import { ServiceEditor, type Bookmark } from './ServiceEditor';
 import { ServiceModels } from './ServiceModels';
 import { AIServiceSettings } from './AIServiceSettings';
-import './services.css';
 
 type Catalog = { items: Bookmark[]; revision: string };
 const endpoint = '/api/v1/admin/services';

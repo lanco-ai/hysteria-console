@@ -1,28 +1,52 @@
 import { createRoot } from 'react-dom/client';
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import type { ComponentType } from 'react';
 import './styles/index.css';
+// Kept in the entry stylesheet: the console pages are prefetched, and a chunk's
+// CSS is injected as soon as it loads, so it would otherwise appear on every page.
+import './features/services/services.css';
 import { LoginModal, resolveSameOriginReturnTo } from './features/auth/LoginModal';
-import { LogoutPage } from './features/auth/LogoutPage';
-import { UserPasswordPage } from './features/auth/UserPasswordPage';
-import { UserPanelPage } from './features/user/UserPanelPage';
-import { SettingsPage } from './features/network-admin/settings/SettingsPage';
-import { UsagePage } from './features/network-admin/usage/UsagePage';
-import { OperationsPage } from './features/network-admin/operations/OperationsPage';
-import { TemplateRulesPage } from './features/network-admin/template-rules/TemplateRulesPage';
-import { LandingPage } from './features/network-admin/landing/LandingPage';
-import { UserDetailPage } from './features/network-admin/user-detail/UserDetailPage';
-import { OverviewPage } from './features/network-admin/overview/OverviewPage';
-import { ChatPage } from './features/chat/ChatPage';
-import { ServicesPage } from './features/services/ServicesPage';
-import { VideoPage } from './features/video/VideoPage';
-import { PlansPage } from './features/plans/PlansPage';
-import { GithubTrendingPage } from './features/github-trending/GithubTrendingPage';
 import { PortalSessionContext, PortalShell } from './features/public/PortalShell';
 import { ShopPage } from './features/public/ShopPage';
-import { ShopAdminPage } from './features/shop/ShopAdminPage';
 import { VideoAccessState } from './features/public/VideoAccessState';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
+
+// The public shop page stays in the entry chunk. Everything behind a login or
+// on another view (admin console, AI chat with KaTeX, video, user panel) loads
+// on demand, so shoppers no longer download the whole console. Navigation
+// preloads the target page first (see preloadLocation), so a page normally
+// renders synchronously; the React.lazy path is only a fallback.
+type LazyPage<P> = ComponentType<P> & { preload: () => Promise<void> };
+
+function lazyPage<P extends object>(load: () => Promise<ComponentType<P>>): LazyPage<P> {
+  let Loaded: ComponentType<P> | undefined;
+  let pending: Promise<void> | undefined;
+  const preload = () => {
+    pending ??= load().then(component => { Loaded = component; }, (error: unknown) => { pending = undefined; throw error; });
+    return pending;
+  };
+  const Deferred = lazy(() => preload().then(() => ({ default: Loaded as ComponentType<P> })));
+  const Page = (props: P) => (Loaded ? <Loaded {...props}/> : <Deferred {...props}/>);
+  return Object.assign(Page, { preload });
+}
+
+const LogoutPage = lazyPage(() => import('./features/auth/LogoutPage').then(module => module.LogoutPage));
+const UserPasswordPage = lazyPage(() => import('./features/auth/UserPasswordPage').then(module => module.UserPasswordPage));
+const UserPanelPage = lazyPage(() => import('./features/user/UserPanelPage').then(module => module.UserPanelPage));
+const SettingsPage = lazyPage(() => import('./features/network-admin/settings/SettingsPage').then(module => module.SettingsPage));
+const UsagePage = lazyPage(() => import('./features/network-admin/usage/UsagePage').then(module => module.UsagePage));
+const OperationsPage = lazyPage(() => import('./features/network-admin/operations/OperationsPage').then(module => module.OperationsPage));
+const TemplateRulesPage = lazyPage(() => import('./features/network-admin/template-rules/TemplateRulesPage').then(module => module.TemplateRulesPage));
+const LandingPage = lazyPage(() => import('./features/network-admin/landing/LandingPage').then(module => module.LandingPage));
+const UserDetailPage = lazyPage(() => import('./features/network-admin/user-detail/UserDetailPage').then(module => module.UserDetailPage));
+const OverviewPage = lazyPage(() => import('./features/network-admin/overview/OverviewPage').then(module => module.OverviewPage));
+const ChatPage = lazyPage(() => import('./features/chat/ChatPage').then(module => module.ChatPage));
+const ServicesPage = lazyPage(() => import('./features/services/ServicesPage').then(module => module.ServicesPage));
+const VideoPage = lazyPage(() => import('./features/video/VideoPage').then(module => module.VideoPage));
+const PlansPage = lazyPage(() => import('./features/plans/PlansPage').then(module => module.PlansPage));
+const GithubTrendingPage = lazyPage(() => import('./features/github-trending/GithubTrendingPage').then(module => module.GithubTrendingPage));
+const ShopAdminPage = lazyPage(() => import('./features/shop/ShopAdminPage').then(module => module.ShopAdminPage));
 
 const root = document.getElementById('root');
 if (!(root instanceof HTMLElement)) throw new Error('React root is missing');
@@ -138,6 +162,8 @@ function protectedRouteReturnTo(route: string, search: string): string | undefin
   return sanitizeReturnTo(`${route}${search}`);
 }
 
+let navigationSequence = 0;
+
 function installClientNavigation(onNavigate: () => void): () => void {
   const onPopState = (event: PopStateEvent) => {
     const previous = new URL(reactHistoryLocation);
@@ -152,6 +178,7 @@ function installClientNavigation(onNavigate: () => void): () => void {
     const nextIndex = readReactHistoryIndex(event.state);
     if (nextIndex !== null) reactHistoryIndex = nextIndex;
     reactHistoryLocation = nextLocation;
+    navigationSequence += 1;
     onNavigate();
   };
   const onClick = (event: MouseEvent) => {
@@ -165,6 +192,7 @@ function installClientNavigation(onNavigate: () => void): () => void {
       event.preventDefault();
       const next = `${window.location.pathname}${window.location.search}${url.hash}`;
       if (next !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+        navigationSequence += 1;
         pushReactHistory(next);
         onNavigate();
       }
@@ -181,8 +209,13 @@ function installClientNavigation(onNavigate: () => void): () => void {
     event.preventDefault();
     const next = `${previewPath(normalizeRoute(url.pathname))}${url.search}${url.hash}`;
     if (next === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
-    pushReactHistory(next);
-    onNavigate();
+    // Change the URL only once the target page can render, so the address bar
+    // and the content switch together. Only the latest click wins.
+    const token = ++navigationSequence;
+    void preloadLocation(next).then(
+      () => { if (token !== navigationSequence) return; pushReactHistory(next); onNavigate(); },
+      () => { window.location.assign(next); },
+    );
   };
   window.addEventListener('popstate', onPopState);
   document.addEventListener('click', onClick);
@@ -260,6 +293,45 @@ function AdminRoute({ route, locationKey, publicHost, authenticated, status }: {
   return <LandingPage publicHost={publicHost}/>;
 }
 
+// Mirrors WorkbenchRoute, AdminRoute and the user routes in App.
+const ADMIN_PAGE_BY_ROUTE: Record<string, { preload: () => Promise<void> }> = {
+  '/admin': OverviewPage,
+  '/admin/logs': OperationsPage,
+  '/admin/health': OperationsPage,
+  '/admin/incidents': OperationsPage,
+  '/admin/settings': SettingsPage,
+  '/admin/usage': UsagePage,
+  '/admin/config': TemplateRulesPage,
+  '/admin/rules': TemplateRulesPage,
+  '/admin/services': ServicesPage,
+  '/admin/plans': PlansPage,
+  '/admin/shop': ShopAdminPage,
+  '/admin/github-trending': GithubTrendingPage,
+};
+
+// The console's own pages are small; once an admin page is up they are fetched
+// in the background so moving between admin pages stays instant. Chat and
+// video (KaTeX, canvas) stay on demand.
+const ADMIN_CONSOLE_PAGES = [...new Set([...Object.values(ADMIN_PAGE_BY_ROUTE), LandingPage, UserDetailPage])];
+
+function pagesForLocation(url: URL): Array<{ preload: () => Promise<void> }> {
+  const route = normalizeRoute(url.pathname);
+  if (WORKBENCH_ROUTES.has(route)) {
+    const view = route === '/admin/chat' ? 'chat' : route === '/admin/video' ? 'video' : url.searchParams.get('view');
+    return view === 'chat' ? [ChatPage] : view === 'video' ? [VideoPage] : [];
+  }
+  if (/^\/admin\/user\/[^/]+$/.test(route)) return [UserDetailPage];
+  if (ADMIN_ROUTES.has(route)) return [ADMIN_PAGE_BY_ROUTE[route] ?? LandingPage];
+  if (route === '/user/change-password') return [UserPasswordPage];
+  if (route === '/user/panel') return [UserPanelPage];
+  if (route === '/logout' || route === '/user/logout') return [LogoutPage];
+  return [];
+}
+
+function preloadLocation(href: string): Promise<void> {
+  return Promise.all(pagesForLocation(new URL(href, window.location.origin)).map(page => page.preload())).then(() => undefined);
+}
+
 function WorkbenchRoute({ route, publicHost, authenticated, status, loginOpen, onAuthenticated, onUnauthenticated, onClose }: {
   route: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'authenticated' | 'unavailable'; loginOpen: boolean; onAuthenticated: (returnTo?: string) => Promise<void>; onUnauthenticated: () => void; onClose: () => void;
 }) {
@@ -267,9 +339,9 @@ function WorkbenchRoute({ route, publicHost, authenticated, status, loginOpen, o
   const view = route === '/admin/chat' ? 'chat' : route === '/admin/video' ? 'video' : location.searchParams.get('view');
   const returnTo = sanitizeReturnTo(location.searchParams.get('next') || (!LOGIN_ROUTES.has(route) ? `${route}${location.search}` : undefined));
   return <PortalSessionContext.Provider value={{ authenticated, status, onLogin: onUnauthenticated }}>
-    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}>{view === 'chat' ? <ChatPage publicHost={publicHost} authenticated={authenticated} onUnauthenticated={onUnauthenticated} shell={PortalShell}/>
+    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}><Suspense fallback={null}>{view === 'chat' ? <ChatPage publicHost={publicHost} authenticated={authenticated} onUnauthenticated={onUnauthenticated} shell={PortalShell}/>
       : view === 'video' ? authenticated ? <VideoPage publicHost={publicHost} shell={PortalShell}/> : <VideoAccessState/>
-        : <ShopPage key={location.search}/>}</div>
+        : <ShopPage key={location.search}/>}</Suspense></div>
     <LoginModal open={loginOpen} realm={route === '/user/login' ? 'user' : 'admin'} passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
   </PortalSessionContext.Provider>;
 }
@@ -289,7 +361,24 @@ function App() {
   const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/admin/chat' || route === '/admin/video') && !authenticated && session.status !== 'loading') || needsAdminLogin;
   const protectedReturnTo = protectedRouteReturnTo(route, location.search);
 
-  const navigate = useCallback((path: string) => { pushReactHistory(path); setLocationKey(currentLocationKey()); }, []);
+  // Back/forward has already changed the URL: load the page's code, then render
+  // it (usually instant, the page was visited). A chunk that cannot load (for
+  // example a stale tab after a deploy replaced the release) falls back to a
+  // full load.
+  const syncLocation = useCallback(() => {
+    const target = currentLocationKey();
+    return preloadLocation(target).then(
+      () => { if (currentLocationKey() === target) setLocationKey(target); },
+      () => { window.location.replace(target); },
+    );
+  }, []);
+  const navigate = useCallback((path: string) => {
+    const token = ++navigationSequence;
+    void preloadLocation(path).then(
+      () => { if (token !== navigationSequence) return; pushReactHistory(path); setLocationKey(currentLocationKey()); },
+      () => { window.location.assign(path); },
+    );
+  }, []);
   const closeLogin = useCallback(() => { setLoginRequested(false); if (LOGIN_ROUTES.has(route)) navigate(previewPath('/')); }, [navigate, route]);
   const requestLogin = useCallback(() => { setLoginRequested(true); }, []);
   const handleAuthenticated = useCallback(async (candidate?: string) => {
@@ -297,21 +386,36 @@ function App() {
     setLoginRequested(false);
     const returnTo = sanitizeReturnTo(candidate) || (route === '/user/login' ? '/user/panel' : '/');
     const destination = previewPath(returnTo);
+    try {
+      await preloadLocation(destination);
+    } catch {
+      window.location.assign(destination);
+      return;
+    }
+    navigationSequence += 1;
     pushReactHistory(returnTo);
     if (destination !== returnTo) replaceReactHistory(destination);
     setLocationKey(currentLocationKey());
   }, [route, session]);
 
   useLayoutEffect(() => { applyRouteDocument(route); }, [route, location.search]);
-  useEffect(() => installClientNavigation(() => setLocationKey(currentLocationKey())), []);
+  useEffect(() => installClientNavigation(() => { void syncLocation(); }), [syncLocation]);
+  useEffect(() => {
+    if (!isProtectedAdminRoute || !authenticated) return undefined;
+    const timer = window.setTimeout(() => {
+      for (const page of ADMIN_CONSOLE_PAGES) void page.preload().catch(() => undefined);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [isProtectedAdminRoute, authenticated]);
   useEffect(() => { if (LOGIN_ROUTES.has(route)) setLoginRequested(true); }, [route]);
 
   if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} status={authenticated ? 'authenticated' : sessionStatus} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
-  if (isProtectedAdminRoute) return <><AdminRoute route={route} locationKey={locationKey} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
-  if (route === '/user/change-password') return <UserPasswordPage publicHost={publicHost}/>;
-  if (route === '/user/panel') return <UserPanelPage publicHost={publicHost}/>;
-  if (route === '/logout' || route === '/user/logout') return <LogoutPage realm={route === '/logout' ? 'admin' : 'user'} publicHost={publicHost}/>;
+  if (isProtectedAdminRoute) return <><Suspense fallback={null}><AdminRoute route={route} locationKey={locationKey} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/></Suspense><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
+  if (route === '/user/change-password') return <Suspense fallback={null}><UserPasswordPage publicHost={publicHost}/></Suspense>;
+  if (route === '/user/panel') return <Suspense fallback={null}><UserPanelPage publicHost={publicHost}/></Suspense>;
+  if (route === '/logout' || route === '/user/logout') return <Suspense fallback={null}><LogoutPage realm={route === '/logout' ? 'admin' : 'user'} publicHost={publicHost}/></Suspense>;
   throw new Error(`Unsupported React entry: ${window.location.pathname}`);
 }
 
-reactRoot.render(<App/>);
+// A full page load waits for its own page chunk, so it never shows a fallback.
+void preloadLocation(window.location.href).catch(() => undefined).then(() => { reactRoot.render(<App/>); });
