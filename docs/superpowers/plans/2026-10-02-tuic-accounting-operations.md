@@ -1,8 +1,13 @@
 # TUIC authenticated payload accounting: operator runbook
 
-Status: source implementation and offline tooling only. No production migration,
-commit, push or restart is authorized by this document. The real runtime gate
-has **not passed**: official sing-box1.14.2 assets omit `with_v2ray_api`.
+Status: on 2026-10-07 the CI-built artifact (run 37001954390) passed the real
+runtime gate with the managed client below: TCP/UDP over native and QUIC relay,
+IPv4/IPv6, exact per-user counters and explicit unknown-UUID rejection.
+This runbook itself grants no production authorization. The session has separate
+authorization for publication and activation after the required checks and
+independent review. The historical first runtime attempt was blocked because
+official sing-box1.14.2 assets omit `with_v2ray_api`. A trusted custom artifact is
+now available; its real runtime gate must pass with the managed client below.
 
 ## What changes after a separately approved activation
 
@@ -13,7 +18,8 @@ Missing or unrecognized runtime config cannot silently switch an activated node
 back to aggregate metering. A missing/corrupt mode or active checkpoint fails
 TUIC closed. Named authenticated users expose cumulative upload/downlink counters through a
 loopback-only V2Ray gRPC API on127.0.0.1:10086, distinct from Xray10085. Existing
-Xray CLI queries these without reset. Upload is rx; download is tx. Raw payload
+The managed generic gRPC client queries these without reset. Upload is rx;
+download is tx. Raw payload
 bytes enter existing daily/cycle usage, quota decisions and display2.28. Shanghai
 buckets and user expiry/disable/quota logic remain authoritative. The first
 sample begins from zero in the **new runtime generation**, never from old nft
@@ -84,7 +90,7 @@ Use the restricted authorized push path above, or separately approve a build-onl
 workflow/recipe merge and dispatch, or use an authorized trusted external builder.
 For every path record the run URL and exact source commit, download the artifact,
 verify provenance/checksums, and run `runtime-gate.py` on isolated ports with the
-verified local Xray binary before considering production activation.
+prepared stats Python environment before considering production activation.
 
 Use a separate trusted builder with Go1.26.8 (the toolchain in the inspected
 official1.14.2 artifact), at least4GiB free disk and2GiB available memory:
@@ -94,7 +100,7 @@ bash scripts/tuic/build-runtime.sh /absolute/new/tuic-build
 python3 scripts/tuic/runtime-gate.py \
   --binary /absolute/new/tuic-build/sing-box \
   --sha256 TRUSTED_BUILDER_BINARY_SHA256 \
-  --xray /absolute/verified/xray
+  --stats-python /tmp/tuic-stats-stage-TASK/venv/bin/python
 ```
 
 The recipe pins the upstream source archive:
@@ -108,16 +114,64 @@ hash; a hash supplied by an unknown binary provider is not sufficient.
 
 The fixture checks real config parsing, two authorized identities, rejected
 third identity, TCP and both native/QUIC UDP relays, IPv4/IPv6 connections, h3/TLS,
-exact upload/download payload counters and non-reset Xray CLI interoperability.
+exact upload/download payload counters and non-reset managed-client interoperability.
 It uses temporary self-signed certs, synthetic credentials and ephemeral ports;
 no production API is read or reset. A failure is a release blocker, not a skip.
 The official binary SHA256`fc9c6e6ab345f045b16a0ed10d1ff28d68e8e56e7749fca30738d1406e98d7b8`
 fails the build-tags gate and must not be installed for accounting.
 
-Local build was not attempted on the production host: only roughly150MiB root
+At the initial artifact stage, local build was not attempted on the production host: only roughly150MiB root
 and336MiB shared-memory storage were free, available RAM about252MiB with swap
-already in use. SDK+source+dependency+compiler working space cannot retain a
-credible reserve. No reachable trusted external builder was configured.
+already in use. At that stage SDK+source+dependency+compiler working space could
+not retain a credible reserve and no reachable trusted builder was configured.
+The later trusted artifact has SHA256
+`0e4ffde4260808498722e2a4f040f15ba8763bae7b577821ea524fb4f67977c7`,
+version1.14.2, `with_quic,with_v2ray_api`, Go1.26.8 and CGOdisabled. Keep the
+source archive and artifact evidence; availability alone is not a runtime PASS.
+
+## Managed stats client and dedicated dependency
+
+The pinned source rewrites the generated service descriptor at initialization.
+The actual RPC is
+`/v2ray.core.app.stats.command.StatsService/QueryStats`; the Xray CLI namespace is
+incompatible. The helper sends only repeated `patterns` field3 with `user>>>`.
+Deprecated singular field1 is ignored by this server. Reset field2 and regexp
+field4 are omitted and default to false; there is no reset option in the helper.
+The strict wire decoder accepts omitted zero values and rejects negative int64,
+overflowed/truncated fields, duplicate scalars and invalid UTF8. Existing
+accounting validation then rejects unknown or duplicate authenticated identities.
+
+The limiter runs `/usr/bin/python3`, separately from the web environment. Its
+observation launches the fixed managed command:
+
+```sh
+/root/hysteria/.venv-tuic-stats/bin/python -s -E \
+  /root/hysteria/tuic_stats_client.py --endpoint 127.0.0.1:10086
+```
+
+The helper imports grpcio lazily, accepts only a dedicated literal loopback
+endpoint, disables gRPC HTTP proxies, uses a3-second RPC deadline and a2MiB
+receive/output cap. The parent command has a5-second deadline and a joint2MiB
+stdout/stderr cap; generation checks still bracket the entire observation.
+Legacy mode does not launch this helper or require grpcio.
+
+`requirements-tuic-stats.txt` pins grpcio1.74.0 and the reviewed CPython3.12 Linux
+amd64 wheel hash. No mandatory dependencies are installed. Prepare a new
+private task directory with the trusted external pip, using no pip in the venv:
+
+```sh
+python3 -I scripts/tuic/stage-stats-deps.py \
+  --output /tmp/tuic-stats-stage-TASK \
+  --python /usr/bin/python3 --pip-python /usr/bin/python3
+```
+
+The helper permits only a new `/tmp` or `/dev/shm/tuic-stats-stage-*` directory,
+uses `venv --without-pip`, hash checks, binary wheels, `--no-deps` and
+`--no-compile`, and verifies the6,180,664-byte wheel and15,251,027-byte unpacked
+size. Its task-owned staging cap is24MiB; disk staging keeps256MiB free. It
+prepares a venv and never installs deployed files. A reviewed maintenance release
+must place that venv at `/root/hysteria/.venv-tuic-stats` and copy the helper;
+the general legacy installer retains its migrated-mode guard.
 
 ## Offline candidate and preflight
 
@@ -162,7 +216,9 @@ reviewed metered maintenance release rather than bypassing its guard.
    executable, `tuic.json`, unit and drop-ins, nft diagnostic state and accounting
    files into a mode0700 backup directory. Record checksums and exact UTC/Shanghai
    activation timestamps. Do not reset or attribute historical nft totals.
-3. Install verified source modules including `tuic_user_meter.py`; install the
+3. Install verified source modules including `tuic_user_meter.py` and
+   `tuic_stats_client.py`, plus the prepared dedicated stats venv at
+   `/root/hysteria/.venv-tuic-stats`; install the
    tested binary at `/usr/local/lib/hy2/sing-box-tuic-1.14.2` mode0755 and candidate
    TUIC config mode0600. Install the prepared systemd drop-in for the existing
    service. Preserve all other service restrictions. Under `usage.lock`, run
@@ -173,7 +229,8 @@ reviewed metered maintenance release rather than bypassing its guard.
    never overwrite it silently. Do not change existing user ledger totals.
 4. Validate the installed config again, daemon-reload and start the existing
    TUIC unit. Verify service invocation identity, loopback-only API ownership,
-   IPv4/IPv6 UDP9443 and TLS/h3. The live CLI check must omit `-reset`.
+   IPv4/IPv6 UDP9443 and TLS/h3. Use the managed helper above for the live
+   non-reset observation; preserve its fixed request and endpoint restrictions.
 5. Run a controlled authorized test user, verify its raw byte delta and2.28 display,
    disabled/expired rejection, quota cutoff and that a second sample does not
    duplicate credit. Resume the limiter timer and panel. Save the activation

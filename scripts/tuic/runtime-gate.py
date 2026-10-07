@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Isolated real TUICv5 TCP/UDP, identity and Xray stats interoperability gate.
+"""Isolated real TUICv5 TCP/UDP, identity and managed stats client gate.
 
 Requires an explicitly supplied trusted binary and its SHA256. All sockets,
 certificates, credentials and subprocesses belong to this fixture. No systemd,
@@ -301,8 +301,11 @@ def run(args):
         wait_port(api_port, server)
 
         def stats():
-            output = meter.bounded_command([args.xray, 'api', 'statsquery',
-                                            f'--server=127.0.0.1:{api_port}', '-pattern', 'user>>>'])
+            output = meter.bounded_command([
+                args.stats_python, '-s', '-E',
+                str(Path(__file__).resolve().parents[2] / 'hysteria/tuic_stats_client.py'),
+                '--endpoint', f'127.0.0.1:{api_port}',
+            ], timeout=5, limit=2 * 1024 * 1024)
             return meter.parse_stats(json.loads(output), {'alice', 'bob'})
 
         initial = stats()
@@ -381,7 +384,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', required=True)
     parser.add_argument('--sha256', required=True)
-    parser.add_argument('--xray', default='/usr/local/bin/xray')
+    parser.add_argument('--stats-python', default='/root/hysteria/.venv-tuic-stats/bin/python')
     args = parser.parse_args()
     try:
         result = run(args)

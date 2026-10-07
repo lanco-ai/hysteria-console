@@ -41,7 +41,7 @@ def test_title_contains_date_and_bytes():
     assert 'GB' in out  # fmt_bytes formats as 1.40 GB
 
 
-def test_admin_render_includes_sparkline_column(tmp_path, monkeypatch):
+def test_admin_render_includes_sparkline_column(isolated_panel_state, tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json', raising=False)
     monkeypatch.setattr(ss, 'USAGE_FILE', tmp_path / 'usage.json', raising=False)
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json', raising=False)
@@ -60,7 +60,7 @@ def test_admin_render_includes_sparkline_column(tmp_path, monkeypatch):
     assert 'class="spark"' in out
 
 
-def test_admin_render_does_not_load_retired_poll_script(tmp_path, monkeypatch):
+def test_admin_render_does_not_load_retired_poll_script(isolated_panel_state, tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json', raising=False)
     monkeypatch.setattr(ss, 'USAGE_FILE', tmp_path / 'usage.json', raising=False)
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json', raising=False)

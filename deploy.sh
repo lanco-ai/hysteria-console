@@ -381,6 +381,7 @@ build_durable_artifact_set() {
     tuic_config.py \
     tuic_meter.py \
     tuic_user_meter.py \
+    tuic_stats_client.py \
     usage_dashboard.py \
     user_compat.py \
     hysteria_update.py \
@@ -1976,6 +1977,7 @@ for artifact in \
   "$HY_DIR/tuic_config.py" \
   "$HY_DIR/tuic_meter.py" \
   "$HY_DIR/tuic_user_meter.py" \
+  "$HY_DIR/tuic_stats_client.py" \
   "$HY_DIR/usage_dashboard.py" \
   "$HY_DIR/user_compat.py" \
   "$HY_DIR/display.py" \
@@ -2179,6 +2181,7 @@ render "$REPO_DIR/hysteria/xray_config.py"           "$HY_DIR/xray_config.py"
 render "$REPO_DIR/hysteria/tuic_config.py"           "$HY_DIR/tuic_config.py"
 render "$REPO_DIR/hysteria/tuic_meter.py"            "$HY_DIR/tuic_meter.py"
 render "$REPO_DIR/hysteria/tuic_user_meter.py"            "$HY_DIR/tuic_user_meter.py"
+render "$REPO_DIR/hysteria/tuic_stats_client.py"       "$HY_DIR/tuic_stats_client.py"
 render "$REPO_DIR/hysteria/usage_dashboard.py"       "$HY_DIR/usage_dashboard.py"
 render "$REPO_DIR/hysteria/user_compat.py"           "$HY_DIR/user_compat.py"
 render "$REPO_DIR/hysteria/hysteria_update.py"       "$HY_DIR/hysteria_update.py"
@@ -2333,6 +2336,7 @@ chmod 700 \
   "$HY_DIR/tuic_config.py" \
   "$HY_DIR/tuic_meter.py" \
   "$HY_DIR/tuic_user_meter.py" \
+  "$HY_DIR/tuic_stats_client.py" \
   "$HY_DIR/usage_dashboard.py" \
   "$HY_DIR/user_compat.py" \
   "$HY_DIR/display.py" \

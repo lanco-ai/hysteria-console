@@ -190,7 +190,7 @@ def test_expired_alert_fires_once_per_expiry_date(tmp_path, monkeypatch):
     assert b'expiry_expired' in sent[0]['body']
 
 
-def test_reset_paths_clear_cycle_daily_hourly_for_user(tmp_path, monkeypatch):
+def test_reset_paths_clear_cycle_daily_hourly_for_user(isolated_panel_state, tmp_path, monkeypatch):
     """Actual POST resets must clear current history and preserve old history."""
     import json
     import subscription_service as ss

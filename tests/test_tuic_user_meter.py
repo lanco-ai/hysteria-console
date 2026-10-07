@@ -33,6 +33,29 @@ def test_authenticated_direction_mapping_and_valid_empty():
     assert m.parse_stats({}, {'alice'}) == {}
 
 
+def test_observe_uses_the_managed_client_and_keeps_generation_guard(monkeypatch):
+    m = meter()
+    calls = []
+    monkeypatch.setattr(m, 'runtime_generation', lambda: 'stable-generation')
+
+    def collect(command, **kwargs):
+        calls.append((command, kwargs))
+        return json.dumps(sample()).encode()
+
+    monkeypatch.setattr(m, 'bounded_command', collect)
+    assert m.observe('127.0.0.1:10086', {'alice', 'bob'}) == (
+        'stable-generation', {'alice': {'rx': 10, 'tx': 0}, 'bob': {'rx': 0, 'tx': 20}},
+    )
+    assert calls == [([
+        '/root/hysteria/.venv-tuic-stats/bin/python', '-s', '-E',
+        '/root/hysteria/tuic_stats_client.py', '--endpoint', '127.0.0.1:10086',
+    ], {'timeout': 5, 'limit': 2 * 1024 * 1024})]
+    generations = iter(['before', 'after'])
+    monkeypatch.setattr(m, 'runtime_generation', lambda: next(generations))
+    with pytest.raises(state_store.StateStoreError, match='generation changed'):
+        m.observe('127.0.0.1:10086', {'alice', 'bob'})
+
+
 @pytest.mark.parametrize(
     'data',
     [
@@ -171,22 +194,27 @@ def test_query_is_nonreset_and_checks_generation_on_both_sides(monkeypatch):
     monkeypatch.setattr(m, 'runtime_generation', lambda: next(generations))
 
     def run(command, **kwargs):
-        commands.append(command)
+        commands.append((command, kwargs))
         return json.dumps(sample()).encode()
 
     monkeypatch.setattr(m, 'bounded_command', run)
     generation, counters = m.observe('127.0.0.1:10086', {'alice', 'bob'})
     assert generation == 'boot:a:1'
     assert counters['alice']['rx'] == 10
+    # The managed client has no reset option; the Xray CLI cannot call the
+    # sing-box stats namespace at all.
     assert commands == [
-        [
-            '/usr/local/bin/xray',
-            'api',
-            'statsquery',
-            '--server=127.0.0.1:10086',
-            '-pattern',
-            'user>>>',
-        ]
+        (
+            [
+                '/root/hysteria/.venv-tuic-stats/bin/python',
+                '-s',
+                '-E',
+                '/root/hysteria/tuic_stats_client.py',
+                '--endpoint',
+                '127.0.0.1:10086',
+            ],
+            {'timeout': 5, 'limit': 2 * 1024 * 1024},
+        )
     ]
 
 

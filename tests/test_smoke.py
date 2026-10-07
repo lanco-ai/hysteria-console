@@ -26,7 +26,7 @@ def test_usage_routes_wired_in_dispatcher():
     assert '/static/style.css' not in page
 
 
-def test_render_usage_page_smoke(tmp_path, monkeypatch):
+def test_render_usage_page_smoke(isolated_panel_state, tmp_path, monkeypatch):
     """Render /admin/usage end-to-end against an empty state."""
     monkeypatch.setattr(ss, "USERS_FILE", tmp_path / "users.json", raising=False)
     monkeypatch.setattr(ss, "USAGE_FILE", tmp_path / "usage.json", raising=False)

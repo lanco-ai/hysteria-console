@@ -1,10 +1,23 @@
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts/hy2-preflight.sh'
+
+
+def _minimal_repository(tmp_path):
+    root = tmp_path / 'repo'
+    scripts = root / 'scripts'
+    scripts.mkdir(parents=True)
+    script = scripts / SCRIPT.name
+    shutil.copyfile(SCRIPT, script)
+    (root / 'sample.py').write_text('answer = 42\n', encoding='utf-8')
+    (root / 'sample.sh').write_text('#!/bin/sh\nexit 0\n', encoding='utf-8')
+    (root / 'sample.js').write_text('const answer = 42;\n', encoding='utf-8')
+    return root, script
 
 
 def _write_command(bin_dir, name, body):
@@ -105,10 +118,11 @@ def test_preflight_is_local_and_read_only_by_construction():
 
 def test_preflight_runs_all_stages_with_stubbed_commands(tmp_path):
     env, command_log = _stubbed_environment(tmp_path)
+    root, script = _minimal_repository(tmp_path)
 
     result = subprocess.run(
-        ['/bin/bash', str(SCRIPT)],
-        cwd=ROOT,
+        ['/bin/bash', str(script)],
+        cwd=root,
         env=env,
         capture_output=True,
         text=True,
@@ -133,10 +147,11 @@ def test_preflight_runs_all_stages_with_stubbed_commands(tmp_path):
 
 def test_preflight_stops_at_first_failed_stage(tmp_path):
     env, command_log = _stubbed_environment(tmp_path, bash_status=12)
+    root, script = _minimal_repository(tmp_path)
 
     result = subprocess.run(
-        ['/bin/bash', str(SCRIPT)],
-        cwd=ROOT,
+        ['/bin/bash', str(script)],
+        cwd=root,
         env=env,
         capture_output=True,
         text=True,
@@ -152,10 +167,11 @@ def test_preflight_stops_at_first_failed_stage(tmp_path):
 
 def test_preflight_redacts_git_diff_output_on_failure(tmp_path):
     env, _ = _stubbed_environment(tmp_path, git_diff_status=3)
+    root, script = _minimal_repository(tmp_path)
 
     result = subprocess.run(
-        ['/bin/bash', str(SCRIPT)],
-        cwd=ROOT,
+        ['/bin/bash', str(script)],
+        cwd=root,
         env=env,
         capture_output=True,
         text=True,

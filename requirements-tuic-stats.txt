@@ -1,0 +1,2 @@
+# CPython3.12 Linux amd64 wheel; dedicated TUIC stats environment only.
+grpcio==1.74.0 --hash=sha256:176d60a5168d7948539def20b2a3adcce67d72454d9ae05969a2e73f3a0feee7

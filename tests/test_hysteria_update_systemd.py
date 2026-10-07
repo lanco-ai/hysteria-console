@@ -19,13 +19,17 @@ def _exec_start():
     raise AssertionError("updater service has no ExecStart")
 
 
-def test_updater_service_command_can_import_sibling_modules():
+def test_updater_service_command_can_import_sibling_modules(tmp_path):
     """The service command must retain imports from the trusted app directory."""
     command = [
         arg.replace("/root/hysteria", str(ROOT / "hysteria"))
         for arg in _exec_start()
     ]
     command = ["--bogus" if arg == "--auto" else arg for arg in command]
+    locks = tmp_path / 'locks'
+    locks.mkdir(mode=0o700)
+    command[0] = str(ROOT / 'scripts/hy2-lock-exec.py')
+    command[2] = str(locks / 'deploy.lock')
 
     result = subprocess.run(
         command,

@@ -110,7 +110,7 @@ def test_check_route_uses_shared_updater_lock_helper(tmp_path, monkeypatch):
     assert headers["location"].endswith("msg=err:hysteria_update_busy")
 
 
-def test_health_snapshot_requires_auth_and_returns_all_regions(tmp_path, monkeypatch):
+def test_health_snapshot_requires_auth_and_returns_all_regions(isolated_panel_state, tmp_path, monkeypatch):
     _configure_admin(tmp_path, monkeypatch)
     monkeypatch.setattr(
         ss,
@@ -205,7 +205,7 @@ def test_apply_route_schedules_worker_and_returns_ajax_immediately(
 
 
 def test_update_status_endpoint_is_authenticated_and_secret_free(
-    tmp_path, monkeypatch,
+    isolated_panel_state, tmp_path, monkeypatch,
 ):
     _configure_admin(tmp_path, monkeypatch)
     monkeypatch.setattr(

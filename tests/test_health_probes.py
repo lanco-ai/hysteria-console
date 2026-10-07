@@ -145,7 +145,7 @@ def test_probe_online_sums_values(tmp_path, monkeypatch):
     assert '5' in out['label']
 
 
-def test_render_health_page_loads(tmp_path, monkeypatch):
+def test_render_health_page_loads(isolated_panel_state, tmp_path, monkeypatch):
     f = tmp_path / 'usage.json'; f.write_text('{}')
     g = tmp_path / 'online.json'; g.write_text('{}')
     c = tmp_path / 'cost_calibration.json'; c.write_text('{}')

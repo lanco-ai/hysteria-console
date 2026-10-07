@@ -409,7 +409,7 @@ def test_landing_ip_can_be_cleared_via_admin_update(tmp_path, monkeypatch):
     assert "landing_ip" not in saved
 
 
-def test_empty_landing_omits_panel_section():
+def test_empty_landing_omits_panel_section(isolated_panel_state):
     html = ss.render_user_panel(
         "panel.test", "https://panel.test", "alice", "alice-token", _alice(),
         session_auth=True,

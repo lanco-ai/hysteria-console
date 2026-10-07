@@ -6,8 +6,10 @@ modules can be imported for testing.
 """
 
 import importlib
+import os
 import sys
 import types
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -40,3 +42,52 @@ def _install_fcntl_stub() -> None:
 
 
 _install_fcntl_stub()
+
+
+@pytest.fixture
+def isolated_panel_state(tmp_path, monkeypatch):
+    """Opt-in complete core state for positive render tests only."""
+    import subscription_service as ss
+
+    root = tmp_path / 'panel'
+    for name, value in vars(ss).copy().items():
+        if not name.isupper() or not isinstance(value, Path) or name == '_STATIC_DIR':
+            continue
+        try:
+            relative = value.relative_to('/root/hysteria')
+        except ValueError:
+            relative = Path('xray') / value.name
+        destination = root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(ss, name, destination)
+    monkeypatch.setattr(ss, 'HY_API_SECRET_FILE', str(root / 'api_secret'))
+    for name in ('USERS_FILE', 'META_FILE', 'USAGE_FILE', 'USAGE_DAILY_FILE'):
+        getattr(ss, name).write_text('{}', encoding='utf-8')
+    return root
+
+
+@pytest.fixture
+def xray_runtime_group(monkeypatch):
+    """Use a real existing group while retaining real ownership checks."""
+    import grp
+
+    import xray_config as xc
+
+    monkeypatch.setattr(xc, 'CONFIG_GROUP', grp.getgrgid(os.getgid()).gr_name)
+
+
+@pytest.fixture(autouse=True)
+def isolated_default_video_stores(tmp_path, monkeypatch):
+    """Only route defaults are redirected; injected stores/runners stay real."""
+    import web_api.video_routes as routes
+    from web_api.video_service import AssetStore, RunService, VideoSettingsStore, WorkflowStore
+
+    root = tmp_path / 'default-video'
+    monkeypatch.setattr(
+        routes, 'VideoSettingsStore', partial(VideoSettingsStore, path=root / 'settings.json')
+    )
+    monkeypatch.setattr(
+        routes, 'WorkflowStore', partial(WorkflowStore, path=root / 'workflows.json')
+    )
+    monkeypatch.setattr(routes, 'AssetStore', partial(AssetStore, root=root / 'assets'))
+    monkeypatch.setattr(routes, 'RunService', partial(RunService, path=root / 'runs.json'))

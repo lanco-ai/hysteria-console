@@ -232,7 +232,7 @@ def test_load_heatmap_grid_shape(monkeypatch, tmp_path):
     assert all(len(row["hours"]) == 24 for row in grid)
 
 
-def test_aggregate_stats_keys(monkeypatch, tmp_path):
+def test_aggregate_stats_keys(isolated_panel_state, monkeypatch, tmp_path):
     monkeypatch.setattr(ss, "USAGE_HOURLY_FILE", tmp_path / "usage_hourly.json")
     monkeypatch.setattr(ss, "USERS_FILE", tmp_path / "users.json")
     monkeypatch.setattr(ss, "USAGE_FILE", tmp_path / "usage.json")

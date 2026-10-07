@@ -450,13 +450,15 @@ def observe(endpoint, known_users):
     before = runtime_generation()
     raw = bounded_command(
         [
-            '/usr/local/bin/xray',
-            'api',
-            'statsquery',
-            '--server=' + endpoint,
-            '-pattern',
-            'user>>>',
-        ]
+            '/root/hysteria/.venv-tuic-stats/bin/python',
+            '-s',
+            '-E',
+            '/root/hysteria/tuic_stats_client.py',
+            '--endpoint',
+            endpoint,
+        ],
+        timeout=5,
+        limit=2 * 1024 * 1024,
     )
     after = runtime_generation()
     if before != after:

@@ -104,7 +104,7 @@ def test_render_profile_qr_svg_uses_selected_subscription_url(monkeypatch):
     assert captured['value'] == 'https://h/sub/alice?token=tok&profile=safe'
 
 
-def test_user_panel_defers_qr_generation_until_requested(tmp_path, monkeypatch):
+def test_user_panel_defers_qr_generation_until_requested(isolated_panel_state, tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
@@ -229,7 +229,7 @@ def test_user_password_login_reaches_clean_panel_url(tmp_path, monkeypatch):
         thread.join(timeout=3)
 
 
-def test_user_must_change_initial_password_before_opening_panel(tmp_path, monkeypatch):
+def test_user_must_change_initial_password_before_opening_panel(isolated_panel_state, tmp_path, monkeypatch):
     import http.client
     import threading
     from http.server import ThreadingHTTPServer
@@ -517,7 +517,7 @@ def test_rotate_token_rejects_wrong_current_token(tmp_path, monkeypatch):
     assert stored['alice']['sub_token'] == 'OLD-TOKEN'
 
 
-def test_user_panel_renders_rotate_token_form_with_current_token(tmp_path, monkeypatch):
+def test_user_panel_renders_rotate_token_form_with_current_token(isolated_panel_state, tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
@@ -650,7 +650,7 @@ def test_settings_appears_in_sidebar_nav():
                for key, href, _label, _icon in ss._SIDEBAR_NAV)
 
 
-def test_health_page_has_test_alert_button_and_flash():
+def test_health_page_has_test_alert_button_and_flash(isolated_panel_state):
     out = ss.render_health('host', flash='alert sent')
     assert 'action="/admin/test-alert"' in out
     assert '发送测试告警' in out
@@ -658,7 +658,7 @@ def test_health_page_has_test_alert_button_and_flash():
     assert '未配置告警通道' in ss.render_health('host', flash='err:alert_no_channels')
 
 
-def test_rules_page_renders_rule_pack_form(tmp_path, monkeypatch):
+def test_rules_page_renders_rule_pack_form(isolated_panel_state, tmp_path, monkeypatch):
     template = tmp_path / 'template.yaml'
     template.write_text('rules:\n  - MATCH,🚀 节点选择\n')
     users_file = tmp_path / 'users.json'
@@ -674,7 +674,7 @@ def test_rules_page_renders_rule_pack_form(tmp_path, monkeypatch):
     assert '<option value="alice">alice</option>' in page
 
 
-def test_apply_rule_pack_to_user_writes_clash_overrides(tmp_path, monkeypatch):
+def test_apply_rule_pack_to_user_writes_clash_overrides(isolated_panel_state, tmp_path, monkeypatch):
     users_file = tmp_path / 'users.json'
     users_file.write_text(json.dumps({'alice': {'sub_token': 'tok'}}))
     monkeypatch.setattr(ss, 'USERS_FILE', users_file)
@@ -960,7 +960,7 @@ def test_user_clash_direct_overrides_survive_safe_profile(tmp_path, monkeypatch)
                for rule in extra_rules)
 
 
-def test_user_panel_lists_subscription_profiles(tmp_path, monkeypatch):
+def test_user_panel_lists_subscription_profiles(isolated_panel_state, tmp_path, monkeypatch):
     monkeypatch.setattr(ss, 'USERS_FILE', tmp_path / 'users.json')
     monkeypatch.setattr(ss, 'USAGE_DAILY_FILE', tmp_path / 'usage_daily.json')
     monkeypatch.setattr(ss, 'ONLINE_FILE', tmp_path / 'online.json')
@@ -1794,7 +1794,7 @@ def test_fire_test_alert_dispatches_on_background_thread(monkeypatch):
     assert captured['config'] is cfg
 
 
-def test_health_flash_reports_dispatched_not_guaranteed_sent(tmp_path, monkeypatch):
+def test_health_flash_reports_dispatched_not_guaranteed_sent(isolated_panel_state, tmp_path, monkeypatch):
     out = ss.render_health('host', flash='alert dispatched')
     assert '后台发送' in out
 

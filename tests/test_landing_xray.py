@@ -7,6 +7,8 @@ import subscription_profiles as profiles
 import subscription_service as ss
 import xray_config as xc
 
+pytestmark = pytest.mark.usefixtures('xray_runtime_group')
+
 
 def _node(**overrides):
     raw = {

@@ -11,6 +11,8 @@ import pytest
 import tuic_config as tc
 import xray_config as xc
 
+pytestmark = pytest.mark.usefixtures('xray_runtime_group')
+
 VALID_GENERATION = '123-0123456789abcdef0123456789abcdef'
 
 

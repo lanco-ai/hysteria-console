@@ -10,6 +10,8 @@ import pytest
 import state_store
 import xray_config as xc
 
+pytestmark = pytest.mark.usefixtures('xray_runtime_group')
+
 
 def _make_cfg(tmp_path, clients_443=None, clients_8443=None):
     cfg = {
