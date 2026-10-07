@@ -7,14 +7,15 @@
 ## 已完成
 
 - 审查报告第一版：`docs/optimization/REPORT.md`
+- P2：健康页只读一次校准文件（600d336）
+- P3：评估后不做（理由见报告）
 - P1：校准文件改为紧凑 JSON（c19914f）
 
 ## 下一步
 
-1. P2：健康页只读一次校准文件，供两处汇总复用（`_build_health_json_payload` 和 `health_widgets.summarize_cost_calibration`）。
-2. P3：`_recent_samples` 从尾部向前扫描，到窗口起点就停。
-3. 用 `pytest --durations=20` 找出最慢的测试，补进报告。
-4. 低风险项做完后，在 REPORT.md 开头写总结，把状态改为“完成”。
+1. 用 `pytest --durations=20` 找出最慢的测试，补进报告。
+2. 继续找低风险的优化点（优先：流量统计每轮的其他文件读写、面板高频接口）。
+3. 低风险项做完后，在 REPORT.md 开头写总结，把状态改为“完成”。
 
 ## 测试方法（在生产机上）
 
