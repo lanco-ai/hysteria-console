@@ -59,6 +59,14 @@ def test_prepare_creates_only_offline_candidate_with_quota_plan(tmp_path):
     for name, value in values.items():
         assert json.loads((tmp_path / (name + '.json')).read_text()) == value
     assert not (tmp_path / 'tuic_user_state.json').exists()
+    override = (output / 'tuic-server.override.conf').read_text().splitlines()
+    assert override[:3] == [
+        '[Service]',
+        'ExecStart=',
+        'ExecStart=/usr/local/lib/hy2/sing-box-tuic-1.14.2 run -c /root/hysteria/tuic.json',
+    ]
+    # sing-box's network monitor needs netlink; the legacy unit only allowed IP/UNIX.
+    assert 'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK' in override
 
 
 def test_legacy_deploy_guard_cannot_bypass_active_mode_by_removing_config(tmp_path):

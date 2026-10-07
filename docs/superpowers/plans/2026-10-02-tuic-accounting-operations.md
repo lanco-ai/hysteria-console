@@ -285,3 +285,35 @@ bounded transport attempt; unexpected or unconfirmed evidence returns
 `BLOCKED/FAIL`. This validates the observed fixture interval, not arbitrary future
 traffic. Unit tests using socketpair/loopback are regression evidence only; the
 supported trusted binary must still pass the real runtime gate before activation.
+
+### Sandboxed gate (required before activation)
+
+The first activation attempt on 2026-10-07 rolled back: sing-box opens a netlink
+socket for its interface/route monitor at startup and exited with
+`create netlink socket: address family not supported by protocol`, because the
+legacy `tuic-server.service` only allows `AF_UNIX AF_INET AF_INET6`. The plain gate
+cannot see this, so the prepared drop-in now also sets
+`RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK` (no `CAP_NET_ADMIN`
+is granted, so netlink stays read-only). Before activation, run the gate inside a
+transient service with the unit's hardening and the drop-in's address families:
+
+```sh
+systemd-run --wait --pipe --collect -p User=root -p Group=root \
+  -p WorkingDirectory="$PWD" -p LimitNOFILE=1048576 \
+  -p AmbientCapabilities=CAP_NET_BIND_SERVICE -p CapabilityBoundingSet=CAP_NET_BIND_SERVICE \
+  -p NoNewPrivileges=true -p PrivateTmp=true -p ProtectSystem=strict \
+  -p ReadOnlyPaths=/root/hysteria -p ProtectKernelTunables=true \
+  -p ProtectKernelModules=true -p ProtectControlGroups=true \
+  -p "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK" \
+  -p RestrictRealtime=true -p RestrictSUIDSGID=true -p LockPersonality=true \
+  -p SystemCallArchitectures=native \
+  /usr/bin/python3 -B scripts/tuic/runtime-gate.py \
+  --binary /usr/local/lib/hy2/sing-box-tuic-1.14.2 --sha256 TRUSTED_BUILDER_BINARY_SHA256 \
+  --stats-python /root/hysteria/.venv-tuic-stats/bin/python
+```
+
+Without `AF_NETLINK` this reports `BLOCKED/FAIL` (fixture process exited); with it
+the 2026-10-07 run passed all four TCP/UDP, native/QUIC, IPv4/IPv6 checks.
+A rolled-back activation leaves an explicit legacy mode file and an unused
+checkpoint (generation null); archive the checkpoint first and then the mode file,
+under `usage.lock`, before initializing again.

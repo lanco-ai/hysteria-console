@@ -16,6 +16,18 @@ import tuic_user_meter
 from timeutil import local_now
 
 
+# Fixed installed binary path; no user-controlled systemd command interpolation.
+# sing-box opens a netlink socket for its interface/route monitor at startup and
+# exits under the legacy unit's AF_UNIX/AF_INET/AF_INET6-only allow-list. The
+# unit grants no CAP_NET_ADMIN, so netlink stays read-only.
+OVERRIDE = (
+    '[Service]\n'
+    'ExecStart=\n'
+    'ExecStart=/usr/local/lib/hy2/sing-box-tuic-1.14.2 run -c /root/hysteria/tuic.json\n'
+    'RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK\n'
+)
+
+
 def prepare(args):
     output = Path(args.output).resolve()
     if output.exists() or output == Path('/root/hysteria') or Path('/root/hysteria') in output.parents:
@@ -53,10 +65,7 @@ def prepare(args):
               'users': len(candidate['inbounds'][0]['users']),
               'remaining_gate': 'runtime-gate.py plus independent review and explicit migration authorization'}
     state_store.save_json(output / 'report.json', report)
-    # Fixed installed binary path; no user-controlled systemd command interpolation.
-    (output / 'tuic-server.override.conf').write_text(
-        '[Service]\nExecStart=\nExecStart=/usr/local/lib/hy2/sing-box-tuic-1.14.2 run -c /root/hysteria/tuic.json\n'
-    )
+    (output / 'tuic-server.override.conf').write_text(OVERRIDE)
     print(json.dumps(report, indent=2))
 
 
