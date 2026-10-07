@@ -126,7 +126,9 @@ def update_sample(path, *, app_raw_bytes, now=None, net_totals=None, max_samples
         'last': last,
         'samples': samples[-int(max_samples):],
     }
-    state_store.save_json(path, state)
+    # Rewritten on every limiter tick; with ~20k samples the indented form is
+    # ~3.6 MB and its dump dominates the tick's JSON cost on a one-core host.
+    state_store.save_json_compact(path, state)
     return state
 
 

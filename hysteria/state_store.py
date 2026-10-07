@@ -85,6 +85,14 @@ def save_json(path, data):
     _write_atomic(p, payload)
 
 
+def save_json_compact(path, data):
+    """Atomic JSON write without indentation, for large machine-only state."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, ensure_ascii=True, separators=(',', ':')) + "\n"
+    _write_atomic(p, payload)
+
+
 def save_text_atomic(path, text):
     """Atomic UTF-8 text write for operator-edited config files."""
     p = Path(path)

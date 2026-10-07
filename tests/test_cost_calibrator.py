@@ -43,6 +43,27 @@ def test_update_sample_uses_previous_net_counter_as_baseline(tmp_path):
     assert state['samples'][0]['net_tx_delta'] == 800
 
 
+def test_update_sample_writes_compact_json_that_round_trips(tmp_path):
+    import json
+
+    path = tmp_path / 'cost_calibration.json'
+    now = datetime(2026, 6, 3, 12, 0, 0)
+    for minutes, total in ((0, 3000), (5, 4400), (10, 5000)):
+        state = cc.update_sample(
+            path,
+            app_raw_bytes=500,
+            now=now + timedelta(minutes=minutes),
+            net_totals={'rx': total // 3, 'tx': total - total // 3, 'total': total, 'ifaces': ['eth0']},
+        )
+
+    text = path.read_text()
+    # One line: the file is rewritten every limiter tick, so no indentation.
+    assert text.count('\n') == 1 and text.endswith('\n')
+    assert ', ' not in text and ': ' not in text
+    assert json.loads(text) == state
+    assert len(state['samples']) == 2
+
+
 def test_summarize_state_returns_weighted_multiplier():
     mib = 1024 ** 2
     state = {
