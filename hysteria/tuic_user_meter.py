@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 import state_store
+from timeutil import billing_day_key
 
 STATE_NAME = 'tuic_user_state.json'
 MODE_NAME = 'tuic_user_mode.json'
@@ -315,7 +316,7 @@ def credit_locked(
         invalid('cannot rebind authenticated identities within a generation')
     delta = calculate_delta(state, generation, counters, users)
     after = copy.deepcopy(before)
-    for name, bucket in (('daily', now.strftime('%Y-%m-%d')), ('usage', month_key)):
+    for name, bucket in (('daily', billing_day_key(now)), ('usage', month_key)):
         for username, diff in delta.items():
             rows = after[name].setdefault(bucket, {})
             row = traffic_limiter.normalize_usage_entry(rows.get(username, 0))

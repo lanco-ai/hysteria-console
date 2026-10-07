@@ -20,8 +20,8 @@ TUIC closed. Named authenticated users expose cumulative upload/downlink counter
 loopback-only V2Ray gRPC API on127.0.0.1:10086, distinct from Xray10085. Existing
 The managed generic gRPC client queries these without reset. Upload is rx;
 download is tx. Raw payload
-bytes enter existing daily/cycle usage, quota decisions and display2.28. Shanghai
-buckets and user expiry/disable/quota logic remain authoritative. The first
+bytes enter existing daily/cycle usage, quota decisions and display2.28. Billing-day
+(UTC) buckets and user expiry/disable/quota logic remain authoritative. The first
 sample begins from zero in the **new runtime generation**, never from old nft
 counters. Historical18.43GiB is not attributable to users and stays excluded.
 
@@ -31,8 +31,13 @@ Graphs are auxiliary: a collector crash after canonical commit can leave an
 hourly/protocol gap; quota daily credit and source watermark recover together.
 Normal restart starts a new generation from zero. An abrupt TUIC crash loses
 unpolled bytes held only in its memory; this is not crash-perfect billing.
-A sample crossing midnight credits the increment to the collection's Shanghai
+A sample crossing 00:00 UTC credits the increment to the collection's billing
 day; cumulative runtime counters do not expose packet timestamps.
+
+Stop `hysteria-traffic-limiter.timer` (and let a running tick finish) before any
+manual `tuic-server.service` restart. Only reloads started by the panel's reload
+worker carry a pending token; an unannounced restart observed by a limiter tick
+is an accounting fault that stops TUIC until operator recovery.
 
 Quota ledgers and source checkpoint are advanced with a durable intent journal
 under `usage.lock`. Before another tick consumes Hysteria/Xray counters, or any

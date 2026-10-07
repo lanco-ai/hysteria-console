@@ -250,7 +250,10 @@ def test_aggregate_stats_cycle_uses_daily_sum(tmp_path, monkeypatch):
 
 def test_zero_cycle_daily_hourly_clears_user_within_cycle(tmp_path, monkeypatch):
     """Manual reset's daily/hourly clearing must zero the affected user's entries
-    inside the current cycle and leave other users / pre-cycle data alone."""
+    inside the current cycle and leave other users / pre-cycle data alone.
+
+    The cycle starts at 00:00 UTC on the settlement day, i.e. 08:00 in the
+    Asia/Shanghai hourly buckets."""
     now = datetime(2026, 5, 14, 10, tzinfo=SH)
     daily = {
         "2026-05-11": {"alice": {"tx": 0, "rx": 9, "total": 9},  # pre-cycle (day 11 < 12)
@@ -260,8 +263,8 @@ def test_zero_cycle_daily_hourly_clears_user_within_cycle(tmp_path, monkeypatch)
         "2026-05-13": {"alice": {"tx": 0, "rx": 1500, "total": 1500}},
     }
     hourly = {
-        "2026-05-11T23": {"alice": {"tx": 0, "rx": 9, "total": 9}},  # pre-cycle
-        "2026-05-12T00": {"alice": {"tx": 0, "rx": 50, "total": 50},
+        "2026-05-12T07": {"alice": {"tx": 0, "rx": 9, "total": 9}},  # 23:00 UTC, pre-cycle
+        "2026-05-12T08": {"alice": {"tx": 0, "rx": 50, "total": 50},  # 00:00 UTC
                           "bob": {"tx": 0, "rx": 5, "total": 5}},
         "2026-05-14T09": {"alice": {"tx": 0, "rx": 100, "total": 100}},
     }
@@ -273,14 +276,14 @@ def test_zero_cycle_daily_hourly_clears_user_within_cycle(tmp_path, monkeypatch)
     # alice's in-cycle entries are zeroed
     assert daily_after["2026-05-12"]["alice"] == {"tx": 0, "rx": 0, "total": 0}
     assert daily_after["2026-05-13"]["alice"] == {"tx": 0, "rx": 0, "total": 0}
-    assert hourly_after["2026-05-12T00"]["alice"] == {"tx": 0, "rx": 0, "total": 0}
+    assert hourly_after["2026-05-12T08"]["alice"] == {"tx": 0, "rx": 0, "total": 0}
     assert hourly_after["2026-05-14T09"]["alice"] == {"tx": 0, "rx": 0, "total": 0}
     # alice's pre-cycle entries untouched
     assert daily_after["2026-05-11"]["alice"]["total"] == 9
-    assert hourly_after["2026-05-11T23"]["alice"]["total"] == 9
+    assert hourly_after["2026-05-12T07"]["alice"]["total"] == 9
     # bob untouched
     assert daily_after["2026-05-12"]["bob"]["total"] == 200
-    assert hourly_after["2026-05-12T00"]["bob"]["total"] == 5
+    assert hourly_after["2026-05-12T08"]["bob"]["total"] == 5
 
 
 def _seed_meta(tmp_path, monkeypatch, **meta):

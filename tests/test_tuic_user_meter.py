@@ -288,22 +288,24 @@ def test_corrupt_checkpoint_schema_raises_state_error(tmp_path, value):
         credit(m, daily, usage)
 
 
-def test_next_shanghai_day_only_credits_new_bytes(tmp_path):
+def test_next_billing_day_only_credits_new_bytes(tmp_path):
+    """Daily credits roll on the billing clock: 00:00 UTC is 08:00 in Shanghai."""
     m, daily, usage = setup_store(tmp_path)
     credit(m, daily, usage)
-    m.credit_locked(
-        daily_path=daily,
-        usage_path=usage,
-        now=datetime(2026, 10, 3, 0, tzinfo=ZoneInfo('Asia/Shanghai')),
-        month_key='2026-10',
-        generation='a',
-        counters={'alice': {'rx': 11, 'tx': 23}},
-        users={'alice': {}},
-        identities={'alice': 'a' * 64},
-    )
+    for hour, minute, counters in ((7, 59, {'rx': 11, 'tx': 21}), (8, 0, {'rx': 11, 'tx': 23})):
+        m.credit_locked(
+            daily_path=daily,
+            usage_path=usage,
+            now=datetime(2026, 10, 3, hour, minute, tzinfo=ZoneInfo('Asia/Shanghai')),
+            month_key='2026-10',
+            generation='a',
+            counters={'alice': counters},
+            users={'alice': {}},
+            identities={'alice': 'a' * 64},
+        )
     actual = json.loads(daily.read_text())
-    assert actual['2026-10-02']['alice']['total'] == 30
-    assert actual['2026-10-03']['alice']['total'] == 4
+    assert actual['2026-10-02']['alice']['total'] == 32
+    assert actual['2026-10-03']['alice']['total'] == 2
 
 
 def test_pending_replay_rejects_intervening_ledger_mutation(tmp_path, monkeypatch):

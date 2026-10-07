@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from timeutil import billing_now
+
 
 @dataclass(frozen=True)
 class Context:
@@ -30,7 +32,7 @@ def _cycle_reset_info(ctx: Context, now=None):
         now = ctx.local_now()
     cycle_len = ctx.get_cycle_length_days()
     next_reset = ctx.next_cycle_start_for(now).date()
-    days_left = max((next_reset - now.date()).days, 0)
+    days_left = max((next_reset - billing_now(now).date()).days, 0)
     return next_reset.strftime('%Y-%m-%d'), days_left, cycle_len
 
 

@@ -143,7 +143,7 @@ def test_overview_page_uses_configured_safe_public_url_and_complete_allowlist(
     assert payload['cycle'] == {
         'key': '2026-09',
         'total_used': 60,
-        'range': '09/01 → 09/30 · 第 12/30 天',
+        'range': '09/01 → 09/30 UTC · 第 12/30 天',
         'settlement_day': 1,
         'length_days': 30,
         'length_min': ss.CYCLE_LENGTH_MIN,

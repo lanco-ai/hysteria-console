@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Callable
 
 import user_compat
+from timeutil import billing_now
 
 
 @dataclass(frozen=True)
@@ -129,7 +130,9 @@ def render_user_panel(
     remain_label = '不限' if quota_unlimited else ctx.fmt_bytes(remain)
     percent_label = '不限' if quota_unlimited else f'{percent:.2f}%'
     reset_date, days_left, cycle_len = ctx._cycle_reset_info(now)
-    spark = ctx.sparkline_svg(ctx.daily_window_for_user(user, daily, days=30, today=now.date()))
+    spark = ctx.sparkline_svg(
+        ctx.daily_window_for_user(user, daily, days=30, today=billing_now(now).date())
+    )
     panel_path = '/user/panel' if session_auth else f'/panel/{user}?token={token}'
     json_path = '/user/panel.json' if session_auth else f'/panel/{user}.json?token={token}'
     panel_http = f'{base_url}{panel_path}'

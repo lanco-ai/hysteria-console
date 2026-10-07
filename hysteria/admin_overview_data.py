@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 import user_compat
+from timeutil import billing_now
 
 
 def build_user(ctx, user, cfg, online, base_url, *, daily=None, now=None):
@@ -68,10 +69,10 @@ def build_page(ctx, base_url):
     cycle_start = ctx.cycle_start_for(now)
     next_cycle_start = ctx.next_cycle_start_for(now)
     cycle_end = next_cycle_start - timedelta(days=1)
-    cycle_day = (now.date() - cycle_start.date()).days + 1
+    cycle_day = (billing_now(now).date() - cycle_start.date()).days + 1
     cycle_period_days = (next_cycle_start.date() - cycle_start.date()).days
     cycle_range = (
-        f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")}'
+        f'{cycle_start.strftime("%m/%d")} → {cycle_end.strftime("%m/%d")} UTC'
         f' · 第 {cycle_day}/{cycle_period_days} 天'
     )
     landing_options = [

@@ -8,7 +8,7 @@ from typing import Callable
 
 import cycle as cycle_util
 import user_compat
-from timeutil import billing_cycle_key
+from timeutil import billing_cycle_key, local_hour_key
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ class BillingService:
         return cycle_util.cycle_anchor_date(now, meta)
 
     def cycle_start_for(self, now, day=None, length=None, anchor=None):
-        """Datetime at 00:00 local of the current cycle's start.
+        """Datetime at 00:00 (billing clock, UTC) of the current cycle's start.
 
         The default 30-day cycle follows the current calendar settlement day.
         For shorter/longer N, cycles roll exactly every N days from the anchor
@@ -75,7 +75,7 @@ class BillingService:
         return cycle_util.cycle_start_for(now, day=day, length=length, anchor=anchor, meta=meta)
 
     def next_cycle_start_for(self, now, day=None, length=None, anchor=None):
-        """Datetime at 00:00 local of the next billing cycle boundary."""
+        """Datetime at 00:00 (billing clock, UTC) of the next billing cycle boundary."""
         meta = self.load_meta()
         return cycle_util.next_cycle_start_for(
             now,
@@ -109,7 +109,8 @@ class BillingService:
             return
         days = set(self._cycle_days(now))
         cycle_start = self.cycle_start_for(now)
-        hour_cutoff = cycle_start.strftime('%Y-%m-%dT%H')
+        # The cycle starts on the billing clock; hourly keys are local hours.
+        hour_cutoff = local_hour_key(cycle_start)
 
         daily = self.load_json(self.USAGE_DAILY_FILE, {})
         changed_daily = False

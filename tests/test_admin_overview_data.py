@@ -238,7 +238,7 @@ def test_build_page_reuses_authoritative_cycle_data_and_public_landing_choices(
     assert page['cycle'] == {
         'key': '2026-09',
         'total_used': 70,
-        'range': '09/01 → 09/30 · 第 12/30 天',
+        'range': '09/01 → 09/30 UTC · 第 12/30 天',
         'settlement_day': 1,
         'length_days': 30,
         'length_min': ss.CYCLE_LENGTH_MIN,
@@ -265,7 +265,7 @@ def test_build_page_keeps_a_complete_cycle_when_there_are_no_users(
 
     assert page['users'] == []
     assert page['cycle']['total_used'] == 10
-    assert page['cycle']['range'] == '09/01 → 09/30 · 第 12/30 天'
+    assert page['cycle']['range'] == '09/01 → 09/30 UTC · 第 12/30 天'
 
 
 def test_build_page_uses_calendar_settlement_range_for_30_day_cycle(overview_state, monkeypatch):
@@ -286,7 +286,7 @@ def test_build_page_uses_calendar_settlement_range_for_30_day_cycle(overview_sta
         'https://panel.invalid',
     )
 
-    assert page['cycle']['range'] == '09/15 → 10/14 · 第 3/30 天'
+    assert page['cycle']['range'] == '09/15 → 10/14 UTC · 第 3/30 天'
 
 
 def test_render_admin_characterization_preserves_html_and_sensitive_draft_filtering(

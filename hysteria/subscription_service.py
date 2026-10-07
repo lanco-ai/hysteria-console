@@ -1711,7 +1711,7 @@ def _action_label(action):
 
 
 DAILY_RETENTION_DAYS = 30
-LOCAL_TZ_LABEL = 'Asia/Shanghai · 滚动 7 天小时 / 30 天每日'
+LOCAL_TZ_LABEL = '小时按 Asia/Shanghai · 每日与结算周期按 UTC · 滚动 7 天小时 / 30 天每日'
 
 
 def _usage_context():

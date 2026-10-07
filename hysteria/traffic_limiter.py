@@ -15,7 +15,7 @@ from pathlib import Path
 import cycle as cycle_util
 import state_store
 from display import DISPLAY_MULTIPLIER
-from timeutil import billing_cycle_key, local_now
+from timeutil import billing_cycle_key, billing_day_key, billing_now, local_now
 
 import alerts as _alerts
 import anomaly as _anomaly
@@ -500,7 +500,7 @@ def maybe_reset_all_usage_on_day_21(now, users, usage, month, day=None):
     """Once-per-cycle zeroing of usage on the settlement day. Idempotent across
     multiple cron ticks via auto_reset_state.last_reset_month."""
     d = int(day if day is not None else get_settlement_day())
-    if now.day != d:
+    if billing_now(now).day != d:
         return
     state = load_json(RESET_STATE_FILE, {}, required=True)
     _validate_reset_state(state, path=RESET_STATE_FILE)
@@ -604,8 +604,10 @@ def traffic_totals(traffic):
 
 def accumulate_daily(traffic, now, *, daily=None):
     """Returns the post-write daily dict so the caller can reuse it for
-    cycle-quota math without re-reading the file we just persisted."""
-    day_key = now.strftime("%Y-%m-%d")
+    cycle-quota math without re-reading the file we just persisted.
+
+    Daily buckets are billing days (UTC), matching the cycle boundaries."""
+    day_key = billing_day_key(now)
     if daily is None:
         daily = load_json(USAGE_DAILY_FILE, {}, required=True)
         _validate_usage_ledger(daily, path=USAGE_DAILY_FILE, daily=True)
@@ -618,7 +620,7 @@ def accumulate_daily(traffic, now, *, daily=None):
         cur["rx"] += rx
         cur["total"] += tx + rx
         daily[day_key][uid] = cur
-    prune_daily(daily, now.date())
+    prune_daily(daily, billing_now(now).date())
     save_json(USAGE_DAILY_FILE, daily)
     return daily
 
@@ -710,8 +712,10 @@ def check_alerts(users, now, month_key, *, daily=None, _opener=None):
     if daily is None:
         daily = load_json(USAGE_DAILY_FILE, {})
     today_date = now.date()
-
-    today_key = today_date.strftime('%Y-%m-%d')
+    # Anomalies compare daily buckets, which are billing days; expiry
+    # reminders below stay on the local calendar.
+    billing_today = billing_now(now).date()
+    today_key = billing_today.strftime('%Y-%m-%d')
     z_threshold = float(cfg.get('anomaly_z_threshold', _alerts.DEFAULT_Z_THRESHOLD))
     min_bytes = int(cfg.get('anomaly_min_bytes', _alerts.DEFAULT_MIN_BYTES))
 
@@ -738,7 +742,7 @@ def check_alerts(users, now, month_key, *, daily=None, _opener=None):
                 }, month_key, config=cfg, opener=_opener)
 
         # ---- anomaly ----
-        hit = _anomaly.detect(uid, daily, today_date,
+        hit = _anomaly.detect(uid, daily, billing_today,
                               z_threshold=z_threshold, min_bytes=min_bytes)
         if hit is not None:
             _alerts.dispatch_once({

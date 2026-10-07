@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import user_compat
+from timeutil import billing_now
 
 
 def configured_max_devices(cfg, default=2):
@@ -150,8 +151,11 @@ def aggregate_stats(ctx, *, now, online, hourly=None, daily=None):
     if daily is None:
         daily = ctx.load_json(ctx.usage_daily_file, {})
 
+    # Today/yesterday are local calendar days built from hourly buckets;
+    # 7-day and cycle totals use daily buckets, which are billing days.
     today_str = now.strftime("%Y-%m-%d")
     yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+    billing_today = billing_now(now).date()
 
     cur_bucket = hourly.get(hour_key(now)) or {}
     current_hour_raw = sum(entry_total(v) for v in cur_bucket.values())
@@ -161,12 +165,14 @@ def aggregate_stats(ctx, *, now, online, hourly=None, daily=None):
         b = hourly.get(f"{today_str}T{hh:02d}") or {}
         today_raw += sum(entry_total(v) for v in b.values())
 
-    yest_bucket = daily.get(yesterday_str) or {}
-    yesterday_raw = sum(entry_total(v) for v in yest_bucket.values())
+    yesterday_raw = 0
+    for hh in range(24):
+        b = hourly.get(f"{yesterday_str}T{hh:02d}") or {}
+        yesterday_raw += sum(entry_total(v) for v in b.values())
 
     last_7d_raw = 0
     for d in range(7):
-        dk = (now.date() - timedelta(days=d)).strftime("%Y-%m-%d")
+        dk = (billing_today - timedelta(days=d)).strftime("%Y-%m-%d")
         last_7d_raw += sum(entry_total(v) for v in (daily.get(dk) or {}).values())
 
     cycle_raw = sum(
@@ -178,7 +184,7 @@ def aggregate_stats(ctx, *, now, online, hourly=None, daily=None):
 
     cycle_start = ctx.cycle_start_for(now)
     next_cycle_start = ctx.next_cycle_start_for(now)
-    cycle_day = (now.date() - cycle_start.date()).days + 1
+    cycle_day = (billing_today - cycle_start.date()).days + 1
     cycle_total_days = (next_cycle_start.date() - cycle_start.date()).days
 
     return {
@@ -196,7 +202,7 @@ def aggregate_stats(ctx, *, now, online, hourly=None, daily=None):
 def build_usage_csv(ctx, *, now, window='cycle'):
     daily = ctx.load_json(ctx.usage_daily_file, {})
     if window == '30d':
-        today = now.date()
+        today = billing_now(now).date()
         days = [(today - timedelta(days=i)).strftime('%Y-%m-%d')
                 for i in range(ctx.daily_retention_days - 1, -1, -1)]
     else:
@@ -303,8 +309,9 @@ def build_daily_history_payload(ctx, *, now):
     retention_days = max(1, int(ctx.daily_retention_days))
     users = ctx.load_json(ctx.users_file, {})
     daily = ctx.load_json(ctx.usage_daily_file, {})
+    billing_today = billing_now(now).date()
     dates = [
-        (now.date() - timedelta(days=offset)).strftime('%Y-%m-%d')
+        (billing_today - timedelta(days=offset)).strftime('%Y-%m-%d')
         for offset in reversed(range(retention_days))
     ]
     rows = []
@@ -438,7 +445,8 @@ def build_user_json_payload(ctx, uid, *, now, include_charts=True):
 
 
 def daily_window_for_user(ctx, uid, daily, *, days=30, today=None):
-    today = today or ctx.local_now().date()
+    """Daily totals ending at `today`, a billing day (defaults to the current one)."""
+    today = today or billing_now(ctx.local_now()).date()
     out = []
     for i in reversed(range(days)):
         dk = (today - timedelta(days=i)).strftime('%Y-%m-%d')
@@ -457,7 +465,7 @@ def render_daily_usage(ctx, host, days=14):
     users = ctx.load_json(ctx.users_file, {})
     daily = ctx.load_json(ctx.usage_daily_file, {})
 
-    today = ctx.local_now().date()
+    today = billing_now(ctx.local_now()).date()
     today_key = today.strftime('%Y-%m-%d')
     window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
     weekday_labels = ['一', '二', '三', '四', '五', '六', '日']
@@ -773,7 +781,7 @@ def render_daily_table_collapsed(ctx, host):
     days = ctx.daily_retention_days
     users = ctx.load_json(ctx.users_file, {})
     daily = ctx.load_json(ctx.usage_daily_file, {})
-    today = ctx.local_now().date()
+    today = billing_now(ctx.local_now()).date()
     window = [(today - timedelta(days=i)).strftime('%Y-%m-%d') for i in reversed(range(days))]
 
     rows_html = []
