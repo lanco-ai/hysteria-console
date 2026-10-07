@@ -7,7 +7,7 @@
 ## 已完成
 
 - 审查报告第一版：`docs/optimization/REPORT.md`
-- P1：校准文件改为紧凑 JSON
+- P1：校准文件改为紧凑 JSON（c19914f）
 
 ## 下一步
 

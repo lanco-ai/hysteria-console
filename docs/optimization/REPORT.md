@@ -13,7 +13,7 @@
 
 | 编号 | 位置 | 问题 | 收益 | 风险 | 工作量 | 建议 | 状态 |
 |---|---|---|---|---|---|---|---|
-| P1 | `hysteria/cost_calibrator.py` `update_sample` | 3.6 MB 校准文件每 90 秒带缩进整体重写 | 每轮少约 100 ms CPU、少写 1 MB（−28%） | 低：只改序列化格式，读取方式不变 | 小 | 改为紧凑 JSON | 可直接实施 |
+| P1 | `hysteria/cost_calibrator.py` `update_sample` | 3.6 MB 校准文件每 90 秒带缩进整体重写 | 每轮少约 100 ms CPU、少写 1 MB（−28%） | 低：只改序列化格式，读取方式不变 | 小 | 改为紧凑 JSON | 已实现（c19914f） |
 | P2 | `hysteria/subscription_service.py` `_build_health_json_payload` | 健康页每次请求把 3.6 MB 校准文件解析两遍 | 每次刷新少约 35 ms 以上 | 低 | 小 | 读一次，供两处汇总复用 | 可直接实施 |
 | P3 | `hysteria/cost_calibrator.py` `_recent_samples` | 每个统计窗口都把 2 万个时间戳逐个解析（每次健康页请求 4 遍） | 每次刷新少几十 ms | 低：样本按时间顺序追加 | 小 | 从尾部向前扫描，到窗口起点就停 | 可直接实施 |
 | D1 | `frontend/src/main.tsx` | 20 个页面全部静态导入，公开商品页也加载后台代码 | 客户首屏体积大幅下降，跨境和移动网络最明显 | 中：涉及路由和加载态，需要浏览器测试 | 中 | 按路由用 `React.lazy` 拆分：公开页、用户面板、管理后台各一组 | 需你决定（服务器内存不够构建，需在本地或 CI 构建验证） |
