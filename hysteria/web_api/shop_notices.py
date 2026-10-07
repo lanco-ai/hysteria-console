@@ -1,6 +1,7 @@
-"""Merchant-editable Claude notice defaults, independent of supplier copy."""
+"""Merchant-editable product notice defaults, independent of supplier copy."""
 
 CLAUDE_PRODUCT_IDS = frozenset({"1000000000005", "1000000000007", "1000000000008"})
+GROK_PRODUCT_IDS = frozenset({"1000000000011"})
 
 CLAUDE_NOTICE = {
     "description": """# ⚠️ 充值前重要须知
@@ -70,4 +71,43 @@ CLAUDE_NOTICE = {
 确认以上条件全部正常后，再进行充值。
 
 **充值前请仔细检查，充值成功后因账户自身原因导致无法到账的，无法退款。**""",
+}
+
+GROK_NOTICE = {
+    "description": """# 宝贝详情
+
+![Grok SuperGrok 月卡详情](/shop-notices/grok/supergrok-monthly)
+
+## Grok SuperGrok 月卡
+
+充值地址：[https://sub2buy.com/#/grok](https://sub2buy.com/#/grok)
+
+本商品卡密可囤1个月，超过1个月后不提供任何售后。
+
+IOS充值渠道输入ID直接充值，全平台通用！
+
+频道通知：[https://t.me/buy_gptplus](https://t.me/buy_gptplus)
+
+售后客服：[https://t.me/bkbk58](https://t.me/bkbk58)
+
+## Grok SuperGrok Monthly
+
+Recharge Portal: [https://sub2buy.com/#/grok](https://sub2buy.com/#/grok)
+
+The CDK can be stored for up to one month before redemption. We recommend redeeming it within that time.
+
+This top-up is processed through iOS billing and works with accounts created on any platform. It can also replace an active subscription. Please note that any time remaining on your current subscription will not carry over or be added to the new subscription period.
+
+Channel Updates: [https://t.me/buygpt_plus](https://t.me/buygpt_plus)
+
+Customer Support: [https://t.me/bkbk58](https://t.me/bkbk58)
+""",
+    "after_sales": """## 质保规则
+
+掉订阅全程质保，按天数退差价。如果出现封号属于官方封控或者个人原因，无法提供任何质保！
+
+## Warranty Policy
+
+Your subscription is covered for the full one-month term. If the subscription is unexpectedly removed during that period, you will receive a prorated refund for the unused days. Account suspensions resulting from platform enforcement or user-related issues are not covered by the warranty.
+""",
 }

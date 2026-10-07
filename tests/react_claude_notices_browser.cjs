@@ -61,11 +61,17 @@ async function main() {
     }
     for (const [id, description] of [['5', originals['5'].description], ['1000000000011', originals['1000000000011'].description]]) {
       await page.goto(`${base}/?product=${id}`);
-      await expect(page.getByText(description, { exact: true })).toBeVisible();
-      await expect(page.locator('.shop-notice')).toHaveCount(0);
-      await expect(page.locator('.shop-detail-copy strong')).toHaveCount(0);
+      if (id === '1000000000011') {
+        await expect(page.getByText('原 Grok 纯文本', { exact: true })).toBeVisible();
+        await expect(page.locator('.shop-notice')).toHaveCount(2);
+        await expect(page.locator('.shop-detail-copy strong')).toHaveText('纯文本');
+      } else {
+        await expect(page.getByText(description, { exact: true })).toBeVisible();
+        await expect(page.locator('.shop-notice')).toHaveCount(0);
+        await expect(page.locator('.shop-detail-copy strong')).toHaveCount(0);
+      }
     }
-    evidence.assertions.push('GPT and Grok saved copy stay plain text');
+    evidence.assertions.push('GPT saved copy stays plain text; Grok saved copy supports Markdown');
     await manager.getByRole('button', { name: '保存商品设置', exact: true }).click();
     await expect(manager.getByRole('status')).toContainText('已保存');
     let merchant = await (await admin.request.get(`${base}/api/v1/shop/admin`)).json();

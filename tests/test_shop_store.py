@@ -509,7 +509,7 @@ def test_claude_defaults_can_save_override_clear_and_survive_legacy_updates(tmp_
         await store.refresh()
         admin = await store.admin()
         expected = copy.deepcopy(admin['products'])
-        assert len(expected) == 3
+        assert len(expected) == 4
         payload = {key: admin[key] for key in ('revision', 'telegram', 'skus', 'products')}
         await store.update(payload)
         assert json.loads(store.settings_path.read_text())['products'] == expected

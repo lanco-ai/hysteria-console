@@ -317,6 +317,7 @@ body.page-portal {
 .shop-notice p { white-space: normal; margin: 14px 0; }
 .shop-notice ol, .shop-notice ul { padding-left: 24px; margin: 14px 0; }
 .shop-notice li + li { margin-top: 6px; }
+.shop-notice a { color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; }
 .shop-notice img { display: block; width: 100%; max-width: 960px; height: auto; margin: 18px 0; border-radius: 10px; }
 .shop-cart { padding: 28px; }
 .shop-cart-row { display: grid; grid-template-columns: 80px minmax(0, 1fr) auto auto auto; gap: 20px; align-items: center; padding: 24px 0; border-bottom: 1px solid #e5e7e1; }
