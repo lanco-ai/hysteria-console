@@ -1,5 +1,7 @@
 """Merchant-editable product notice defaults, independent of supplier copy."""
 
+import re
+
 CLAUDE_PRODUCT_IDS = frozenset({"1000000000005", "1000000000007", "1000000000008"})
 GROK_PRODUCT_IDS = frozenset({"1000000000011"})
 
@@ -80,27 +82,19 @@ GROK_NOTICE = {
 
 ## Grok SuperGrok 月卡
 
-充值地址：[https://sub2buy.com/#/grok](https://sub2buy.com/#/grok)
+下单后由本店人工交付卡密与充值方式，请通过本店联系方式获取。
 
-本商品卡密可囤1个月，超过1个月后不提供任何售后。
+本商品卡密可囤 1 个月，超过 1 个月后不提供任何售后。
 
-IOS充值渠道输入ID直接充值，全平台通用！
-
-频道通知：[https://t.me/buy_gptplus](https://t.me/buy_gptplus)
-
-售后客服：[https://t.me/bkbk58](https://t.me/bkbk58)
+iOS 充值渠道，输入账号 ID 直接充值，全平台通用！
 
 ## Grok SuperGrok Monthly
 
-Recharge Portal: [https://sub2buy.com/#/grok](https://sub2buy.com/#/grok)
+After you order, we deliver the CDK and redemption instructions manually. Please contact us through this store.
 
 The CDK can be stored for up to one month before redemption. We recommend redeeming it within that time.
 
 This top-up is processed through iOS billing and works with accounts created on any platform. It can also replace an active subscription. Please note that any time remaining on your current subscription will not carry over or be added to the new subscription period.
-
-Channel Updates: [https://t.me/buygpt_plus](https://t.me/buygpt_plus)
-
-Customer Support: [https://t.me/bkbk58](https://t.me/bkbk58)
 """,
     "after_sales": """## 质保规则
 
@@ -111,3 +105,37 @@ Customer Support: [https://t.me/bkbk58](https://t.me/bkbk58)
 Your subscription is covered for the full one-month term. If the subscription is unexpectedly removed during that period, you will receive a prorated refund for the unused days. Account suspensions resulting from platform enforcement or user-related issues are not covered by the warranty.
 """,
 }
+
+# Supplier storefronts, recharge portals and contact handles. Customer-facing
+# copy must never send buyers to the supplier, so any line naming one of these
+# is dropped from saved and projected product copy.
+SUPPLIER_MARKERS = (
+    "sub2buy",
+    "qiangyunai",
+    "anligpt",
+    "t.me/bkbk58",
+    "t.me/buy_gptplus",
+    "t.me/buygpt_plus",
+)
+
+
+def strip_supplier_lines(text):
+    """Remove every line that mentions a supplier storefront or contact."""
+    if not isinstance(text, str) or not text:
+        return text
+    lowered = text.lower()
+    if not any(marker in lowered for marker in SUPPLIER_MARKERS):
+        return text
+    kept = [
+        line for line in text.split("\n")
+        if not any(marker in line.lower() for marker in SUPPLIER_MARKERS)
+    ]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip("\n")
+
+
+def sanitize_product_copy(products):
+    return {
+        product_id: {field: strip_supplier_lines(value) for field, value in copy.items()}
+        if isinstance(copy, dict) else copy
+        for product_id, copy in products.items()
+    }

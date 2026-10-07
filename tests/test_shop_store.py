@@ -570,3 +570,22 @@ def test_copy_size_limit_includes_incremented_revision_without_writing(tmp_path)
         assert (await store.admin())['revision'] == 9
 
     asyncio.run(run())
+
+
+def test_supplier_contacts_never_reach_product_copy():
+    from web_api.shop_notices import GROK_NOTICE, sanitize_product_copy, strip_supplier_lines
+
+    for text in GROK_NOTICE.values():
+        lowered = text.lower()
+        assert 'sub2buy' not in lowered and 't.me/' not in lowered
+    legacy = {
+        '1000000000011': {
+            'description': '本商品卡密可囤1个月\n\n充值地址：[https://sub2buy.com/#/grok](https://sub2buy.com/#/grok)\n\n'
+            '频道通知：https://t.me/buy_gptplus\n\nChannel Updates: https://t.me/buygpt_plus\n\n'
+            '售后客服：https://T.me/bkbk58\n\n全平台通用',
+            'after_sales': '',
+        }
+    }
+    cleaned = sanitize_product_copy(legacy)['1000000000011']
+    assert cleaned == {'description': '本商品卡密可囤1个月\n\n全平台通用', 'after_sales': ''}
+    assert strip_supplier_lines('联系本店') == '联系本店'

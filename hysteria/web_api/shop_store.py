@@ -11,7 +11,13 @@ import state_store
 
 from .shop_anli_source import ORIGIN as ANLI_ORIGIN
 from .shop_anli_source import PRODUCT_BASE, SELECTED
-from .shop_notices import CLAUDE_NOTICE, CLAUDE_PRODUCT_IDS, GROK_NOTICE, GROK_PRODUCT_IDS
+from .shop_notices import (
+    CLAUDE_NOTICE,
+    CLAUDE_PRODUCT_IDS,
+    GROK_NOTICE,
+    GROK_PRODUCT_IDS,
+    sanitize_product_copy,
+)
 from .shop_source import MAX_CENTS, MAX_ROWS, ORIGIN, fetch_catalog
 
 TTL = 900
@@ -240,6 +246,8 @@ class ShopStore:
             products.setdefault(product_id, dict(CLAUDE_NOTICE))
         for product_id in {row['product_id'] for row in items} & GROK_PRODUCT_IDS:
             products.setdefault(product_id, dict(GROK_NOTICE))
+        # Older saved copy may still carry supplier links; never project them.
+        products = sanitize_product_copy(products)
         statuses = {provider: self._feed_status(source) for provider, source in sources.items()}
         successes = [
             source['last_success']
@@ -329,7 +337,7 @@ class ShopStore:
             } | set(current['skus'])
             if set(payload['skus']) - known:
                 raise ValueError('unknown SKU')
-            products = payload.get('products', current.get('products', {}))
+            products = sanitize_product_copy(payload.get('products', current.get('products', {})))
             known_products = {key.split(':')[0] for key in known} | set(current.get('products', {}))
             if set(products) - known_products:
                 raise ValueError('unknown product')
