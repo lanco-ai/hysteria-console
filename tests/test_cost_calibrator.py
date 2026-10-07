@@ -64,6 +64,38 @@ def test_update_sample_writes_compact_json_that_round_trips(tmp_path):
     assert len(state['samples']) == 2
 
 
+def test_summarize_overview_reads_once_and_matches_per_window_summaries(tmp_path, monkeypatch):
+    import json
+
+    path = tmp_path / 'cost_calibration.json'
+    now = datetime(2026, 6, 3, 12, 0, 0)
+    for minutes in range(0, 600, 30):
+        cc.update_sample(
+            path,
+            app_raw_bytes=2 * 1024 ** 2,
+            now=now + timedelta(minutes=minutes),
+            net_totals={'rx': minutes * 10 ** 6, 'tx': minutes * 2 * 10 ** 6,
+                        'total': minutes * 3 * 10 ** 6, 'ifaces': ['eth0']},
+        )
+    state = json.loads(path.read_text())
+    later = now + timedelta(hours=10)
+    reads = []
+    original = cc.state_store.load_json
+    monkeypatch.setattr(cc.state_store, 'load_json', lambda *a, **k: reads.append(a) or original(*a, **k))
+
+    summary, windows = cc.summarize_overview(path, current_multiplier=2.28, now=later)
+
+    assert len(reads) == 1
+    assert summary == cc.summarize_state(state, current_multiplier=2.28, now=later)
+    assert windows == [
+        cc.summarize_state(state, current_multiplier=2.28, now=later, window_hours=hours)
+        for hours in cc.WINDOW_HOURS
+    ]
+    # Callers attach the windows to the default summary; that must stay acyclic.
+    summary['windows'] = windows
+    json.dumps(summary)
+
+
 def test_summarize_state_returns_weighted_multiplier():
     mib = 1024 ** 2
     state = {

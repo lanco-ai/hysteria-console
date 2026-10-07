@@ -287,6 +287,28 @@ def summarize_windows(path, *, current_multiplier, now=None, windows=WINDOW_HOUR
     ]
 
 
+def summarize_overview(path, *, current_multiplier, now=None, window_hours=DEFAULT_WINDOW_HOURS,
+                       windows=WINDOW_HOURS, min_sample_app_bytes=DEFAULT_MIN_SAMPLE_APP_BYTES):
+    """Return (default-window summary, per-window summaries) from one file read.
+
+    The state file holds ~20k samples, so the health views read it once and
+    compute each distinct window once. The default summary is a separate dict:
+    callers attach the window list to it, which must not create a cycle.
+    """
+    state = state_store.load_json(path, {})
+    by_hours = {
+        hours: summarize_state(
+            state,
+            current_multiplier=current_multiplier,
+            now=now,
+            window_hours=hours,
+            min_sample_app_bytes=min_sample_app_bytes,
+        )
+        for hours in dict.fromkeys((window_hours, *windows))
+    }
+    return dict(by_hours[window_hours]), [by_hours[hours] for hours in windows]
+
+
 def _as_float(value, default, *, low=None, high=None):
     try:
         out = float(value)

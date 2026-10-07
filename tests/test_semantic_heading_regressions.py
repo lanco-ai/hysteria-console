@@ -206,14 +206,9 @@ def _render_health_widgets(monkeypatch):
         "ifaces": [],
     }
     monkeypatch.setattr(
-        health_widgets,
-        "summarize_cost_calibration",
-        lambda _ctx, now=None: summary,
-    )
-    monkeypatch.setattr(
         health_widgets.cost_calibrator,
-        "summarize_windows",
-        lambda *_args, **_kwargs: [],
+        "summarize_overview",
+        lambda *_args, **_kwargs: (dict(summary), []),
     )
     monkeypatch.setattr(
         health_widgets.cost_calibrator,

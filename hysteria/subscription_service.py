@@ -2045,12 +2045,12 @@ def _build_health_json_payload(*, now=None):
     presenter = _health_presentation()
     kpis = presenter._render_health_top_kpis()
     radar = build_line_radar(now=now)
-    calibration = summarize_cost_calibration(now=now)
-    calibration['windows'] = cost_calibrator.summarize_windows(
+    calibration, windows = cost_calibrator.summarize_overview(
         COST_CALIBRATION_FILE,
         current_multiplier=current_display_multiplier(),
         now=now,
     )
+    calibration['windows'] = windows
     policy = cost_calibrator.load_auto_policy(MULTIPLIER_AUTO_POLICY_FILE)
     calibration['policy'] = {
         'enabled': bool(policy.get('enabled')),

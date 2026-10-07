@@ -253,8 +253,7 @@ def summarize_cost_calibration(ctx, *, now=None):
 
 def render_cost_calibrator(ctx, now=None):
     current_now = now or ctx.local_now()
-    summary = summarize_cost_calibration(ctx, now=current_now)
-    windows = cost_calibrator.summarize_windows(
+    summary, windows = cost_calibrator.summarize_overview(
         ctx.cost_calibration_file,
         current_multiplier=ctx.display_multiplier,
         now=current_now,
