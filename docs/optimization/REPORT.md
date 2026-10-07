@@ -5,7 +5,7 @@
 - **第一轮（已实现）**：
   - P1 校准文件改为紧凑 JSON：流量统计每轮少约 100 ms CPU，每天少写约 1 GB。
   - P2 健康页只读一次校准文件：每次刷新从 153 ms 降到 93 ms。
-- **第二轮（已实现，在本分支上，没有部署）**：
+- **第二轮（已实现，已部署）**：
   - D1 前端按路由拆包：公开商品页的脚本从 1,027 KB（gzip 后 297 KB）降到 404 KB（gzip 后 124 KB），少约 60%；KaTeX 和后台代码都移出了首屏。
     - 换页时先加载目标页代码再切换，地址栏和内容同步变化。
     - 代码块加载失败（例如部署后旧页面去取已删除的文件）时整页重新加载。
@@ -16,7 +16,7 @@
     - 健康页显示“本周期网卡流量”，可以直接和服务商账单对照（本周期至今 364.88 GiB）。
 - **D6 停用旧服务**：
   - 复核发现 Hysteria 认证早已走统一面板（`127.0.0.1:8083/auth`），所以 `hysteria-auth` 和 `hysteria-subscription` 两个旧服务都闲置着，共占约 46 MB（含 swap）。
-  - 仓库已经支持统一模式（`HY_UNIFIED_FASTAPI=1`），不需要改代码，只需在生产上改配置并停用这两个服务。这一步属于部署，需要你确认。
+  - 仓库已经支持统一模式（`HY_UNIFIED_FASTAPI=1`），不需要改代码。已在生产执行：`.env` 设 `HY_UNIFIED_FASTAPI=1`，两个旧服务已停用并禁用，实测释放约 48 MB（可用内存 +17 MB，swap −31 MB）。
 - **评估后暂不做**：D3、D4、D5，以及 P3、D7，原因见表格。
 - **测试**：后端全量测试、lint、前端类型检查与构建、gate 测试，以及 25 个浏览器脚本中的 24 个通过。剩下那个（外壳导航的几何断言）在拆包前的原始代码上同样 3 次全挂，属于这台机器上的已有问题，见“测试耗时”一节。
 
@@ -39,7 +39,7 @@
 | D3 | `hysteria/tuic_user_meter.py` `observe` | 每轮启动一个 Python 子进程加载 grpcio（约 108 ms CPU、34 MB 内存） | 每天少约 1.7 分钟 CPU | 中：会动到隔离设计 | 中 | 常驻轻量查询进程，或给统计服务的解释器装 grpcio | 暂不做：108 ms 里约 75 ms 是加载 grpcio，挪进统计进程也省不掉；子进程能强制超时和释放内存，fail-closed 设计依赖这一点 |
 | D4 | `subscription_service.py`（约 114 KB）、`deploy.sh`（约 100 KB）、`traffic_limiter.py`（约 45 KB） | 单文件过大，改动容易牵连 | 可维护性 | 高 | 大 | 按职责逐步拆分，每步都由全量测试兜底 | 暂不做：测试里有 1,397 处通过 `ss.<属性>` 替换实现，`deploy.sh` 的部署清单要逐个列出模块；一次性拆分没有运行时收益，回归风险高。建议改动某个功能时顺手把它迁到独立模块并保留兼容别名，每次只迁一个 |
 | D5 | `hysteria/web_api/chat_workspace_store.py` 删除会话 | 删除时全表扫描 tool_runs/tool_plans 并逐行解析 JSON | 数据量大了才明显 | 中：涉及 SQLite 表结构迁移 | 中 | 加 `conversation_id` 索引列 | 暂不做：生产库里只有 1 个会话、0 条工具记录（86 KB）。等 tool_runs 增长到上千行再加索引 |
-| D6 | `hysteria-subscription.service`（8081）和 `hysteria-auth.service`（8082） | 统一面板已在进程内处理订阅和认证（Hysteria 的认证配置指向 `8083/auth`），这两个旧服务没有 nginx 路由、没有调用方，却常驻约 46 MB（含 swap） | 913 MB 的机器上省出约 46 MB | 中：`deploy.sh`（11 处）、`hy2-deploy-recovery` 和若干测试还引用它 | 中 | 先从部署和恢复流程里摘掉，再停用并禁用这个服务 | 无需改代码，待你确认后在生产执行：`.env` 设 `HY_UNIFIED_FASTAPI=1`，然后停用 `hysteria-auth` 和 `hysteria-subscription`，省约 46 MB；回滚只需重新启用这两个服务 |
+| D6 | `hysteria-subscription.service`（8081）和 `hysteria-auth.service`（8082） | 统一面板已在进程内处理订阅和认证（Hysteria 的认证配置指向 `8083/auth`），这两个旧服务没有 nginx 路由、没有调用方，却常驻约 46 MB（含 swap） | 913 MB 的机器上省出约 46 MB | 中：`deploy.sh`（11 处）、`hy2-deploy-recovery` 和若干测试还引用它 | 中 | 先从部署和恢复流程里摘掉，再停用并禁用这个服务 | 已在生产执行：`HY_UNIFIED_FASTAPI=1`，两个旧服务已停用并禁用，省约 48 MB；回滚：`systemctl enable --now hysteria-auth hysteria-subscription` |
 | D7 | `state/usage_hourly.json`、`protocol_usage_hourly.json` | 每轮带缩进重写（约 52 KB 和 44 KB） | 每轮少几 ms | 低 | 小 | 改紧凑 JSON | 不建议：收益很小，这两个账本有时要人工查看，可读性更重要 |
 
 ## 已复核、无需处理
@@ -62,3 +62,11 @@
 - 在新的工作目录里，有 6 个测试依赖已构建的前端 `frontend/dist`，CI 会先构建所以不受影响；本地跑之前要先构建，或者放入已发布的前端包。
 
 - 浏览器测试 `react_shell_navigation_browser.cjs` 的 1024px 几何断言在这台机器上不稳定：“运维”链接的背景在 hover 过渡中被采样，读到 `rgba(0,0,0,0.0xx)`。拆包前的原始代码也连续 3 次失败，属于已有问题，和本轮改动无关；在更快的 CI runner 上可能不会出现。
+
+## 部署记录（2026-10-07）
+
+- 前端版本 `e37ee97f` 和 5 个后端模块已上线，面板中断约 5 秒；98 个静态资源逐一核对一致。
+- 第一次部署时，校验脚本连续请求 100 个资源，触发了 nginx 限速（每秒 10 个请求，突发 40 个），收到 429。自动回滚后，把校验改为每秒约 7.7 个请求，第二次部署通过。真实用户不会这样连续请求，后台预取也只有十几个请求。
+- 流量统计在新代码下运行正常：校准文件 0.79 MB，5,771 个样本，572 个小时网卡汇总；TUIC 计量正常。
+- D6 已执行：`hysteria-auth` 和 `hysteria-subscription` 已停用。
+- 回滚材料在 `/root/hysteria/backups/opt-round2-20261007/`：旧模块、旧校准文件和改动前的 `.env`。旧前端版本 `2fba31cd` 仍保留在 `panel/releases`。
