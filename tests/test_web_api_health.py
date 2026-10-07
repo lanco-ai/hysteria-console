@@ -122,6 +122,33 @@ def test_health_route_returns_structured_status_and_strips_private_fields():
     assert 'token' not in response.text
 
 
+class StubHealthServicesWithCycleNet(StubHealthServices):
+    def read_admin_health(self, *, headers, path):
+        payload = super().read_admin_health(headers=headers, path=path)
+        payload['calibration']['cycle_net'] = {
+            'rx': 192,
+            'tx': 168,
+            'total': 360,
+            'hours': 538,
+            'since': '2026-09-15T00:00:00+00:00',
+        }
+        return payload
+
+
+def test_health_calibration_carries_optional_cycle_nic_totals():
+    with TestClient(create_app(StubHealthServices())) as client:
+        assert client.get('/api/v1/admin/health').json()['calibration']['cycle_net'] is None
+    with TestClient(create_app(StubHealthServicesWithCycleNet())) as client:
+        cycle_net = client.get('/api/v1/admin/health').json()['calibration']['cycle_net']
+    assert cycle_net == {
+        'rx': 192,
+        'tx': 168,
+        'total': 360,
+        'hours': 538,
+        'since': '2026-09-15T00:00:00+00:00',
+    }
+
+
 def test_health_operation_routes_return_safe_structured_success():
     headers = {'Origin': 'http://testserver'}
     with TestClient(create_app(StubHealthServices())) as client:

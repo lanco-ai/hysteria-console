@@ -96,6 +96,84 @@ def test_summarize_overview_reads_once_and_matches_per_window_summaries(tmp_path
     json.dumps(summary)
 
 
+def test_update_sample_keeps_eight_days_of_samples_and_all_nic_bytes_hourly(tmp_path):
+    import json
+
+    path = tmp_path / 'cost_calibration.json'
+    start = datetime(2026, 6, 1, 0, 0, 0)
+    total = 0
+    for hour in range(0, 24 * 10 + 1):
+        total += 1000
+        cc.update_sample(
+            path,
+            app_raw_bytes=0 if hour % 2 else 500,
+            now=start + timedelta(hours=hour),
+            net_totals={'rx': total // 2, 'tx': total - total // 2, 'total': total, 'ifaces': ['eth0']},
+        )
+    state = json.loads(path.read_text())
+    newest = start + timedelta(hours=240)
+
+    stamps = [datetime.fromisoformat(sample['ts']) for sample in state['samples']]
+    assert min(stamps) == newest - timedelta(hours=cc.SAMPLE_RETENTION_HOURS)
+    assert all(sample['app_raw_bytes'] == 500 for sample in state['samples'])
+    # The provider meters the whole NIC, so idle ticks still count hourly.
+    assert sum(bucket['total'] for bucket in state['net_hourly'].values()) == 1000 * 240
+
+
+def test_missing_hourly_totals_are_seeded_from_existing_samples(tmp_path):
+    import json
+
+    path = tmp_path / 'cost_calibration.json'
+    now = datetime(2026, 6, 3, 12, 0, 0)
+    path.write_text(json.dumps({
+        'last': {'ts': now.isoformat(timespec='seconds'), 'rx': 100, 'tx': 200, 'total': 300, 'ifaces': ['eth0']},
+        'samples': [{
+            'ts': (now - timedelta(hours=2)).isoformat(timespec='seconds'), 'app_raw_bytes': 5,
+            'net_rx_delta': 10, 'net_tx_delta': 20, 'net_total_delta': 30,
+        }],
+    }))
+
+    state = cc.update_sample(
+        path,
+        app_raw_bytes=5,
+        now=now + timedelta(minutes=30),
+        net_totals={'rx': 110, 'tx': 220, 'total': 330, 'ifaces': ['eth0']},
+    )
+
+    assert state['net_hourly'] == {
+        '2026-06-03T10': {'rx': 10, 'tx': 20, 'total': 30},
+        '2026-06-03T12': {'rx': 10, 'tx': 20, 'total': 30},
+    }
+
+
+def test_cycle_net_totals_sum_utc_hours_from_the_cycle_start(tmp_path):
+    import json
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+
+    path = tmp_path / 'cost_calibration.json'
+    base = datetime(2026, 10, 15, 7, 0, tzinfo=ZoneInfo('Asia/Shanghai'))  # 2026-10-14 23:00 UTC
+    for minutes, total in ((0, 0), (30, 100), (90, 300)):
+        cc.update_sample(
+            path,
+            app_raw_bytes=1,
+            now=base + timedelta(minutes=minutes),
+            net_totals={'rx': total, 'tx': 0, 'total': total, 'ifaces': ['eth0']},
+        )
+    state = json.loads(path.read_text())
+    assert state['net_hourly'] == {
+        '2026-10-14T23': {'rx': 100, 'tx': 0, 'total': 100},
+        '2026-10-15T00': {'rx': 200, 'tx': 0, 'total': 200},
+    }
+
+    cycle_start = datetime(2026, 10, 15, tzinfo=timezone.utc)
+    totals = cc.cycle_net_totals(state, since=cycle_start)
+    assert (totals['total'], totals['rx'], totals['hours']) == (200, 200, 1)
+    summary, _windows = cc.summarize_overview(
+        path, current_multiplier=2.28, now=base + timedelta(hours=2), cycle_start=cycle_start)
+    assert summary['cycle_net'] == totals
+
+
 def test_summarize_state_returns_weighted_multiplier():
     mib = 1024 ** 2
     state = {

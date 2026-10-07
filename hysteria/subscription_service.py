@@ -2049,6 +2049,7 @@ def _build_health_json_payload(*, now=None):
         COST_CALIBRATION_FILE,
         current_multiplier=current_display_multiplier(),
         now=now,
+        cycle_start=cycle_start_for(now),
     )
     calibration['windows'] = windows
     policy = cost_calibrator.load_auto_policy(MULTIPLIER_AUTO_POLICY_FILE)

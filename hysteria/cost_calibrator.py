@@ -7,7 +7,9 @@ It never changes configuration by itself.
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import cycle as cycle_util
 import state_store
+from timeutil import billing_now
 
 
 EXCLUDED_IFACES = {'lo'}
@@ -15,9 +17,15 @@ EXCLUDED_PREFIXES = (
     'docker', 'br-', 'veth', 'virbr', 'tun', 'tap', 'wg',
     'tailscale', 'zt', 'kube', 'cni',
 )
-MAX_SAMPLES = 20160  # 7 days at 30-second traffic-limiter cadence.
+MAX_SAMPLES = 20160  # Hard cap; the time-based retention below normally applies first.
 DEFAULT_WINDOW_HOURS = 72
 WINDOW_HOURS = (24, 72, 168)
+# Fine samples are only summarized over WINDOW_HOURS, so keep the longest window
+# plus a day: ~7.7k samples at the limiter's 90 s cadence instead of 20k.
+SAMPLE_RETENTION_HOURS = max(WINDOW_HOURS) + 24
+# NIC totals per billing-clock (UTC) hour, kept for the longest configurable
+# cycle, so the cycle-to-date NIC volume can be compared with the provider meter.
+NET_HOURLY_RETENTION_DAYS = cycle_util.CYCLE_LENGTH_MAX + 2
 DEFAULT_MIN_SAMPLE_APP_BYTES = 1 * 1024 ** 2
 TRIM_FRACTION = 0.10
 DEFAULT_AUTO_POLICY = {
@@ -93,8 +101,47 @@ def _non_negative_delta(cur, prev, key):
     return delta if delta >= 0 else None
 
 
+def _net_hour_key(ts):
+    return billing_now(ts).strftime('%Y-%m-%dT%H')
+
+
+def _add_net_hour(hourly, ts, rx, tx, total):
+    bucket = hourly.setdefault(_net_hour_key(ts), {'rx': 0, 'tx': 0, 'total': 0})
+    bucket['rx'] += rx
+    bucket['tx'] += tx
+    bucket['total'] += total
+
+
+def _seed_net_hourly(samples):
+    """Rebuild hourly NIC totals from fine samples (first run after upgrade)."""
+    hourly = {}
+    for sample in samples:
+        ts = _parse_ts(sample.get('ts'))
+        if ts is not None:
+            _add_net_hour(
+                hourly,
+                ts,
+                int(sample.get('net_rx_delta', 0) or 0),
+                int(sample.get('net_tx_delta', 0) or 0),
+                int(sample.get('net_total_delta', 0) or 0),
+            )
+    return hourly
+
+
+def _kept_after(sample, cutoff):
+    """Retention mirrors _recent_samples: unparseable or mixed-awareness rows stay."""
+    ts = _parse_ts(sample.get('ts'))
+    if ts is None or (ts.tzinfo is None) != (cutoff.tzinfo is None):
+        return True
+    return ts >= cutoff
+
+
 def update_sample(path, *, app_raw_bytes, now=None, net_totals=None, max_samples=MAX_SAMPLES):
-    """Update calibration state and append one sample when a previous baseline exists."""
+    """Update calibration state; append one sample when a baseline exists and users moved bytes.
+
+    NIC deltas also accumulate into per-hour totals on every tick, including
+    ticks without user traffic, because the provider meters the whole NIC.
+    """
     path = str(path)
     app_raw = int(app_raw_bytes or 0)
     net = net_totals or read_net_totals()
@@ -108,23 +155,35 @@ def update_sample(path, *, app_raw_bytes, now=None, net_totals=None, max_samples
     state = state_store.load_json(path, {})
     samples = list(state.get('samples') or [])
     prev = state.get('last') or {}
+    hourly = state.get('net_hourly')
+    hourly = dict(hourly) if isinstance(hourly, dict) else _seed_net_hourly(samples)
+    current = _parse_ts(last['ts'])
 
-    if prev and app_raw > 0:
+    if prev:
         rx_delta = _non_negative_delta(last, prev, 'rx')
         tx_delta = _non_negative_delta(last, prev, 'tx')
         total_delta = _non_negative_delta(last, prev, 'total')
         if rx_delta is not None and tx_delta is not None and total_delta is not None:
-            samples.append({
-                'ts': last['ts'],
-                'app_raw_bytes': app_raw,
-                'net_rx_delta': rx_delta,
-                'net_tx_delta': tx_delta,
-                'net_total_delta': total_delta,
-            })
+            if current is not None:
+                _add_net_hour(hourly, current, rx_delta, tx_delta, total_delta)
+            if app_raw > 0:
+                samples.append({
+                    'ts': last['ts'],
+                    'app_raw_bytes': app_raw,
+                    'net_rx_delta': rx_delta,
+                    'net_tx_delta': tx_delta,
+                    'net_total_delta': total_delta,
+                })
 
+    if current is not None:
+        cutoff = current - timedelta(hours=SAMPLE_RETENTION_HOURS)
+        samples = [sample for sample in samples if _kept_after(sample, cutoff)]
+        oldest_hour = _net_hour_key(current - timedelta(days=NET_HOURLY_RETENTION_DAYS))
+        hourly = {key: value for key, value in hourly.items() if key >= oldest_hour}
     state = {
         'last': last,
         'samples': samples[-int(max_samples):],
+        'net_hourly': hourly,
     }
     # Rewritten on every limiter tick; with ~20k samples the indented form is
     # ~3.6 MB and its dump dominates the tick's JSON cost on a one-core host.
@@ -287,13 +346,27 @@ def summarize_windows(path, *, current_multiplier, now=None, windows=WINDOW_HOUR
     ]
 
 
+def cycle_net_totals(state, *, since):
+    """NIC rx/tx/total summed from the hourly billing-clock buckets at or after `since`."""
+    start = _net_hour_key(since)
+    totals = {'rx': 0, 'tx': 0, 'total': 0, 'hours': 0, 'since': since.isoformat()}
+    for key, bucket in (state.get('net_hourly') or {}).items():
+        if key >= start and isinstance(bucket, dict):
+            for field in ('rx', 'tx', 'total'):
+                totals[field] += int(bucket.get(field, 0) or 0)
+            totals['hours'] += 1
+    return totals
+
+
 def summarize_overview(path, *, current_multiplier, now=None, window_hours=DEFAULT_WINDOW_HOURS,
-                       windows=WINDOW_HOURS, min_sample_app_bytes=DEFAULT_MIN_SAMPLE_APP_BYTES):
+                       windows=WINDOW_HOURS, min_sample_app_bytes=DEFAULT_MIN_SAMPLE_APP_BYTES,
+                       cycle_start=None):
     """Return (default-window summary, per-window summaries) from one file read.
 
-    The state file holds ~20k samples, so the health views read it once and
-    compute each distinct window once. The default summary is a separate dict:
-    callers attach the window list to it, which must not create a cycle.
+    The state file holds thousands of samples, so the health views read it once
+    and compute each distinct window once. The default summary is a separate
+    dict: callers attach the window list to it, which must not create a cycle.
+    With `cycle_start` it also carries the cycle-to-date NIC totals.
     """
     state = state_store.load_json(path, {})
     by_hours = {
@@ -306,7 +379,10 @@ def summarize_overview(path, *, current_multiplier, now=None, window_hours=DEFAU
         )
         for hours in dict.fromkeys((window_hours, *windows))
     }
-    return dict(by_hours[window_hours]), [by_hours[hours] for hours in windows]
+    summary = dict(by_hours[window_hours])
+    if cycle_start is not None:
+        summary['cycle_net'] = cycle_net_totals(state, since=cycle_start)
+    return summary, [by_hours[hours] for hours in windows]
 
 
 def _as_float(value, default, *, low=None, high=None):

@@ -90,6 +90,23 @@ class HealthCalibrationPolicyResponse(PublicModel):
     cooldown_hours: StrictFloat
 
 
+class HealthCalibrationCycleNetResponse(PublicModel):
+    """Cycle-to-date NIC volume on the billing clock, comparable to the provider meter."""
+
+    rx: StrictInt
+    tx: StrictInt
+    total: StrictInt
+    hours: StrictInt
+    since: StrictStr
+
+    @field_validator('rx', 'tx', 'total', 'hours')
+    @classmethod
+    def cycle_net_values_must_be_non_negative(cls, value):
+        if value < 0:
+            raise ValueError('cycle NIC totals must be non-negative')
+        return value
+
+
 class HealthCalibrationResponse(PublicModel):
     window_hours: StrictInt
     sample_count: StrictInt
@@ -108,6 +125,7 @@ class HealthCalibrationResponse(PublicModel):
     egress_sample_count: StrictInt
     windows: list[HealthCalibrationWindowResponse]
     policy: HealthCalibrationPolicyResponse
+    cycle_net: HealthCalibrationCycleNetResponse | None = None
 
     @field_validator(
         'window_hours',

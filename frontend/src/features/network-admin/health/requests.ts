@@ -1,6 +1,6 @@
 import { postFormJson } from '../../../shared/postForm';
 import { ResourceError } from '../../../shared/readResource';
-import type { Health, HealthCalibration, HealthCalibrationPolicy, HealthCalibrationWindow, HealthLineRadar, HealthLineRadarRow, HealthOperation, HealthStatus, HealthUpdate } from './types';
+import type { Health, HealthCalibration, HealthCalibrationPolicy, HealthCalibrationWindow, HealthCycleNet, HealthLineRadar, HealthLineRadarRow, HealthOperation, HealthStatus, HealthUpdate } from './types';
 
 export const HEALTH_ENDPOINT = '/api/v1/admin/health';
 
@@ -36,6 +36,13 @@ function lineRadar(value: unknown): HealthLineRadar {
   return { window_hours: v.window_hours, total_bytes: v.total_bytes, recommendation: v.recommendation, reason: v.reason, rows };
 }
 
+function cycleNet(value: unknown): HealthCycleNet | null {
+  if (value === undefined || value === null) return null;
+  const v = record(value);
+  if (typeof v.since !== 'string') return invalid();
+  return { rx: nonNegative(v.rx), tx: nonNegative(v.tx), total: nonNegative(v.total), hours: nonNegative(v.hours), since: v.since };
+}
+
 function calibration(value: unknown): HealthCalibration {
   const v = record(value);
   const requiredInt = ['window_hours', 'sample_count', 'included_sample_count', 'app_raw_bytes', 'net_total_bytes', 'net_tx_bytes', 'egress_sample_count'];
@@ -47,7 +54,7 @@ function calibration(value: unknown): HealthCalibration {
   };
   const policy = record(v.policy);
   if (typeof policy.enabled !== 'boolean' || typeof policy.mode !== 'string' || typeof policy.min_confidence !== 'string' || typeof policy.max_delta_percent !== 'number' || !Number.isFinite(policy.max_delta_percent) || policy.max_delta_percent < 0 || typeof policy.min_delta_percent !== 'number' || !Number.isFinite(policy.min_delta_percent) || policy.min_delta_percent < 0 || typeof policy.cooldown_hours !== 'number' || !Number.isFinite(policy.cooldown_hours) || policy.cooldown_hours <= 0) return invalid();
-  return { window_hours: v.window_hours as number, sample_count: v.sample_count as number, included_sample_count: v.included_sample_count as number, app_raw_bytes: v.app_raw_bytes as number, net_total_bytes: v.net_total_bytes as number, net_tx_bytes: v.net_tx_bytes as number, current_multiplier: v.current_multiplier, suggested_multiplier: optionalNonNegative(v.suggested_multiplier), egress_multiplier: optionalNonNegative(v.egress_multiplier), delta_percent: v.delta_percent === null ? null : (typeof v.delta_percent === 'number' && Number.isFinite(v.delta_percent) ? v.delta_percent : invalid()), confidence: v.confidence, ifaces: v.ifaces as string[], last_ts: v.last_ts, method: v.method, egress_sample_count: v.egress_sample_count as number, windows: v.windows.map(parseWindow), policy: policy as unknown as HealthCalibrationPolicy };
+  return { window_hours: v.window_hours as number, sample_count: v.sample_count as number, included_sample_count: v.included_sample_count as number, app_raw_bytes: v.app_raw_bytes as number, net_total_bytes: v.net_total_bytes as number, net_tx_bytes: v.net_tx_bytes as number, current_multiplier: v.current_multiplier, suggested_multiplier: optionalNonNegative(v.suggested_multiplier), egress_multiplier: optionalNonNegative(v.egress_multiplier), delta_percent: v.delta_percent === null ? null : (typeof v.delta_percent === 'number' && Number.isFinite(v.delta_percent) ? v.delta_percent : invalid()), confidence: v.confidence, ifaces: v.ifaces as string[], last_ts: v.last_ts, method: v.method, egress_sample_count: v.egress_sample_count as number, windows: v.windows.map(parseWindow), policy: policy as unknown as HealthCalibrationPolicy, cycle_net: cycleNet(v.cycle_net) };
 }
 
 function update(value: unknown): HealthUpdate {
