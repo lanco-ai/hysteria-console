@@ -686,3 +686,13 @@ def test_prodseller_namespace_is_disjoint_and_its_cache_fails_independently(tmp_
         assert (await store.public())['status'] == 'ready'
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('label', ['', '加微信 abc', 'https://evil.test', 'x' * 25, '规格\n7'])
+def test_snapshot_labels_accept_plain_names_and_reject_contacts(label):
+    from web_api.shop_store import validate_items
+
+    row = normalize_products(products())[0]
+    validate_items([{**row, 'label': '250点数'}])
+    with pytest.raises(ValueError):
+        validate_items([{**row, 'label': label}])

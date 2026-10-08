@@ -50,6 +50,49 @@ def test_duplicate_ids_disabled_sku_and_untrusted_copy():
     assert row['label'] == '规格 7'
 
 
+def plus_with(*labels):
+    data = products()
+    plus = next(product for product in data if product['id'] == 1)
+    for sku, label in zip(plus['skus'], labels):
+        sku['spec_values'] = {'zh-CN': label}
+    return {
+        row['key']: row['label'] for row in normalize_products(data) if row['product_id'] == '1'
+    }
+
+
+def test_variants_are_listed_cheapest_first_within_each_product():
+    data = products()
+    pro = next(product for product in data if product['id'] == 2)
+    pro['skus'].reverse()
+    rows = normalize_products(data)
+    assert [row['key'] for row in rows if row['product_id'] == '2'] == ['2:7', '2:2']
+    assert [row['product_id'] for row in rows][:2] == ['2', '2']
+
+
+def test_plain_supplier_variant_names_reach_buyers():
+    assert plus_with('250点数', 'plus不可以覆盖') == {'1:1': '250点数', '1:4': 'plus不可以覆盖'}
+    # Repeated names would make variants indistinguishable, so repeats keep their number.
+    assert plus_with('月卡', '月卡') == {'1:1': '月卡', '1:4': '规格 4'}
+    assert plus_with('  ', '一卡一付') == {'1:1': '标准规格', '1:4': '一卡一付'}
+
+
+@pytest.mark.parametrize(
+    'unsafe',
+    [
+        '加微信 abc',
+        '客服@shop',
+        'QQ群 123456',
+        'shop.com 直充',
+        't.me/abc',
+        'Telegram 发货',
+        'x' * 25,
+        '<b>粗体</b>',
+    ],
+)
+def test_supplier_variant_names_with_contacts_or_markup_stay_numbered(unsafe):
+    assert plus_with(unsafe)['1:1'] == '规格 1'
+
+
 @pytest.mark.parametrize('status', [302, 403, 429, 500])
 def test_http_denial_never_followed(status):
     calls = []

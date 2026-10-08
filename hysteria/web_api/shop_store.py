@@ -23,7 +23,7 @@ from .shop_notices import (
 from .shop_prodseller_source import ORIGIN as PRODSELLER_ORIGIN
 from .shop_prodseller_source import PRODUCT_BASE as PRODSELLER_BASE
 from .shop_prodseller_source import SELECTED as PRODSELLER_SELECTED
-from .shop_source import MAX_CENTS, MAX_ROWS, ORIGIN, fetch_catalog
+from .shop_source import MAX_CENTS, MAX_ROWS, ORIGIN, fetch_catalog, safe_label
 
 TTL = 900
 BACKOFF = 900
@@ -161,11 +161,7 @@ def validate_items(items, provider='gpt'):
                     r'(ChatGPT (Plus|Go|Pro(?: \d{1,6})?)|数字商品)', row['public_title']
                 )
             )
-            or not isinstance(row['label'], str)
-            or not re.fullmatch(
-                r'(标准规格|可新开|续费卡密不可新开|一卡二付|一卡一付|规格 [1-9]\d{0,15})',
-                row['label'],
-            )
+            or not safe_label(row['label'])
         ):
             raise ValueError('invalid source text')
     return items

@@ -13,8 +13,25 @@ MAX_ROWS = 500
 MAX_CENTS = 100_000_000
 
 
+# Supplier variant names reach buyers only when they read as plain specifications:
+# short, with no links, handles or contact channels. Anything else keeps a neutral
+# numbered label, so supplier marketing and contacts never enter the retail view.
+SAFE_LABEL = re.compile(r'[0-9A-Za-z\u4e00-\u9fff][0-9A-Za-z\u4e00-\u9fff .+\-/×*%$¥()（）·]{0,23}')
+CONTACT_HINT = re.compile(
+    r'https?|www|t\.me|telegram|@|qq|微信|vx|客服|联系|群'
+    r'|\.(?:com|cn|net|org|io|me|xyz|top|cc|vip|shop)\b',
+    re.I,
+)
+
+
 class SourceError(ValueError):
     pass
+
+
+def safe_label(text):
+    return (
+        isinstance(text, str) and bool(SAFE_LABEL.fullmatch(text)) and not CONTACT_HINT.search(text)
+    )
 
 
 def localized(value):
@@ -56,8 +73,8 @@ def normalize_products(products):
         if not title:
             raise SourceError('missing title')
         # Do not republish supplier marketing, contacts, HTML, assets or URLs.
-        # Only recognised plan names and exact known specification vocabulary
-        # enter the retail projection. Original titles remain administrator-only.
+        # Only recognised plan names and plain specification names enter the
+        # retail projection. Original titles remain administrator-only.
         plan = re.search(r'chat\s*gpt\s*(plus|go|pro\s*\d*)', title, re.I)
         tier = re.sub(r'(?i)pro\s*', 'Pro ', plan[1]).strip() if plan else ''
         public_title = f'ChatGPT {tier.title()}' if tier else '数字商品'
@@ -67,6 +84,7 @@ def normalize_products(products):
         skus = product.get('skus')
         if not isinstance(skus, list) or not skus or len(skus) > 100:
             raise SourceError('invalid variants')
+        labels, variants = set(), []
         for sku in skus:
             if not isinstance(sku, dict):
                 raise SourceError('invalid variant')
@@ -78,13 +96,12 @@ def normalize_products(products):
                 raise SourceError('invalid availability')
             if not sku['is_active']:
                 continue
-            label = localized(sku.get('spec_values'))
-            label = (
-                label
-                if label in {'可新开', '续费卡密不可新开', '一卡二付', '一卡一付'}
-                else ('标准规格' if not label else f'规格 {sku_id}')
-            )
-            rows.append(
+            label = localized(sku.get('spec_values')) or '标准规格'
+            # Buyers must be able to tell variants apart; repeats keep their number.
+            if not safe_label(label) or label in labels:
+                label = f'规格 {sku_id}'
+            labels.add(label)
+            variants.append(
                 dict(
                     key=f'{product_id}:{sku_id}',
                     product_id=product_id,
@@ -98,8 +115,10 @@ def normalize_products(products):
                     sales=None,
                 )
             )
-            if len(rows) > MAX_ROWS:
+            if len(rows) + len(variants) > MAX_ROWS:
                 raise SourceError('too many variants')
+        # Suppliers list variants in arbitrary order; show them cheapest first.
+        rows.extend(sorted(variants, key=lambda row: row['cost_cents']))
     return rows
 
 
