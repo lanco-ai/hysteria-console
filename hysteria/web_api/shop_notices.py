@@ -119,11 +119,11 @@ GEMINI_NOTICE = {
     "after_sales": """交付后 24 小时内如链接无法激活，请联系本店处理；激活成功后不再提供售后。""",
 }
 
-# Supplier storefronts, recharge portals and contact handles. Customer-facing
-# copy must never send buyers to the supplier, so any line naming one of these
-# is dropped from saved and projected product copy.
+# Supplier storefronts and contact handles. Customer-facing copy must never send
+# buyers to the supplier, so any line naming one of these is dropped from saved
+# and projected product copy. Redemption portals (aiflbchengzi.com, sub2buy.com)
+# sell nothing and stay: buyers need them to redeem what this store delivers.
 SUPPLIER_MARKERS = (
-    "sub2buy",
     "qiangyunai",
     "anligpt",
     "t.me/bkbk58",

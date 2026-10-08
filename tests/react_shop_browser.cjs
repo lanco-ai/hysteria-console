@@ -60,7 +60,7 @@ async function main() {
     const publicText = await response.text();
     assert.equal(/cost_cents|qiangyunai|source_url|cnadsiuvhga/.test(publicText), false);
     await manager.locator('.shop-copy-editor summary').first().click();
-    await manager.getByLabel('商品说明 2').fill('<img src=x onerror=alert(1)>\n商家自填说明');
+    await manager.getByLabel('商品说明 2').fill('<img src=x onerror=alert(1)>\n商家自填说明\n兑换地址：https://aiflbchengzi.com/\n其他：https://external.invalid/x');
     await manager.getByLabel('售后条款 2').fill('本店售后请联系商家确认。');
     await manager.getByRole('button', { name: '保存商品设置' }).click();
     await expect(manager.getByRole('status')).toContainText('已保存');
@@ -85,6 +85,11 @@ async function main() {
       await expect(page.getByRole('heading', { name: '商品说明', exact: true })).toBeVisible();
       await expect(page.getByText('<img src=x onerror=alert(1)>', { exact: false })).toBeVisible();
       await expect(page.locator('.shop-detail-copy img')).toHaveCount(0);
+      // Only the redemption portal is a link; other URLs stay inert text.
+      await expect(page.locator('.shop-detail-copy a')).toHaveCount(1);
+      await expect(page.locator('.shop-detail-copy a')).toHaveAttribute('href', 'https://aiflbchengzi.com/');
+      await expect(page.locator('.shop-detail-copy a')).toHaveAttribute('target', '_blank');
+      await expect(page.getByText('其他：https://external.invalid/x', { exact: false })).toBeVisible();
       await page.getByRole('button', { name: '续费卡密不可新开', exact: true }).click();
       await page.getByLabel('购买数量', { exact: true }).fill('3');
       await expect(page.getByTestId('purchase-total')).toHaveText('¥3600.06');

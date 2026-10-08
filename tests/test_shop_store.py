@@ -588,8 +588,15 @@ def test_supplier_contacts_never_reach_product_copy():
         }
     }
     cleaned = sanitize_product_copy(legacy)['1000000000011']
-    assert cleaned == {'description': '本商品卡密可囤1个月\n\n全平台通用', 'after_sales': ''}
+    # Redemption portals sell nothing and stay; supplier channels and support go.
+    assert cleaned == {
+        'description': '本商品卡密可囤1个月\n\n充值地址：[https://sub2buy.com/#/grok](https://sub2buy.com/#/grok)'
+        '\n\n全平台通用',
+        'after_sales': '',
+    }
     assert strip_supplier_lines('联系本店') == '联系本店'
+    mixed = '货源：https://qiangyunai.com/products/x\n兑换地址：https://aiflbchengzi.com/'
+    assert strip_supplier_lines(mixed) == '兑换地址：https://aiflbchengzi.com/'
 
 
 def prodseller_rows():
