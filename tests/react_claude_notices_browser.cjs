@@ -30,6 +30,7 @@ async function main() {
     await manager.unroute('**/api/v1/shop/admin');
     await manager.getByRole('button', { name: '刷新来源', exact: true }).click();
     await expect(manager.locator('.shop-admin-row')).toHaveCount(12);
+    await manager.locator('.shop-admin-brands').getByRole('button', { name: /^Claude\b/ }).click();
     for (const id of ids) {
       const section = manager.locator('.shop-admin-product').filter({ has: manager.getByLabel(`商品说明 ${id}`, { exact: true }) });
       await section.locator('summary').click();

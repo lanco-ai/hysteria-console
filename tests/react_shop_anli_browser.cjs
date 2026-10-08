@@ -23,6 +23,10 @@ async function main() {
     await expect(manager.locator('.shop-admin-product')).toHaveCount(10);
     await expect(manager.locator('.shop-admin-row')).toHaveCount(12);
     await expect(manager.locator('.shop-admin-source-status p')).toHaveCount(2);
+    const brandTabs = manager.locator('.shop-admin-brands').getByRole('button');
+    const showBrand = name => manager.locator('.shop-admin-brands').getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
+    await expect(brandTabs).toHaveText([/^GPT 7/, /^Claude 3/, /^Grok 2/]);
+    await expect(manager.locator('.shop-admin-group:visible')).toHaveCount(1);
     for (const id of [5, 7, 8, 11, 10]) {
       const key = `${1000000000000 + id}:1`;
       await expect(manager.getByLabel(`售价 ${key}`, { exact: true })).toHaveValue('');
@@ -30,16 +34,21 @@ async function main() {
     }
     evidence.assertions.push('five new products draft/no retail; original five GPT products/seven variants intact');
     await manager.getByLabel('商家 Telegram 用户名').fill('fixture_shop');
-    for (const [key, price] of [['2:7', '1100.01'], ['2:2', '1200.02'], ['1000000000005:1', '155.00'], ['1000000000007:1', '850.00'], ['1000000000008:1', '1750.00'], ['1000000000011:1', '205.00'], ['1000000000010:1', '670.00']]) {
+    for (const [brand, key, price] of [['GPT', '2:7', '1100.01'], ['GPT', '2:2', '1200.02'], ['Claude', '1000000000005:1', '155.00'], ['Claude', '1000000000007:1', '850.00'], ['Claude', '1000000000008:1', '1750.00'], ['Grok', '1000000000011:1', '205.00'], ['Grok', '1000000000010:1', '670.00']]) {
+      await showBrand(brand);
       await manager.getByLabel(`售价 ${key}`, { exact: true }).fill(price);
       await manager.getByLabel(`上架 ${key}`, { exact: true }).check();
     }
+    // Hidden tabs keep their edits and flag them until saved.
+    await expect(brandTabs.filter({ hasText: '有未保存的修改' })).toHaveCount(3);
+    await showBrand('Claude');
     const claudeGroup = manager.locator('.shop-admin-product').filter({ has: manager.getByLabel('售价 1000000000005:1', { exact: true }) });
     await claudeGroup.locator('summary').click();
     await manager.getByLabel('商品说明 1000000000005', { exact: true }).fill('本店 Claude 说明');
     await manager.getByLabel('售后条款 1000000000005', { exact: true }).fill('本店 Claude 售后');
     await manager.getByRole('button', { name: '保存商品设置' }).click();
     await expect(manager.getByRole('status')).toContainText('已保存');
+    await expect(brandTabs.filter({ hasText: '有未保存的修改' })).toHaveCount(0);
     const catalogResponse = await page.request.get(`${base}/api/v1/shop/catalog`);
     const catalogText = await catalogResponse.text();
     const catalog = JSON.parse(catalogText);
@@ -92,6 +101,7 @@ async function main() {
       await page.getByRole('button', { name: '清空购物车' }).click();
       evidence.assertions.push(`${width}px category/search/brand/detail/soldout/cart/current purchase totals`);
     }
+    await showBrand('Claude');
     await manager.getByLabel('售价 1000000000005:1', { exact: true }).fill('199.99');
     await manager.getByLabel('商品说明 1000000000005', { exact: true }).fill('未保存说明');
     await manager.getByLabel('售后条款 1000000000005', { exact: true }).fill('未保存售后');

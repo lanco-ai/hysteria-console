@@ -245,6 +245,16 @@ div.shop-admin-empty p { margin: 0; }
 .shop-admin-affix:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .shop-admin-affix:has(input[aria-invalid="true"]) { border-color: var(--danger); background: var(--danger-soft); }
 .shop-admin-affix:has(input:disabled) { opacity: .6; }
+/* Brand tabs stay reachable below the sticky shell topbar while a long brand list scrolls. */
+.shop-admin-brands { position: sticky; z-index: 3; top: 68px; display: flex; gap: 4px; min-width: 0; overflow-x: auto; border-bottom: 1px solid var(--border); background: var(--bg-page); scrollbar-width: none; }
+.shop-admin-brands::-webkit-scrollbar { display: none; }
+.shop-admin-brand { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; min-height: 46px; padding: 0 16px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font: inherit; font-size: 15px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+.shop-admin-brand:hover { color: var(--text-primary); }
+.shop-admin-brand.active { border-bottom-color: var(--accent); color: var(--text-primary); font-weight: 600; }
+.shop-admin-brand:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.shop-admin-brand-count { min-width: 22px; padding: 0 7px; border-radius: var(--radius-pill); background: var(--bg-subtle); color: var(--text-secondary); font-size: 12px; font-variant-numeric: tabular-nums; line-height: 20px; text-align: center; }
+.shop-admin-brand.active .shop-admin-brand-count { background: var(--accent); color: var(--bg-surface); }
+.shop-admin-brand-dirty { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
 .shop-admin-toolbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
 .shop-admin-filters { flex-wrap: wrap; }
 .shop-admin-filters .chip { gap: 6px; }
@@ -283,7 +293,7 @@ div.shop-admin-empty p { margin: 0; }
 .shop-copy-fields label { display: grid; gap: 6px; min-width: 0; font-size: 13px; }
 .shop-copy-label { display: flex; justify-content: space-between; gap: 8px; }
 .shop-copy-label small { color: var(--text-tertiary); font-size: 11px; font-variant-numeric: tabular-nums; }
-.shop-copy-fields textarea { width: 100%; min-height: 140px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 13px; line-height: 1.6; resize: vertical; scroll-margin-bottom: 120px; }
+.shop-copy-fields textarea { width: 100%; min-height: 140px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 13px; line-height: 1.6; resize: vertical; scroll-margin-top: 130px; scroll-margin-bottom: 120px; }
 .shop-copy-fields textarea:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
 .shop-admin-row { position: relative; min-width: 0; padding: 8px 20px; }
 .shop-admin-row.is-changed { background: var(--warn-soft); }
@@ -305,7 +315,7 @@ div.shop-admin-empty p { margin: 0; }
 .shop-admin-margin.is-invalid strong { font-size: 12px; }
 .shop-admin-margin.is-empty strong { color: var(--text-disabled); font-weight: 400; }
 .shop-admin-price { display: block; min-width: 0; }
-.shop-admin-row input { scroll-margin-bottom: 110px; }
+.shop-admin-row input { scroll-margin-top: 130px; scroll-margin-bottom: 110px; }
 .shop-admin-row .shop-publish { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .shop-admin-row .shop-publish > span,
 .shop-admin-mobile-label { display: none; }

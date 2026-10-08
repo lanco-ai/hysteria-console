@@ -19,6 +19,7 @@ const ANLI_PRODUCT_BASE = 1_000_000_000_000;
 const PRODSELLER_PRODUCT_BASE = 2_000_000_000_000;
 const SOURCE_NAMES: Record<string, string> = { gpt: 'GPT', anli: 'Claude / Grok', prodseller: 'Gemini' };
 const EMPTY_COPY = { description: '', after_sales: '' };
+const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
 
 function providerOf(productId: string) {
   const id = Number(productId);
@@ -29,6 +30,9 @@ function brandOf(item: SourceItem): Brand {
   if (provider === 'gpt') return 'GPT';
   if (provider === 'prodseller') return 'Gemini';
   return /^claude/i.test(item.public_title ?? item.title) ? 'Claude' : 'Grok';
+}
+function storedBrand(): Brand | null {
+  try { return BRANDS.find(brand => brand === localStorage.getItem(BRAND_KEY)) ?? null; } catch { return null; }
 }
 function priceText(setting: Setting | undefined) { return setting?.price_cents == null ? '' : money(setting.price_cents).slice(1); }
 function draftFor(value: Merchant): Draft {
@@ -69,6 +73,11 @@ export function ShopAdminPage() {
   const [notice, setNotice] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
+  const [brand, setBrand] = useState<Brand | null>(storedBrand);
+  function chooseBrand(value: Brand) {
+    setBrand(value); setQuery('');
+    try { localStorage.setItem(BRAND_KEY, value); } catch { /* Storage unavailable: keep the choice for this visit. */ }
+  }
   function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setDraft(draftFor(value)); setCopy(value.products ?? {}); setDirty(false); }
   useEffect(() => {
     let active = true;
@@ -141,10 +150,15 @@ export function ShopAdminPage() {
     products.set(item.product_id, [...(products.get(item.product_id) ?? []), item]);
     groups.set(brandOf(item), products);
   }
-  const counts = Object.fromEntries(FILTERS.map(([value]) => [value, items.filter(item => matchesFilter(value, item, saved[item.key])).length])) as Record<Filter, number>;
+  const present = BRANDS.filter(name => groups.has(name));
+  const activeBrand = present.find(name => name === brand) ?? present[0];
   const needle = query.trim().toLowerCase();
-  const found = (...texts: (string | undefined)[]) => !needle || texts.some(text => text?.toLowerCase().includes(needle));
-  const visible = (item: SourceItem) => matchesFilter(filter, item, saved[item.key]) && found(item.title, item.public_title, item.label, item.key);
+  const found = (item: SourceItem) => !needle || [item.title, item.public_title, item.label, item.key].some(text => text?.toLowerCase().includes(needle));
+  // Tabs show one brand at a time; a search looks across every brand.
+  const inScope = (item: SourceItem) => (needle !== '' || brandOf(item) === activeBrand) && found(item);
+  const counts = Object.fromEntries(FILTERS.map(([value]) => [value, items.filter(item => inScope(item) && matchesFilter(value, item, saved[item.key])).length])) as Record<Filter, number>;
+  const visible = (item: SourceItem) => inScope(item) && matchesFilter(filter, item, saved[item.key]);
+  const brandCount = (name: Brand) => items.filter(item => brandOf(item) === name && found(item) && matchesFilter(filter, item, saved[item.key])).length;
   const changed = (key: string) => {
     const value = draft[key];
     return value !== undefined && (value.published !== (saved[key]?.published ?? false) || draftCents(value.price) !== (saved[key]?.price_cents ?? null));
@@ -160,6 +174,7 @@ export function ShopAdminPage() {
   ].filter(([count]) => count).map(([count, unit]) => `${count} ${unit}`);
   if (state && telegram !== state.telegram) pending.push('Telegram 用户名');
   const shownCount = items.filter(visible).length;
+  const brandDirty = (name: Brand) => items.some(item => brandOf(item) === name && (changed(item.key) || copyChanged(item.product_id)));
   const providerCount = (provider: string) => items.filter(item => providerOf(item.product_id) === provider).length;
   const feedback = <>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
@@ -187,6 +202,15 @@ export function ShopAdminPage() {
             <small className={telegram ? undefined : 'is-warn'}>客户将通过此用户名联系商家；留空时无法联系购买。</small>
           </div>
         </div>
+        {present.length > 1 ? <div className="shop-admin-brands" role="group" aria-label="品牌">
+          {present.map(name => {
+            const active = !needle && name === activeBrand;
+            return <button key={name} type="button" className={`shop-admin-brand${active ? ' active' : ''}`} aria-pressed={active} onClick={() => chooseBrand(name)}>
+              {name}{' '}<span className="shop-admin-brand-count">{brandCount(name)}</span>
+              {brandDirty(name) ? <span className="shop-admin-brand-dirty"><span className="sr-only">有未保存的修改</span></span> : null}
+            </button>;
+          })}
+        </div> : null}
         {items.length ? <div className="shop-admin-toolbar">
           <div className="filter-chips shop-admin-filters" role="group" aria-label="规格筛选">
             {FILTERS.map(([value, label]) => <button key={value} type="button" className={`chip${filter === value ? ' active' : ''}${value === 'unpriced' && counts.unpriced ? ' is-attention' : ''}`} aria-pressed={filter === value} onClick={() => setFilter(value)}>
