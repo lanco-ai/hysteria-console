@@ -9,18 +9,25 @@ type ProductCopy = Record<string, { description: string; after_sales: string }>;
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean }>;
-type Brand = 'GPT' | 'Claude' | 'Grok';
+type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini';
 type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
 
-const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok'];
+const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini'];
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
-// Same split as the storefront categories: secondary-source product ids start at 10^12.
-const SECONDARY_PRODUCT_BASE = 1_000_000_000_000;
+// Same split as the backend feeds: Anli ids start at 10^12, ProdSeller ids at 2*10^12.
+const ANLI_PRODUCT_BASE = 1_000_000_000_000;
+const PRODSELLER_PRODUCT_BASE = 2_000_000_000_000;
+const SOURCE_NAMES: Record<string, string> = { gpt: 'GPT', anli: 'Claude / Grok', prodseller: 'Gemini' };
 const EMPTY_COPY = { description: '', after_sales: '' };
 
-function isSecondary(productId: string) { return Number(productId) >= SECONDARY_PRODUCT_BASE; }
+function providerOf(productId: string) {
+  const id = Number(productId);
+  return id >= PRODSELLER_PRODUCT_BASE ? 'prodseller' : id >= ANLI_PRODUCT_BASE ? 'anli' : 'gpt';
+}
 function brandOf(item: SourceItem): Brand {
-  if (!isSecondary(item.product_id)) return 'GPT';
+  const provider = providerOf(item.product_id);
+  if (provider === 'gpt') return 'GPT';
+  if (provider === 'prodseller') return 'Gemini';
   return /^claude/i.test(item.public_title ?? item.title) ? 'Claude' : 'Grok';
 }
 function priceText(setting: Setting | undefined) { return setting?.price_cents == null ? '' : money(setting.price_cents).slice(1); }
@@ -153,7 +160,7 @@ export function ShopAdminPage() {
   ].filter(([count]) => count).map(([count, unit]) => `${count} ${unit}`);
   if (state && telegram !== state.telegram) pending.push('Telegram 用户名');
   const shownCount = items.filter(visible).length;
-  const providerCount = (provider: string) => items.filter(item => (isSecondary(item.product_id) ? 'anli' : 'gpt') === provider).length;
+  const providerCount = (provider: string) => items.filter(item => providerOf(item.product_id) === provider).length;
   const feedback = <>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
     <p role="status" className="shop-admin-feedback">{notice}</p>
@@ -168,7 +175,7 @@ export function ShopAdminPage() {
             {Object.entries(state.sources ?? { gpt: state }).map(([provider, source]) => {
               const wait = Math.max(source.retry_after_seconds, source.cooldown_seconds);
               return <p key={provider} className={`shop-admin-source${source.is_stale || source.error ? ' is-warn' : ''}`}>
-                <span className="shop-admin-source-name"><strong>{provider === 'anli' ? 'Claude / Grok' : 'GPT'}</strong><small>{providerCount(provider)} 个规格</small></span>
+                <span className="shop-admin-source-name"><strong>{SOURCE_NAMES[provider] ?? provider}</strong><small>{providerCount(provider)} 个规格</small></span>
                 <span className="shop-admin-source-state">{source.is_stale ? '商品信息待更新，此来源商品暂不能购买' : '商品信息已更新'}{source.error ? ' · 来源暂不可用，稍后自动重试' : ''}{wait > 0 ? ` · 刷新等待 ${wait} 秒` : ''}</span>
                 <small className="shop-admin-source-time">最近成功更新：{updatedAt(source.last_success)}</small>
               </p>;

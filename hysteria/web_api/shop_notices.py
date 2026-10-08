@@ -4,6 +4,7 @@ import re
 
 CLAUDE_PRODUCT_IDS = frozenset({"1000000000005", "1000000000007", "1000000000008"})
 GROK_PRODUCT_IDS = frozenset({"1000000000011"})
+GEMINI_PRODUCT_IDS = frozenset({"2000000000001"})
 
 CLAUDE_NOTICE = {
     "description": """# ⚠️ 充值前重要须知
@@ -106,6 +107,18 @@ Your subscription is covered for the full one-month term. If the subscription is
 """,
 }
 
+# Plain text: Gemini copy is not rendered as Markdown on the storefront.
+GEMINI_NOTICE = {
+    "description": """Gemini Pro（Google AI Pro）18 个月会员激活链接，独立账号使用，不是邀请加入。
+
+· 含 5TB 云端存储，可添加 5 位家庭成员
+· 无需绑定银行卡，任何地区均可激活
+· 链接自交付起 7 天内有效，请尽快兑换
+
+使用方法：在浏览器中打开收到的兑换链接，点击“Activate Offer”即可完成激活。如果页面提示链接不可用，请点击“Not Working”按钮获取新链接。""",
+    "after_sales": """交付后 24 小时内如链接无法激活，请联系本店处理；激活成功后不再提供售后。""",
+}
+
 # Supplier storefronts, recharge portals and contact handles. Customer-facing
 # copy must never send buyers to the supplier, so any line naming one of these
 # is dropped from saved and projected product copy.
@@ -116,6 +129,7 @@ SUPPLIER_MARKERS = (
     "t.me/bkbk58",
     "t.me/buy_gptplus",
     "t.me/buygpt_plus",
+    "prodseller",
 )
 
 

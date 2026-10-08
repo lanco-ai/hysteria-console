@@ -12,11 +12,17 @@ from fastapi.responses import JSONResponse
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .shop_anli_source import fetch_catalog as fetch_anli_catalog
+from .shop_prodseller_source import configured as prodseller_configured
+from .shop_prodseller_source import fetch_catalog as fetch_prodseller_catalog
 from .shop_store import Conflict, ShopStore
 
 
 def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabled=False):
-    store = store or ShopStore(secondary_fetcher=fetch_anli_catalog)
+    # The Gemini feed needs a reseller API key; without one it is simply absent.
+    store = store or ShopStore(
+        secondary_fetcher=fetch_anli_catalog,
+        prodseller_fetcher=fetch_prodseller_catalog if prodseller_configured() else None,
+    )
 
     async def scheduler():
         while True:

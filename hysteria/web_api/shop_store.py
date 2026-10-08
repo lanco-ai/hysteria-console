@@ -14,15 +14,30 @@ from .shop_anli_source import PRODUCT_BASE, SELECTED
 from .shop_notices import (
     CLAUDE_NOTICE,
     CLAUDE_PRODUCT_IDS,
+    GEMINI_NOTICE,
+    GEMINI_PRODUCT_IDS,
     GROK_NOTICE,
     GROK_PRODUCT_IDS,
     sanitize_product_copy,
 )
+from .shop_prodseller_source import ORIGIN as PRODSELLER_ORIGIN
+from .shop_prodseller_source import PRODUCT_BASE as PRODSELLER_BASE
+from .shop_prodseller_source import SELECTED as PRODSELLER_SELECTED
 from .shop_source import MAX_CENTS, MAX_ROWS, ORIGIN, fetch_catalog
 
 TTL = 900
 BACKOFF = 900
 MANUAL_COOLDOWN = 60
+PRODSELLER_BY_NUMBER = {
+    number: (supplier_id, title) for supplier_id, (number, title) in PRODSELLER_SELECTED.items()
+}
+
+
+def provider_of(product_id):
+    number = int(product_id)
+    return (
+        'prodseller' if number >= PRODSELLER_BASE else 'anli' if number >= PRODUCT_BASE else 'gpt'
+    )
 
 
 class Conflict(ValueError):
@@ -120,6 +135,16 @@ def validate_items(items, provider='gpt'):
                 or row['label'] != '标准规格'
             ):
                 raise ValueError('invalid secondary source identity')
+        elif provider == 'prodseller':
+            selected = PRODSELLER_BY_NUMBER.get(product_number - PRODSELLER_BASE)
+            if (
+                selected is None
+                or key != f'{product_number}:1'
+                or row['source_url'] != f'{PRODSELLER_ORIGIN}/v1/products/{selected[0]}'
+                or row['public_title'] != selected[1]
+                or row['label'] != '标准规格'
+            ):
+                raise ValueError('invalid secondary source identity')
         else:
             raise ValueError('unknown source')
         seen.add(key)
@@ -153,6 +178,7 @@ class ShopStore:
         *,
         fetcher=fetch_catalog,
         secondary_fetcher=None,
+        prodseller_fetcher=None,
         clock=time.time,
     ):
         self.path = Path(path)
@@ -160,9 +186,25 @@ class ShopStore:
         self.fetcher, self.clock = fetcher, clock
         self.secondary_fetcher = secondary_fetcher
         self.secondary_path = self.path.with_name(self.path.stem + '-anli.json')
+        self.prodseller_fetcher = prodseller_fetcher
+        self.prodseller_path = self.path.with_name(self.path.stem + '-prodseller.json')
 
     def _feed_ids(self):
-        return ('gpt', 'anli') if self.secondary_fetcher is not None else ('gpt',)
+        return tuple(
+            provider for provider in ('gpt', 'anli', 'prodseller') if self._fetcher(provider)
+        )
+
+    def _fetcher(self, provider):
+        return {
+            'gpt': self.fetcher,
+            'anli': self.secondary_fetcher,
+            'prodseller': self.prodseller_fetcher,
+        }[provider]
+
+    def _path(self, provider):
+        return {'gpt': self.path, 'anli': self.secondary_path, 'prodseller': self.prodseller_path}[
+            provider
+        ]
 
     @staticmethod
     def _empty_source():
@@ -175,10 +217,7 @@ class ShopStore:
         }
 
     def _source(self, provider='gpt'):
-        value = state_store.load_json_strict(
-            self.path if provider == 'gpt' else self.secondary_path,
-            self._empty_source(),
-        )
+        value = state_store.load_json_strict(self._path(provider), self._empty_source())
         try:
             if set(value) != {'items', 'last_success', 'error', 'retry_after', 'manual_after'}:
                 raise ValueError('invalid snapshot')
@@ -215,7 +254,7 @@ class ShopStore:
             try:
                 sources[provider] = self._source(provider)
             except state_store.InvalidJsonState:
-                if self.secondary_fetcher is None:
+                if len(self._feed_ids()) == 1:
                     raise
                 # Ignore untrusted cache bytes independently; another fresh feed
                 # stays readable. A successful refresh can replace this cache.
@@ -246,6 +285,8 @@ class ShopStore:
             products.setdefault(product_id, dict(CLAUDE_NOTICE))
         for product_id in {row['product_id'] for row in items} & GROK_PRODUCT_IDS:
             products.setdefault(product_id, dict(GROK_NOTICE))
+        for product_id in {row['product_id'] for row in items} & GEMINI_PRODUCT_IDS:
+            products.setdefault(product_id, dict(GEMINI_NOTICE))
         # Older saved copy may still carry supplier links; never project them.
         products = sanitize_product_copy(products)
         statuses = {provider: self._feed_status(source) for provider, source in sources.items()}
@@ -282,14 +323,16 @@ class ShopStore:
             merchant = state['skus'].get(row['key'], {})
             if not merchant.get('published'):
                 continue
-            provider = 'anli' if int(row['product_id']) >= PRODUCT_BASE else 'gpt'
+            provider = provider_of(row['product_id'])
             applicable.add(provider)
             group = groups.setdefault(
                 row['product_id'],
                 {
                     'id': row['product_id'],
                     'title': row['public_title'],
-                    'category': ('Claude' if row['public_title'].startswith('Claude ') else 'Grok')
+                    'category': 'Gemini'
+                    if provider == 'prodseller'
+                    else ('Claude' if row['public_title'].startswith('Claude ') else 'Grok')
                     if provider == 'anli'
                     else 'GPT',
                     'description': state['products']
@@ -387,8 +430,7 @@ class ShopStore:
                     or (not manual and not status['is_stale'])
                 ):
                     continue
-                path = self.path if provider == 'gpt' else self.secondary_path
-                fetcher = self.fetcher if provider == 'gpt' else self.secondary_fetcher
+                path, fetcher = self._path(provider), self._fetcher(provider)
                 source['manual_after'] = self.clock() + MANUAL_COOLDOWN
                 # Persist before acquisition so cancellation cannot busy-loop.
                 source['retry_after'] = self.clock() + BACKOFF

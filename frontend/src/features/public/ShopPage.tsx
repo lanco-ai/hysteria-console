@@ -58,7 +58,7 @@ export function ShopPage() {
     updateCart(existing ? cart.map(row => row.id === item.id ? { ...row, quantity: row.quantity + item.quantity } : row) : [...cart, item], '已加入购物车。');
   }
   const allProducts = catalog?.products ?? [];
-  const categories = [...new Set(allProducts.map(product => product.category))].sort((a, b) => ['GPT', 'Claude', 'Grok'].indexOf(a) - ['GPT', 'Claude', 'Grok'].indexOf(b));
+  const categories = [...new Set(allProducts.map(product => product.category))].sort((a, b) => ['GPT', 'Claude', 'Grok', 'Gemini'].indexOf(a) - ['GPT', 'Claude', 'Grok', 'Gemini'].indexOf(b));
   const products = allProducts.filter(product => (category === '全部商品' || product.category === category) && `${product.title} ${product.variants.map(item => item.label).join(' ')}`.toLowerCase().includes(search.trim().toLowerCase()));
   return <PortalShell active="shop" pageTitle="购物">
     <div className="shop-toolbar"><a href="/">商品目录</a><a className="btn btn-secondary" href="/?view=cart">购物车（{cart.reduce((sum, item) => sum + item.quantity, 0)}）</a></div>

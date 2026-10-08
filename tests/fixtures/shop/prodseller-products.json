@@ -1,0 +1,39 @@
+{
+  "products": [
+    {
+      "id": "6a31035939dc014325da2c66",
+      "name": "Gemini Pro 18Months (link)",
+      "description": "supplier marketing https://t.me/ProdSellerBot",
+      "price": 0.38,
+      "finalPrice": 0.38,
+      "publicPrice": 0.42,
+      "imageUrl": "https://cdn.example.invalid/gemini.png",
+      "delivery": {"type": "instant"},
+      "sold": 1000,
+      "inStock": true,
+      "requiresEmailActivation": false
+    },
+    {
+      "id": "6a0000000000000000000002",
+      "name": "Example Video 12 Months Link",
+      "description": "Simple as Gemini links, supplier marketing",
+      "price": 1.4,
+      "publicPrice": 1.5,
+      "delivery": {"type": "instant"},
+      "sold": 12,
+      "inStock": true,
+      "requiresEmailActivation": false
+    },
+    {
+      "id": "64abc0000000000000000001",
+      "name": "Example Family Plan",
+      "description": "Activated on your email",
+      "price": 9.99,
+      "publicPrice": 10.99,
+      "delivery": {"type": "manual"},
+      "sold": 3,
+      "inStock": true,
+      "requiresEmailActivation": true
+    }
+  ]
+}

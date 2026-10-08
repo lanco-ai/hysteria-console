@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -589,3 +590,99 @@ def test_supplier_contacts_never_reach_product_copy():
     cleaned = sanitize_product_copy(legacy)['1000000000011']
     assert cleaned == {'description': '本商品卡密可囤1个月\n\n全平台通用', 'after_sales': ''}
     assert strip_supplier_lines('联系本店') == '联系本店'
+
+
+def prodseller_rows():
+    from web_api.shop_prodseller_source import normalize_products as normalize_prodseller
+
+    fixture = Path(__file__).parent / 'fixtures/shop/prodseller-products.json'
+    return normalize_prodseller(json.loads(fixture.read_text(), parse_float=Decimal))
+
+
+def test_prodseller_feed_adds_private_gemini_category_and_default_copy(tmp_path):
+    async def run():
+        async def anli():
+            return anli_rows()
+
+        async def prodseller():
+            return prodseller_rows()
+
+        store = make_store(
+            tmp_path, secondary_fetcher=anli, prodseller_fetcher=prodseller, clock=lambda: 1000
+        )
+        admin = await store.refresh()
+        assert set(admin['sources']) == {'gpt', 'anli', 'prodseller'}
+        assert admin['sources']['prodseller']['is_stale'] is False
+        assert json.loads(store.prodseller_path.read_text())['items'] == prodseller_rows()
+        gemini = [row['key'] for row in admin['items'] if row['product_id'] == '2000000000001']
+        assert gemini == ['2000000000001:1']
+        from web_api.shop_notices import GEMINI_NOTICE
+
+        assert admin['products']['2000000000001'] == GEMINI_NOTICE
+        await store.update(
+            {
+                'revision': 0,
+                'telegram': 'my_shop',
+                'skus': {'2000000000001:1': {'price_cents': 990, 'published': True}},
+            }
+        )
+        public = await store.public()
+        assert [(row['id'], row['category'], row['title']) for row in public['products']] == [
+            ('2000000000001', 'Gemini', 'Gemini Pro 18 个月')
+        ]
+        assert public['products'][0]['description'] == GEMINI_NOTICE['description']
+        assert public['products'][0]['variants'][0]['price_cents'] == 990
+        text = json.dumps(public, ensure_ascii=False)
+        for private in [
+            'cost_cents',
+            'source_url',
+            'prodseller',
+            '274',
+            '$0.38',
+            'supplier marketing',
+        ]:
+            assert private not in text
+
+    asyncio.run(run())
+
+
+def test_prodseller_namespace_is_disjoint_and_its_cache_fails_independently(tmp_path):
+    from web_api.shop_store import provider_of, validate_items
+
+    row = prodseller_rows()[0]
+    validate_items([row], 'prodseller')
+    for provider in ('gpt', 'anli'):
+        with pytest.raises(ValueError):
+            validate_items([row], provider)
+    with pytest.raises(ValueError):
+        validate_items([anli_rows()[0]], 'prodseller')
+    for change in (
+        {'source_url': 'https://evil.test/v1/products/6a31035939dc014325da2c66'},
+        {'public_title': 'Gemini Ultra'},
+        {'key': '2000000000001:2'},
+        {'label': '规格 2'},
+        {'key': '2000000000002:1', 'product_id': '2000000000002'},
+    ):
+        with pytest.raises(ValueError):
+            validate_items([{**row, **change}], 'prodseller')
+    assert [provider_of(value) for value in ('5', '1000000000005', '2000000000001')] == [
+        'gpt',
+        'anli',
+        'prodseller',
+    ]
+
+    async def run():
+        async def prodseller():
+            return prodseller_rows()
+
+        store = make_store(tmp_path, prodseller_fetcher=prodseller)
+        await store.refresh()
+        value = json.loads(store.prodseller_path.read_text())
+        value['items'][0]['source_url'] = 'https://evil.test/'
+        store.prodseller_path.write_text(json.dumps(value))
+        admin = await store.admin()
+        assert admin['sources']['prodseller']['is_stale'] is True
+        assert all(item['product_id'] != '2000000000001' for item in admin['items'])
+        assert (await store.public())['status'] == 'ready'
+
+    asyncio.run(run())
