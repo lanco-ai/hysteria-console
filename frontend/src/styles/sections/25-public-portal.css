@@ -91,10 +91,8 @@ body.page-portal {
 .shop-search svg { flex: 0 0 auto; width: 20px; height: 20px; color: var(--text-tertiary); }
 .shop-search input { flex: 1 1 auto; width: 100%; min-width: 0; padding-block: 6px; border: 0; background: transparent; font: inherit; }
 .shop-search input::placeholder { color: var(--text-tertiary); }
-.shop-search button,
-.portal-primary { flex: 0 0 auto; min-height: 36px; padding: 8px 20px; border: 0; border-radius: var(--radius-pill); background: var(--accent); color: var(--bg-surface); font: inherit; font-weight: 600; cursor: pointer; }
-.shop-search button:hover,
-.portal-primary:hover { background: var(--accent-hover); }
+.shop-search button { flex: 0 0 auto; min-height: 36px; padding: 8px 20px; border: 0; border-radius: var(--radius-pill); background: var(--accent); color: var(--bg-surface); font: inherit; font-weight: 600; cursor: pointer; }
+.shop-search button:hover { background: var(--accent-hover); }
 .shop-catalog { min-width: 0; }
 .shop-catalog .shop-catalog-heading { min-height: 100px; padding: 10px 0 24px; border-bottom: 0; }
 .shop-catalog .shop-search { background: #fff; }
@@ -107,25 +105,7 @@ body.page-portal {
 .shop-empty-icon svg { width: 30px; height: 30px; }
 .shop-empty h2 { font-size: 19px; }
 .shop-empty p { color: var(--text-secondary); font-size: 13px; }
-.portal-feature-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 18px 24px; border-bottom: 1px solid var(--hairline); }
-.portal-feature-heading h1 { font-size: 20px; }
-.portal-main-chat,
-.portal-main-video { border: 1px solid var(--border); border-radius: calc(var(--radius-lg) * 1.5); background: var(--bg-surface); box-shadow: var(--shadow-xs); }
-.portal-main-chat { display: flex; flex-direction: column; height: calc(100dvh - 150px); min-height: 660px; }
-.portal-main-chat .chat-topbar-controls { flex-wrap: wrap; }
-.portal-main-chat .chat-page { padding: 18px 24px 0; }
-.portal-main-video .video-workspace { min-width: 0; margin: 0; padding: 20px; }
 .portal-session-notice { margin: 12px 24px; color: var(--text-secondary); }
-.portal-video-access { display: flex; align-items: center; flex-direction: column; gap: 18px; min-height: 530px; padding: 64px 24px 32px; border: 0; box-shadow: none; text-align: center; }
-.portal-video-mark { display: grid; place-items: center; width: 72px; height: 72px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 24px; background: var(--bg-overlay); }
-.portal-video-mark svg { width: 30px; height: 30px; }
-.portal-video-access .portal-eyebrow { margin-bottom: 0; }
-.portal-video-access h2 { font-size: clamp(26px, 3.5vw, 40px); letter-spacing: -.04em; }
-.portal-video-access > p:not(.portal-eyebrow) { color: var(--text-secondary); line-height: 1.9; }
-.portal-primary { min-height: 46px; margin-top: 6px; padding-inline: 24px; }
-.portal-primary:disabled { opacity: .55; cursor: wait; }
-.portal-video-steps { display: flex; justify-content: center; flex-wrap: wrap; gap: clamp(20px, 4vw, 60px); margin-top: 48px; color: var(--text-tertiary); font-size: 12px; }
-.portal-video-steps b { margin-left: 8px; color: var(--text-secondary); font-weight: 500; }
 .sidebar-home { display: flex; align-items: center; gap: 10px; min-width: 0; }
 
 @media (max-width: 1100px) {
@@ -156,12 +136,6 @@ body.page-portal {
   .shop-catalog-heading { padding: 22px 20px; }
   .shop-catalog-heading h1 { font-size: 22px; }
   .shop-empty { min-height: 270px; }
-  .portal-feature-heading { padding: 16px; }
-  .portal-main-chat { height: auto; min-height: calc(100dvh - 170px); }
-  .portal-main-chat .chat-page { min-height: 660px; padding: 12px; }
-  .portal-main-video .video-workspace { padding: 12px; }
-  .portal-video-access { min-height: 470px; padding-top: 44px; }
-  .portal-video-steps { gap: 16px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

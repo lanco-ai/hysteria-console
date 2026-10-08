@@ -17,7 +17,7 @@ class Sessions:
 HEADERS = {'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'same-origin'}
 
 
-def test_api_guards_validation_and_no_arbitrary_url(tmp_path):
+def test_reads_are_public_refresh_stays_admin_and_input_is_validated(tmp_path):
     async def fetch(_):
         return [
             {
@@ -35,9 +35,16 @@ def test_api_guards_validation_and_no_arbitrary_url(tmp_path):
     store = TrendingStore(tmp_path / 'cache.json', fetcher=fetch)
     with TestClient(create_app(Sessions(), github_trending_store=store)) as client:
         url = '/api/v1/github-trending'
-        assert client.get(url).status_code == 401
-        assert client.get(url, headers={'Cookie': 'sid=user'}).status_code == 403
+        assert client.get(url).status_code == 200
+        assert client.get(url, headers={'Cookie': 'sid=user'}).status_code == 200
+        assert client.get(url + '?period=monthly').status_code == 422
         assert client.post(url + '/refresh', json={'period': 'weekly'}).status_code == 401
+        assert (
+            client.post(
+                url + '/refresh', headers={'Cookie': 'sid=user'}, json={'period': 'weekly'}
+            ).status_code
+            == 403
+        )
         assert (
             client.post(
                 url + '/refresh',

@@ -42,11 +42,10 @@ async function main() {
         label: group.querySelector('.sidebar-section')?.textContent?.trim() || '',
         hrefs: Array.from(group.querySelectorAll('a[href]'), link => new URL(link.href).pathname),
       })));
-      assert.deepEqual(navGroups.map(group => group.label), ['工作台', '网络管理', '运维管理', '服务接入']);
+      assert.deepEqual(navGroups.map(group => group.label), ['工作台', 'AI 工具', '网络管理', '运维管理', '服务接入']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/plans'))?.label, '工作台');
-      for (const path of ['/admin/chat', '/admin/video']) {
-        assert.equal(navGroups.find(group => group.hrefs.includes(path)), undefined, `${path} has moved to the public portal navigation`);
-      }
+      assert.deepEqual(navGroups.find(group => group.label === 'AI 工具')?.hrefs, ['/admin/chat', '/admin/video']);
+      assert.equal(navGroups.find(group => group.hrefs.includes('/admin/github-trending')), undefined, 'GitHub trending has moved to the public portal');
       assert.deepEqual(navGroups.find(group => group.label === '运维管理')?.hrefs, ['/admin/health']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/services'))?.label, '服务接入');
       assert.deepEqual(await page.locator('.sidebar-footer a[href]').evaluateAll(links => links.map(link => new URL(link.href).pathname)), ['/admin/settings']);
@@ -57,7 +56,7 @@ async function main() {
         await expect.poll(async () => Math.round((await page.locator('.sidebar').boundingBox()).x)).toBe(0);
       }
       const baseline = await geometry(page);
-      for (const path of ['/admin/plans', '/admin/github-trending', '/admin/services', '/admin']) {
+      for (const path of ['/admin/plans', '/admin/shop', '/admin/services', '/admin']) {
         await page.locator(`.sidebar a[href="${path}"]`).click();
         await expect(page).toHaveURL(`${baseUrl}/__react${path}`);
         await expect(page.locator(`.sidebar a[href="${path}"]`)).toHaveAttribute('aria-current', 'page');

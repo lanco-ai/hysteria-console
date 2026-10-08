@@ -27,12 +27,13 @@ async function main() {
     if (new URL(request.url()).pathname.startsWith('/api/chat/')) anonymousChatRequests += 1;
   });
   const anonymousSession = anonymousPage.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/session');
+  // Chat is an admin console tool: old portal links land on the login prompt, not on chat.
   await anonymousPage.goto(`${baseUrl}/__react/?view=chat`);
   assert.equal((await anonymousSession).status(), 401);
-  await expect(anonymousPage.locator('.chat-composer textarea')).toBeDisabled();
+  await expect(anonymousPage).toHaveURL(`${baseUrl}/__react/admin/chat`);
+  await expect(anonymousPage.getByRole('dialog')).toBeVisible();
+  await expect(anonymousPage.locator('.chat-composer')).toHaveCount(0);
   await expect(anonymousPage.locator('.chat-history-panel')).toHaveCount(0);
-  await expect(anonymousPage.getByRole('button', { name: '打开历史记录' })).toBeVisible();
-  await expect(anonymousPage.locator('button[aria-label="设置"]')).toBeDisabled();
   assert.equal(anonymousChatRequests, 0);
   const anonymousStorageCalls = await anonymousPage.evaluate(() => window.__chatStorageCalls);
   assert.equal(anonymousStorageCalls, 0);

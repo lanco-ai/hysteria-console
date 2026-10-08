@@ -28,7 +28,7 @@ async function main() {
     const dialog = page.getByRole('dialog', { name: '选择学习项目', exact: true });
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
-      await page.goto(`${base}/__react/?view=chat`);
+      await page.goto(`${base}/__react/admin/chat`);
       await expect(trigger).toBeEnabled();
       await expect(trigger).toHaveAccessibleName('选择学习项目：自由对话');
       await trigger.click();
@@ -73,7 +73,7 @@ async function main() {
     await expect(page.getByRole('button', { name: /论文资料/ })).toBeEnabled();
     evidence.assertions.push('cancelled draft discard stays open/current; confirmed switch preserves goal/memory/papers actions');
     const conversation = await (await context.request.post(`${base}/api/chat/conversations`, { data: { project_id: alpha.id } })).json();
-    await page.goto(`${base}/__react/?view=chat&conversation=${conversation.id}`);
+    await page.goto(`${base}/__react/admin/chat?conversation=${conversation.id}`);
     await expect(trigger).toHaveAccessibleName('选择学习项目：AI 与存储');
     await page.route(`**/api/chat/conversations/${conversation.id}`, async route => {
       if (route.request().method() === 'PATCH') await route.fulfill({ status: 503, json: { error: 'unavailable' } });

@@ -18,7 +18,6 @@ const DRAFT_KEY = 'hy2.chat.unsent.v2';
 
 function replaceConversationLocation(id?: string) {
   const query = new URLSearchParams();
-  if (new URLSearchParams(window.location.search).get('view') === 'chat') query.set('view', 'chat');
   if (id) query.set('conversation', id);
   const suffix = query.toString();
   window.history.replaceState(window.history.state, '', `${window.location.pathname}${suffix ? `?${suffix}` : ''}`);

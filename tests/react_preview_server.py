@@ -36,10 +36,8 @@ from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
-    '/__react/admin/github-trending': ('GitHub 热榜', 'has-shell'),
     '/__react/admin/shop': ('商品管理', 'has-shell'),
     '/admin/shop': ('商品管理', 'has-shell'),
-    '/admin/github-trending': ('GitHub 热榜', 'has-shell'),
     '/__react/admin/services': ('服务中心', 'has-shell'),
     '/admin/services': ('服务中心', 'has-shell'),
     '/__react/admin/plans': ('今日计划', 'has-shell'),
@@ -66,10 +64,10 @@ REACT_PAGES = {
     '/__react/user/logout': ('确认退出', ''),
     '/__react/user/change-password': ('修改面板密码', 'page-auth'),
     '/__react/user/panel': ('用户面板 · Hysteria', ''),
-    '/__react/admin/chat': ('AI 对话', 'page-portal page-workbench'),
-    '/admin/chat': ('AI 对话', 'page-portal page-workbench'),
-    '/__react/admin/video': ('AI 视频', 'page-portal page-workbench'),
-    '/admin/video': ('AI 视频', 'page-portal page-workbench'),
+    '/__react/admin/chat': ('AI 对话', 'has-shell page-workbench'),
+    '/admin/chat': ('AI 对话', 'has-shell page-workbench'),
+    '/__react/admin/video': ('AI 视频', 'has-shell'),
+    '/admin/video': ('AI 视频', 'has-shell'),
 }
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'

@@ -1,4 +1,4 @@
-"""Administrator-only discovery routes and lifecycle-owned refresh tasks."""
+"""Public discovery reads, an administrator-only refresh, and lifecycle-owned tasks."""
 
 import asyncio
 import json
@@ -84,23 +84,32 @@ def register_github_trending_routes(
         except (OSError, state_store.StateStoreError, ValueError, TypeError):
             return JSONResponse({'error': 'storage_unavailable'}, status_code=503)
 
+    async def listed(owner):
+        # Anonymous visitors may only fetch avatars of owners on a current board,
+        # so the proxy cannot be used to fetch arbitrary GitHub accounts.
+        for period in PERIODS:
+            try:
+                items = (await store.read(period))['items']
+            except (OSError, state_store.StateStoreError, ValueError, TypeError):
+                continue
+            if any(item['full_name'].split('/')[0].lower() == owner.lower() for item in items):
+                return True
+        return False
+
+    # The boards are public GitHub data, so reads need no session.
     @app.get('/api/v1/github-trending')
     async def get_trending(request: Request):
-        denied = await guard(request)
-        if denied is not None:
-            return denied
         period = request.query_params.get('period', 'weekly')
         if period not in PERIODS:
             return JSONResponse({'error': 'invalid_period'}, status_code=422)
         return await reply(period)
 
     @app.get('/api/v1/github-trending/avatar/{owner}')
-    async def get_trending_avatar(owner: str, request: Request):
-        denied = await guard(request)
-        if denied is not None:
-            return denied
+    async def get_trending_avatar(owner: str):
         if not valid_owner(owner):
             return JSONResponse({'error': 'invalid_owner'}, status_code=422)
+        if not await listed(owner):
+            return JSONResponse({'error': 'avatar_unavailable'}, status_code=404)
         image = await avatar_proxy.get(owner)
         if image is None:
             return JSONResponse({'error': 'avatar_unavailable'}, status_code=502, headers={'Cache-Control': 'private, max-age=60'})

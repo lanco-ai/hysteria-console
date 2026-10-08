@@ -5,14 +5,18 @@ authentication, administrator console, and authenticated user panel. The
 document routes are served by the FastAPI adapter on port 8083 and use the
 immutable assets under `/static/react/assets/`.
 
-## Public shopping and AI entry
+## Public shopping and discovery entry
 
-The home page uses a shared public header with 购物, AI 对话 and AI 视频.
-Shopping is the default view; `/?view=chat` and `/?view=video` select the existing
-AI interfaces. `/login` and `/auth` open the existing administrator login modal
-over this entry; `/user/login` retains the existing user login realm.
-The authenticated header has a management-console link, and the console logo
-returns to this public entry. AI links no longer appear in the admin sidebar.
+The home page uses a shared public header with 购物 and 开源发现.
+Shopping is the default view; `/?view=trending` shows the GitHub Trending board
+(`&period=daily` selects the daily board). `/login` and `/auth` open the existing
+administrator login modal over this entry; `/user/login` retains the existing user
+login realm. The authenticated header has a management-console link, and the
+console logo returns to this public entry.
+
+AI 对话 (`/admin/chat`) and AI 视频 (`/admin/video`) are administrator tools in the
+console sidebar's AI 工具 group. Old `/?view=chat` and `/?view=video` links are
+forwarded there, keeping their other query parameters.
 
 The shopping catalogue reads `/api/v1/shop/catalog`. Only explicitly published
 SKU variants with administrator-entered retail prices are visible. `/admin/shop`
@@ -60,17 +64,21 @@ The explicit React document allow-list covers:
 - `/user/panel`, `/user/change-password`
 - `/admin`, `/admin/logs`, `/admin/settings`, `/admin/usage`, `/admin/health`
 - `/admin/incidents`, `/admin/config`, `/admin/rules`,
-  `/admin/landing-egresses`, `/admin/github-trending`, `/admin/shop`, and `/admin/user/<uid>`
+  `/admin/landing-egresses`, `/admin/chat`, `/admin/video`, `/admin/shop`, and `/admin/user/<uid>`
+
+`/admin/github-trending` answers with a redirect to `/?view=trending`.
 
 The document shell injects the request host and the appropriate session guard;
 unknown paths are not treated as SPA fallbacks. Page data and mutations use the
 cookie-authenticated `/api/v1/*` adapters.
 
-The administrator's 开源发现 page at `/admin/github-trending` reads the daily
-and weekly GitHub Trending snapshots through `/api/v1/github-trending`. Search
-and language filtering apply only to the currently displayed snapshot. Manual
-refresh requests use the same-origin `/api/v1/github-trending/refresh` endpoint;
-its cooldown and upstream retry fields are authoritative.
+The public 开源发现 page reads the daily and weekly GitHub Trending snapshots
+through `/api/v1/github-trending`, which needs no session; the avatar proxy only
+serves owners listed on a current board. Search and language filtering apply only
+to the displayed snapshot and persist across the period links. Administrators also
+see the manual refresh, which uses the same-origin, admin-only
+`/api/v1/github-trending/refresh` endpoint; its cooldown and upstream retry fields
+are authoritative and are shown to administrators only.
 
 ## Daily workspace
 

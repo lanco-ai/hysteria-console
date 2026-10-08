@@ -11,32 +11,41 @@ async function main() {
   try {
     const anonymousContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const anonymous = await anonymousContext.newPage();
-    let chatRequests = 0;
+    let privateRequests = 0;
     anonymous.on('request', request => {
-      if (new URL(request.url()).pathname.startsWith('/api/chat/')) chatRequests += 1;
+      const pathname = new URL(request.url()).pathname;
+      if (pathname.startsWith('/api/chat/') || pathname.startsWith('/api/video/')) privateRequests += 1;
     });
     const sessionResponse = anonymous.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/session');
     await anonymous.goto(`${baseUrl}/__react/`);
     assert.equal((await sessionResponse).status(), 401);
     await expect(anonymous).toHaveTitle('购物 · Hysteria');
     await expect(anonymous.locator('.sidebar')).toHaveCount(0);
-    await expect(anonymous.locator('nav[aria-label="主导航"] a')).toHaveText(['购物', 'AI 对话', 'AI 视频']);
+    // AI chat and video live in the admin console; the portal shows shopping and discovery.
+    await expect(anonymous.locator('nav[aria-label="主导航"] a')).toHaveText(['购物', '开源发现']);
     await expect(anonymous.getByRole('dialog')).toHaveCount(0);
     await expect(anonymous.getByRole('heading', { name: '暂无商品' })).toBeVisible();
     await anonymous.evaluate(() => { window.__portalMarker = 'same-document'; });
-    await anonymous.getByRole('link', { name: 'AI 对话', exact: true }).click();
-    await expect(anonymous).toHaveURL(`${baseUrl}/__react/?view=chat`);
-    await expect(anonymous.locator('.chat-composer textarea')).toBeDisabled();
-    await expect(anonymous.getByRole('dialog')).toHaveCount(0);
-    await anonymous.getByRole('link', { name: 'AI 视频', exact: true }).click();
-    await expect(anonymous.getByRole('heading', { name: '把想法，变成画面。' })).toBeVisible();
-    await expect(anonymous.locator('.video-workspace')).toHaveCount(0);
+    await anonymous.getByRole('link', { name: '开源发现', exact: true }).click();
+    await expect(anonymous).toHaveURL(`${baseUrl}/__react/?view=trending`);
+    await expect(anonymous).toHaveTitle('GitHub 热榜 · Hysteria');
+    await expect(anonymous.getByRole('heading', { name: 'GitHub 热榜', level: 1 })).toBeVisible();
+    await expect(anonymous.locator('nav[aria-label="主导航"] a[aria-current="page"]')).toHaveText('开源发现');
+    await expect(anonymous.getByRole('button', { name: '刷新榜单' })).toHaveCount(0);
     assert.equal(await anonymous.evaluate(() => window.__portalMarker), 'same-document');
     await anonymous.goBack();
-    await expect(anonymous.locator('.chat-composer textarea')).toBeDisabled();
+    await expect(anonymous.getByRole('heading', { name: '暂无商品' })).toBeVisible();
     await anonymous.goForward();
-    await expect(anonymous).toHaveTitle('AI 视频 · Hysteria');
-    assert.equal(chatRequests, 0, 'anonymous root must not call the chat API');
+    await expect(anonymous).toHaveTitle('GitHub 热榜 · Hysteria');
+    assert.equal(privateRequests, 0, 'the public portal must not call private chat or video APIs');
+
+    // Old portal links follow the tools into the admin console and ask for a login there.
+    for (const [view, route] of [['chat', '/admin/chat'], ['video', '/admin/video']]) {
+      await anonymous.goto(`${baseUrl}/__react/?view=${view}`);
+      await expect(anonymous).toHaveURL(`${baseUrl}/__react${route}`);
+      await expect(anonymous.getByRole('dialog')).toBeVisible();
+    }
+    assert.equal(privateRequests, 0, 'anonymous legacy links must not call private APIs');
 
     for (const width of [390, 768, 1440]) {
       await anonymous.setViewportSize({ width, height: 900 });
@@ -54,6 +63,9 @@ async function main() {
         fs.mkdirSync(process.env.REACT_HOME_SCREENSHOT_DIR, { recursive: true });
         await anonymous.screenshot({ path: path.join(process.env.REACT_HOME_SCREENSHOT_DIR, `portal-shop-${width}.png`), fullPage: true });
       }
+      await anonymous.goto(`${baseUrl}/__react/?view=trending`);
+      await expect(anonymous.getByRole('heading', { name: 'GitHub 热榜', level: 1 })).toBeVisible();
+      assert.equal(await anonymous.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `trending ${width}px must not overflow`);
     }
 
     for (const alias of ['/__react/auth', '/__react/login', '/__react/user/login']) {
@@ -70,18 +82,22 @@ async function main() {
     await authenticated.route('**/api/chat/settings', route => route.fulfill({ json: { temperature: 0.7, api_key_configured: true } }));
     await authenticated.route('**/api/chat/models', route => route.fulfill({ json: [{ id: 'preview-model', name: 'Preview model' }] }));
     await authenticated.goto(`${baseUrl}/__react/?view=chat`);
-    await expect(authenticated.locator('.portal-header')).toHaveCount(1);
+    await expect(authenticated).toHaveURL(`${baseUrl}/__react/admin/chat`);
+    await expect(authenticated.locator('.sidebar')).toHaveCount(1);
+    await expect(authenticated.locator('.portal-header')).toHaveCount(0);
     await expect(authenticated.getByRole('dialog')).toHaveCount(0);
     await expect(authenticated.locator('.chat-composer textarea')).toBeEnabled();
-    await expect(authenticated.locator('.sidebar')).toHaveCount(0);
     await expect(authenticated.getByRole('button', { name: '新对话', exact: true })).toBeEnabled();
     await authenticated.getByRole('button', { name: '新对话', exact: true }).click();
-    await expect(authenticated).toHaveURL(`${baseUrl}/__react/?view=chat`);
+    await expect(authenticated).toHaveURL(/\/__react\/admin\/chat(?:\?|$)/);
     await authenticated.reload();
     await expect(authenticated.locator('.chat-composer textarea')).toBeEnabled();
-    await authenticated.getByRole('link', { name: '管理后台' }).click();
-    await expect(authenticated.locator('.sidebar')).toHaveCount(1);
-    await expect(authenticated.locator('.sidebar a[href="/admin/chat"], .sidebar a[href="/admin/video"]')).toHaveCount(0);
+    await expect(authenticated.locator('.sidebar a[href="/admin/chat"], .sidebar a[href="/admin/video"]')).toHaveCount(2);
+    await expect(authenticated.locator('.sidebar a[href="/admin/github-trending"]')).toHaveCount(0);
+    // Administrators manage discovery from the public page itself.
+    await authenticated.goto(`${baseUrl}/__react/?view=trending`);
+    await expect(authenticated.getByRole('link', { name: '管理后台' })).toBeVisible();
+    await expect(authenticated.getByRole('button', { name: '刷新榜单' })).toBeVisible();
     await authenticatedContext.close();
 
     const videoContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -92,36 +108,36 @@ async function main() {
     await video.route('**/api/chat/models', route => route.fulfill({ json: [{ id: 'preview-model', name: 'Preview model' }] }));
     let videoRequests = 0;
     video.on('request', request => { if (new URL(request.url()).pathname.startsWith('/api/video/')) videoRequests += 1; });
-    await video.goto(`${baseUrl}/__react/?view=video`);
-    await expect(video.getByRole('heading', { name: '把想法，变成画面。' })).toBeVisible();
-    assert.equal(videoRequests, 0, 'guest video view must not request private workflows');
-    await video.getByRole('button', { name: '登录', exact: true }).click();
-    await expect(video.locator('.portal').locator('..')).toHaveAttribute('inert', '');
+    await video.goto(`${baseUrl}/__react/admin/video`);
+    await expect(video.getByRole('dialog')).toBeVisible();
+    assert.equal(videoRequests, 0, 'the guest video placeholder must not request private workflows');
     await expect(video.locator('#login-modal-username')).toBeFocused();
     await video.locator('#login-modal-username').fill('admin');
     await video.locator('#login-modal-password').fill(process.env.REACT_PREVIEW_LOGIN_PASSWORD);
     await video.getByRole('button', { name: '登录', exact: true }).click();
-    await expect(video).toHaveURL(`${baseUrl}/__react/?view=video`);
+    await expect(video).toHaveURL(`${baseUrl}/__react/admin/video`);
     await expect(video.locator('.video-canvas-editor')).toBeVisible();
-    await expect(video.locator('.sidebar')).toHaveCount(0);
+    await expect(video.locator('.sidebar')).toHaveCount(1);
     await video.reload();
     await expect(video.locator('.video-canvas-editor')).toBeVisible();
     await expect(video.locator('.react-flow')).toBeVisible();
     for (const width of [390, 768, 1440]) {
       await video.setViewportSize({ width, height: 900 });
       assert.equal(await video.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `video ${width}px must not overflow`);
-      if (process.env.REACT_HOME_SCREENSHOT_DIR) await video.screenshot({ path: path.join(process.env.REACT_HOME_SCREENSHOT_DIR, `portal-video-${width}.png`), fullPage: true });
+      if (process.env.REACT_HOME_SCREENSHOT_DIR) await video.screenshot({ path: path.join(process.env.REACT_HOME_SCREENSHOT_DIR, `admin-video-${width}.png`), fullPage: true });
     }
-    await video.getByRole('link', { name: 'AI 对话', exact: true }).click();
+    await video.setViewportSize({ width: 1440, height: 900 });
+    await video.locator('.sidebar a[href="/admin/chat"]').click();
+    await expect(video).toHaveURL(`${baseUrl}/__react/admin/chat`);
     await expect(video.locator('.chat-composer textarea')).toBeEnabled();
     await expect(video.getByLabel('当前模型')).toHaveValue('preview-model');
     for (const width of [390, 768, 1440]) {
       await video.setViewportSize({ width, height: 900 });
       assert.equal(await video.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, `chat ${width}px must not overflow`);
-      if (process.env.REACT_HOME_SCREENSHOT_DIR) await video.screenshot({ path: path.join(process.env.REACT_HOME_SCREENSHOT_DIR, `portal-chat-${width}.png`), fullPage: true });
+      if (process.env.REACT_HOME_SCREENSHOT_DIR) await video.screenshot({ path: path.join(process.env.REACT_HOME_SCREENSHOT_DIR, `admin-chat-${width}.png`), fullPage: true });
     }
     await videoContext.close();
-    console.log('PASS: public portal navigation, guest permissions, auth aliases and management return');
+    console.log('PASS: public portal shopping and discovery, admin-only AI tools, legacy links and login return');
   } finally {
     await browser.close();
   }

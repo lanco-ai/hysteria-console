@@ -6,9 +6,8 @@ import './styles/index.css';
 // CSS is injected as soon as it loads, so it would otherwise appear on every page.
 import './features/services/services.css';
 import { LoginModal, resolveSameOriginReturnTo } from './features/auth/LoginModal';
-import { PortalSessionContext, PortalShell } from './features/public/PortalShell';
+import { PortalSessionContext } from './features/public/PortalShell';
 import { ShopPage } from './features/public/ShopPage';
-import { VideoAccessState } from './features/public/VideoAccessState';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
@@ -54,14 +53,15 @@ const appRoot = root;
 const reactRoot = createRoot(appRoot);
 const REACT_PREVIEW_PREFIX = '/__react';
 
-const WORKBENCH_ROUTES = new Set(['/', '/auth', '/login', '/user/login', '/admin/chat', '/admin/video']);
+const WORKBENCH_ROUTES = new Set(['/', '/auth', '/login', '/user/login']);
 const LOGIN_ROUTES = new Set(['/auth', '/login', '/user/login']);
 const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
   '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/services',
   '/admin/plans',
   '/admin/shop',
-  '/admin/github-trending',
+  '/admin/chat',
+  '/admin/video',
 ]);
 const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter', 'view', 'conversation']);
 const REACT_DOCUMENT_ROUTES = new Set([
@@ -83,12 +83,11 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/config': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/rules': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
   '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
-  '/admin/chat': { title: 'AI 对话', bodyClass: 'page-portal page-workbench' },
+  '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
   '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
-  '/admin/video': { title: 'AI 视频', bodyClass: 'page-portal page-workbench' },
+  '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell', shell: true },
   '/admin/plans': { title: '今日计划', bodyClass: 'has-shell', shell: true },
   '/admin/shop': { title: '商品管理', bodyClass: 'has-shell', shell: true },
-  '/admin/github-trending': { title: 'GitHub 热榜', bodyClass: 'has-shell', shell: true },
   '/user/change-password': { title: '修改面板密码', bodyClass: 'page-auth' },
   '/user/panel': { title: '用户面板 · Hysteria', bodyClass: '' },
   '/logout': { title: '确认退出', bodyClass: '' },
@@ -233,8 +232,7 @@ function applyRouteDocument(route: string): void {
     : ROUTE_METADATA[route];
   if (!metadata) return;
   const view = new URLSearchParams(window.location.search).get('view');
-  document.title = route === '/' && (view === 'chat' || view === 'video')
-    ? `${view === 'chat' ? 'AI 对话' : 'AI 视频'} · Hysteria` : metadata.title;
+  document.title = route === '/' && view === 'trending' ? 'GitHub 热榜 · Hysteria' : metadata.title;
   if (metadata.bodyClass) document.body.className = metadata.bodyClass;
   else document.body.removeAttribute('class');
   if (metadata.shell) applyInitialShellPreferences();
@@ -262,7 +260,7 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
   '/admin/services': { active: 'services', title: '服务中心' },
   '/admin/plans': { active: 'plans', title: '今日计划' },
   '/admin/shop': { active: 'shop', title: '商品管理' },
-  '/admin/github-trending': { active: 'github-trending', title: 'GitHub 热榜' },
+  '/admin/chat': { active: 'chat', title: 'AI 对话' },
   '/admin/video': { active: 'video', title: 'AI 视频' },
 };
 
@@ -288,7 +286,7 @@ function AdminRoute({ route, locationKey, publicHost, authenticated, status }: {
   if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
   if (route === '/admin/plans') return <PlansPage/>;
   if (route === '/admin/shop') return <ShopAdminPage/>;
-  if (route === '/admin/github-trending') return <GithubTrendingPage/>;
+  if (route === '/admin/chat') return <ChatPage publicHost={publicHost} authenticated/>;
   if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
   return <LandingPage publicHost={publicHost}/>;
 }
@@ -306,20 +304,29 @@ const ADMIN_PAGE_BY_ROUTE: Record<string, { preload: () => Promise<void> }> = {
   '/admin/services': ServicesPage,
   '/admin/plans': PlansPage,
   '/admin/shop': ShopAdminPage,
-  '/admin/github-trending': GithubTrendingPage,
 };
 
 // The console's own pages are small; once an admin page is up they are fetched
 // in the background so moving between admin pages stays instant. Chat and
 // video (KaTeX, canvas) stay on demand.
 const ADMIN_CONSOLE_PAGES = [...new Set([...Object.values(ADMIN_PAGE_BY_ROUTE), LandingPage, UserDetailPage])];
+const ADMIN_TOOL_PAGES: Record<string, { preload: () => Promise<void> }> = { '/admin/chat': ChatPage, '/admin/video': VideoPage };
+
+// AI chat and video moved into the admin console; old portal links follow them.
+function legacyToolLocation(url: URL): string | null {
+  const view = url.searchParams.get('view');
+  if (normalizeRoute(url.pathname) !== '/' || (view !== 'chat' && view !== 'video')) return null;
+  const query = new URLSearchParams(url.search);
+  query.delete('view');
+  const suffix = query.toString();
+  return previewPath(`/admin/${view}${suffix ? `?${suffix}` : ''}`);
+}
 
 function pagesForLocation(url: URL): Array<{ preload: () => Promise<void> }> {
   const route = normalizeRoute(url.pathname);
-  if (WORKBENCH_ROUTES.has(route)) {
-    const view = route === '/admin/chat' ? 'chat' : route === '/admin/video' ? 'video' : url.searchParams.get('view');
-    return view === 'chat' ? [ChatPage] : view === 'video' ? [VideoPage] : [];
-  }
+  if (WORKBENCH_ROUTES.has(route)) return url.searchParams.get('view') === 'trending' ? [GithubTrendingPage] : [];
+  const tool = ADMIN_TOOL_PAGES[route];
+  if (tool) return [tool];
   if (/^\/admin\/user\/[^/]+$/.test(route)) return [UserDetailPage];
   if (ADMIN_ROUTES.has(route)) return [ADMIN_PAGE_BY_ROUTE[route] ?? LandingPage];
   if (route === '/user/change-password') return [UserPasswordPage];
@@ -336,12 +343,12 @@ function WorkbenchRoute({ route, publicHost, authenticated, status, loginOpen, o
   route: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'authenticated' | 'unavailable'; loginOpen: boolean; onAuthenticated: (returnTo?: string) => Promise<void>; onUnauthenticated: () => void; onClose: () => void;
 }) {
   const location = new URL(window.location.href);
-  const view = route === '/admin/chat' ? 'chat' : route === '/admin/video' ? 'video' : location.searchParams.get('view');
+  const view = location.searchParams.get('view');
   const returnTo = sanitizeReturnTo(location.searchParams.get('next') || (!LOGIN_ROUTES.has(route) ? `${route}${location.search}` : undefined));
   return <PortalSessionContext.Provider value={{ authenticated, status, onLogin: onUnauthenticated }}>
-    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}><Suspense fallback={null}>{view === 'chat' ? <ChatPage publicHost={publicHost} authenticated={authenticated} onUnauthenticated={onUnauthenticated} shell={PortalShell}/>
-      : view === 'video' ? authenticated ? <VideoPage publicHost={publicHost} shell={PortalShell}/> : <VideoAccessState/>
-        : <ShopPage key={location.search}/>}</Suspense></div>
+    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}><Suspense fallback={null}>{view === 'trending'
+      ? <GithubTrendingPage period={location.searchParams.get('period') === 'daily' ? 'daily' : 'weekly'} authenticated={authenticated}/>
+      : <ShopPage key={location.search}/>}</Suspense></div>
     <LoginModal open={loginOpen} realm={route === '/user/login' ? 'user' : 'admin'} passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
   </PortalSessionContext.Provider>;
 }
@@ -358,7 +365,8 @@ function App() {
   const authenticated = session.status === 'authenticated' && session.role === 'admin';
   const sessionStatus = session.status === 'authenticated' ? 'anonymous' : session.status;
   const needsAdminLogin = isProtectedAdminRoute && !authenticated && session.status !== 'loading';
-  const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || ((route === '/admin/chat' || route === '/admin/video') && !authenticated && session.status !== 'loading') || needsAdminLogin;
+  const shouldOpenLogin = LOGIN_ROUTES.has(route) || loginRequested || needsAdminLogin;
+  const legacyTool = legacyToolLocation(location);
   const protectedReturnTo = protectedRouteReturnTo(route, location.search);
 
   // Back/forward has already changed the URL: load the page's code, then render
@@ -408,7 +416,9 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [isProtectedAdminRoute, authenticated]);
   useEffect(() => { if (LOGIN_ROUTES.has(route)) setLoginRequested(true); }, [route]);
+  useLayoutEffect(() => { if (legacyTool) window.location.replace(legacyTool); }, [legacyTool]);
 
+  if (legacyTool) return null;
   if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} status={authenticated ? 'authenticated' : sessionStatus} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
   if (isProtectedAdminRoute) return <><Suspense fallback={null}><AdminRoute route={route} locationKey={locationKey} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/></Suspense><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
   if (route === '/user/change-password') return <Suspense fallback={null}><UserPasswordPage publicHost={publicHost}/></Suspense>;

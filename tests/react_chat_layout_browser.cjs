@@ -36,7 +36,7 @@ async function capture(page, filename) {
       const page = await context.newPage();
       const errors = [];
       page.on('pageerror', error => errors.push(error.message));
-      await page.goto(base + '/__react/?view=chat');
+      await page.goto(base + '/__react/admin/chat');
       await expect(page.getByLabel('聊天消息')).toBeEnabled();
       await page.evaluate(() => document.fonts.ready);
 

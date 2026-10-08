@@ -175,6 +175,21 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         assert 'data-password-max-length' not in password.text
 
 
+def test_moved_discovery_redirects_everyone_and_ai_tools_use_the_admin_shell(tmp_path):
+    with TestClient(create_app(StubDocumentServices(), react_dist=_dist(tmp_path))) as client:
+        for headers in ({}, {'Cookie': 'sid=admin'}):
+            for method in (client.get, client.head):
+                moved = method('/admin/github-trending', headers=headers, follow_redirects=False)
+                assert moved.status_code == 302
+                assert moved.headers['location'] == '/?view=trending'
+        assert client.get('/admin/github-trending/unknown').status_code == 404
+        chat = client.get('/admin/chat', headers={'Cookie': 'sid=admin'})
+        assert '<body class="has-shell page-workbench">' in chat.text
+        video = client.get('/admin/video', headers={'Cookie': 'sid=admin'})
+        assert '<title>AI 视频</title>' in video.text
+        assert '<body class="has-shell">' in video.text
+
+
 def test_react_documents_do_not_spa_fallback_and_assets_are_immutable(tmp_path):
     with TestClient(create_app(StubDocumentServices(), react_dist=_dist(tmp_path))) as client:
         asset = client.get('/static/react/assets/index.js')

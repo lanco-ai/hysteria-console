@@ -114,7 +114,7 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     assert 'className="main"' not in adapter
     assert "navigationGroups" in navigation
     assert "placement: 'bottom'" in navigation
-    for label in ("工作台", "网络管理", "运维管理", "服务接入"):
+    for label in ("工作台", "AI 工具", "网络管理", "运维管理", "服务接入"):
         assert label in navigation
     for href in (
         "/admin", "/admin/usage", "/admin/health",
@@ -124,9 +124,9 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
         assert href in navigation
     portal = source("frontend/src/features/public/PortalShell.tsx")
     for route, view in (("/admin/chat", "chat"), ("/admin/video", "video")):
-        assert route in routes, "old AI bookmarks must remain reachable"
-        assert route not in navigation, "AI entries have moved out of the admin sidebar"
-        assert f'href="/?view={view}"' in portal
+        assert route in routes, "AI bookmarks must remain reachable"
+        assert f"href: '{route}'" in navigation, "AI tools live in the admin sidebar"
+        assert f"view={view}" not in portal, "the public portal no longer links AI tools"
     for route, tab in (("/admin/health", "health"), ("/admin/incidents", "incidents"), ("/admin/logs", "logs")):
         assert f"'{route}':" in routes
         assert f"key: '{tab}'" in operations
@@ -190,7 +190,8 @@ def test_router_composes_every_workbench_alias_through_the_session_gate():
     assert "REACT_PREVIEW_PREFIX" in router
     assert "const WORKBENCH_ROUTES" in router
     assert "function WorkbenchRoute" in router
-    assert "<ChatPage publicHost={publicHost} authenticated={authenticated}" in router
+    assert "if (route === '/admin/chat') return <ChatPage publicHost={publicHost} authenticated/>;" in router
+    assert "function legacyToolLocation" in router, "old portal chat/video links follow the tools"
     assert "<LoginModal" in router
     assert "return <HomePage/>" not in router
     assert "return <LoginPage" not in router

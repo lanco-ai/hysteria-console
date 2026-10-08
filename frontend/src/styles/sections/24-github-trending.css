@@ -1,397 +1,104 @@
-body.has-shell .trending-page {
-  --trending-accent: var(--data);
-  --trending-accent-hover: var(--accent-hover);
-  --trending-accent-soft: var(--data-soft);
-  --trending-ink: var(--text-primary);
-  width: min(100%, 1280px);
-  min-width: 0;
-  margin-inline: auto;
-  gap: 20px;
-}
+/* =====================================================
+   GITHUB TRENDING — public portal discovery page
+   ===================================================== */
 
-body.has-shell .trending-intro {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: 24px;
-  padding: 0 2px;
-}
-body.has-shell .trending-intro > div:first-child { min-width: 0; }
-body.has-shell .trending-eyebrow {
-  display: inline-block;
-  margin-bottom: 6px;
-  color: var(--trending-accent);
-  font: 650 11px var(--font-label);
-  letter-spacing: .1em;
-}
-body.has-shell .trending-intro h2 {
-  margin-bottom: 6px;
-  font-size: clamp(26px, 2vw, 30px);
-  line-height: 1.25;
-  letter-spacing: -.02em;
-  color: var(--trending-ink);
-}
-body.has-shell .trending-intro h2 span { color: var(--trending-ink); }
-body.has-shell .trending-intro p:not(.trending-eyebrow) {
-  color: var(--text-secondary);
-  font-size: var(--text-body);
-  line-height: 1.5;
-}
-body.has-shell .trending-source {
-  display: grid;
-  gap: 4px;
-  flex-shrink: 0;
-  padding: 10px 13px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--bg-surface);
-  color: var(--text-tertiary);
-  text-align: right;
-  font-size: var(--text-small);
-}
-body.has-shell .trending-source strong { margin-left: 5px; color: var(--trending-ink); font-weight: 700; }
-body.has-shell .trending-source small { color: var(--text-secondary); font-size: var(--text-small); }
+.trending-page { display: grid; gap: 18px; min-width: 0; }
 
-body.has-shell .trending-page .admin-section { border-color: var(--border); border-radius: 14px; box-shadow: var(--shadow-xs); }
-body.has-shell .trending-controls {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--bg-surface);
-}
-body.has-shell .trending-period {
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 2px;
-  padding: 3px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-}
-body.has-shell .trending-period button {
-  min-width: 50px;
-  min-height: 36px;
-  padding: 7px 13px;
-  cursor: pointer;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  font: 600 var(--text-ui) var(--font-sans);
-}
-body.has-shell .trending-period button[aria-pressed="true"] {
-  background: var(--trending-accent);
-  color: #fff;
-  box-shadow: 0 2px 5px color-mix(in srgb, var(--trending-accent) 18%, transparent);
-}
-body.has-shell .trending-controls > .btn {
-  flex: 0 0 auto;
-  min-height: 42px;
-  margin-left: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font-weight: 600;
-}
-body.has-shell .trending-controls > .btn:hover:not(:disabled) { border-color: var(--border-strong); background: var(--bg-subtle); }
-body.has-shell .trending-controls > .btn:disabled { border-color: var(--border); background: var(--bg-subtle); color: var(--text-tertiary); }
-body.has-shell .trending-filters {
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-body.has-shell .trending-filters label { min-width: 0; }
-body.has-shell .trending-filters label:first-child { flex: 1 1 180px; max-width: 300px; }
-body.has-shell .trending-filters label:nth-child(2) { flex: 0 1 155px; }
-body.has-shell .trending-filters label > span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-body.has-shell .trending-filters input,
-body.has-shell .trending-filters select {
-  width: 100%;
-  min-width: 0;
-  height: 42px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
-  color: var(--text-primary);
-  font: var(--text-ui) var(--font-sans);
-}
-body.has-shell .trending-filters input::placeholder { color: var(--text-tertiary); }
-body.has-shell .trending-filters input:hover,
-body.has-shell .trending-filters select:hover { border-color: var(--border-strong); }
-body.has-shell .trending-filters small { color: var(--text-tertiary); font-size: var(--text-small); white-space: nowrap; }
-body.has-shell .trending-clear {
-  min-height: 42px;
-  padding: 0 6px;
-  cursor: pointer;
-  border: 0;
-  background: transparent;
-  color: var(--trending-accent);
-  font: 600 var(--text-small) var(--font-sans);
-  white-space: nowrap;
-}
-body.has-shell .trending-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--hairline);
-  color: var(--text-secondary);
-  font-size: var(--text-small);
-}
-body.has-shell .trending-status:empty { display: none; }
-body.has-shell .trending-notice { padding: 4px 9px; border-radius: var(--radius-pill); background: var(--bg-subtle); }
-body.has-shell .trending-notice.warning { background: var(--warn-soft); color: var(--warn); }
-body.has-shell .trending-feedback { min-width: 0; overflow-wrap: anywhere; color: var(--trending-accent); font-weight: 600; }
-body.has-shell .trending-empty { padding: 42px 20px; color: var(--text-secondary); text-align: center; }
-body.has-shell .trending-list-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-height: 39px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--hairline);
-  background: var(--bg-overlay);
-}
-body.has-shell .trending-list-header strong { color: var(--trending-ink); font-size: var(--text-ui); font-weight: 700; }
-body.has-shell .trending-list-header span { color: var(--text-tertiary); font-size: var(--text-small); }
+.trending-hero { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: 16px 24px; padding: 6px 4px 0; }
+.trending-hero .portal-eyebrow { margin-bottom: 8px; }
+.trending-hero h1 { margin: 0; font-size: clamp(28px, 3.4vw, 40px); letter-spacing: -.03em; }
+.trending-hero p:not(.portal-eyebrow) { margin: 8px 0 0; color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+.trending-hero-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; color: var(--text-tertiary); font-size: 13px; }
+.trending-refresh,
+.trending-retry { min-height: 38px; padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.trending-refresh:hover,
+.trending-retry:hover { border-color: var(--border-strong); background: var(--bg-subtle); }
+.trending-refresh:disabled { cursor: not-allowed; opacity: .55; }
 
-body.has-shell .trending-period { position: relative; }
-body.has-shell .trending-period-indicator {
-  position: absolute;
-  inset: 3px auto 3px 3px;
-  width: calc(50% - 4px);
-  border-radius: 6px;
-  background: var(--trending-accent);
-  box-shadow: none;
-  transition: transform 220ms ease;
-}
-body.has-shell .trending-period.is-daily .trending-period-indicator { transform: translateX(calc(100% + 2px)); }
-body.has-shell .trending-period button { position: relative; z-index: 1; }
-body.has-shell .trending-period button[aria-pressed="true"] { background: transparent; box-shadow: none; }
-body.has-shell .trending-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  padding: 16px;
-  list-style: none;
-}
-body.has-shell .trending-repo {
-  position: relative;
-  min-width: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: #fff;
-  cursor: pointer;
-}
-body.has-shell .trending-repo:hover,
-body.has-shell .trending-repo:focus-within { border-color: color-mix(in srgb, var(--trending-accent) 32%, white); box-shadow: 0 7px 18px color-mix(in srgb, var(--trending-accent) 8%, transparent); }
-body.has-shell .trending-entry-toggle { position: absolute; z-index: 1; inset: 0; width: 100%; border: 0; background: transparent; cursor: pointer; }
-body.has-shell .trending-top-card {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
-  align-content: start;
-  gap: 12px 10px;
-  min-height: 220px;
-  padding: 42px 18px 18px;
-}
-body.has-shell .trending-rank { color: var(--trending-accent); font: 700 13px var(--font-num); }
-body.has-shell .trending-top-card .trending-rank {
-  position: absolute;
-  top: 15px;
-  left: 18px;
-  color: var(--trending-accent);
-  font-size: 13px;
-  line-height: 1;
-  pointer-events: none;
-}
-body.has-shell .trending-avatar {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--trending-accent-soft);
-  color: var(--trending-accent);
-  font: 700 17px var(--font-num);
-}
-body.has-shell .trending-avatar img { width: 100%; height: 100%; object-fit: cover; }
-body.has-shell .trending-repo-main { min-width: 0; }
-body.has-shell .trending-repo-main h2 { color: var(--trending-ink); font-size: 16px; font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
-body.has-shell .trending-repo:not(.is-expanded) .trending-repo-main h2 { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-body.has-shell .trending-repo-main p { margin-top: 4px; color: var(--text-secondary); font-size: var(--text-ui); line-height: 1.4; overflow-wrap: anywhere; }
-body.has-shell .trending-top-card .trending-repo-main { grid-column: 2 / -1; padding-right: 92px; }
-body.has-shell .trending-top-card .trending-repo-main p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-body.has-shell .trending-period-stat { grid-column: 1 / -1; align-self: end; margin-top: 10px; }
-body.has-shell .trending-period-stat small,
-body.has-shell .trending-row-period small { display: block; color: var(--text-tertiary); font-size: var(--text-caption); }
-body.has-shell .trending-period-stat strong { color: var(--trending-accent); font: 700 32px var(--font-num); font-variant-numeric: tabular-nums; }
-body.has-shell .trending-progress { display: block; width: 100%; height: 6px; overflow: hidden; border-radius: var(--radius-pill); background: var(--trending-accent-soft); }
-body.has-shell .trending-progress-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--trending-accent);
-  transform-origin: left;
-  animation: trending-bar-grow 650ms ease-out both;
-}
-body.has-shell .trending-progress-missing { color: var(--text-tertiary); font-size: var(--text-small); }
-body.has-shell .trending-top-card > .trending-progress,
-body.has-shell .trending-top-card > .trending-progress-missing { grid-column: 1 / -1; }
-body.has-shell .trending-secondary { display: flex; grid-column: 1 / -1; align-items: center; flex-wrap: wrap; gap: 7px 12px; color: var(--text-tertiary); font-size: var(--text-small); }
-body.has-shell .trending-secondary b,
-body.has-shell .trending-row-total b { color: var(--text-primary); font-family: var(--font-num); }
-body.has-shell .trending-language { color: var(--trending-accent); font-size: var(--text-small); font-weight: 600; overflow-wrap: anywhere; }
-body.has-shell .trending-secondary .trending-language { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.has-shell .trending-language::before { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: currentColor; content: ""; vertical-align: 1px; }
-body.has-shell .trending-repo-row {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: 35px 38px minmax(0, 1fr) minmax(75px, .4fr) 110px 100px 72px;
-  align-items: center;
-  gap: 12px;
-  min-height: 72px;
-  padding: 11px 14px;
-}
-body.has-shell .trending-repo-row .trending-avatar { width: 38px; height: 38px; }
-body.has-shell .trending-repo-row .trending-repo-main p { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.has-shell .trending-repo-row .trending-language { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-body.has-shell .trending-row-period { min-width: 0; }
-body.has-shell .trending-row-period strong { color: var(--trending-accent); font: 700 17px var(--font-num); }
-body.has-shell .trending-row-period .trending-progress { height: 4px; margin-top: 4px; }
-body.has-shell .trending-row-total { color: var(--text-tertiary); font-size: var(--text-small); white-space: nowrap; }
-body.has-shell .trending-details { grid-column: 1 / -1; min-width: 0; padding: 11px 0 0; border-top: 1px solid var(--hairline); color: var(--text-secondary); font-size: var(--text-ui); overflow-wrap: anywhere; }
-body.has-shell .trending-details[hidden] { display: none; }
-body.has-shell .trending-details strong { color: var(--trending-ink); overflow-wrap: anywhere; }
-body.has-shell .trending-details dl { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 8px; }
-body.has-shell .trending-details dt { color: var(--text-tertiary); font-size: var(--text-caption); }
-body.has-shell .trending-details dd { color: var(--text-primary); font-weight: 600; }
-body.has-shell .trending-actions { position: relative; z-index: 2; display: flex; align-items: center; justify-content: flex-end; gap: 4px; opacity: 0; pointer-events: none; transition: opacity 160ms ease; }
-body.has-shell .trending-top-card .trending-actions { position: absolute; top: 14px; right: 14px; }
-body.has-shell .trending-repo:focus-within .trending-actions { opacity: 1; }
-body.has-shell .trending-repo.is-expanded .trending-actions { opacity: 1; pointer-events: auto; }
-@media (hover: hover) and (pointer: fine) {
-  body.has-shell .trending-repo:hover .trending-actions,
-  body.has-shell .trending-repo:focus-within .trending-actions { opacity: 1; pointer-events: auto; }
-}
-body.has-shell .trending-actions a,
-body.has-shell .trending-actions button {
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  width: 34px;
-  height: 36px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--bg-subtle);
-  color: var(--text-secondary);
-  box-shadow: none;
-  cursor: pointer;
-  font: inherit;
-  text-decoration: none;
-}
-body.has-shell .trending-actions svg { width: 16px; height: 16px; stroke-width: 1.75; pointer-events: none; }
-body.has-shell .trending-top-card .trending-actions a,
-body.has-shell .trending-top-card .trending-actions button { width: 44px; height: 44px; }
-body.has-shell .trending-actions a:hover,
-body.has-shell .trending-actions button:hover,
-body.has-shell .trending-actions a:focus-visible,
-body.has-shell .trending-actions button:focus-visible { border-color: var(--border); background: var(--trending-accent-soft); color: var(--trending-accent); }
-body.has-shell .trending-actions span { color: var(--text-tertiary); font-size: var(--text-small); }
-body.has-shell .trending-page button:focus-visible,
-body.has-shell .trending-page a:focus-visible,
-body.has-shell .trending-page input:focus-visible,
-body.has-shell .trending-page select:focus-visible,
-body.has-shell .trending-repo:focus-visible { outline: 2px solid var(--trending-accent); outline-offset: 2px; }
-@keyframes trending-bar-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.trending-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 12px; min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: calc(var(--radius-lg) * 1.5); background: var(--bg-surface); box-shadow: var(--shadow-xs); }
+.trending-period { display: inline-flex; flex: 0 0 auto; gap: 4px; padding: 4px; border-radius: var(--radius-pill); background: var(--bg-subtle); }
+.trending-period a { display: inline-flex; align-items: center; justify-content: center; min-height: 36px; padding: 0 18px; border-radius: var(--radius-pill); color: var(--text-secondary); font-size: 14px; font-weight: 600; text-decoration: none; }
+.trending-period a:hover { color: var(--text-primary); }
+.trending-period a[aria-current="page"] { background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-xs); }
+.trending-search { display: flex; flex: 1 1 260px; align-items: center; gap: 10px; min-width: 0; min-height: 44px; padding: 0 16px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-page); }
+.trending-search svg { flex: 0 0 auto; width: 18px; height: 18px; color: var(--text-tertiary); }
+.trending-search input { flex: 1 1 auto; width: 100%; min-width: 0; border: 0; outline: none; background: transparent; color: var(--text-primary); font: inherit; font-size: 14px; }
+.trending-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.trending-language-filter { flex: 0 1 190px; min-width: 0; min-height: 44px; padding: 0 14px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-page); color: var(--text-primary); font: inherit; font-size: 14px; }
+.trending-count { flex: 0 0 auto; margin-left: auto; padding-right: 8px; color: var(--text-tertiary); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+.trending-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.trending-status:empty { display: none; }
+.trending-notice,
+.trending-feedback { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: var(--radius-pill); background: var(--bg-subtle); color: var(--text-secondary); font-size: 12px; }
+.trending-notice.warning { background: var(--warn-soft); color: var(--warn); }
+.trending-feedback { background: var(--ok-soft); color: var(--ok); }
+.trending-empty { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; min-height: 200px; padding: 32px 20px; border: 1px dashed var(--border); border-radius: calc(var(--radius-lg) * 1.5); color: var(--text-secondary); text-align: center; }
+
+.trending-featured,
+.trending-list { margin: 0; padding: 0; list-style: none; }
+.trending-featured { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.trending-list { overflow: hidden; border: 1px solid var(--border); border-radius: calc(var(--radius-lg) * 1.5); background: var(--bg-surface); box-shadow: var(--shadow-xs); }
+
+.trending-entry { display: grid; grid-template-columns: 32px 40px minmax(0, 1fr) 150px 36px; grid-template-areas: "rank avatar main heat copy"; align-items: center; gap: 14px; min-width: 0; padding: 16px 20px; }
+.trending-list .trending-entry + .trending-entry { border-top: 1px solid var(--hairline); }
+.trending-rank { grid-area: rank; color: var(--text-tertiary); font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: center; }
+.trending-avatar { display: grid; grid-area: avatar; place-items: center; width: 40px; height: 40px; overflow: hidden; border-radius: 12px; background: var(--bg-subtle); color: var(--text-secondary); font-weight: 700; }
+.trending-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.trending-main { display: grid; grid-area: main; gap: 6px; min-width: 0; }
+.trending-main h2 { margin: 0; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.trending-main h2 a { color: var(--text-primary); text-decoration: none; }
+.trending-main h2 a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.trending-main h2 a:focus-visible { border-radius: 4px; outline: 2px solid var(--accent); outline-offset: 2px; }
+.trending-main p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.trending-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--text-tertiary); font-size: 12px; }
+.trending-meta b { color: var(--text-secondary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.trending-language::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--data); vertical-align: 1px; }
+.trending-heat { display: grid; grid-area: heat; justify-items: end; gap: 4px; min-width: 0; text-align: right; }
+.trending-heat strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.trending-heat small { color: var(--text-tertiary); font-size: 11px; }
+.trending-progress { display: block; width: 100%; max-width: 120px; height: 4px; overflow: hidden; border-radius: var(--radius-pill); background: var(--bg-subtle); }
+.trending-progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--data); }
+.trending-copy { display: grid; grid-area: copy; place-items: center; width: 36px; height: 36px; padding: 0; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--text-tertiary); cursor: pointer; }
+.trending-copy:hover { border-color: var(--border); color: var(--text-primary); }
+.trending-copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trending-copy svg { width: 16px; height: 16px; }
+.trending-copy.is-unavailable { width: auto; font-size: 11px; cursor: default; }
+
+/* The top three read as cards with the period gain as the headline number. */
+.trending-entry.is-featured { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-rows: 1fr auto; grid-template-areas: "rank avatar main copy" "heat heat heat heat"; align-items: start; padding: 20px; border: 1px solid var(--border); border-radius: calc(var(--radius-lg) * 1.5); background: var(--bg-surface); box-shadow: var(--shadow-xs); }
+.is-featured .trending-rank { padding-top: 9px; color: var(--accent); font-size: 18px; text-align: left; }
+.is-featured .trending-avatar { width: 44px; height: 44px; }
+.is-featured .trending-heat { grid-template-columns: auto minmax(0, 1fr); align-items: baseline; justify-items: start; gap: 4px 10px; padding-top: 14px; border-top: 1px solid var(--hairline); text-align: left; }
+.is-featured .trending-heat strong { font-size: 26px; }
+.is-featured .trending-progress { grid-column: 1 / -1; max-width: none; }
+
 @media (max-width: 1100px) {
-  body.has-shell .trending-filters small { display: none; }
-  body.has-shell .trending-top-card .trending-repo-main { grid-column: 1 / -1; grid-row: 2; padding-right: 0; }
-  body.has-shell .trending-top-card .trending-actions { position: static; grid-column: 3; grid-row: 1; }
-  body.has-shell .trending-repo-row { grid-template-columns: 30px 38px minmax(0, 1fr) minmax(70px, .35fr) 100px 78px 72px; gap: 9px; }
+  .trending-featured { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 850px) {
-  body.has-shell .trending-repo-row { grid-template-columns: 28px 38px minmax(0, 1fr) minmax(70px, .4fr) 88px 72px; }
-  body.has-shell .trending-repo-row .trending-row-total { display: none; }
-}
-@media (min-width: 720px) and (max-width: 850px) {
-  body.has-shell .trending-top-card { grid-template-columns: 40px minmax(0, 1fr) auto; }
-}
-@media (max-width: 719px) {
-  body.has-shell .trending-list { grid-template-columns: minmax(0, 1fr); padding: 10px; }
-  body.has-shell .trending-top-card { min-height: 200px; }
-  body.has-shell .trending-top-card .trending-repo-main { grid-column: 2 / -1; grid-row: auto; padding-right: 25px; }
-  body.has-shell .trending-top-card .trending-actions { display: none; grid-column: 1 / -1; grid-row: auto; justify-content: flex-start; }
-  body.has-shell .trending-top-card:focus-within .trending-actions,
-  body.has-shell .trending-top-card.is-expanded .trending-actions { display: flex; }
-  body.has-shell .trending-repo-row { grid-template-columns: 26px 36px minmax(0, 1fr) 82px 72px; gap: 8px; padding: 10px; }
-  body.has-shell .trending-repo-row > .trending-language { display: none; }
-  body.has-shell .trending-repo-row .trending-avatar { width: 36px; height: 36px; }
-  body.has-shell .trending-repo-row .trending-actions a,
-  body.has-shell .trending-repo-row .trending-actions button { width: 34px; height: 36px; }
-  body.has-shell .trending-repo-row.is-expanded .trending-actions { grid-column: 1 / -1; justify-content: flex-start; }
-  body.has-shell .trending-repo-row.is-expanded .trending-actions a,
-  body.has-shell .trending-repo-row.is-expanded .trending-actions button { flex: 0 0 44px; height: 44px; }
-  body.has-shell .trending-page { gap: 10px; }
-  body.has-shell .trending-intro { display: block; padding: 0 1px; }
-  body.has-shell .trending-eyebrow { margin-bottom: 5px; }
-  body.has-shell .trending-intro h2 { margin-bottom: 4px; font-size: 32px; }
-  body.has-shell .trending-intro p:not(.trending-eyebrow) { font-size: var(--text-ui); }
-  body.has-shell .trending-source { margin-top: 8px; padding: 7px 10px; text-align: left; }
-  body.has-shell .trending-controls { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 10px; }
-  body.has-shell .trending-period { justify-self: start; }
-  body.has-shell .trending-period button { min-height: 42px; }
-  body.has-shell .trending-controls > .btn { min-height: 48px; }
-  body.has-shell .trending-filters { grid-column: 1 / -1; grid-row: 2; flex-wrap: wrap; }
-  body.has-shell .trending-filters label:first-child { flex: 1 1 160px; max-width: none; }
-  body.has-shell .trending-filters label:nth-child(2) { flex: 0 1 130px; }
-  body.has-shell .trending-filters input,
-  body.has-shell .trending-filters select { height: 44px; }
-  body.has-shell .trending-status { padding: 7px 10px; }
-}
-@media (max-width: 460px) {
-  body.has-shell .trending-repo-row { grid-template-columns: 25px 34px minmax(0, 1fr) 75px; }
-  body.has-shell .trending-repo-row .trending-actions { display: none; }
-  body.has-shell .trending-repo-row:focus-within .trending-actions,
-  body.has-shell .trending-repo-row.is-expanded .trending-actions { display: flex; grid-column: 1 / -1; justify-content: flex-start; }
-  body.has-shell .trending-top-card .trending-actions a,
-  body.has-shell .trending-top-card .trending-actions button,
-  body.has-shell .trending-repo-row .trending-actions a,
-  body.has-shell .trending-repo-row .trending-actions button { width: 44px; height: 44px; }
-}
-@media (max-width: 719px) and (hover: hover) and (pointer: fine) {
-  body.has-shell .trending-top-card:hover .trending-actions { display: flex; }
-}
-@media (max-width: 460px) and (hover: hover) and (pointer: fine) {
-  body.has-shell .trending-repo-row:hover .trending-actions { display: flex; grid-column: 1 / -1; justify-content: flex-start; }
-}
-@media (prefers-reduced-motion: reduce) {
-  body.has-shell .trending-period-indicator,
-  body.has-shell .trending-repo,
-  body.has-shell .trending-actions { transition: none; }
-  body.has-shell .trending-progress-fill { animation: none; }
+
+@media (max-width: 720px) {
+  .trending-toolbar { padding: 8px; border-radius: 22px; }
+  .trending-period { flex: 1 1 100%; }
+  .trending-period a { flex: 1 1 0; }
+  .trending-search { flex-basis: 100%; }
+  .trending-language-filter { flex: 1 1 auto; }
+  .trending-count { margin-left: 0; }
+  /* Swipe sideways through the top three instead of scrolling past three tall cards. */
+  .trending-featured { grid-template-columns: none; grid-auto-columns: 86%; grid-auto-flow: column; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x mandatory; scrollbar-width: none; }
+  .trending-featured::-webkit-scrollbar { display: none; }
+  .trending-featured .trending-entry { scroll-snap-align: start; }
+  /* Name on the first line; description, stats and gain then use the full width. */
+  .trending-entry,
+  .trending-entry.is-featured { grid-template-columns: 22px 34px minmax(0, 1fr) 36px; grid-template-rows: none; grid-template-areas: "rank avatar title copy" "desc desc desc desc" "meta meta meta meta" "heat heat heat heat"; align-items: center; gap: 8px 10px; padding: 14px 16px; }
+  .trending-main { display: contents; }
+  .trending-main h2 { grid-area: title; }
+  .trending-main p { grid-area: desc; }
+  .trending-meta { grid-area: meta; }
+  .trending-avatar,
+  .is-featured .trending-avatar { width: 34px; height: 34px; border-radius: 10px; }
+  .is-featured .trending-rank { padding-top: 0; }
+  .trending-list .trending-heat { grid-auto-flow: column; align-items: baseline; justify-content: start; justify-items: start; gap: 8px; text-align: left; }
+  .trending-list .trending-heat strong { font-size: 16px; }
+  .trending-list .trending-progress { display: none; }
 }

@@ -31,11 +31,19 @@ class Sessions:
 
 
 def client_for(tmp_path, handler):
+    async def board(_period):
+        return [{
+            'source_rank': 1, 'full_name': 'octocat/hello-world', 'html_url': 'https://github.com/octocat/hello-world',
+            'description': None, 'language': None, 'stars_total': 1, 'stars_period': 1, 'forks_count': None,
+        }]
+
+    store = TrendingStore(tmp_path / 'cache.json', fetcher=board)
+    asyncio.run(store.refresh('weekly'))
     proxy = AvatarProxy(transport=httpx.MockTransport(handler))
-    return TestClient(create_app(Sessions(), github_trending_store=TrendingStore(tmp_path / 'cache.json'), github_trending_avatar_proxy=proxy))
+    return TestClient(create_app(Sessions(), github_trending_store=store, github_trending_avatar_proxy=proxy))
 
 
-def test_avatar_route_auth_validation_cache_and_redirect(tmp_path):
+def test_avatar_route_is_public_for_listed_owners_with_validation_cache_and_redirect(tmp_path):
     calls = []
 
     def handler(request):
@@ -46,14 +54,17 @@ def test_avatar_route_auth_validation_cache_and_redirect(tmp_path):
 
     with client_for(tmp_path, handler) as client:
         url = '/api/v1/github-trending/avatar/octocat'
-        assert client.get(url).status_code == 401
-        assert client.get(url, headers={'Cookie': 'sid=user'}).status_code == 403
         for owner in ('-bad', 'bad--name', 'bad.', 'bad%2Fname', 'a' * 40):
             assert client.get('/api/v1/github-trending/avatar/' + owner, headers=HEADERS).status_code in (404, 422)
-        first = client.get(url, headers=HEADERS)
+        # Owners that are not on a current board are never fetched, even for admins.
+        assert client.get('/api/v1/github-trending/avatar/someone-else', headers=HEADERS).status_code == 404
+        assert calls == []
+        # The boards are public, so anonymous and user sessions read listed avatars too.
+        first = client.get(url)
         assert first.status_code == 200 and first.content == PNG
         assert first.headers['content-type'].startswith('image/png')
         assert first.headers['cache-control'] == 'no-store'
+        assert client.get(url, headers={'Cookie': 'sid=user'}).content == PNG
         assert client.get(url, headers=HEADERS).content == PNG
     assert calls == ['https://github.com/octocat.png?size=64', 'https://avatars.githubusercontent.com/u/1?s=64&v=4']
 

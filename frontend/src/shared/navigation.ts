@@ -20,7 +20,13 @@ export const navigationGroups: NavigationGroup[] = [
       { key: 'dashboard', href: '/admin', label: '用户', icon: 'dashboard' },
       { key: 'plans', href: '/admin/plans', label: '今日计划', icon: 'calendar' },
       { key: 'shop', href: '/admin/shop', label: '商品管理', icon: 'dashboard' },
-      { key: 'github-trending', href: '/admin/github-trending', label: '开源发现', icon: 'dashboard' },
+    ],
+  },
+  {
+    label: 'AI 工具',
+    items: [
+      { key: 'chat', href: '/admin/chat', label: 'AI 对话', icon: 'chat' },
+      { key: 'video', href: '/admin/video', label: 'AI 视频', icon: 'video' },
     ],
   },
   {

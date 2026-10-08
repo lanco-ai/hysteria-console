@@ -44,12 +44,15 @@ REACT_DOCUMENTS = {
     '/admin/config': ('模板与路由', 'has-shell', 'admin'),
     '/admin/rules': ('模板与路由', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
-    '/admin/chat': ('AI 对话', 'page-portal page-workbench', 'admin'),
+    '/admin/chat': ('AI 对话', 'has-shell page-workbench', 'admin'),
     '/admin/services': ('服务中心', 'has-shell', 'admin'),
     '/admin/plans': ('今日计划', 'has-shell', 'admin'),
     '/admin/shop': ('商品管理', 'has-shell', 'admin'),
-    '/admin/github-trending': ('GitHub 热榜', 'has-shell', 'admin'),
-    '/admin/video': ('AI 视频', 'page-portal page-workbench', 'admin'),
+    '/admin/video': ('AI 视频', 'has-shell', 'admin'),
+}
+# Documents that moved; old bookmarks keep working for every visitor.
+MOVED_DOCUMENTS = {
+    '/admin/github-trending': '/?view=trending',
 }
 
 
@@ -199,6 +202,17 @@ def register_react_document_routes(app, services, dispatch, react_dist):
             endpoint_for(path),
             methods=['GET', 'HEAD'],
             include_in_schema=False,
+        )
+
+    def moved_to(location):
+        async def endpoint():
+            return RedirectResponse(location, status_code=302)
+
+        return endpoint
+
+    for path, location in MOVED_DOCUMENTS.items():
+        router.add_api_route(
+            path, moved_to(location), methods=['GET', 'HEAD'], include_in_schema=False
         )
 
     async def user_detail_document(request: Request, uid: str):
