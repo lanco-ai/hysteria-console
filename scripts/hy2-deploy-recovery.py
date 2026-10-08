@@ -295,6 +295,7 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/web_api/shop_routes.py",
     "/root/hysteria/web_api/shop_source.py",
     "/root/hysteria/web_api/shop_anli_source.py",
+    "/root/hysteria/web_api/shop_prodseller_source.py",
     "/root/hysteria/web_api/shop_notices.py",
     "/root/hysteria/web_api/shop_store.py",
     "/root/hysteria/web_api/subscription_routes.py",
