@@ -186,7 +186,7 @@ export function ShopAdminPage() {
               {label}{' '}<span className="shop-admin-chip-count">{counts[value]}</span>
             </button>)}
           </div>
-          <input type="search" className="user-filter-input shop-admin-search" aria-label="搜索商品或规格" placeholder="搜索商品、规格或 SKU" autoComplete="off" value={query} onChange={event => setQuery(event.target.value)}/>
+          <input type="search" className="user-filter-input shop-admin-search" aria-label="搜索商品或规格" placeholder="搜索商品或规格" autoComplete="off" value={query} onChange={event => setQuery(event.target.value)}/>
         </div> : <p className="shop-admin-empty">尚无来源商品，请刷新来源。获取到的商品会先保存为草稿。</p>}
         {items.length && !shownCount ? <div className="shop-admin-empty"><p>没有符合条件的规格。</p><button type="button" className="btn btn-secondary btn-sm" onClick={() => { setFilter('all'); setQuery(''); }}>清除筛选</button></div> : null}
         <div className="shop-admin-products">{BRANDS.filter(brand => groups.has(brand)).map(brand => {
@@ -231,7 +231,7 @@ export function ShopAdminPage() {
                   return <article key={item.key} className={`shop-admin-row${changed(item.key) ? ' is-changed' : ''}${item.available ? '' : ' is-soldout'}`} hidden={!visible(item)}>
                     <div className="shop-admin-spec">
                       <strong>{item.label}</strong>
-                      <small>SKU {item.key}{item.available ? null : <span className="badge warn">来源售罄</span>}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>
+                      {item.available && !changed(item.key) ? null : <small>{item.available ? null : <span className="badge warn">来源售罄</span>}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
                     </div>
                     <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
                     <label className="shop-admin-price"><span className="shop-admin-mobile-label">售价（元）</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`售价 ${item.key}`} aria-invalid={margin.tone === 'invalid' || undefined} inputMode="decimal" autoComplete="off" value={value.price} disabled={busy} placeholder="待填写" onChange={event => edit(item.key, { price: event.target.value })}/></span></label>
