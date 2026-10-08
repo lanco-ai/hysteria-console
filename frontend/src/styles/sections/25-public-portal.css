@@ -29,19 +29,10 @@ body.page-portal {
   align-items: center;
 }
 
-.portal-brand { flex: 0 0 auto; gap: 12px; }
-.portal-brand > span {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--bg-surface);
-  font-size: 23px;
-  font-weight: 700;
-}
-.portal-brand strong { font-size: 21px; letter-spacing: -.6px; }
+.portal-brand { flex: 0 0 auto; gap: 10px; color: var(--accent); text-decoration: none; }
+.portal-brand-mark { flex: 0 0 auto; width: 40px; height: 40px; }
+.portal-brand strong { color: var(--text-primary); font-size: 21px; letter-spacing: -.6px; }
+.portal-brand strong span { color: var(--data); }
 .portal-nav { gap: 6px; min-width: 0; }
 .portal-nav a {
   gap: 8px;
@@ -120,7 +111,7 @@ body.page-portal {
 @media (max-width: 720px) {
   .portal { padding: 16px 14px 24px; }
   .portal-header { flex-wrap: wrap; gap: 12px; padding: 14px; border-radius: 24px; }
-  .portal-brand > span { width: 34px; height: 34px; font-size: 20px; }
+  .portal-brand-mark { width: 34px; height: 34px; }
   .portal-brand { gap: 8px; }
   .portal-account { min-height: 38px; padding: 8px 12px; font-size: 12px; }
   .portal-account svg { width: 16px; height: 16px; }

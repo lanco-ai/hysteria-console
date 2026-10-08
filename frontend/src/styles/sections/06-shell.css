@@ -74,6 +74,32 @@ body.has-shell {
   text-transform: uppercase;
 }
 
+/* Closing only applies to the mobile drawer; the desktop rail hides the button. */
+.sidebar-close {
+  display: none;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.sidebar-close:hover {
+  background: var(--bg-subtle);
+  color: var(--text-primary);
+}
+
+.sidebar-close svg {
+  width: 18px;
+  height: 18px;
+}
+
 .sidebar-nav {
   flex: 1;
   min-height: 0;
@@ -200,6 +226,12 @@ body.has-shell {
 
 .sidebar.collapsed .sidebar-collapse {
   margin: 8px auto 12px;
+}
+
+/* The chevron points the way the rail will move: left to collapse, right to expand. */
+.sidebar.collapsed .sidebar-collapse svg,
+html.sidebar-pre-collapsed .sidebar-collapse svg {
+  transform: rotate(180deg);
 }
 
 .sidebar.collapsed .sidebar-footer {

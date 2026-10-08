@@ -134,13 +134,13 @@ def test_react_preview_serves_exact_public_entry_with_public_document_shell(runn
     with urlopen(base_url + '/__react/', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · Hysteria</title>' in page
+        assert '<title>购物 · LancoAI</title>' in page
         assert '<body class="page-portal page-workbench">' in page
         assert '/static/react/assets/' in page
 
     with urlopen(base_url + '/', timeout=5) as response:
         assert response.status == 200
-        assert '<title>购物 · Hysteria</title>' in response.read().decode()
+        assert '<title>购物 · LancoAI</title>' in response.read().decode()
 
     _assert_head_matches_get(base_url + '/__react/')
 
@@ -150,7 +150,7 @@ def test_react_preview_serves_exact_login_entry_with_password_limit(running_prev
     with urlopen(base_url + '/__react/login', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · Hysteria</title>' in page
+        assert '<title>购物 · LancoAI</title>' in page
         assert '<body class="page-portal page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/login')
@@ -161,7 +161,7 @@ def test_react_preview_serves_user_login_entry_with_password_limit(running_previ
     with urlopen(base_url + '/__react/user/login', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · Hysteria</title>' in page
+        assert '<title>购物 · LancoAI</title>' in page
         assert '<body class="page-portal page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/user/login')
@@ -172,12 +172,12 @@ def test_react_preview_serves_auth_alias_with_workbench_bootstrap(running_previe
     with urlopen(base_url + '/__react/auth', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · Hysteria</title>' in page
+        assert '<title>购物 · LancoAI</title>' in page
         assert '<body class="page-portal page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/auth')
     with urlopen(base_url + '/auth', timeout=5) as response:
-        assert '<title>购物 · Hysteria</title>' in response.read().decode()
+        assert '<title>购物 · LancoAI</title>' in response.read().decode()
 
 
 @pytest.mark.parametrize(

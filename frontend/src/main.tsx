@@ -70,10 +70,10 @@ const REACT_DOCUMENT_ROUTES = new Set([
 
 type RouteMetadata = { title: string; bodyClass: string; shell?: boolean };
 const ROUTE_METADATA: Record<string, RouteMetadata> = {
-  '/': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
-  '/auth': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
-  '/login': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
-  '/user/login': { title: '购物 · Hysteria', bodyClass: 'page-portal page-workbench' },
+  '/': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
+  '/auth': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
+  '/login': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
+  '/user/login': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
   '/admin': { title: '用户', bodyClass: 'has-shell', shell: true },
   '/admin/logs': { title: '运维', bodyClass: 'has-shell', shell: true },
   '/admin/settings': { title: '设置', bodyClass: 'has-shell', shell: true },
@@ -232,7 +232,7 @@ function applyRouteDocument(route: string): void {
     : ROUTE_METADATA[route];
   if (!metadata) return;
   const view = new URLSearchParams(window.location.search).get('view');
-  document.title = route === '/' && view === 'trending' ? 'GitHub 热榜 · Hysteria' : metadata.title;
+  document.title = route === '/' && view === 'trending' ? 'GitHub 热榜 · LancoAI' : metadata.title;
   if (metadata.bodyClass) document.body.className = metadata.bodyClass;
   else document.body.removeAttribute('class');
   if (metadata.shell) applyInitialShellPreferences();

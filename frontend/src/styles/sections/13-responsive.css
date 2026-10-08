@@ -99,6 +99,10 @@
     display: flex;
   }
 
+  .sidebar-close {
+    display: grid;
+  }
+
   .topbar-inner {
     padding: 0 16px;
   }

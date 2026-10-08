@@ -19,7 +19,7 @@ async function main() {
     const sessionResponse = anonymous.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/session');
     await anonymous.goto(`${baseUrl}/__react/`);
     assert.equal((await sessionResponse).status(), 401);
-    await expect(anonymous).toHaveTitle('购物 · Hysteria');
+    await expect(anonymous).toHaveTitle('购物 · LancoAI');
     await expect(anonymous.locator('.sidebar')).toHaveCount(0);
     // AI chat and video live in the admin console; the portal shows shopping and discovery.
     await expect(anonymous.locator('nav[aria-label="主导航"] a')).toHaveText(['购物', '开源发现']);
@@ -28,7 +28,7 @@ async function main() {
     await anonymous.evaluate(() => { window.__portalMarker = 'same-document'; });
     await anonymous.getByRole('link', { name: '开源发现', exact: true }).click();
     await expect(anonymous).toHaveURL(`${baseUrl}/__react/?view=trending`);
-    await expect(anonymous).toHaveTitle('GitHub 热榜 · Hysteria');
+    await expect(anonymous).toHaveTitle('GitHub 热榜 · LancoAI');
     await expect(anonymous.getByRole('heading', { name: 'GitHub 热榜', level: 1 })).toBeVisible();
     await expect(anonymous.locator('nav[aria-label="主导航"] a[aria-current="page"]')).toHaveText('开源发现');
     await expect(anonymous.getByRole('button', { name: '刷新榜单' })).toHaveCount(0);
@@ -36,7 +36,7 @@ async function main() {
     await anonymous.goBack();
     await expect(anonymous.getByRole('heading', { name: '暂无商品' })).toBeVisible();
     await anonymous.goForward();
-    await expect(anonymous).toHaveTitle('GitHub 热榜 · Hysteria');
+    await expect(anonymous).toHaveTitle('GitHub 热榜 · LancoAI');
     assert.equal(privateRequests, 0, 'the public portal must not call private chat or video APIs');
 
     // Old portal links follow the tools into the admin console and ask for a login there.

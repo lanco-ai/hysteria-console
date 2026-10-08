@@ -141,7 +141,7 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
 
         user_login = client.get('/user/login')
         assert user_login.status_code == 200
-        assert '<title>购物 · Hysteria</title>' in user_login.text
+        assert '<title>购物 · LancoAI</title>' in user_login.text
         assert '<body class="page-portal page-workbench">' in user_login.text
         assert 'data-password-max-length="128"' in user_login.text
 

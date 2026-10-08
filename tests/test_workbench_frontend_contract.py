@@ -114,7 +114,7 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     assert 'className="main"' not in adapter
     assert "navigationGroups" in navigation
     assert "placement: 'bottom'" in navigation
-    for label in ("工作台", "AI 工具", "网络管理", "运维管理", "服务接入"):
+    for label in ("网络管理", "工作台", "AI 工具"):
         assert label in navigation
     for href in (
         "/admin", "/admin/usage", "/admin/health",

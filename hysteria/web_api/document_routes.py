@@ -27,10 +27,10 @@ _SAFE_LOGIN_QUERY_KEYS = frozenset(
 # ``/admin/daily`` and subscription/CSV/evidence downloads stay on their
 # established handlers until their own cutover contracts are approved.
 REACT_DOCUMENTS = {
-    '/': ('购物 · Hysteria', 'page-portal page-workbench', None),
-    '/auth': ('购物 · Hysteria', 'page-portal page-workbench', None),
-    '/login': ('购物 · Hysteria', 'page-portal page-workbench', None),
-    '/user/login': ('购物 · Hysteria', 'page-portal page-workbench', None),
+    '/': ('购物 · LancoAI', 'page-portal page-workbench', None),
+    '/auth': ('购物 · LancoAI', 'page-portal page-workbench', None),
+    '/login': ('购物 · LancoAI', 'page-portal page-workbench', None),
+    '/user/login': ('购物 · LancoAI', 'page-portal page-workbench', None),
     '/logout': ('确认退出', '', 'admin'),
     '/user/logout': ('确认退出', '', 'user'),
     '/user/change-password': ('修改面板密码', 'page-auth', 'user-password'),

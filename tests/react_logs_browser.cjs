@@ -10,21 +10,20 @@ const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
 
 const columns = ['时间', '操作人', 'IP', '操作', '目标', '日期', '流量变化'];
 const navigation = [
-  ['工作台', null],
+  ['网络管理', null],
   ['用户', '/admin'],
+  ['流量分析', '/admin/usage'],
+  ['模板与路由', '/admin/config'],
+  ['家宽出口', '/admin/landing-egresses'],
+  ['运维', '/admin/health'],
+  ['工作台', null],
   ['今日计划', '/admin/plans'],
   ['商品管理', '/admin/shop'],
   ['AI 工具', null],
   ['AI 对话', '/admin/chat'],
   ['AI 视频', '/admin/video'],
-  ['网络管理', null],
-  ['流量分析', '/admin/usage'],
-  ['模板与路由', '/admin/config'],
-  ['家宽出口', '/admin/landing-egresses'],
-  ['运维管理', null],
-  ['运维', '/admin/health'],
-  ['服务接入', null],
   ['服务中心', '/admin/services'],
+  ['访问网站', '/'],
   ['设置', '/admin/settings'],
 ];
 
@@ -271,11 +270,11 @@ async function verifyShellKeyboardAndPreferences(browser) {
   await toggle.click();
   await mobilePage.waitForFunction(() => document.activeElement?.id === 'sidebar-close');
   await mobilePage.keyboard.press('Shift+Tab');
-  assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '返回首页');
+  assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '控制台首页');
   await mobilePage.keyboard.press('Shift+Tab');
   assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '退出登录');
   await mobilePage.keyboard.press('Tab');
-  assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '返回首页');
+  assert.equal(await mobilePage.evaluate(() => document.activeElement?.getAttribute('aria-label')), '控制台首页');
   await mobilePage.keyboard.press('Tab');
   assert.equal(await mobilePage.evaluate(() => document.activeElement?.id), 'sidebar-close');
   await mobilePage.keyboard.press('Escape');

@@ -7,15 +7,17 @@ immutable assets under `/static/react/assets/`.
 
 ## Public shopping and discovery entry
 
-The home page uses a shared public header with 购物 and 开源发现.
+The home page uses a shared public header with the LancoAI brand, 购物 and 开源发现.
 Shopping is the default view; `/?view=trending` shows the GitHub Trending board
 (`&period=daily` selects the daily board). `/login` and `/auth` open the existing
 administrator login modal over this entry; `/user/login` retains the existing user
-login realm. The authenticated header has a management-console link, and the
-console logo returns to this public entry.
+login realm. The authenticated header has a management-console link. In the
+console, the Hysteria Network Console logo opens the console home (`/admin`) and the
+sidebar footer's 访问网站 link returns to this public entry.
 
-AI 对话 (`/admin/chat`) and AI 视频 (`/admin/video`) are administrator tools in the
-console sidebar's AI 工具 group. Old `/?view=chat` and `/?view=video` links are
+The console sidebar groups 网络管理 (用户, 流量分析, 模板与路由, 家宽出口, 运维),
+工作台 (今日计划, 商品管理) and AI 工具. AI 对话 (`/admin/chat`), AI 视频
+(`/admin/video`) and 服务中心, whose API access the AI tools use, are in AI 工具. Old `/?view=chat` and `/?view=video` links are
 forwarded there, keeping their other query parameters.
 
 The shopping catalogue reads `/api/v1/shop/catalog`. Only explicitly published

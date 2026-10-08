@@ -42,13 +42,16 @@ async function main() {
         label: group.querySelector('.sidebar-section')?.textContent?.trim() || '',
         hrefs: Array.from(group.querySelectorAll('a[href]'), link => new URL(link.href).pathname),
       })));
-      assert.deepEqual(navGroups.map(group => group.label), ['工作台', 'AI 工具', '网络管理', '运维管理', '服务接入']);
+      assert.deepEqual(navGroups.map(group => group.label), ['网络管理', '工作台', 'AI 工具']);
+      assert.deepEqual(navGroups.find(group => group.label === '网络管理')?.hrefs, ['/admin', '/admin/usage', '/admin/config', '/admin/landing-egresses', '/admin/health']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/plans'))?.label, '工作台');
-      assert.deepEqual(navGroups.find(group => group.label === 'AI 工具')?.hrefs, ['/admin/chat', '/admin/video']);
+      assert.deepEqual(navGroups.find(group => group.label === 'AI 工具')?.hrefs, ['/admin/chat', '/admin/video', '/admin/services']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/github-trending')), undefined, 'GitHub trending has moved to the public portal');
-      assert.deepEqual(navGroups.find(group => group.label === '运维管理')?.hrefs, ['/admin/health']);
-      assert.equal(navGroups.find(group => group.hrefs.includes('/admin/services'))?.label, '服务接入');
-      assert.deepEqual(await page.locator('.sidebar-footer a[href]').evaluateAll(links => links.map(link => new URL(link.href).pathname)), ['/admin/settings']);
+      assert.deepEqual(await page.locator('.sidebar-footer a[href]').evaluateAll(links => links.map(link => new URL(link.href).pathname)), ['/', '/admin/settings']);
+      // Each entry has its own icon, so the collapsed rail stays readable.
+      const icons = await page.locator('.sidebar a.sidebar-link svg').evaluateAll(svgs => svgs.map(svg => svg.innerHTML));
+      assert.equal(new Set(icons).size, icons.length, 'sidebar icons must be distinct');
+      assert.equal(await page.locator('.sidebar-home').getAttribute('href'), '/admin');
       await page.evaluate(() => { window.__navigationMarker = 'same-document'; });
       const mobile = viewport.width <= 880;
       if (mobile) {
@@ -57,9 +60,9 @@ async function main() {
       }
       const baseline = await geometry(page);
       for (const path of ['/admin/plans', '/admin/shop', '/admin/services', '/admin']) {
-        await page.locator(`.sidebar a[href="${path}"]`).click();
+        await page.locator(`.sidebar-link[href="${path}"]`).click();
         await expect(page).toHaveURL(`${baseUrl}/__react${path}`);
-        await expect(page.locator(`.sidebar a[href="${path}"]`)).toHaveAttribute('aria-current', 'page');
+        await expect(page.locator(`.sidebar-link[href="${path}"]`)).toHaveAttribute('aria-current', 'page');
         if (path === '/admin/plans') await expect(page.getByRole('heading', { name: '今日计划', level: 1 })).toBeVisible();
         if (mobile) {
           await page.locator('#sidebar-toggle').click();
