@@ -20,7 +20,7 @@ async function main() {
     await manager.goto(`${base}/admin/shop`);
     await expect(manager.getByRole('heading', { name: /^商品管理/ })).toBeVisible();
     await expect(manager.locator('.shop-admin-product')).toHaveCount(5);
-    await expect(manager.locator('.shop-admin-product h2')).toHaveCount(5);
+    await expect(manager.locator('.shop-admin-product h3')).toHaveCount(5);
     await expect(manager.locator('.shop-admin-row')).toHaveCount(7);
     await expect(manager.locator('.shop-admin-product').first().locator('.shop-admin-row')).toHaveCount(2);
     await expect(manager.locator('.topbar-right').getByRole('button', { name: '刷新来源' })).toBeVisible();
