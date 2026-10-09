@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { AdminShell } from '../../shared/AdminShell';
 import { Icon } from '../../shared/icons';
+import { useInitialFragmentNavigation } from '../../shared/useInitialFragmentNavigation';
 import { ServiceEditor, type Bookmark } from './ServiceEditor';
 import { ServiceModels } from './ServiceModels';
 import { AIServiceSettings } from './AIServiceSettings';
@@ -24,8 +25,8 @@ async function request(options?: RequestInit): Promise<Catalog> {
   return response.json() as Promise<Catalog>;
 }
 
-// Old links opened a tab; they now scroll to the matching section once both load.
-const sectionFromLocation = () => new URLSearchParams(window.location.search).get('tab') === 'websites' ? 'websites' : window.location.hash.slice(1);
+const fragmentTargets: ReadonlySet<string> = new Set(['ai-services', 'assistant-models', 'websites']);
+const noFragmentTargets: ReadonlySet<string> = new Set();
 
 export function ServicesPage({ publicHost }: { publicHost: string }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -53,14 +54,16 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
     return () => window.removeEventListener('keydown', focusSearch);
   }, []);
   const [aiSettled, setAiSettled] = useState(false);
-  const pendingSection = useRef(sectionFromLocation());
-  const settled = aiSettled && (catalog !== null || error !== '');
-  useEffect(() => {
-    const target = pendingSection.current;
-    if (!settled || !target) return;
-    pendingSection.current = '';
-    document.getElementById(target)?.scrollIntoView({ block: 'start' });
-  }, [settled]);
+  useLayoutEffect(() => {
+    // The page used to have ?tab= links; ?tab=websites now means the bookmarks section.
+    const url = new URL(window.location.href);
+    const tab = url.searchParams.get('tab');
+    if (tab === null) return;
+    url.searchParams.delete('tab');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${tab === 'websites' ? '#websites' : url.hash}`);
+  }, []);
+  // Section offsets settle once both lists have rendered.
+  useInitialFragmentNavigation(aiSettled && (catalog !== null || error !== '') ? fragmentTargets : noFragmentTargets);
   const reload = async () => {
     setError(''); setBusy(true);
     try { setCatalog(await request()); setFeedback('收藏列表已刷新'); } catch (value) { setError(value instanceof Error ? value.message : '读取失败'); }

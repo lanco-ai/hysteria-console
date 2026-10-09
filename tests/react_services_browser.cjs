@@ -176,14 +176,16 @@ const { expect } = require('@playwright/test');
 
     const another = await browser.newContext({ viewport: { width: 390, height: 844 } });
     await another.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
-    const second = await another.newPage();
-    await second.goto(`${base}/admin/services?tab=websites`);
-    await expect(second.locator('.service-card')).toHaveCount(2);
-    await expect.poll(() => second.locator('#websites').evaluate(element => Math.round(element.getBoundingClientRect().top))).toBeLessThan(120);
-    await second.goto(`${base}/admin/services#assistant-models`);
-    await expect(second.locator('[data-ai-binding="video_assistant"]')).toBeVisible();
-    await expect.poll(() => second.locator('#assistant-models').evaluate(element => Math.round(element.getBoundingClientRect().top))).toBeLessThan(120);
-    await expect(second.getByLabel('视频创意助手 模型')).toHaveValue('preview-chat-fast');
+    const legacy = await another.newPage();
+    await legacy.goto(`${base}/admin/services?tab=websites`);
+    await expect(legacy.locator('.service-card')).toHaveCount(2);
+    await expect(legacy).toHaveURL(/\/admin\/services#websites$/);
+    await expect.poll(() => legacy.locator('#websites').evaluate(element => Math.round(element.getBoundingClientRect().top))).toBeLessThan(120);
+    const anchored = await another.newPage();
+    await anchored.goto(`${base}/admin/services#assistant-models`);
+    await expect(anchored.locator('[data-ai-binding="video_assistant"]')).toBeVisible();
+    await expect.poll(() => anchored.locator('#assistant-models').evaluate(element => Math.round(element.getBoundingClientRect().top))).toBeLessThan(120);
+    await expect(anchored.getByLabel('视频创意助手 模型')).toHaveValue('preview-chat-fast');
     assert.deepEqual(failures, []);
     console.log('Services: single page, Chat API A/B/C tests, model catalog, bookmarks CRUD, reload persistence, old links and mobile passed');
   } finally { await browser.close(); }
