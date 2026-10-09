@@ -36,7 +36,7 @@ export function PortalShell({ active, children, agentEnabled = false }: CodexShe
         <a href="/?view=trending" aria-current={active === 'trending' ? 'page' : undefined}><Icon name="trending"/><span>开源发现</span></a>
       </nav>
       {session.authenticated
-        ? <a className="portal-account" href="/admin"><Icon name="dashboard"/><span>管理后台</span></a>
+        ? <a className="portal-account" href="/admin/plans"><Icon name="dashboard"/><span>管理后台</span></a>
         : <button className="portal-account" type="button" onClick={session.onLogin}><Icon name="logout"/><span>登录</span></button>}
     </header>
     <main className={`portal-main portal-main-${active}`} id="main-content" tabIndex={-1}>

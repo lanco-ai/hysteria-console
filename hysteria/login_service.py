@@ -103,7 +103,7 @@ class LoginService:
             realm='admin',
             username=username,
             session_id=session_id,
-            redirect_to='/admin?msg=login+success',
+            redirect_to='/admin/plans',
         )
 
     def _authenticate_user(self, *, username: str, password: str, client_ip: str) -> LoginResult:

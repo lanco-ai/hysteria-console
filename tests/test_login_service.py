@@ -94,7 +94,7 @@ def test_login_result_is_typed_immutable_and_hides_session_id_from_repr():
         realm='admin',
         username='admin',
         session_id='internal-session-secret',
-        redirect_to='/admin?msg=login+success',
+        redirect_to='/admin/plans',
     )
 
     assert result.outcome == 'success'
@@ -126,7 +126,7 @@ def test_admin_first_values_are_used_after_username_trim_and_take_precedence():
         realm='admin',
         username='admin',
         session_id='admin-session-secret',
-        redirect_to='/admin?msg=login+success',
+        redirect_to='/admin/plans',
     )
     assert calls['verified'] == [('correct-password', ADMIN_HASH)]
     assert calls['admin_sessions'] == [('admin', f'generation:{ADMIN_HASH}')]

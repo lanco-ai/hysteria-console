@@ -110,7 +110,7 @@ export function CodexShell({ active, pageTitle, badge, children, subtitle, topba
     <div className={`app${effectiveCollapsed ? ' sidebar-collapsed' : ''}${animationReady ? ' anim-ready' : ''}`} data-auth-status={authStatus}>
       <aside className={`sidebar${effectiveCollapsed ? ' collapsed' : ''}${mobile && open ? ' open' : ''}`} id="sidebar" ref={sidebarRef} inert={mobile && !open ? true : undefined}>
         <div className="sidebar-brand">
-          <a className="sidebar-home" href="/admin" aria-label="控制台首页"><span className="sidebar-logo">H</span><div className="sidebar-brand-text"><strong>Hysteria</strong><small>Network Console</small></div></a>
+          <a className="sidebar-home" href="/admin/plans" aria-label="控制台首页"><span className="sidebar-logo">H</span><div className="sidebar-brand-text"><strong>Hysteria</strong><small>Network Console</small></div></a>
           <button className="sidebar-close" id="sidebar-close" type="button" aria-label="关闭导航" aria-controls="sidebar" onClick={() => closeSidebar(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>

@@ -3,7 +3,7 @@ import { hasExactKeys, postFormJson } from '../../shared/postForm';
 export type LoginResponse =
   | {
       ok: true;
-      redirect_to: '/admin?msg=login+success' | '/user/panel' | '/user/change-password';
+      redirect_to: '/admin/plans' | '/user/panel' | '/user/change-password';
     }
   | { ok: false; message: string };
 
@@ -11,7 +11,7 @@ type Credentials = { username: string; password: string };
 export type LoginRealm = 'admin' | 'user';
 
 const destinations = new Set([
-  '/admin?msg=login+success',
+  '/admin/plans',
   '/user/panel',
   '/user/change-password',
 ]);

@@ -21,7 +21,7 @@ class UserSessionResponse(PublicModel):
 class LoginSuccessResponse(PublicModel):
     ok: Literal[True]
     redirect_to: Literal[
-        '/admin?msg=login+success',
+        '/admin/plans',
         '/user/panel',
         '/user/change-password',
     ]

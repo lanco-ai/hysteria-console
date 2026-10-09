@@ -404,7 +404,7 @@ async function verifyRealPasswordChanges(browser) {
   const oldLogin = await adminContext.request.post(`${baseUrl}/api/v1/login`, { form: { admin_username: 'admin', admin_password: adminPassword } });
   assert.equal((await oldLogin.json()).ok, false);
   const newLogin = await adminContext.request.post(`${baseUrl}/api/v1/login`, { form: { admin_username: 'admin', admin_password: 'changed-admin-password' } });
-  assert.equal((await newLogin.json()).redirect_to, '/admin?msg=login+success');
+  assert.equal((await newLogin.json()).redirect_to, '/admin/plans');
   const replacementAdminCookie = newLogin.headers()['set-cookie'].split(';', 1)[0];
   await adminContext.close();
 

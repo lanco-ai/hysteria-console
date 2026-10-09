@@ -275,7 +275,7 @@ def test_login_admin_precedence_trims_username_and_binds_secure_session(
         )
 
     assert response.status == 302
-    assert response.headers["location"] == "/admin?msg=login+success"
+    assert response.headers["location"] == "/admin/plans"
     cookie = response.headers["set-cookie"]
     assert cookie.startswith("sid=")
     assert "usid=" not in cookie

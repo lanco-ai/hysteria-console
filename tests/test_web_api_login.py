@@ -135,7 +135,7 @@ def test_admin_login_returns_allowlisted_json_and_generation_bound_cookie(
     )
 
     assert response.status_code == 200
-    assert response.json() == {'ok': True, 'redirect_to': '/admin?msg=login+success'}
+    assert response.json() == {'ok': True, 'redirect_to': '/admin/plans'}
     cookie = response.headers['set-cookie']
     assert cookie.startswith('sid=')
     assert '; Path=/; Max-Age=86400; HttpOnly; SameSite=Lax' in cookie
@@ -192,7 +192,7 @@ def test_admin_login_preserves_first_value_precedence_and_ignores_redirect_input
     )
 
     assert response.status_code == 200
-    assert response.json() == {'ok': True, 'redirect_to': '/admin?msg=login+success'}
+    assert response.json() == {'ok': True, 'redirect_to': '/admin/plans'}
     assert response.headers['set-cookie'].startswith('sid=')
     assert 'attacker' not in response.text
 
@@ -367,7 +367,7 @@ def test_legacy_login_keeps_its_cross_site_origin_exception(login_state):
         )
 
     assert response.status == 302
-    assert response.headers['location'] == '/admin?msg=login+success'
+    assert response.headers['location'] == '/admin/plans'
 
 
 class RecordingLoginServices:

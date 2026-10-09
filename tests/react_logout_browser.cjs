@@ -271,7 +271,7 @@ async function createAdminContext(browser) {
     form: { admin_username: 'admin', admin_password: fixturePassword },
   });
   assert.equal(response.status(), 200);
-  assert.deepEqual(await response.json(), { ok: true, redirect_to: '/admin?msg=login+success' });
+  assert.deepEqual(await response.json(), { ok: true, redirect_to: '/admin/plans' });
   return context;
 }
 

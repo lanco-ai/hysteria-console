@@ -51,7 +51,7 @@ async function main() {
       // Each entry has its own icon, so the collapsed rail stays readable.
       const icons = await page.locator('.sidebar a.sidebar-link svg').evaluateAll(svgs => svgs.map(svg => svg.innerHTML));
       assert.equal(new Set(icons).size, icons.length, 'sidebar icons must be distinct');
-      assert.equal(await page.locator('.sidebar-home').getAttribute('href'), '/admin');
+      assert.equal(await page.locator('.sidebar-home').getAttribute('href'), '/admin/plans');
       await page.evaluate(() => { window.__navigationMarker = 'same-document'; });
       const mobile = viewport.width <= 880;
       if (mobile) {
@@ -103,7 +103,7 @@ async function main() {
     });
     await reminderPage.goto(`${baseUrl}/__react/admin`);
     await expect(reminderPage.getByRole('complementary', { name: '今日计划提醒' })).toContainText(task.title);
-    await reminderPage.locator('.sidebar a[href="/admin/plans"]').click();
+    await reminderPage.locator('.sidebar-link[href="/admin/plans"]').click();
     await expect(reminderPage.locator('.plans-global-reminders')).toContainText(task.title);
     await expect(reminderPage.locator('.plans-reminder-list')).toHaveCount(0, 'the global reminder must not be duplicated inside the Plans page');
     await reminderPage.getByRole('button', { name: '稍后', exact: true }).click();

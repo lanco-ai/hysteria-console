@@ -260,7 +260,7 @@ def test_react_preview_allows_exact_form_posts_and_preserves_cookie_isolation(ru
         {'admin_username': 'admin', 'admin_password': server.preview_login_password},
     )
     assert status == 200
-    assert success == {'ok': True, 'redirect_to': '/admin?msg=login+success'}
+    assert success == {'ok': True, 'redirect_to': '/admin/plans'}
     cookie = headers['Set-Cookie'].split(';', 1)[0]
     assert cookie.startswith('sid=')
     assert 'HttpOnly' in headers['Set-Cookie']
@@ -453,7 +453,7 @@ def test_each_preview_context_restores_credentials_and_sessions(tmp_path, monkey
             {'admin_username': 'admin', 'admin_password': second.preview_login_password},
         )
         assert status == 200
-        assert result == {'ok': True, 'redirect_to': '/admin?msg=login+success'}
+        assert result == {'ok': True, 'redirect_to': '/admin/plans'}
         assert _json(
             second_base + '/api/v1/user/password',
             cookie=f'usid={second.preview_must_change_cookie}',

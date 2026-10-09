@@ -44,6 +44,30 @@ function dateHeading(value: string): string {
   return `${month}月${day}日 ${weekday}`;
 }
 
+function dayOffset(from: string, to: string): number {
+  const utc = (value: string) => { const [year, month, day] = value.split('-').map(Number); return Date.UTC(year || 2000, (month || 1) - 1, day || 1); };
+  return Math.round((utc(to) - utc(from)) / 86_400_000);
+}
+
+function relativeDay(offset: number): string {
+  if (offset === 0) return '今天';
+  if (offset === -1) return '昨天';
+  if (offset === 1) return '明天';
+  return offset < 0 ? `${-offset} 天前` : `${offset} 天后`;
+}
+
+function taskTime(value: string, planDate: string): string {
+  const local = localInputValue(value);
+  if (!local) return '';
+  return local.slice(0, 10) === planDate ? local.slice(11) : `${local.slice(5, 10).replace('-', '/')} ${local.slice(11)}`;
+}
+
+function PlansGlyph({ name }: { name: 'spark' | 'refresh' }) {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {name === 'spark' ? <path d="M12 3.5 13.8 9a2 2 0 0 0 1.2 1.2l5.5 1.8-5.5 1.8a2 2 0 0 0-1.2 1.2L12 20.5 10.2 15a2 2 0 0 0-1.2-1.2L3.5 12 9 10.2A2 2 0 0 0 10.2 9z"/> : <><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.1 8a8 8 0 0 1 13-3L20 7M4 17l1.9 2a8 8 0 0 0 13-3"/></>}
+  </svg>;
+}
+
 function timestamp(): string { return new Date().toISOString(); }
 function newId(): string { return globalThis.crypto?.randomUUID?.() || `task-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function normalizePlanTitle(value: string): string { return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase(); }
@@ -121,6 +145,7 @@ export function PlansPage(): ReactElement {
   const [assistantOutputMode, setAssistantOutputMode] = useState('');
   const [assistantSuggestions, setAssistantSuggestions] = useState<PlanSuggestionDraft[]>([]);
   const [assistantApplyPending, setAssistantApplyPending] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const hasFormDraft = Boolean(title.trim() || reminderInput);
   const hasProtectedDraft = dirty || hasFormDraft || Boolean(conflictDraft) || Boolean(pendingDeleteId)
     || (assistantApplyPending && assistantSuggestions.length > 0);
@@ -304,6 +329,9 @@ export function PlansPage(): ReactElement {
 
   const changeItems = (next: PlanItem[]) => { editVersion.current += 1; replaceItems(next); setDirty(true); setSaveState(saveLock.current ? 'saving' : 'unsaved'); setFeedback(''); };
   const selectedItems = items.filter(item => item.plan_date === selectedDate);
+  const completedCount = selectedItems.filter(item => item.status === 'done').length;
+  const today = localDate(timezone);
+  const dayFromToday = dayOffset(today, selectedDate);
   const suggestionIssues = new Map<string, string>();
   const suggestionWarnings = new Map<string, string>();
   const usedTargets = new Set<string>();
@@ -538,27 +566,26 @@ export function PlansPage(): ReactElement {
   return <CodexShell active="plans" pageTitle="今日计划">
     <section className="plans-page" aria-label="今日计划">
       <header className="plans-header">
-        <div className="plans-header-main">
-          <div className="plans-date-copy">
-            <div className="plans-heading-row"><button className="plans-date-arrow" type="button" aria-label="前一天" onClick={() => changeSelectedDate(value => shiftDate(value, -1))}>‹</button><h2>{dateHeading(selectedDate)}</h2><button className="plans-date-arrow" type="button" aria-label="后一天" onClick={() => changeSelectedDate(value => shiftDate(value, 1))}>›</button></div>
-            <p className="plans-date-subtitle">{selectedDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$1年$2月$3日')}<span className="plans-subtitle-divider"> · </span>新的一天，加油！ <span aria-hidden="true">☀️</span></p>
+        <div className="plans-date">
+          <div className="plans-heading-row"><button className="plans-date-arrow" type="button" aria-label="前一天" onClick={() => changeSelectedDate(value => shiftDate(value, -1))}>‹</button><h2 id="daily-plans-heading">{dateHeading(selectedDate)}</h2><button className="plans-date-arrow" type="button" aria-label="后一天" onClick={() => changeSelectedDate(value => shiftDate(value, 1))}>›</button><span className={`plans-day-badge${dayFromToday === 0 ? ' is-today' : ''}`}>{relativeDay(dayFromToday)}</span></div>
+          <div className="plans-date-meta">
+            <input className="plans-date-input" aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} />
+            {dayFromToday !== 0 ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => changeSelectedDate(() => today)}>回到今天</button> : null}
+            {selectedItems.length ? <span className="plans-progress">已完成 {completedCount} / {selectedItems.length}<span className="plans-progress-bar" aria-hidden="true"><span style={{ width: `${Math.round(completedCount / selectedItems.length * 100)}%` }} /></span></span> : null}
           </div>
-          <aside className="plans-quote" aria-label="今日寄语"><p>专注当下，持续积累，<br />让每一天都更有意义。</p><small>— Today is a new start —</small></aside>
         </div>
-        <div className="plans-header-utility">
-          <div className="plans-header-controls"><nav className="plans-date-nav" aria-label="日期选择"><input aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} /></nav><div className="plans-header-actions"><button className="btn btn-secondary" type="button" onClick={() => changeSelectedDate(() => localDate(timezone))}>今天</button><button className="btn btn-secondary" type="button" onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft} title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : undefined}>刷新</button><button className="btn btn-secondary" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}>AI 建议</button></div></div>
+        <div className="plans-header-side">
+          <nav className="daily-section-nav" aria-label="今日页面内容">
+            <a href="#daily-timeline" aria-haspopup="dialog" aria-controls="daily-journal-drawer">时间线</a>
+            <a href="#daily-plans" ref={plansLinkRef} aria-current={journalPanel ? undefined : "page"}>今日计划</a>
+            <a href="#daily-review" aria-haspopup="dialog" aria-controls="daily-journal-drawer">回顾</a>
+          </nav>
+          <div className="plans-header-actions"><button className="btn btn-secondary plans-ai-trigger" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}><PlansGlyph name="spark" />AI 建议</button><button className="btn btn-ghost plans-refresh" type="button" aria-label="刷新" title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : '重新读取计划'} onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft}><PlansGlyph name="refresh" /></button></div>
         </div>
       </header>
 
-      <nav className="daily-section-nav" aria-label="今日页面内容">
-        <a href="#daily-timeline" aria-haspopup="dialog" aria-controls="daily-journal-drawer">时间线 <span aria-hidden="true">↗</span></a>
-        <a href="#daily-plans" ref={plansLinkRef} aria-current={journalPanel ? undefined : "page"}>今日计划</a>
-        <a href="#daily-review" aria-haspopup="dialog" aria-controls="daily-journal-drawer">回顾 <span aria-hidden="true">↗</span></a>
-      </nav>
-
       <section className="daily-plans-section" id="plans-workspace" aria-labelledby="daily-plans-heading" tabIndex={-1}>
-        <div className="daily-section-heading"><div><span>01 / PLAN</span><h2 id="daily-plans-heading">今日计划</h2></div><p>把重要的事放在眼前，逐项推进。</p></div>
-
+      <div className={`plans-composer${dirty || saveState === 'failure' || conflictDraft ? ' is-dirty' : ''}`}>
       <form className="plans-create" onSubmit={addTask}>
         <label className="sr-only" htmlFor="plan-title">计划标题</label><input id="plan-title" value={title} onChange={event => { formDraftVersion.current += 1; setTitle(event.target.value); setFeedback(''); }} maxLength={160} placeholder="添加今天要做的事…" required disabled={editingBlocked} />
         <label className="sr-only" htmlFor="plan-quadrant">计划分类</label><select id="plan-quadrant" value={quadrant} onChange={event => setQuadrant(event.target.value as PlanQuadrant)} disabled={editingBlocked}>{groups.map(group => <option key={group.id} value={group.id}>{group.title}</option>)}</select>
@@ -568,8 +595,8 @@ export function PlansPage(): ReactElement {
           <label className="plans-reminder"><span>提醒</span><input aria-label="提醒时间" type="datetime-local" value={reminderInput} onChange={event => { formDraftVersion.current += 1; setReminderInput(event.target.value); setFeedback(''); }} disabled={editingBlocked} /></label>
         </div></details>
       </form>
-
       <div className="plans-toolbar"><div className="plans-toolbar-status"><div className="plans-save-status" role="status">{loading ? '正在读取计划…' : loadFailed ? '计划读取失败' : saveState === 'saving' ? '保存中…' : saveState === 'failure' ? '保存失败' : hasProtectedDraft || saveState === 'unsaved' ? '未保存' : '已保存'}</div>{lastSavedAt ? <small className="plans-saved-at">最近成功保存：{new Date(lastSavedAt).toLocaleString()}</small> : null}{feedback ? <small className="plans-save-feedback">{feedback}</small> : hasFormDraft ? <small className="plans-save-feedback">表单草稿尚未加入计划；提交后立即保存。</small> : null}</div><div className="plans-toolbar-actions"><button className="btn btn-ghost" type="button" onClick={abandonLocalChanges} disabled={!(dirty || hasFormDraft || assistantApplyPending) || saving || loading || editingBlocked}>放弃修改</button><button className="btn btn-primary" type="button" onClick={() => void persist(items)} disabled={!dirty || saving || editingBlocked}>{saving ? '保存中…' : '保存计划'}</button></div></div>
+      </div>
       {!assistantOpen && error ? renderPlanError() : null}
       {!assistantOpen && conflictDraft && !error ? renderConflictNotice() : null}
 
@@ -599,12 +626,16 @@ export function PlansPage(): ReactElement {
         const groupItems = selectedItems.filter(item => item.quadrant === group.id);
         return <section className={`plans-quadrant plans-quadrant-${group.id}${groupItems.length ? '' : ' plans-quadrant-empty'}`} key={group.id} aria-label={group.title}>
           <header><div><h3>{group.title}</h3><p>{group.hint}</p></div><span>{groupItems.length}</span></header>
-          {groupItems.length ? <ul>{groupItems.map(item => <li className={item.status === 'done' ? 'is-done' : ''} key={item.id}>
+          {groupItems.length ? <ul>{groupItems.map(item => {
+            const expanded = openTaskId === item.id;
+            const meta = [item.start_time, `${item.estimate_minutes} 分钟`, item.due_at ? `截止 ${taskTime(item.due_at, item.plan_date)}` : '', item.reminder_at ? `提醒 ${taskTime(item.reminder_at, item.plan_date)}` : ''].filter(Boolean).join(' · ');
+            return <li className={[item.status === 'done' ? 'is-done' : '', expanded ? 'is-expanded' : ''].filter(Boolean).join(' ') || undefined} key={item.id}>
             <label className="plans-task-check"><input type="checkbox" checked={item.status === 'done'} onChange={event => updateTask(item.id, { status: event.target.checked ? 'done' : 'todo' })} disabled={editingBlocked || pendingDeleteId === item.id} /><span className="sr-only">标记完成</span></label>
-            <div className="plans-task-body"><strong>{item.title}</strong>{item.notes ? <p>{item.notes}</p> : null}<small>{item.estimate_minutes} 分钟{item.start_time ? ` · ${item.start_time}` : ''}{item.due_at ? ` · 截止 ${new Date(item.due_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</small>
-              <div className="plans-task-controls"><select aria-label={`${item.title}状态`} value={item.status} onChange={event => updateTask(item.id, { status: event.target.value as PlanStatus })} disabled={editingBlocked || pendingDeleteId === item.id}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><select aria-label={`${item.title}分类`} value={item.quadrant} onChange={event => updateTask(item.id, { quadrant: event.target.value as PlanQuadrant })} disabled={editingBlocked || pendingDeleteId === item.id}>{groups.map(option => <option value={option.id} key={option.id}>{option.title}</option>)}</select><input aria-label={`${item.title}提醒`} type="datetime-local" value={localInputValue(item.reminder_at)} onChange={event => updateTask(item.id, { reminder_at: isoFromLocalInput(event.target.value) })} disabled={editingBlocked || pendingDeleteId === item.id} /></div>
-            </div><button className="btn btn-ghost btn-sm plans-delete" type="button" aria-label={`删除 ${item.title}`} onClick={() => void removeTask(item.id)} disabled={editingBlocked || saving}>删除</button>
-          </li>)}</ul> : <p className="plans-empty">暂无计划</p>}
+            <div className="plans-task-body"><div className="plans-task-title"><strong>{item.title}</strong><button className="btn btn-ghost btn-sm plans-task-toggle" type="button" aria-expanded={expanded} aria-controls={expanded ? `plan-task-controls-${item.id}` : undefined} aria-label={`调整 ${item.title}`} title="状态、分类、提醒和删除" onClick={() => setOpenTaskId(current => current === item.id ? null : item.id)}>⋯</button></div>{item.notes ? <p>{item.notes}</p> : null}<small>{item.status === 'in_progress' ? <span className="plans-task-state">进行中</span> : null}{meta}</small>
+              {expanded ? <div className="plans-task-controls" id={`plan-task-controls-${item.id}`}><select aria-label={`${item.title}状态`} value={item.status} onChange={event => updateTask(item.id, { status: event.target.value as PlanStatus })} disabled={editingBlocked || pendingDeleteId === item.id}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><select aria-label={`${item.title}分类`} value={item.quadrant} onChange={event => updateTask(item.id, { quadrant: event.target.value as PlanQuadrant })} disabled={editingBlocked || pendingDeleteId === item.id}>{groups.map(option => <option value={option.id} key={option.id}>{option.title}</option>)}</select><label className="plans-task-reminder">提醒<input aria-label={`${item.title}提醒`} type="datetime-local" value={localInputValue(item.reminder_at)} onChange={event => updateTask(item.id, { reminder_at: isoFromLocalInput(event.target.value) })} disabled={editingBlocked || pendingDeleteId === item.id} /></label><button className="btn btn-ghost btn-sm plans-delete" type="button" aria-label={`删除 ${item.title}`} onClick={() => void removeTask(item.id)} disabled={editingBlocked || saving}>删除</button></div> : null}
+            </div>
+          </li>;
+          })}</ul> : <p className="plans-empty">暂无计划</p>}
         </section>;
       })}</div>}
       <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services#ai-services">服务中心</a></footer>
