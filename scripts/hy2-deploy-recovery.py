@@ -309,7 +309,6 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/web_api/video_service.py",
     "/root/hysteria/web_api/ai/__init__.py",
     "/root/hysteria/web_api/ai/compat.py",
-    "/root/hysteria/web_api/ai/gemini.py",
     "/root/hysteria/web_api/ai/routes.py",
     "/root/hysteria/web_api/ai/service_store.py",
     "/root/hysteria/web_api/ai/assistant_generation.py",

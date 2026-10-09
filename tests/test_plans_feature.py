@@ -151,18 +151,12 @@ def test_reminder_api_is_admin_only_and_acknowledges_due_items(tmp_path):
         assert client.get(endpoint, headers=HEADERS).json()['items'] == []
 
 
-class PlanGeminiStub:
+class PlanModelStub:
+    """Stands in for the Chat API structured request made by the plan assistant."""
+
     def __init__(self):
         self.calls = []
-
-    def list_models(self, profile):
-        assert profile['api_key'] == 'server-only-key'
-        return [{'id': 'gemini-test-flash', 'name': 'Gemini Test Flash'}]
-
-    def generate_json(self, profile, model, prompt, schema):
-        self.calls.append({'model': model, 'prompt': prompt, 'schema': schema})
-        assert profile['api_key'] == 'server-only-key'
-        return {
+        self.result = {
             'summary': '先完成最重要的任务，再安排休息。',
             'suggestions': [{
                 'title': '整理本周计划', 'notes': '拆成可执行的小步骤。',
@@ -171,6 +165,20 @@ class PlanGeminiStub:
                 'reason': '为后续工作建立清晰顺序。',
             }],
         }
+
+    def __call__(self, profile, model, prompt, schema):
+        self.calls.append({'model': model, 'prompt': prompt, 'schema': schema})
+        assert profile['api_key'] == 'server-only-key'
+        return self.result, 'json_schema'
+
+
+@pytest.fixture
+def plan_model(monkeypatch):
+    import web_api.plans_routes as plans_routes
+
+    stub = PlanModelStub()
+    monkeypatch.setattr(plans_routes, 'generate_assistant_json', stub)
+    return stub
 
 
 def make_ai_store(tmp_path):
@@ -182,28 +190,27 @@ def make_ai_store(tmp_path):
     )
 
 
-def configure_gemini(store):
+def configure_chat(store):
     initial = store.public()
     saved = store.update_profile(
-        'gemini-primary', revision=initial['revision'], api_key='server-only-key',
+        'chat-primary', revision=initial['revision'],
+        base_url='https://provider.test/v1', api_key='server-only-key',
     )
     catalog = store.update_catalog(
-        'gemini-primary', [{'id': 'listed-first'}, {'id': 'gemini-test-flash'}],
+        'chat-primary', [{'id': 'listed-first'}, {'id': 'chat-test-flash'}],
         capabilities=['chat'], checked_at='2026-09-19T00:00:00Z', revision=saved['revision'],
     )
     return store.set_binding(
-        'plan_assistant', 'gemini-primary', model_id='gemini-test-flash', revision=catalog['revision'],
+        'plan_assistant', 'chat-primary', model_id='chat-test-flash', revision=catalog['revision'],
     )
 
 
-def test_plan_assistant_returns_a_preview_without_changing_saved_plans(tmp_path):
+def test_plan_assistant_returns_a_preview_without_changing_saved_plans(tmp_path, plan_model):
     plan_store = PlanStore(tmp_path / 'plans.json')
     ai_store = make_ai_store(tmp_path)
-    configure_gemini(ai_store)
-    gemini = PlanGeminiStub()
+    configure_chat(ai_store)
     with TestClient(create_app(
-        Sessions(), plans_store=plan_store,
-        ai_services_store=ai_store, gemini_adapter=gemini,
+        Sessions(), plans_store=plan_store, ai_services_store=ai_store,
     )) as client:
         response = client.post('/api/plans/assistant', headers=HEADERS, json={
             'date': '2026-09-19', 'timezone': 'America/Los_Angeles',
@@ -212,12 +219,13 @@ def test_plan_assistant_returns_a_preview_without_changing_saved_plans(tmp_path)
         })
         assert response.status_code == 200
         data = response.json()
-        assert data['model'] == 'gemini-test-flash'
-        assert data['structured_output'] == 'gemini_native_schema'
+        assert data['model'] == 'chat-test-flash'
+        assert data['service_name'] == 'Chat API'
+        assert data['structured_output'] == 'json_schema'
         assert data['suggestions'][0]['quadrant'] == 'important'
         assert 'server-only-key' not in response.text
-        assert 'server-only-key' not in gemini.calls[0]['prompt']
-        assert gemini.calls[0]['model'] == 'gemini-test-flash'
+        assert 'server-only-key' not in plan_model.calls[0]['prompt']
+        assert plan_model.calls[0]['model'] == 'chat-test-flash'
         assert plan_store.read()['items'] == []
 
 
@@ -239,7 +247,7 @@ def test_plan_assistant_uses_the_saved_chat_service_and_exact_model(tmp_path, mo
     )
     observed = {}
 
-    def generate(profile, model, prompt, schema, *, gemini_adapter):
+    def generate(profile, model, prompt, schema):
         observed.update(protocol=profile['protocol'], model=model, api_key=profile['api_key'])
         return ({
             'summary': '计划建议', 'suggestions': [{
@@ -263,16 +271,12 @@ def test_plan_assistant_uses_the_saved_chat_service_and_exact_model(tmp_path, mo
     assert observed == {'protocol': 'openai_compatible', 'model': 'chosen-model', 'api_key': 'test-chat-secret'}
 
 
-def test_plan_assistant_is_admin_same_origin_and_validates_model_output(tmp_path):
-    class InvalidGemini(PlanGeminiStub):
-        def generate_json(self, profile, model, prompt, schema):
-            return {'summary': 'bad', 'suggestions': [{'title': 'bad', 'quadrant': 'other'}]}
-
+def test_plan_assistant_is_admin_same_origin_and_validates_model_output(tmp_path, plan_model):
+    plan_model.result = {'summary': 'bad', 'suggestions': [{'title': 'bad', 'quadrant': 'other'}]}
     ai_store = make_ai_store(tmp_path)
-    configure_gemini(ai_store)
+    configure_chat(ai_store)
     with TestClient(create_app(
-        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'),
-        ai_services_store=ai_store, gemini_adapter=InvalidGemini(),
+        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'), ai_services_store=ai_store,
     )) as client:
         endpoint = '/api/plans/assistant'
         payload = {'date': '2026-09-19', 'timezone': 'UTC', 'request': '安排任务', 'existing_tasks': []}
@@ -284,70 +288,73 @@ def test_plan_assistant_is_admin_same_origin_and_validates_model_output(tmp_path
         assert response.json() == {'error': 'invalid_model_response'}
 
 
-def test_plan_assistant_requires_a_configured_gemini_service(tmp_path):
+@pytest.mark.parametrize('profile_values', [
+    {},
+    {'api_key': 'server-only-key'},
+    {'base_url': 'https://provider.test/v1'},
+])
+def test_plan_assistant_requires_a_configured_chat_service(tmp_path, plan_model, profile_values):
+    store = make_ai_store(tmp_path)
+    if profile_values:
+        store.update_profile('chat-primary', revision=store.public()['revision'], **profile_values)
     with TestClient(create_app(
-        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'),
-        ai_services_store=make_ai_store(tmp_path), gemini_adapter=PlanGeminiStub(),
+        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'), ai_services_store=store,
     )) as client:
         response = client.post('/api/plans/assistant', headers=HEADERS, json={
             'date': '2026-09-19', 'timezone': 'UTC', 'request': '安排计划', 'existing_tasks': [],
         })
         assert response.status_code == 422
         assert response.json() == {'error': 'service_not_configured'}
+    assert plan_model.calls == []
 
 
-def test_plan_assistant_requires_explicit_model_in_legacy_binding(tmp_path):
+def test_plan_assistant_requires_explicit_model_in_legacy_binding(tmp_path, plan_model):
     store = make_ai_store(tmp_path)
     initial = store.public()
-    saved = store.update_profile('gemini-primary', revision=initial['revision'], api_key='server-only-key')
+    saved = store.update_profile(
+        'chat-primary', revision=initial['revision'],
+        base_url='https://provider.test/v1', api_key='server-only-key',
+    )
     store.update_catalog(
-        'gemini-primary', [{'id': 'first-model'}, {'id': 'another-model'}],
+        'chat-primary', [{'id': 'first-model'}, {'id': 'another-model'}],
         capabilities=['chat'], checked_at='2026-09-20T00:00:00Z', revision=saved['revision'],
     )
-    gemini = PlanGeminiStub()
     with TestClient(create_app(
-        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'),
-        ai_services_store=store, gemini_adapter=gemini,
+        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'), ai_services_store=store,
     )) as client:
         response = client.post('/api/plans/assistant', headers=HEADERS, json={
             'date': '2026-09-19', 'timezone': 'UTC', 'request': '安排计划', 'existing_tasks': [],
         })
     assert response.status_code == 422
     assert response.json() == {'error': 'model_not_selected'}
-    assert gemini.calls == []
+    assert plan_model.calls == []
 
 
 @pytest.mark.parametrize('date_value', ['2026-99-19', '2026-02-30', '0000-01-01'])
-def test_plan_assistant_rejects_impossible_calendar_dates(tmp_path, date_value):
+def test_plan_assistant_rejects_impossible_calendar_dates(tmp_path, plan_model, date_value):
     ai_store = make_ai_store(tmp_path)
-    configure_gemini(ai_store)
-    gemini = PlanGeminiStub()
+    configure_chat(ai_store)
     with TestClient(create_app(
-        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'),
-        ai_services_store=ai_store, gemini_adapter=gemini,
+        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'), ai_services_store=ai_store,
     )) as client:
         response = client.post('/api/plans/assistant', headers=HEADERS, json={
             'date': date_value, 'timezone': 'UTC', 'request': '安排计划', 'existing_tasks': [],
         })
     assert response.status_code == 400
-    assert gemini.calls == []
+    assert plan_model.calls == []
 
 
-def test_plan_assistant_rejects_more_than_eight_suggestions(tmp_path):
-    class TooManySuggestions(PlanGeminiStub):
-        def generate_json(self, profile, model, prompt, schema):
-            suggestion = {
-                'title': '任务', 'notes': '', 'quadrant': 'important',
-                'start_time': '', 'estimate_minutes': 30,
-                'reminder_offset_minutes': 0, 'reason': '',
-            }
-            return {'summary': '安排计划', 'suggestions': [suggestion] * 9}
-
+def test_plan_assistant_rejects_more_than_eight_suggestions(tmp_path, plan_model):
+    suggestion = {
+        'title': '任务', 'notes': '', 'quadrant': 'important',
+        'start_time': '', 'estimate_minutes': 30,
+        'reminder_offset_minutes': 0, 'reason': '',
+    }
+    plan_model.result = {'summary': '安排计划', 'suggestions': [suggestion] * 9}
     ai_store = make_ai_store(tmp_path)
-    configure_gemini(ai_store)
+    configure_chat(ai_store)
     with TestClient(create_app(
-        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'),
-        ai_services_store=ai_store, gemini_adapter=TooManySuggestions(),
+        Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'), ai_services_store=ai_store,
     )) as client:
         response = client.post('/api/plans/assistant', headers=HEADERS, json={
             'date': '2026-09-19', 'timezone': 'UTC', 'request': '安排计划', 'existing_tasks': [],

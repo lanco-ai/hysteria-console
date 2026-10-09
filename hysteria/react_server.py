@@ -14,7 +14,6 @@ from pathlib import Path
 import subscription_service
 from web_api import create_app
 from web_api.ai.compat import ChatSettingsAdapter, VideoSettingsAdapter
-from web_api.ai.gemini import GeminiAdapter
 from web_api.ai.service_store import AIServiceStore
 from web_api.services import LegacyPanelServices
 
@@ -114,7 +113,6 @@ def build_app():
             worker.join(timeout=5)
 
     ai_services = AIServiceStore()
-    gemini = GeminiAdapter()
     return create_app(
         LegacyPanelServices(subscription_service),
         react_dist=REACT_DIST,
@@ -122,10 +120,9 @@ def build_app():
         video_scheduler_enabled=True,
         github_trending_scheduler_enabled=True,
         shop_scheduler_enabled=True,
-        chat_settings_store=ChatSettingsAdapter(ai_services, gemini),
+        chat_settings_store=ChatSettingsAdapter(ai_services),
         video_settings_store=VideoSettingsAdapter(ai_services),
         ai_services_store=ai_services,
-        gemini_adapter=gemini,
     )
 
 

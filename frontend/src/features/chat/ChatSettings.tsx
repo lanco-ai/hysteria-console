@@ -29,7 +29,7 @@ export function ChatSettings({ settings, busy, feedback, onSave, onExport }: Cha
           <p>{settings?.api_key_configured ? '聊天服务已在服务中心配置。' : '尚未配置聊天服务，先在服务中心添加并绑定模型。'}</p>
         </div>
       </div>
-      <a className="btn btn-secondary" href="/admin/services?tab=ai">前往服务中心管理 API</a>
+      <a className="btn btn-secondary" href="/admin/services#ai-services">前往服务中心管理 API</a>
       <p className="chat-settings-note">API 地址、凭据和连接测试统一由服务中心管理；密钥不会显示在此页面。</p>
     </section>
 

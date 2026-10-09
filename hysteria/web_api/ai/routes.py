@@ -18,7 +18,6 @@ from .assistant_schemas import (
 )
 from ..video_models import VideoSettings
 from ..video_provider import GrokVideoProvider, ProviderError
-from .gemini import GeminiAdapter, GeminiUpstreamError
 from .service_store import AIServiceError, AIServiceStore, FEATURE_PROTOCOLS
 
 
@@ -29,10 +28,11 @@ def _error(code: str, status: int = 400):
     return JSONResponse(status_code=status, content={'error': code})
 
 
+def _unknown_service(exc: AIServiceError) -> bool:
+    return str(exc) == 'unknown AI service'
+
+
 def _connection_error(exc: Exception) -> tuple[str, int]:
-    if isinstance(exc, GeminiUpstreamError):
-        status = 504 if exc.code == 'timeout' else 502
-        return exc.code, status
     if isinstance(exc, ChatUpstreamError):
         if exc.status == 401:
             return 'authentication_failed', 502
@@ -59,12 +59,10 @@ def register_ai_service_routes(
     dispatch,
     *,
     store: AIServiceStore | None = None,
-    gemini_adapter: GeminiAdapter | None = None,
     openai_models_fetcher=None,
     media_provider_factory=None,
 ):
     registry = store or AIServiceStore()
-    gemini = gemini_adapter or GeminiAdapter()
     fetch_openai_models = openai_models_fetcher or list_chat_models
     make_media_provider = media_provider_factory or (lambda: GrokVideoProvider())
 
@@ -119,10 +117,7 @@ def register_ai_service_routes(
         if not profile['api_key']:
             raise AIServiceError('service_not_configured')
         capabilities: list[str] = []
-        if profile['protocol'] == 'gemini_native':
-            models = gemini.list_models(profile)
-            capabilities = ['chat']
-        elif profile['protocol'] == 'openai_compatible':
+        if profile['protocol'] == 'openai_compatible':
             if not profile['base_url']:
                 raise AIServiceError('service_not_configured')
             settings = ChatSettings(
@@ -192,9 +187,7 @@ def register_ai_service_routes(
             else:
                 schema = video_assistant_schema()
                 prompt = VIDEO_ASSISTANT_TEST_PROMPT
-            result, output_mode = generate_assistant_json(
-                profile, model_id, prompt, schema, gemini_adapter=gemini,
-            )
+            result, output_mode = generate_assistant_json(profile, model_id, prompt, schema)
             try:
                 if feature == 'plan_assistant':
                     from ..plans_routes import PlanAssistantResult
@@ -215,7 +208,7 @@ def register_ai_service_routes(
             level = 'C'
         else:
             prompt = 'Reply with the exact words: capability test passed.'
-            generate_assistant_text(profile, model_id, prompt, gemini_adapter=gemini)
+            generate_assistant_text(profile, model_id, prompt)
             output_mode = 'text'
             level = 'B'
         return {
@@ -253,6 +246,8 @@ def register_ai_service_routes(
                 ), request)
             except AIServiceError as exc:
                 message = str(exc)
+                if _unknown_service(exc):
+                    return _error('unknown_service', 404)
                 if 'not_configured' in message:
                     return _error('service_not_configured', 422)
                 if 'model_not_selected' in message:
@@ -264,7 +259,7 @@ def register_ai_service_routes(
                 if 'incompatible' in message or 'assistant feature' in message:
                     return _error('invalid_feature_binding', 422)
                 return _error('ai_services_unavailable', 503)
-            except (GeminiUpstreamError, ChatUpstreamError, ProviderError) as exc:
+            except (ChatUpstreamError, ProviderError) as exc:
                 code, status = _connection_error(exc)
                 return JSONResponse({'error': code}, status_code=status)
             if isinstance(result, JSONResponse):
@@ -309,6 +304,8 @@ def register_ai_service_routes(
             result = await dispatch(partial(update_profile, service_id=service_id, values=values), request)
         except AIServiceError as exc:
             message = str(exc)
+            if _unknown_service(exc):
+                return _error('unknown_service', 404)
             if 'conflict' in message:
                 return _error('revision_conflict', 409)
             if 'unavailable' in message or 'migration' in message:
@@ -352,7 +349,9 @@ def register_ai_service_routes(
             return denied
         try:
             result = await dispatch(partial(read_models, service_id=service_id), request)
-        except AIServiceError:
+        except AIServiceError as exc:
+            if _unknown_service(exc):
+                return _error('unknown_service', 404)
             return _error('ai_services_unavailable', 503)
         if isinstance(result, JSONResponse):
             return result
@@ -376,12 +375,14 @@ def register_ai_service_routes(
         try:
             result = await dispatch(partial(test_profile, service_id=service_id), request)
         except AIServiceError as exc:
+            if _unknown_service(exc):
+                return _error('unknown_service', 404)
             if 'conflict' in str(exc):
                 return _error('revision_conflict', 409)
             if 'not_configured' in str(exc):
                 return _error('service_not_configured', 422)
             return _error('ai_services_unavailable', 503)
-        except (GeminiUpstreamError, ChatUpstreamError, ProviderError) as exc:
+        except (ChatUpstreamError, ProviderError) as exc:
             code, status = _connection_error(exc)
             return JSONResponse({'ok': False, 'error': code}, status_code=status)
         if isinstance(result, JSONResponse):

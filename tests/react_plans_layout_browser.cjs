@@ -16,7 +16,7 @@ const { expect } = require('@playwright/test');
     await page.route('**/api/plans/assistant', route => {
       assistantRequests += 1;
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-        model: 'gemini-preview-fast', service_name: 'Gemini', structured_output: 'gemini_native_schema', summary: '先处理最重要的事项。',
+        model: 'preview-chat-fast', service_name: 'Chat API', structured_output: 'json_schema', summary: '先处理最重要的事项。',
         suggestions: assistantRequests === 1
           ? [{ title: '论文下载 阅读', notes: '拆成三个小步骤。', quadrant: 'important', start_time: '10:30', estimate_minutes: 45, reminder_offset_minutes: 10, reason: '为后续工作建立结构。' },
             { title: '完成论文下载与阅读', notes: '拆成三个小步骤。', quadrant: 'important', start_time: '10:30', estimate_minutes: 45, reminder_offset_minutes: 10, reason: '与第一项是同一件事。' }]
@@ -98,7 +98,7 @@ const { expect } = require('@playwright/test');
     const gridAfter = await page.locator('.plans-grid').boundingBox();
     assert.equal(gridAfter.y, gridBefore.y, 'opening AI suggestions must not push the plan grid down');
 
-    await page.getByLabel('告诉 Gemini 你的目标').fill('今天先完成论文阅读。');
+    await page.getByLabel('告诉 AI 你的目标').fill('今天先完成论文阅读。');
     await page.getByRole('button', { name: '生成建议' }).click();
     await expect(page.getByLabel('建议任务标题').first()).toHaveValue('论文下载 阅读');
     await expect(page.getByRole('button', { name: '保存选中建议' })).toBeDisabled();
@@ -110,7 +110,7 @@ const { expect } = require('@playwright/test');
     assert.equal(saveRequests, 1);
 
     await page.getByRole('button', { name: 'AI 建议' }).click();
-    await page.getByLabel('告诉 Gemini 你的目标').fill('再次安排论文阅读。');
+    await page.getByLabel('告诉 AI 你的目标').fill('再次安排论文阅读。');
     await page.getByRole('button', { name: '生成建议' }).click();
     await expect(page.getByLabel('建议任务标题')).toHaveValue('完成论文下载与阅读');
     await page.getByRole('button', { name: '保存选中建议' }).click();
@@ -119,7 +119,7 @@ const { expect } = require('@playwright/test');
     assert.equal(savedItems[0].title, '完成论文下载与阅读');
     assert.equal(saveRequests, 2, 'a semantic duplicate should update the existing task with one save');
     await page.getByRole('button', { name: 'AI 建议' }).click();
-    await page.getByLabel('告诉 Gemini 你的目标').fill('继续安排论文阅读。');
+    await page.getByLabel('告诉 AI 你的目标').fill('继续安排论文阅读。');
     await page.getByRole('button', { name: '生成建议' }).click();
     await expect(page.getByLabel('建议任务标题')).toHaveValue('继续论文下载与阅读');
     await page.getByRole('button', { name: '保存选中建议' }).click();

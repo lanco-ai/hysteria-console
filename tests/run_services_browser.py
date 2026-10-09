@@ -12,6 +12,7 @@ if __name__ == '__main__':
         subprocess.run(
             ['node', 'tests/react_services_browser.cjs'], cwd=ROOT,
             env=dict(os.environ, PREVIEW_BASE_URL=f'http://127.0.0.1:{server.server_port}',
-                     REACT_PREVIEW_ADMIN_COOKIE=server.preview_admin_cookie),
+                     REACT_PREVIEW_ADMIN_COOKIE=server.preview_admin_cookie,
+                     PREVIEW_OPENAI_BASE_URL=server.preview_openai_base_url),
             check=True, timeout=75,
         )

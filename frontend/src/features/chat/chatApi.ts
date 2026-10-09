@@ -6,7 +6,7 @@ export type ChatMessageData = {
 export type ChatSettings = {
   temperature: number;
   api_key_configured: boolean;
-  protocol?: 'openai_compatible' | 'gemini_native';
+  protocol?: 'openai_compatible';
   name?: string;
 };
 

@@ -14,7 +14,6 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 from pydantic import BaseModel, ConfigDict, Field
 
-from .ai.gemini import GeminiAdapter
 from .ai.service_store import AIServiceStore
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .video_provider import GrokVideoProvider, ProviderError
@@ -89,7 +88,6 @@ def register_video_routes(
     scheduler_enabled=False,
     scheduler_interval=5.0,
     ai_services_store: AIServiceStore | None = None,
-    gemini_adapter: GeminiAdapter | None = None,
 ):
     store = settings_store or VideoSettingsStore()
     workflows = workflow_store or WorkflowStore()

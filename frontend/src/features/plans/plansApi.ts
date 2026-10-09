@@ -32,7 +32,7 @@ export type PlanAssistantPreview = {
   summary: string;
   model: string;
   service_name: string;
-  structured_output: 'gemini_native_schema' | 'json_schema' | 'json_text_fallback';
+  structured_output: 'json_schema' | 'json_text_fallback';
   suggestions: PlanAssistantSuggestion[];
 };
 

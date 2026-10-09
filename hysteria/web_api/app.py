@@ -16,7 +16,6 @@ from starlette.exceptions import HTTPException
 
 from .account_routes import register_account_routes
 from .agent_routes import register_agent_routes
-from .ai.gemini import GeminiAdapter
 from .ai.routes import register_ai_service_routes
 from .ai.service_store import AIServiceStore
 from .auth_routes import register_auth_routes
@@ -323,7 +322,6 @@ def create_app(
     chat_workspace_store=None,
     chat_workspace_settings=None,
     ai_services_store: AIServiceStore | None = None,
-    gemini_adapter: GeminiAdapter | None = None,
     openai_models_fetcher=None,
     media_provider_factory=None,
 ):
@@ -517,7 +515,6 @@ def create_app(
         scheduler_enabled=video_scheduler_enabled,
         scheduler_interval=float(video_scheduler_interval),
         ai_services_store=ai_services_store,
-        gemini_adapter=gemini_adapter,
     )
     register_agent_routes(app, services, dispatch)
     register_service_center_routes(app, services, dispatch, service_center_store)
@@ -538,7 +535,6 @@ def create_app(
         dispatch,
         store=plans_store,
         ai_services_store=ai_services_store,
-        gemini_adapter=gemini_adapter,
     )
     register_journal_routes(app, services, dispatch, store=journal_store)
     from .chat_workspace_routes import register_workspace_routes
@@ -558,7 +554,6 @@ def create_app(
             services,
             dispatch,
             store=ai_services_store,
-            gemini_adapter=gemini_adapter,
             openai_models_fetcher=openai_models_fetcher,
             media_provider_factory=media_provider_factory,
         )

@@ -1,4 +1,4 @@
-"""Protocol routing for the plan and storyboard text assistants."""
+"""OpenAI-compatible requests for the plan and storyboard text assistants."""
 
 from ..chat_service import (
     ChatSettings, ChatUpstreamError, forward_chat, forward_structured_json,
@@ -32,19 +32,16 @@ def _chat_settings(profile):
     )
 
 
-def generate_assistant_json(profile, model, prompt, schema, *, gemini_adapter):
+def generate_assistant_json(profile, model, prompt, schema):
     """Return a parsed structured value plus an honest output-mode label."""
     if not isinstance(model, str) or not model.strip():
         raise ValueError('model_not_selected')
-    if profile.get('protocol') == 'gemini_native':
-        return gemini_adapter.generate_json(profile, model, prompt, schema), 'gemini_native_schema'
-    if profile.get('protocol') == 'openai_compatible':
-        value, mode = forward_structured_json(
-            _chat_settings(profile), model=model, prompt=prompt,
-            schema=_openai_schema(schema),
-        )
-        return value, mode
-    raise ValueError('unsupported_service_protocol')
+    if profile.get('protocol') != 'openai_compatible':
+        raise ValueError('unsupported_service_protocol')
+    return forward_structured_json(
+        _chat_settings(profile), model=model, prompt=prompt,
+        schema=_openai_schema(schema),
+    )
 
 
 def _assistant_text(response):
@@ -64,17 +61,12 @@ def _assistant_text(response):
         raise ChatUpstreamError(200, code='invalid_model_response') from None
 
 
-def generate_assistant_text(profile, model, prompt, *, gemini_adapter):
+def generate_assistant_text(profile, model, prompt):
     """Send a small explicit-model text request for an admin capability test."""
     if not isinstance(model, str) or not model.strip():
         raise ValueError('model_not_selected')
-    messages = [{'role': 'user', 'content': prompt}]
-    if profile.get('protocol') == 'gemini_native':
-        response = gemini_adapter.generate_chat(
-            profile, model, messages, temperature=profile['temperature'],
-        )
-    elif profile.get('protocol') == 'openai_compatible':
-        response = forward_chat(_chat_settings(profile), messages, model=model)
-    else:
+    if profile.get('protocol') != 'openai_compatible':
         raise ValueError('unsupported_service_protocol')
+    messages = [{'role': 'user', 'content': prompt}]
+    response = forward_chat(_chat_settings(profile), messages, model=model)
     return _assistant_text(response)

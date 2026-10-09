@@ -3,28 +3,26 @@
 from datetime import datetime, timezone
 
 from ..chat_service import (
-    ChatSettings, ChatSettingsError, ChatUpstreamError, forward_chat,
-    forward_chat_stream, list_chat_models, mask_api_key,
+    ChatSettings, ChatSettingsError, forward_chat, forward_chat_stream,
+    list_chat_models, mask_api_key,
 )
 from ..video_models import VideoSettings
 from ..video_service import VideoSettingsError, mask_video_key
-from .gemini import GeminiAdapter, GeminiUpstreamError
 from .service_store import AIServiceError, AIServiceStore
 
 
 class ChatSettingsAdapter:
     """Expose the selected shared Chat service through the legacy Chat API."""
 
-    def __init__(self, store: AIServiceStore, gemini: GeminiAdapter | None = None):
+    def __init__(self, store: AIServiceStore):
         self.store = store
-        self.gemini = gemini or GeminiAdapter()
 
     def _profile(self):
         try:
             profile = self.store.bound_profile('chat')
         except AIServiceError as exc:
             raise ChatSettingsError('settings unavailable') from exc
-        if profile['protocol'] not in ('openai_compatible', 'gemini_native'):
+        if profile['protocol'] != 'openai_compatible':
             raise ChatSettingsError('settings unavailable')
         return profile
 
@@ -68,25 +66,10 @@ class ChatSettingsAdapter:
     def _as_chat_settings(profile: dict) -> ChatSettings:
         return ChatSettings(profile['base_url'], profile['api_key'], profile['temperature'])
 
-    @staticmethod
-    def _translate_gemini_error(error: GeminiUpstreamError):
-        raise ChatUpstreamError(
-            error.status, retry_after=error.retry_after, code=error.code,
-        ) from None
-
     def complete(self, messages, *, model, reasoning_effort='auto', max_output_tokens=None):
         profile = self._profile()
         if not profile['api_key']:
             raise ChatSettingsError('api key is not configured')
-        if profile['protocol'] == 'gemini_native':
-            try:
-                return self.gemini.generate_chat(
-                    profile, model, messages, temperature=profile['temperature'],
-                    reasoning_effort=reasoning_effort,
-                    **({'max_output_tokens': max_output_tokens} if max_output_tokens is not None else {}),
-                )
-            except GeminiUpstreamError as exc:
-                self._translate_gemini_error(exc)
         return forward_chat(
             self._as_chat_settings(profile), messages, model=model,
             reasoning_effort=reasoning_effort,
@@ -97,14 +80,6 @@ class ChatSettingsAdapter:
         profile = self._profile()
         if not profile['api_key']:
             raise ChatSettingsError('api key is not configured')
-        if profile['protocol'] == 'gemini_native':
-            try:
-                return self.gemini.stream_chat(
-                    profile, model, messages, temperature=profile['temperature'],
-                    reasoning_effort=reasoning_effort,
-                )
-            except GeminiUpstreamError as exc:
-                self._translate_gemini_error(exc)
         return forward_chat_stream(
             self._as_chat_settings(profile), messages, model=model,
             reasoning_effort=reasoning_effort,
@@ -116,13 +91,7 @@ class ChatSettingsAdapter:
             raise ChatSettingsError('api key is not configured')
         if profile['models']:
             return profile['models']
-        if profile['protocol'] == 'gemini_native':
-            try:
-                models = self.gemini.list_models(profile)
-            except GeminiUpstreamError as exc:
-                self._translate_gemini_error(exc)
-        else:
-            models = list_chat_models(self._as_chat_settings(profile))
+        models = list_chat_models(self._as_chat_settings(profile))
         try:
             result = self.store.update_catalog(
                 profile['id'], models, capabilities=['chat'],

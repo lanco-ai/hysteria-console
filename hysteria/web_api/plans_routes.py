@@ -15,7 +15,6 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from .ai.assistant_generation import generate_assistant_json
 from .ai.assistant_schemas import plan_assistant_schema
-from .ai.gemini import GeminiAdapter, GeminiUpstreamError
 from .ai.service_store import AIServiceError, AIServiceStore
 from .chat_service import ChatUpstreamError
 from .plans_service import PlanStore
@@ -94,10 +93,9 @@ class PlanAssistantResult(BaseModel):
     suggestions: list[PlanSuggestion] = Field(min_length=1, max_length=8)
 
 
-def register_plans_routes(app, services, dispatch, *, store=None, ai_services_store=None, gemini_adapter=None):
+def register_plans_routes(app, services, dispatch, *, store=None, ai_services_store=None):
     store = store or PlanStore()
     ai_store = ai_services_store
-    gemini = gemini_adapter or GeminiAdapter()
 
     async def require_admin(request):
         try:
@@ -126,7 +124,7 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
             raise AIServiceError('service_not_configured')
         selection = ai_store.bound_assistant('plan_assistant')
         profile = selection['profile']
-        if profile['protocol'] not in {'gemini_native', 'openai_compatible'} or not profile['api_key']:
+        if profile['protocol'] != 'openai_compatible' or not profile['api_key'] or not profile['base_url']:
             raise AIServiceError('service_not_configured')
         model = selection['model_id']
         if not model:
@@ -147,16 +145,14 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
             }, ensure_ascii=False, separators=(',', ':'))
         )
         schema = plan_assistant_schema()
-        result, output_mode = generate_assistant_json(
-            profile, model, prompt, schema, gemini_adapter=gemini,
-        )
+        result, output_mode = generate_assistant_json(profile, model, prompt, schema)
         try:
             validated = PlanAssistantResult.model_validate(result)
             suggestions = [item.model_dump() for item in validated.suggestions]
             if any(item['reminder_offset_minutes'] and not item['start_time'] for item in suggestions):
                 raise ValueError('reminder requires start time')
         except (ValidationError, ValueError):
-            raise GeminiUpstreamError('invalid_model_response', 200) from None
+            raise ChatUpstreamError(200, code='invalid_model_response') from None
         return {
             'summary': validated.summary,
             'model': model,
@@ -222,16 +218,6 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
             else:
                 code = 'upstream_error'
             return JSONResponse({'error': code}, status_code=504 if code == 'timeout' else 502)
-        except GeminiUpstreamError as exc:
-            if exc.code == 'service_not_configured':
-                return JSONResponse({'error': exc.code}, status_code=422)
-            if exc.code == 'timeout':
-                status = 504
-            elif exc.code in {'authentication_failed', 'permission_denied', 'rate_limited'}:
-                status = 502
-            else:
-                status = 502
-            return JSONResponse({'error': exc.code}, status_code=status)
         except (OSError, RuntimeError):
             return JSONResponse({'error': 'ai_service_unavailable'}, status_code=503)
         if isinstance(result, JSONResponse):

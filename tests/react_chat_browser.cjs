@@ -56,10 +56,9 @@ async function main() {
     }
   });
   let settings = {
-    // Native Gemini profiles do not have an OpenAI-compatible base URL. The
-    // chat model gate must use the server-side configured status, not base_url.
+    // The chat model gate must use the server-side configured status, not base_url.
     base_url: '',
-    protocol: 'gemini_native',
+    protocol: 'openai_compatible',
     temperature: 0.7,
     api_key_configured: true,
   };

@@ -9,6 +9,7 @@ import sys
 import tempfile
 import threading
 from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -123,65 +124,111 @@ class PreviewWorkspaceProvider:
         return generate()
 
 
-class PreviewGeminiAdapter:
-    """Deterministic Gemini model-list double; never performs network requests."""
+PREVIEW_CHAT_MODELS = (
+    {'id': 'preview-chat-listed-first', 'name': 'Preview Chat Listed First'},
+    {'id': 'preview-chat-fast', 'name': 'Preview Chat Fast', 'context_window': 64000},
+)
 
-    def list_models(self, profile):
-        if not profile.get('api_key'):
-            raise ValueError('missing preview credential')
-        return [
-            {'id': 'gemini-preview-listed-first', 'name': 'Gemini Preview Listed First'},
-            {
-                'id': 'gemini-preview-fast',
-                'name': 'Gemini Preview Fast',
-                'input_token_limit': 64000,
-            },
-        ]
 
-    def generate_chat(self, profile, model, messages, **_kwargs):
-        if not profile.get('api_key') or model != 'gemini-preview-fast' or not messages:
-            raise ValueError('invalid preview capability test')
+def _preview_assistant_result(schema):
+    if 'suggestions' in schema.get('properties', {}):
         return {
-            'choices': [{'message': {'role': 'assistant', 'content': 'capability test passed'}}]
-        }
-
-    def generate_json(self, profile, model, prompt, schema):
-        if not profile.get('api_key') or model != 'gemini-preview-fast' or not prompt:
-            raise ValueError('invalid preview structured test')
-        if 'suggestions' in schema.get('properties', {}):
-            return {
-                'summary': '结构化输出检查',
-                'suggestions': [
-                    {
-                        'title': '测试建议',
-                        'notes': '',
-                        'quadrant': 'important',
-                        'start_time': '',
-                        'estimate_minutes': 30,
-                        'reminder_offset_minutes': 0,
-                        'reason': '检查计划建议结构',
-                    }
-                ],
-            }
-        return {
-            'title': 'Preview Storyboard',
-            'rewritten_text': 'A short structured test story.',
-            'style_prompt': 'Soft light.',
-            'aspect_ratio': '16:9',
-            'shots': [
+            'summary': '结构化输出检查',
+            'suggestions': [
                 {
-                    'title': 'Preview Shot',
-                    'script': 'A person looks up.',
-                    'shot_type': '近景',
-                    'character': 'A person',
-                    'scene': 'A bright room',
-                    'duration': 5,
-                    'image_prompt': 'A bright room in soft light.',
-                    'motion_prompt': 'Slow push in.',
-                    'dialogue': 'Hello.',
+                    'title': '测试建议',
+                    'notes': '',
+                    'quadrant': 'important',
+                    'start_time': '',
+                    'estimate_minutes': 30,
+                    'reminder_offset_minutes': 0,
+                    'reason': '检查计划建议结构',
                 }
             ],
         }
+    return {
+        'title': 'Preview Storyboard',
+        'rewritten_text': 'A short structured test story.',
+        'style_prompt': 'Soft light.',
+        'aspect_ratio': '16:9',
+        'shots': [
+            {
+                'title': 'Preview Shot',
+                'script': 'A person looks up.',
+                'shot_type': '近景',
+                'character': 'A person',
+                'scene': 'A bright room',
+                'duration': 5,
+                'image_prompt': 'A bright room in soft light.',
+                'motion_prompt': 'Slow push in.',
+                'dialogue': 'Hello.',
+            }
+        ],
+    }
+
+
+class PreviewOpenAIGateway(BaseHTTPRequestHandler):
+    """Deterministic OpenAI-compatible gateway on loopback for the Chat API profile."""
+
+    def log_message(self, *_args):
+        pass
+
+    def _send(self, status, payload):
+        body = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _authorized(self):
+        token = self.headers.get('Authorization', '').removeprefix('Bearer ').strip()
+        if token:
+            return True
+        self._send(401, {'error': {'message': 'missing preview credential'}})
+        return False
+
+    def do_GET(self):
+        if self.path != '/v1/models':
+            self._send(404, {'error': {'message': 'not found'}})
+        elif self._authorized():
+            self._send(200, {'object': 'list', 'data': list(PREVIEW_CHAT_MODELS)})
+
+    def do_POST(self):
+        if self.path != '/v1/chat/completions':
+            self._send(404, {'error': {'message': 'not found'}})
+            return
+        if not self._authorized():
+            return
+        try:
+            length = int(self.headers.get('Content-Length') or 0)
+            payload = json.loads(self.rfile.read(min(length, 256 * 1024)))
+        except ValueError:
+            self._send(400, {'error': {'message': 'invalid request'}})
+            return
+        if payload.get('model') != 'preview-chat-fast' or not payload.get('messages'):
+            self._send(404, {'error': {'message': 'model not found'}})
+            return
+        response_format = payload.get('response_format') or {}
+        if response_format.get('type') == 'json_schema':
+            result = _preview_assistant_result(response_format['json_schema']['schema'])
+            content = json.dumps(result, ensure_ascii=False)
+        else:
+            content = 'capability test passed'
+        self._send(
+            200,
+            {
+                'object': 'chat.completion',
+                'model': payload['model'],
+                'choices': [
+                    {
+                        'index': 0,
+                        'message': {'role': 'assistant', 'content': content},
+                        'finish_reason': 'stop',
+                    }
+                ],
+            },
+        )
 
 
 async def _offline_trending_fetcher(_period):
@@ -626,45 +673,51 @@ def preview_server(port=0, *, overview_fixture=False):
 
             shop_store = ShopStore(Path(directory) / 'shop-source.json', fetcher=shop_fetcher)
             asyncio.run(shop_store.refresh())
-            app = create_app(
-                LegacyPanelServices(service),
-                max_requests=4,
-                service_center_store=ServiceCenterStore(Path(directory) / 'services.json'),
-                ai_services_store=AIServiceStore(
-                    preview_ai_root / 'services.json',
-                    chat_legacy_path=preview_ai_root / 'missing-chat.json',
-                    video_legacy_path=preview_ai_root / 'missing-video.json',
-                    backup_dir=preview_ai_root / 'migration-backup',
-                ),
-                plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
-                journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
-                chat_workspace_store=PreviewWorkspaceStore(
-                    Path(directory) / 'chat' / 'workspace.sqlite3'
-                ),
-                chat_workspace_settings=PreviewWorkspaceProvider(),
-                github_trending_store=trending_store,
-                shop_store=shop_store,
-                video_settings_store=VideoSettingsStore(preview_ai_root / 'video-settings.json'),
-                video_workflow_store=WorkflowStore(preview_ai_root / 'video-workflows.json'),
-                video_asset_store=AssetStore(preview_ai_root / 'video-assets'),
-                gemini_adapter=PreviewGeminiAdapter(),
-            )
-            with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
-                handler = _handler(api_client, allowed_assets)
-                with managed_preview_http_server(('127.0.0.1', port), handler) as server:
-                    server.preview_admin_cookie = admin_cookie
-                    server.preview_trending_store = trending_store
-                    server.preview_admin_other_cookie = admin_other_cookie
-                    server.preview_user_cookie = user_cookie
-                    server.preview_user_other_cookie = user_other_cookie
-                    server.preview_password_user_cookie = password_user_cookie
-                    server.preview_password_user_other_cookie = password_user_other_cookie
-                    server.preview_must_change_cookie = must_change_cookie
-                    server.preview_login_password = PREVIEW_LOGIN_PASSWORD
-                    server.preview_user_password = PREVIEW_USER_PASSWORD
-                    server.preview_must_change_password = PREVIEW_MUST_CHANGE_PASSWORD
-                    allowed_ports.add(server.server_port)
-                    yield server
+            with managed_preview_http_server(('127.0.0.1', 0), PreviewOpenAIGateway) as gateway:
+                allowed_ports.add(gateway.server_port)
+                app = create_app(
+                    LegacyPanelServices(service),
+                    max_requests=4,
+                    service_center_store=ServiceCenterStore(Path(directory) / 'services.json'),
+                    ai_services_store=AIServiceStore(
+                        preview_ai_root / 'services.json',
+                        chat_legacy_path=preview_ai_root / 'missing-chat.json',
+                        video_legacy_path=preview_ai_root / 'missing-video.json',
+                        backup_dir=preview_ai_root / 'migration-backup',
+                    ),
+                    plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
+                    journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
+                    chat_workspace_store=PreviewWorkspaceStore(
+                        Path(directory) / 'chat' / 'workspace.sqlite3'
+                    ),
+                    chat_workspace_settings=PreviewWorkspaceProvider(),
+                    github_trending_store=trending_store,
+                    shop_store=shop_store,
+                    video_settings_store=VideoSettingsStore(
+                        preview_ai_root / 'video-settings.json'
+                    ),
+                    video_workflow_store=WorkflowStore(preview_ai_root / 'video-workflows.json'),
+                    video_asset_store=AssetStore(preview_ai_root / 'video-assets'),
+                )
+                with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
+                    handler = _handler(api_client, allowed_assets)
+                    with managed_preview_http_server(('127.0.0.1', port), handler) as server:
+                        server.preview_admin_cookie = admin_cookie
+                        server.preview_openai_base_url = (
+                            f'http://127.0.0.1:{gateway.server_port}/v1'
+                        )
+                        server.preview_trending_store = trending_store
+                        server.preview_admin_other_cookie = admin_other_cookie
+                        server.preview_user_cookie = user_cookie
+                        server.preview_user_other_cookie = user_other_cookie
+                        server.preview_password_user_cookie = password_user_cookie
+                        server.preview_password_user_other_cookie = password_user_other_cookie
+                        server.preview_must_change_cookie = must_change_cookie
+                        server.preview_login_password = PREVIEW_LOGIN_PASSWORD
+                        server.preview_user_password = PREVIEW_USER_PASSWORD
+                        server.preview_must_change_password = PREVIEW_MUST_CHANGE_PASSWORD
+                        allowed_ports.add(server.server_port)
+                        yield server
         finally:
             with service._login_failures_lock:
                 (

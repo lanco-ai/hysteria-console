@@ -60,7 +60,6 @@ WEB_API_MODULES = (
     'video_service.py',
     'ai/__init__.py',
     'ai/compat.py',
-    'ai/gemini.py',
     'ai/routes.py',
     'ai/service_store.py',
     'ai/assistant_generation.py',

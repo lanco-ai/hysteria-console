@@ -10,7 +10,6 @@ from PIL import Image, ImageDraw, ImageFont
 import pytest
 
 from tests.test_chat_workspace import env, project, turn
-from web_api.ai.gemini import GeminiAdapter
 from web_api.chat_workspace_store import WorkspaceError, WorkspaceStore
 
 
@@ -52,8 +51,6 @@ def test_docx_image_and_scanned_pdf_are_real_extracts(env):
     saved, prompt = store.begin(item['id'], turn(item, document_ids=[image['id'], doc['id']]))
     assert any('2026' in c['quote'] for c in saved['messages'][-1]['citations'])
     assert prompt[-1]['content'][1]['image_url']['url'].startswith('data:image/jpeg;base64,')
-    _, gemini = GeminiAdapter._chat_request('vision-model', prompt, 0.7)
-    assert gemini['contents'][-1]['parts'][1]['inlineData']['mimeType'] == 'image/jpeg'
     store.event(item['id'], 'request_0001', {'type': 'done'})
     current = store.get(item['id'])
     _, followup = store.begin(item['id'], turn(current, request_id='image_followup', content='What does the image show?'))

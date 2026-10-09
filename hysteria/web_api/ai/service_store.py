@@ -20,13 +20,15 @@ DEFAULT_AI_SERVICES_PATH = Path('/root/hysteria/state/ai/services.json')
 DEFAULT_CHAT_SETTINGS_PATH = Path('/root/hysteria/state/chat/settings.json')
 DEFAULT_VIDEO_SETTINGS_PATH = Path('/root/hysteria/state/video/settings.json')
 DEFAULT_MIGRATION_BACKUP_DIR = Path('/root/hysteria/state/ai/migration-backup')
-GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
-PROTOCOLS = {'gemini_native', 'openai_compatible', 'grok_media'}
-PROFILE_IDS = {'gemini-primary', 'chat-primary', 'media-primary'}
+PROTOCOLS = {'openai_compatible', 'grok_media'}
+PROFILE_IDS = {'chat-primary', 'media-primary'}
+# Removed profiles are dropped from stored registries on first read; features
+# that were bound to them fall back to the Chat API without a model.
+RETIRED_PROFILE_IDS = {'gemini-primary'}
 FEATURE_PROTOCOLS = {
-    'chat': {'openai_compatible', 'gemini_native'},
-    'plan_assistant': {'openai_compatible', 'gemini_native'},
-    'video_assistant': {'openai_compatible', 'gemini_native'},
+    'chat': {'openai_compatible'},
+    'plan_assistant': {'openai_compatible'},
+    'video_assistant': {'openai_compatible'},
     'image_generation': {'grok_media'},
     'video_generation': {'grok_media'},
 }
@@ -46,12 +48,6 @@ def _mask_key(value: str) -> str:
 
 def _default_profile(profile_id: str) -> dict:
     defaults = {
-        'gemini-primary': {
-            'id': 'gemini-primary', 'name': 'Gemini',
-            'protocol': 'gemini_native', 'base_url': GEMINI_BASE_URL,
-            'api_key': '', 'temperature': 0.7, 'provider': '',
-            'models': [], 'last_verified_at': '', 'verified_capabilities': [],
-        },
         'chat-primary': {
             'id': 'chat-primary', 'name': 'Chat API',
             'protocol': 'openai_compatible', 'base_url': '',
@@ -76,8 +72,8 @@ def _default_state() -> dict:
         'profiles': {profile_id: _default_profile(profile_id) for profile_id in sorted(PROFILE_IDS)},
         'bindings': {
             'chat': 'chat-primary',
-            'plan_assistant': 'gemini-primary',
-            'video_assistant': 'gemini-primary',
+            'plan_assistant': 'chat-primary',
+            'video_assistant': 'chat-primary',
             'image_generation': 'media-primary',
             'video_generation': 'media-primary',
         },
@@ -90,8 +86,6 @@ def _validate_base_url(value: object, protocol: str) -> str:
     if len(url) > 2048:
         raise AIServiceError('base_url is too long')
     if not url:
-        if protocol == 'gemini_native':
-            raise AIServiceError('Gemini base_url is required')
         return ''
     parsed = urlsplit(url)
     if (
@@ -105,15 +99,14 @@ def _validate_base_url(value: object, protocol: str) -> str:
         parsed.port
     except ValueError:
         raise AIServiceError('base_url has an invalid port') from None
-    if protocol in ('gemini_native', 'grok_media') and parsed.scheme == 'http':
+    if protocol == 'grok_media' and parsed.scheme == 'http':
         hostname = parsed.hostname or ''
         try:
             loopback = ipaddress.ip_address(hostname).is_loopback
         except ValueError:
             loopback = hostname.lower().rstrip('.') == 'localhost'
         if not loopback:
-            label = 'Gemini API' if protocol == 'gemini_native' else 'media API'
-            raise AIServiceError(f'{label} must use HTTPS or loopback HTTP')
+            raise AIServiceError('media API must use HTTPS or loopback HTTP')
     return url.rstrip('/')
 
 
@@ -285,12 +278,36 @@ class AIServiceStore:
         state['migrated_legacy'] = bool(state.get('migrated_legacy'))
         return state
 
-    def _read_file(self) -> dict:
+    @staticmethod
+    def _retire_profiles(raw: object) -> tuple[object, bool]:
+        """Drop retired profiles; features bound to them fall back to the Chat API."""
+        profiles = raw.get('profiles') if isinstance(raw, dict) else None
+        if not isinstance(profiles, dict) or not RETIRED_PROFILE_IDS & set(profiles):
+            return raw, False
+        state = deepcopy(raw)
+        for profile_id in RETIRED_PROFILE_IDS:
+            state['profiles'].pop(profile_id, None)
+        bindings = state.get('bindings')
+        model_bindings = state.get('model_bindings')
+        if isinstance(bindings, dict):
+            for feature, profile_id in list(bindings.items()):
+                if profile_id in RETIRED_PROFILE_IDS:
+                    bindings[feature] = 'chat-primary'
+                    if isinstance(model_bindings, dict) and feature in model_bindings:
+                        model_bindings[feature] = ''
+        return state, True
+
+    def _load(self) -> tuple[dict, bool]:
+        """Read the registry; the flag reports a retirement not yet persisted."""
         try:
             raw = state_store.load_json_strict(self.path, None, required=True)
-            return self._validate_state(raw)
+            raw, retired = self._retire_profiles(raw)
+            return self._validate_state(raw), retired
         except (state_store.StateStoreError, AIServiceError) as exc:
             raise AIServiceError('AI service registry unavailable') from exc
+
+    def _read_file(self) -> dict:
+        return self._load()[0]
 
     def _save(self, state: dict) -> dict:
         self._prepare_directory()
@@ -301,13 +318,21 @@ class AIServiceStore:
 
     def _ensure_initialized(self) -> dict:
         if self.path.exists():
-            return self._read_file()
+            state, retired = self._load()
+            if not retired:
+                return state
         self._prepare_directory()
         lock_path = self.path.with_name(self.path.name + '.lock')
         try:
             with state_store.file_lock(lock_path, timeout=3):
                 if self.path.exists():
-                    return self._read_file()
+                    state, retired = self._load()
+                    if retired:
+                        # Persist the retirement so the removed profile's key
+                        # leaves disk and clients holding the old view reload.
+                        state['revision'] += 1
+                        state = self._save(state)
+                    return state
                 self._backup_legacy()
                 state = _default_state()
                 try:
@@ -443,7 +468,7 @@ class AIServiceStore:
             if values.get('clear_api_key') not in (None, True, False):
                 raise AIServiceError('clear_api_key is invalid')
             if (
-                profile['protocol'] in {'gemini_native', 'openai_compatible'}
+                profile['protocol'] == 'openai_compatible'
                 and (profile['base_url'] != previous_base_url or profile['api_key'] != previous_api_key)
             ):
                 profile['models'] = []

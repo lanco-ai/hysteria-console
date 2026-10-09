@@ -189,7 +189,6 @@ declare -a REACT_WEB_API_MODULES=(
   video_service.py
   ai/__init__.py
   ai/compat.py
-  ai/gemini.py
   ai/routes.py
   ai/service_store.py
   ai/assistant_generation.py
@@ -458,7 +457,6 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/video_service.py"
   add_durable_artifact "$HY_DIR/web_api/ai/__init__.py"
   add_durable_artifact "$HY_DIR/web_api/ai/compat.py"
-  add_durable_artifact "$HY_DIR/web_api/ai/gemini.py"
   add_durable_artifact "$HY_DIR/web_api/ai/routes.py"
   add_durable_artifact "$HY_DIR/web_api/ai/service_store.py"
   add_durable_artifact "$HY_DIR/web_api/ai/assistant_generation.py"
@@ -2260,7 +2258,6 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   install -d -o root -g root -m 755 "$HY_DIR/web_api/ai"
   render "$REPO_DIR/hysteria/web_api/ai/__init__.py" "$HY_DIR/web_api/ai/__init__.py"
   render "$REPO_DIR/hysteria/web_api/ai/compat.py" "$HY_DIR/web_api/ai/compat.py"
-  render "$REPO_DIR/hysteria/web_api/ai/gemini.py" "$HY_DIR/web_api/ai/gemini.py"
   render "$REPO_DIR/hysteria/web_api/ai/routes.py" "$HY_DIR/web_api/ai/routes.py"
   render "$REPO_DIR/hysteria/web_api/ai/service_store.py" "$HY_DIR/web_api/ai/service_store.py"
   render "$REPO_DIR/hysteria/web_api/ai/assistant_generation.py" "$HY_DIR/web_api/ai/assistant_generation.py"

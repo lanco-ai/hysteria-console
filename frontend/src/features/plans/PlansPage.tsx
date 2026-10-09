@@ -577,10 +577,10 @@ export function PlansPage(): ReactElement {
         <div className="plans-assistant-dialog">
         <header><div><p className="plans-eyebrow">AI 助手</p><h3 id="plans-assistant-title">把目标整理成可选计划</h3><p>预览后可以将建议添加为新计划，或选择现有任务补充内容。</p></div><button className="btn btn-ghost btn-sm" type="button" ref={assistantCloseRef} onClick={closeAssistant}>关闭</button></header>
         {error ? renderPlanError('err plans-error plans-assistant-save-state') : conflictDraft ? renderConflictNotice('plans-conflict-draft plans-assistant-save-state') : null}
-        <label htmlFor="plan-assistant-request">告诉 Gemini 你的目标<textarea id="plan-assistant-request" value={assistantRequest} onChange={event => changeAssistantRequest(event.target.value)} maxLength={4000} rows={3} placeholder="例如：今天先完成项目方案，下午运动，给重要任务留出专注时间。" disabled={editingBlocked} /></label>
-        <div className="plans-assistant-actions"><button className="btn btn-primary" type="button" onClick={() => void generateSuggestions()} disabled={editingBlocked || assistantBusy || !assistantRequest.trim()}>{assistantBusy ? '正在整理建议…' : '生成建议'}</button><a href="/admin/services?tab=ai">选择服务和模型</a></div>
+        <label htmlFor="plan-assistant-request">告诉 AI 你的目标<textarea id="plan-assistant-request" value={assistantRequest} onChange={event => changeAssistantRequest(event.target.value)} maxLength={4000} rows={3} placeholder="例如：今天先完成项目方案，下午运动，给重要任务留出专注时间。" disabled={editingBlocked} /></label>
+        <div className="plans-assistant-actions"><button className="btn btn-primary" type="button" onClick={() => void generateSuggestions()} disabled={editingBlocked || assistantBusy || !assistantRequest.trim()}>{assistantBusy ? '正在整理建议…' : '生成建议'}</button><a href="/admin/services#assistant-models">选择服务和模型</a></div>
         {assistantError ? <p className="plans-assistant-error" role="alert">{assistantError}</p> : null}
-        {assistantSummary ? <div className="plans-assistant-preview"><p>{assistantSummary}</p><small>{assistantModel} · 预览不会自动保存 · {assistantOutputMode === 'json_text_fallback' ? '结构化参数不支持，已降级为严格 JSON 文本并完成校验' : assistantOutputMode === 'json_schema' ? 'JSON Schema 输出已通过结构校验' : 'Gemini 原生结构化输出已通过校验'}</small>
+        {assistantSummary ? <div className="plans-assistant-preview"><p>{assistantSummary}</p><small>{assistantModel} · 预览不会自动保存 · {assistantOutputMode === 'json_text_fallback' ? '结构化参数不支持，已降级为严格 JSON 文本并完成校验' : 'JSON Schema 输出已通过结构校验'}</small>
           <ul>{assistantSuggestions.map(item => <li key={item.draftId}>
             <label className="plans-assistant-select"><input type="checkbox" aria-label={`选择建议：${item.title || '未命名计划'}`} checked={item.selected} onChange={event => setAssistantSuggestions(current => current.map(draft => draft.draftId === item.draftId ? { ...draft, selected: event.target.checked } : draft))} /></label>
             <div className="plans-assistant-suggestion"><input aria-label="建议任务标题" maxLength={160} value={item.title} onChange={event => { const nextTitle = event.target.value; setAssistantSuggestions(current => current.map(draft => draft.draftId === item.draftId ? { ...draft, title: nextTitle, targetId: draft.targetManuallySelected ? draft.targetId : suggestedTarget(nextTitle, selectedItems) } : draft)); }} /><p>{item.reason}</p>
@@ -607,7 +607,7 @@ export function PlansPage(): ReactElement {
           </li>)}</ul> : <p className="plans-empty">暂无计划</p>}
         </section>;
       })}</div>}
-      <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services?tab=ai">服务中心</a></footer>
+      <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services#ai-services">服务中心</a></footer>
       </section>
       <JournalPage panel={journalPanel} onClose={closeJournal} selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
     </section>

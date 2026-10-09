@@ -35,7 +35,7 @@ const { expect } = require('@playwright/test');
       assert.equal(payload.date, '2026-09-19');
       assert.equal(payload.timezone, 'America/Los_Angeles');
       await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
-        model: 'gemini-preview-fast', service_name: 'Gemini', structured_output: 'gemini_native_schema', summary: '优先处理关键任务。',
+        model: 'preview-chat-fast', service_name: 'Chat API', structured_output: 'json_schema', summary: '优先处理关键任务。',
         suggestions: [{ title: assistantRequests === 1 ? '完成项目提纲' : '补充项目提纲', notes: '拆成三个小步骤。', quadrant: 'important', start_time: '10:30', estimate_minutes: 45, reminder_offset_minutes: 10, reason: '为后续工作建立结构。' }],
       }) });
     });
@@ -153,7 +153,7 @@ const { expect } = require('@playwright/test');
     suggestionIds.length = 0;
     await page.getByLabel('计划日期').fill('2026-09-19');
     await page.getByRole('button', { name: 'AI 建议' }).click();
-    await page.getByLabel('告诉 Gemini 你的目标').fill('今天先完成项目方案，再留时间运动。');
+    await page.getByLabel('告诉 AI 你的目标').fill('今天先完成项目方案，再留时间运动。');
     await page.getByRole('button', { name: '生成建议' }).click();
     await expect(page.getByText('优先处理关键任务。')).toBeVisible();
     await expect(page.getByLabel('建议任务标题')).toHaveValue('完成项目提纲');
@@ -284,7 +284,7 @@ const { expect } = require('@playwright/test');
     assert.equal(savedItems.some(item => item.title === '服务器新增任务'), false);
 
     await page.getByRole('button', { name: 'AI 建议' }).click();
-    await page.getByLabel('告诉 Gemini 你的目标').fill('再次安排项目提纲');
+    await page.getByLabel('告诉 AI 你的目标').fill('再次安排项目提纲');
     await page.getByRole('button', { name: '生成建议' }).click();
     await expect(page.getByText('优先处理关键任务。')).toBeVisible();
     loseNextSaveResponse = true;
@@ -304,7 +304,7 @@ const { expect } = require('@playwright/test');
     const savesBeforeNoopRetry = saveRequests;
     const committedTaskBeforeNoopRetry = savedItems.find(item => item.id === committedSuggestionId);
     await page.getByRole('button', { name: 'AI 建议' }).click();
-    await page.getByLabel('告诉 Gemini 你的目标').fill('重新检查项目提纲是否还需要安排');
+    await page.getByLabel('告诉 AI 你的目标').fill('重新检查项目提纲是否还需要安排');
     await page.getByRole('button', { name: '生成建议' }).click();
     await expect(page.getByLabel('建议任务标题')).toHaveValue('补充项目提纲');
     await expect(page.getByLabel('如何应用建议：补充项目提纲')).toHaveValue(committedSuggestionId);
@@ -317,7 +317,7 @@ const { expect } = require('@playwright/test');
     assert.equal(committedTasksAfterNoopRetry[0].notes, committedTaskBeforeNoopRetry.notes);
     const savesBeforeSemanticUpdate = saveRequests;
     await page.getByRole('button', { name: 'AI 建议' }).click();
-    await page.getByLabel('告诉 Gemini 你的目标').fill('更新项目提纲现有任务');
+    await page.getByLabel('告诉 AI 你的目标').fill('更新项目提纲现有任务');
     await page.getByRole('button', { name: '生成建议' }).click();
     await page.getByLabel('建议任务标题').fill('补充项目提纲（已调整）');
     await page.getByLabel('如何应用建议：补充项目提纲（已调整）').selectOption(committedSuggestionId);
@@ -333,7 +333,7 @@ const { expect } = require('@playwright/test');
     const acceptNavigationDialog = async (dialog) => { navigationDialogs += 1; await dialog.accept(); };
     page.on('dialog', acceptNavigationDialog);
     await page.locator('.plans-footer').getByRole('link', { name: '服务中心' }).click();
-    await expect(page).toHaveURL(/\/admin\/services\?tab=ai$/);
+    await expect(page).toHaveURL(/\/admin\/services#ai-services$/);
     assert.equal(navigationDialogs, 1, 'accepting the in-app leave warning must not trigger a second unload prompt');
     page.off('dialog', acceptNavigationDialog);
 
@@ -352,12 +352,12 @@ const { expect } = require('@playwright/test');
     await expect(page.getByLabel('计划标题')).toHaveValue('返回取消后保留');
     page.once('dialog', dialog => dialog.accept());
     await page.goBack();
-    await expect(page).toHaveURL(/\/admin\/services\?tab=ai$/);
+    await expect(page).toHaveURL(/\/admin\/services#ai-services$/);
 
     await page.goForward();
     await expect(page).toHaveURL(/\/admin\/plans$/);
     await page.locator('.plans-footer').getByRole('link', { name: '服务中心' }).click();
-    await expect(page).toHaveURL(/\/admin\/services\?tab=ai$/);
+    await expect(page).toHaveURL(/\/admin\/services#ai-services$/);
     await page.goBack();
     await expect(page).toHaveURL(/\/admin\/plans$/);
     await page.getByLabel('计划标题').fill('前进取消后保留');
@@ -367,12 +367,12 @@ const { expect } = require('@playwright/test');
     await expect(page.getByLabel('计划标题')).toHaveValue('前进取消后保留');
     page.once('dialog', dialog => dialog.accept());
     await page.goForward();
-    await expect(page).toHaveURL(/\/admin\/services\?tab=ai$/);
+    await expect(page).toHaveURL(/\/admin\/services#ai-services$/);
 
     await page.getByRole('link', { name: '服务中心', exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/services$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/admin\/services\?tab=ai$/);
+    await expect(page).toHaveURL(/\/admin\/services#ai-services$/);
     await page.goBack();
     await expect(page).toHaveURL(/\/admin\/plans$/);
     await page.getByLabel('计划标题').fill('跨过未标记历史项后仍保留');
@@ -402,11 +402,11 @@ const { expect } = require('@playwright/test');
     await expect(page.getByLabel('计划标题')).toHaveValue('跳转锚点后保留草稿');
     page.once('dialog', dialog => dialog.accept());
     await page.locator('.plans-footer').getByRole('link', { name: '服务中心' }).click();
-    await expect(page).toHaveURL(/\/admin\/services\?tab=ai$/);
+    await expect(page).toHaveURL(/\/admin\/services#ai-services$/);
     await page.getByRole('link', { name: '今日计划' }).click();
     await expect(page).toHaveURL(/\/admin\/plans$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/admin\/services\?tab=ai$/);
+    await expect(page).toHaveURL(/\/admin\/services#ai-services$/);
 
     await page.getByRole('link', { name: '今日计划' }).click();
     await expect(page).toHaveURL(/\/admin\/plans$/);
