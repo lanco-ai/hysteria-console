@@ -56,12 +56,9 @@ def test_health_quality_sections_keep_copy_and_percentages_aligned():
     assert 'className="small faint mt-sm line-radar-reason"' in health_source
     assert "body.has-shell .health-radar-section .line-radar-reason {" in styles
     assert "padding: 12px 24px 16px;" in styles
-    assert "grid-template-columns: minmax(0, 1fr) 160px minmax(0, 1fr);" in incident_styles
-    assert 'className="mono"' in incidents_source
-    assert "body.has-shell .radar-summary-row > .mono {" in incident_styles
-    assert "width: auto;" in incident_styles
-    assert "justify-self: stretch;" in incident_styles
-    assert "text-align: center;" in incident_styles
+    # Line quality is shown once, in 运维's radar; incidents no longer repeat it.
+    assert "radar-summary-row" not in incidents_source + incident_styles
+    assert "line_radar" not in incidents_source
 
 
 def _relative_luminance(hex_color):

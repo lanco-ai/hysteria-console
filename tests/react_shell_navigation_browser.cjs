@@ -37,13 +37,13 @@ async function main() {
       await page.route('**/api/plans/reminders', route => route.fulfill({ json: { items: [] } }));
       await page.route('**/api/plans/reminders/**', route => route.fulfill({ json: { item: {} } }));
       await page.goto(`${baseUrl}/__react/admin`);
-      await expect(page.locator('.overview-stats')).toBeVisible();
+      await expect(page.locator('.overview-cycle')).toBeVisible();
       const navGroups = await page.locator('.sidebar-nav > div').evaluateAll(groups => groups.map(group => ({
         label: group.querySelector('.sidebar-section')?.textContent?.trim() || '',
         hrefs: Array.from(group.querySelectorAll('a[href]'), link => new URL(link.href).pathname),
       })));
       assert.deepEqual(navGroups.map(group => group.label), ['网络管理', '工作台', 'AI 工具']);
-      assert.deepEqual(navGroups.find(group => group.label === '网络管理')?.hrefs, ['/admin', '/admin/usage', '/admin/config', '/admin/landing-egresses', '/admin/health']);
+      assert.deepEqual(navGroups.find(group => group.label === '网络管理')?.hrefs, ['/admin', '/admin/usage', '/admin/config', '/admin/health']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/plans'))?.label, '工作台');
       assert.deepEqual(navGroups.find(group => group.label === 'AI 工具')?.hrefs, ['/admin/chat', '/admin/video', '/admin/services']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/github-trending')), undefined, 'GitHub trending has moved to the public portal');
@@ -75,6 +75,18 @@ async function main() {
           await expect.poll(async () => Math.round((await page.locator('.sidebar').boundingBox()).width)).toBe(64);
           await page.locator('#sidebar-collapse').click();
         }
+      }
+      if (viewport.width === 1024) {
+        // Another page opens at its top even when the previous one was scrolled
+        // (here /admin is taller than the viewport, so the offset would survive).
+        await page.locator('.sidebar-link[href="/admin/services"]').click();
+        await expect(page).toHaveURL(`${baseUrl}/__react/admin/services`);
+        // Retry until the content has rendered and the page can scroll.
+        await expect.poll(() => page.evaluate(() => { window.scrollTo({ top: 400, behavior: 'instant' }); return window.scrollY; })).toBeGreaterThan(0);
+        await page.locator('.sidebar-link[href="/admin"]').click();
+        await expect(page).toHaveURL(`${baseUrl}/__react/admin`);
+        await expect(page.locator('.overview-cycle')).toBeVisible();
+        assert.equal(await page.evaluate(() => window.scrollY), 0);
       }
       assert.deepEqual(failures, []);
       await context.close();

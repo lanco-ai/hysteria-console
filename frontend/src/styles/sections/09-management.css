@@ -191,7 +191,7 @@ body.has-shell .reset-all-button { margin-top: 10px; }
 
 /* Create Section */
 .create-section {
-  margin-top: 24px;
+  margin-bottom: 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg-surface);

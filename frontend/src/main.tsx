@@ -37,7 +37,6 @@ const SettingsPage = lazyPage(() => import('./features/network-admin/settings/Se
 const UsagePage = lazyPage(() => import('./features/network-admin/usage/UsagePage').then(module => module.UsagePage));
 const OperationsPage = lazyPage(() => import('./features/network-admin/operations/OperationsPage').then(module => module.OperationsPage));
 const TemplateRulesPage = lazyPage(() => import('./features/network-admin/template-rules/TemplateRulesPage').then(module => module.TemplateRulesPage));
-const LandingPage = lazyPage(() => import('./features/network-admin/landing/LandingPage').then(module => module.LandingPage));
 const UserDetailPage = lazyPage(() => import('./features/network-admin/user-detail/UserDetailPage').then(module => module.UserDetailPage));
 const OverviewPage = lazyPage(() => import('./features/network-admin/overview/OverviewPage').then(module => module.OverviewPage));
 const ChatPage = lazyPage(() => import('./features/chat/ChatPage').then(module => module.ChatPage));
@@ -79,10 +78,10 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/settings': { title: '设置', bodyClass: 'has-shell', shell: true },
   '/admin/usage': { title: '流量分析', bodyClass: 'has-shell', shell: true },
   '/admin/health': { title: '运维', bodyClass: 'has-shell', shell: true },
-  '/admin/incidents': { title: '运维', bodyClass: 'has-shell', shell: true },
-  '/admin/config': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
-  '/admin/rules': { title: '模板与路由', bodyClass: 'has-shell', shell: true },
-  '/admin/landing-egresses': { title: '家宽出口', bodyClass: 'has-shell', shell: true },
+  '/admin/incidents': { title: '流量分析', bodyClass: 'has-shell', shell: true },
+  '/admin/config': { title: '路由与出口', bodyClass: 'has-shell', shell: true },
+  '/admin/rules': { title: '路由与出口', bodyClass: 'has-shell', shell: true },
+  '/admin/landing-egresses': { title: '路由与出口', bodyClass: 'has-shell', shell: true },
   '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
   '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
   '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell', shell: true },
@@ -122,10 +121,16 @@ if (readReactHistoryIndex(window.history.state) === null) {
   window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', window.location.href);
 }
 
+// Opening another page starts at its top, as a full page load would; back and
+// forward keep the browser's scroll restoration, and #fragments their target.
+let scrollToTopOnRender = false;
+
 function pushReactHistory(path: string): void {
+  const leaving = window.location.pathname;
   reactHistoryIndex += 1;
   window.history.pushState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
   reactHistoryLocation = window.location.href;
+  if (window.location.pathname !== leaving && !window.location.hash) scrollToTopOnRender = true;
 }
 
 function replaceReactHistory(path: string): void {
@@ -253,10 +258,10 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
   '/admin/settings': { active: 'settings', title: '设置' },
   '/admin/usage': { active: 'usage', title: '流量分析' },
   '/admin/health': { active: 'operations', title: '运维' },
-  '/admin/incidents': { active: 'operations', title: '运维' },
-  '/admin/config': { active: 'config', title: '模板与路由' },
-  '/admin/rules': { active: 'config', title: '模板与路由' },
-  '/admin/landing-egresses': { active: 'landing-egresses', title: '家宽出口' },
+  '/admin/incidents': { active: 'usage', title: '流量分析' },
+  '/admin/config': { active: 'config', title: '路由与出口' },
+  '/admin/rules': { active: 'config', title: '路由与出口' },
+  '/admin/landing-egresses': { active: 'config', title: '路由与出口' },
   '/admin/services': { active: 'services', title: '服务中心' },
   '/admin/plans': { active: 'plans', title: '今日计划' },
   '/admin/shop': { active: 'shop', title: '商品管理' },
@@ -279,16 +284,16 @@ function AdminRoute({ route, locationKey, publicHost, authenticated, status }: {
   if (!authenticated) return <AdminPlaceholder route={route} status={status}/>;
   if (detail) return <UserDetailPage publicHost={publicHost} uid={decodeRouteSegment(detail[1] || '')}/>;
   if (route === '/admin') return <OverviewPage publicHost={publicHost}/>;
-  if (route === '/admin/logs' || route === '/admin/health' || route === '/admin/incidents') return <OperationsPage locationKey={locationKey} publicHost={publicHost}/>;
+  if (route === '/admin/logs' || route === '/admin/health') return <OperationsPage locationKey={locationKey} publicHost={publicHost}/>;
   if (route === '/admin/settings') return <SettingsPage publicHost={publicHost}/>;
-  if (route === '/admin/usage') return <UsagePage publicHost={publicHost}/>;
-  if (route === '/admin/config' || route === '/admin/rules') return <TemplateRulesPage publicHost={publicHost}/>;
+  if (route === '/admin/usage' || route === '/admin/incidents') return <UsagePage publicHost={publicHost}/>;
+  if (route === '/admin/config' || route === '/admin/rules' || route === '/admin/landing-egresses') return <TemplateRulesPage publicHost={publicHost}/>;
   if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
   if (route === '/admin/plans') return <PlansPage/>;
   if (route === '/admin/shop') return <ShopAdminPage/>;
   if (route === '/admin/chat') return <ChatPage publicHost={publicHost} authenticated/>;
   if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
-  return <LandingPage publicHost={publicHost}/>;
+  return <OverviewPage publicHost={publicHost}/>;
 }
 
 // Mirrors WorkbenchRoute, AdminRoute and the user routes in App.
@@ -296,11 +301,12 @@ const ADMIN_PAGE_BY_ROUTE: Record<string, { preload: () => Promise<void> }> = {
   '/admin': OverviewPage,
   '/admin/logs': OperationsPage,
   '/admin/health': OperationsPage,
-  '/admin/incidents': OperationsPage,
+  '/admin/incidents': UsagePage,
   '/admin/settings': SettingsPage,
   '/admin/usage': UsagePage,
   '/admin/config': TemplateRulesPage,
   '/admin/rules': TemplateRulesPage,
+  '/admin/landing-egresses': TemplateRulesPage,
   '/admin/services': ServicesPage,
   '/admin/plans': PlansPage,
   '/admin/shop': ShopAdminPage,
@@ -309,11 +315,13 @@ const ADMIN_PAGE_BY_ROUTE: Record<string, { preload: () => Promise<void> }> = {
 // The console's own pages are small; once an admin page is up they are fetched
 // in the background so moving between admin pages stays instant. Chat and
 // video (KaTeX, canvas) stay on demand.
-const ADMIN_CONSOLE_PAGES = [...new Set([...Object.values(ADMIN_PAGE_BY_ROUTE), LandingPage, UserDetailPage])];
+const ADMIN_CONSOLE_PAGES = [...new Set([...Object.values(ADMIN_PAGE_BY_ROUTE), UserDetailPage])];
 const ADMIN_TOOL_PAGES: Record<string, { preload: () => Promise<void> }> = { '/admin/chat': ChatPage, '/admin/video': VideoPage };
 
-// AI chat and video moved into the admin console; old portal links follow them.
+// Old links follow moved pages: AI chat and video left the portal for the
+// console, and 事故处理 left 运维 for 流量分析.
 function legacyToolLocation(url: URL): string | null {
+  if (normalizeRoute(url.pathname) === '/admin/health' && url.searchParams.get('tab') === 'incidents') return previewPath('/admin/incidents');
   const view = url.searchParams.get('view');
   if (normalizeRoute(url.pathname) !== '/' || (view !== 'chat' && view !== 'video')) return null;
   const query = new URLSearchParams(url.search);
@@ -328,7 +336,7 @@ function pagesForLocation(url: URL): Array<{ preload: () => Promise<void> }> {
   const tool = ADMIN_TOOL_PAGES[route];
   if (tool) return [tool];
   if (/^\/admin\/user\/[^/]+$/.test(route)) return [UserDetailPage];
-  if (ADMIN_ROUTES.has(route)) return [ADMIN_PAGE_BY_ROUTE[route] ?? LandingPage];
+  if (ADMIN_ROUTES.has(route)) return [ADMIN_PAGE_BY_ROUTE[route] ?? OverviewPage];
   if (route === '/user/change-password') return [UserPasswordPage];
   if (route === '/user/panel') return [UserPanelPage];
   if (route === '/logout' || route === '/user/logout') return [LogoutPage];
@@ -406,7 +414,13 @@ function App() {
     setLocationKey(currentLocationKey());
   }, [route, session]);
 
-  useLayoutEffect(() => { applyRouteDocument(route); }, [route, location.search]);
+  useLayoutEffect(() => {
+    applyRouteDocument(route);
+    if (scrollToTopOnRender) {
+      scrollToTopOnRender = false;
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  }, [route, location.search]);
   useEffect(() => installClientNavigation(() => { void syncLocation(); }), [syncLocation]);
   useEffect(() => {
     if (!isProtectedAdminRoute || !authenticated) return undefined;

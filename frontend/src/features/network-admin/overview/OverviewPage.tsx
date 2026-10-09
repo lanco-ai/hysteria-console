@@ -4,7 +4,6 @@ import { LoadingState } from '../../../shared/LoadingState';
 import { useInitialFragmentNavigation } from '../../../shared/useInitialFragmentNavigation';
 import { OverviewTable } from './OverviewTable';
 import { CreateForm, CycleForm, EditDialog } from './UserForms';
-import { fmtBytes } from './presentation';
 import { useOverview } from './useOverview';
 import type { OverviewUser } from './types';
 
@@ -30,7 +29,6 @@ export function OverviewPage({ publicHost }: { publicHost: string }) {
   };
   const disabled = busy || blocked;
   const topbarExtra = data ? <>
-    <CycleForm cycle={data.cycle} disabled={disabled} mutate={overview.mutate}/>
     <button
       className="badge poll-status poll-status-button"
       data-role="admin-poll-status"
@@ -64,19 +62,15 @@ export function OverviewPage({ publicHost }: { publicHost: string }) {
     </div> : null}
     {overview.loading && !data ? <LoadingState label="正在加载用户…"/> : null}
     {data ? <>
-      <div className="overview-stats">
-        <div className="overview-stat">
-          <div className="label">本周期总流量</div>
-          <div className="value" id="total-used">{fmtBytes(data.cycle.total_used)}</div>
-          <div className="sub">{data.cycle.range}</div>
+      <section className="overview-cycle" aria-label="计费周期">
+        <div className="overview-cycle-info">
+          <span className="overview-cycle-label">计费周期</span>
+          <strong>{data.cycle.key}</strong>
+          <span className="small">{data.cycle.range}</span>
         </div>
-        <div className="overview-stat">
-          <div className="label">计费周期</div>
-          <div className="value">{data.cycle.key}</div>
-          <div className="sub">每 {data.cycle.length_days} 天结算 · 第 {data.cycle.settlement_day} 日</div>
-        </div>
-        <div className="overview-stat">
-          <div className="label">快速操作</div>
+        <CycleForm cycle={data.cycle} disabled={disabled} mutate={overview.mutate}/>
+        <div className="overview-cycle-actions">
+          <a className="btn btn-sm" href="/admin/usage.csv?window=cycle">导出 CSV</a>
           <form method="post" action="/admin/reset-usage-all" onSubmit={event => {
             event.preventDefault();
             if (!disabled && window.confirm('确认清空全部用户本周期已用流量？')) {
@@ -87,16 +81,13 @@ export function OverviewPage({ publicHost }: { publicHost: string }) {
               清空本周期用量
             </button>
           </form>
-          <div className="quick-actions">
-            <a className="btn btn-sm" href="/admin/usage.csv?window=cycle">导出 CSV</a>
-          </div>
         </div>
-      </div>
+      </section>
+      <CreateForm data={data} disabled={disabled} mutate={overview.mutate}/>
       <OverviewTable rows={data.users} disabled={disabled} mutate={overview.mutate} edit={(row, button) => {
         trigger.current = button;
         setSelected({ ...row });
       }}/>
-      <CreateForm data={data} disabled={disabled} mutate={overview.mutate}/>
       {selected ? <EditDialog
         row={selected}
         currentRevision={data.users.find(row => row.user === selected.user)?.revision}

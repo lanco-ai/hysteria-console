@@ -2,30 +2,7 @@
    RESPONSIVE
    ===================================================== */
 
-@media (max-width: 1024px) {
-  .overview-stats {
-    grid-template-columns: 1fr;
-  }
-
-  .overview-stat + .overview-stat {
-    border-left: none;
-    border-top: 1px solid var(--border);
-  }
-}
-
 @media (max-width: 768px) {
-  body.has-shell .health-top-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  body.has-shell .incidents-page .health-top-kpis {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  body.has-shell .incident-dual-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .home-header-inner {
     padding: 0 20px;
   }

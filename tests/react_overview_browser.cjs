@@ -41,6 +41,10 @@ async function realOperations(browser) {
   assert.equal(await page.locator('script[src*="admin-poll"]').count(), 0);
   await expect(page.locator('.sidebar-link[aria-current="page"]')).toHaveText('用户');
   await expect(page.getByRole('link', { name: '导出 CSV' })).toHaveAttribute('href', '/admin/usage.csv?window=cycle');
+  // Cycle settings and cycle-wide actions share one bar instead of the top bar and KPI cards.
+  await expect(page.locator('.overview-cycle .cycle-config-form')).toHaveCount(1);
+  await expect(page.locator('.topbar .cycle-config-form')).toHaveCount(0);
+  await expect(page.locator('#total-used')).toHaveCount(0);
   assert((await snapshot(context)).cycle.total_used > 0, 'accounting fixture must be nonzero');
   fs.mkdirSync(screenshots, { recursive: true });
   const geometry = [];
@@ -48,7 +52,7 @@ async function realOperations(browser) {
     await page.setViewportSize({ width, height: 1080 });
     await page.evaluate(() => { document.activeElement.blur(); window.scrollTo(0, 0); });
     await page.screenshot({ path: path.join(screenshots, `react-${width}.png`), fullPage: true });
-    for (const selector of ['.topbar', '.overview-stats', '.users-header', '.users-table-wrap', '.create-section', '#user-filter', '#filter-count']) {
+    for (const selector of ['.topbar', '.overview-cycle', '.users-header', '.users-table-wrap', '.create-section', '#user-filter', '#filter-count']) {
       const box = await page.locator(selector).boundingBox();
       assert(box && box.width > 0 && box.height > 0, `${width} ${selector} must be visible`);
       geometry.push({ width, selector, react: box });
@@ -69,11 +73,13 @@ async function realOperations(browser) {
   await page.getByRole('searchbox').fill('no-match');
   await expect(page.locator('#filter-empty')).toBeVisible();
   await page.getByRole('searchbox').fill('');
-  await page.getByRole('button', { name: '在线', exact: true }).click();
+  // The filter chips carry the counts, so the page needs no separate summary.
+  await expect(page.locator('.filter-chips .chip-count')).toHaveText(['3', '1', '1']);
+  await page.locator('[data-filter="online"]').click();
   await expect(page.locator('#filter-count')).toHaveText('1 / 3 个');
-  await page.getByRole('button', { name: '超限', exact: true }).click();
+  await page.locator('[data-filter="over"]').click();
   await expect(page.locator('#filter-count')).toHaveText('1 / 3 个');
-  await page.getByRole('button', { name: '全部', exact: true }).click();
+  await page.locator('[data-filter="all"]').click();
   const beforeCancel = requests.filter(([method]) => method === 'POST').length;
   page.on('dialog', dialog => dialog.dismiss());
   for (const name of ['清流量', '刷新流量', '重置订阅', '暂停', '删除']) await rowFor(page).getByRole('button', { name, exact: true }).click();
@@ -132,7 +138,7 @@ async function realOperations(browser) {
   await rowFor(page, 'browser_new').getByRole('button', { name: '删除', exact: true }).click();
   await expect(rowFor(page, 'browser_new')).toHaveCount(0); await ready(page);
   await page.getByRole('button', { name: '清空本周期用量' }).click();
-  await expect(page.locator('#total-used')).toHaveText('0.00 B'); await ready(page);
+  await expect(page.locator('.flash', { hasText: '已清除全部用户本周期已用流量' })).toBeVisible(); await ready(page);
   assert.equal((await snapshot(context)).cycle.total_used, 0);
   assert(!requests.some(([, url]) => url === '/admin/overview.json'), 'React never starts legacy polling');
   assert.deepEqual(failures, []);

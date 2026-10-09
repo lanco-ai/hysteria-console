@@ -10,7 +10,7 @@
 .journal-privacy-note { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .journal-privacy-note { margin: 0; max-width: 32em; line-height: 1.6; }
 .journal-page { width: 100%; }
-.journal-drawer { position: fixed; inset: 12px 12px 12px auto; width: min(760px, calc(100vw - 24px)); height: calc(100dvh - 24px); max-width: none; max-height: none; margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 20px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 24px 70px rgba(20, 28, 20, .18); }
+.journal-drawer { position: fixed; inset: 0; width: min(760px, calc(100vw - 32px)); height: min(880px, calc(100dvh - 48px)); max-width: none; max-height: none; margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 20px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 24px 70px rgba(20, 28, 20, .18); }
 .journal-drawer[open] { display: flex; flex-direction: column; }
 .journal-drawer::backdrop { background: rgba(24, 30, 24, .24); }
 .journal-drawer-header { display: grid; flex: 0 0 auto; grid-template-columns: minmax(36px, 1fr) auto minmax(36px, 1fr); align-items: center; gap: 12px; padding: 24px 28px 20px; border-bottom: 1px solid var(--border); }
@@ -38,7 +38,7 @@
 .journal-drawer .journal-week-nav { flex-wrap: wrap; font-size: 13px; }
 .journal-export { margin-top: 18px; }
 @media (max-width: 680px) {
-  .journal-drawer { inset: 0; width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .journal-drawer { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
   .journal-drawer-header { padding: max(18px, env(safe-area-inset-top)) 18px 16px; }
   .journal-drawer-header h2 { font-size: 20px; }
   .journal-drawer-close-label { display: none; }

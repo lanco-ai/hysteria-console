@@ -52,7 +52,7 @@ type ReadResourceOptions<T> = {
   validate: (value: unknown) => T;
 };
 
-type ReadResourceResult<T> =
+export type ReadResourceResult<T> =
   | { status: 'idle' | 'loading'; data?: undefined; error?: undefined; retry: () => void }
   | { status: 'success'; data: T; error?: undefined; retry: () => void }
   | { status: 'error'; data?: undefined; error: ResourceError; retry: () => void };

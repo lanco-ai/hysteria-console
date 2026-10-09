@@ -493,6 +493,21 @@ body.has-shell svg.spark .spark-dot.today {
     grid-template-columns: 1fr;
   }
 
+  /* Short byte values: keep the four traffic KPIs two-up on phones. */
+  body.has-shell .usage-page .metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  body.has-shell .usage-page .metric-card {
+    padding: 14px 12px;
+  }
+
+  body.has-shell .usage-page .metric-v,
+  body.has-shell .usage-page .metric-v.big {
+    font-size: 24px;
+  }
+
   body.has-shell .admin-section-header {
     flex-direction: column;
     align-items: flex-start;

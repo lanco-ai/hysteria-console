@@ -12,8 +12,11 @@ async function main() {
   const requests = [];
   page.on('request', request => requests.push(new URL(request.url()).pathname));
   await page.goto(`${baseUrl}/__react/admin/landing-egresses`);
-  await expect(page).toHaveTitle('家宽出口');
-  await expect(page.getByText('家宽出口节点', { exact: true })).toBeVisible();
+  await expect(page).toHaveTitle('路由与出口');
+  await expect(page.getByRole('tab', { name: '家宽出口' })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.sidebar-link[aria-current="page"]')).toHaveText('路由与出口');
+  await expect(page.locator('.landing-node-list .form-section-title')).toContainText('家宽出口节点');
+  await expect(page.locator('.landing-node-list .badge')).toHaveText('0 个节点');
   await expect(page.getByText('尚未配置家宽出口', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '保存节点' })).toBeVisible();
   assert(requests.includes('/api/v1/admin/landing-egresses'));

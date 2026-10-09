@@ -13,16 +13,16 @@ export type NavigationGroup = {
   placement?: 'bottom';
 };
 
-// Network management comes first: 用户 (/admin) is the console's home page.
-// Every item has its own icon so the collapsed rail stays readable.
+// Every item has its own icon so the collapsed rail stays readable. 今日计划
+// is where sign-in lands; 流量分析 also holds incidents, 路由与出口 the egress
+// nodes, and 运维 the health checks and reset log.
 export const navigationGroups: NavigationGroup[] = [
   {
     label: '网络管理',
     items: [
       { key: 'dashboard', href: '/admin', label: '用户', icon: 'users' },
       { key: 'usage', href: '/admin/usage', label: '流量分析', icon: 'traffic' },
-      { key: 'config', href: '/admin/config', label: '模板与路由', icon: 'config' },
-      { key: 'landing-egresses', href: '/admin/landing-egresses', label: '家宽出口', icon: 'egress' },
+      { key: 'config', href: '/admin/config', label: '路由与出口', icon: 'config' },
       { key: 'operations', href: '/admin/health', label: '运维', icon: 'pulse' },
     ],
   },

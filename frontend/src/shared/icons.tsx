@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 
 export type IconName = 'dashboard' | 'traffic' | 'pulse' | 'logs' | 'lock' | 'config' | 'logout' | 'copy' | 'open' | 'chat' | 'video' | 'calendar' | 'trending' | 'search'
-  | 'users' | 'shop' | 'plug' | 'egress' | 'globe' | 'settings';
+  | 'users' | 'shop' | 'plug' | 'globe' | 'settings';
 
 const shared = {
   viewBox: '0 0 24 24',
@@ -22,7 +22,6 @@ export function Icon({ name }: { name: IconName }): ReactElement {
   if (name === 'users') return <svg {...shared}><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
   if (name === 'shop') return <svg {...shared}><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>;
   if (name === 'plug') return <svg {...shared}><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></svg>;
-  if (name === 'egress') return <svg {...shared}><path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v10h7"/><path d="M15 17h6"/><path d="m18 14 3 3-3 3"/></svg>;
   if (name === 'globe') return <svg {...shared}><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>;
   if (name === 'settings') return <svg {...shared}><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M1 14h6"/><path d="M9 8h6"/><path d="M17 16h6"/></svg>;
   if (name === 'search') return <svg {...shared}><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>;

@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AdminShell } from '../../../shared/AdminShell';
 import { LoadingState } from '../../../shared/LoadingState';
-import { ResourceError, useReadResource } from '../../../shared/readResource';
+import { ResourceError, type ReadResourceResult, useReadResource } from '../../../shared/readResource';
+import { ActionButton, IncidentsSection } from '../incidents/IncidentsPage';
+import { INCIDENTS_ENDPOINT, parseIncidents } from '../incidents/requests';
+import type { Incidents } from '../incidents/types';
 import { Spark, fmtBytes } from '../overview/presentation';
 import { parseUsage, parseUsageHistory } from './requests';
 import type { Usage, UsageHistory } from './types';
@@ -71,13 +74,19 @@ function Heatmap({ rows, ts }: { rows: Usage['heatmap']; ts: string }) {
   </div>;
 }
 
-function TopUsers({ usage }: { usage: Usage }) {
+/** One 24-hour ranking: live sparklines from usage, revisions for the actions from incidents. */
+function UserRanking({ usage, incidents, done }: { usage: Usage; incidents: ReadResourceResult<Incidents>; done: (message: string) => void }) {
   if (!usage.top_n.length) return <div className="empty">暂无活跃用户</div>;
-  return <div id="top-n-host">{usage.top_n.map(user => <a className="top-row" href={`/admin/user/${encodeURIComponent(user.uid)}`} key={user.uid}>
-    <span className="top-uid">{user.uid} ↗</span>
-    <span className="top-spark"><Spark values={user.spark.map((bytes, index) => [`${index}`, bytes])}/></span>
-    <span className="top-bytes">{fmtBytes(user.last_24h_bytes)}</span>
-  </a>)}</div>;
+  const accounts = new Map(incidents.status === 'success' ? incidents.data.users.map(row => [row.user, row]) : []);
+  return <div id="top-n-host">{usage.top_n.map(user => {
+    const account = accounts.get(user.uid);
+    return <div className="top-row" key={user.uid}>
+      <a className="top-uid" href={`/admin/user/${encodeURIComponent(user.uid)}`} title="查看用量画像">{user.uid} ↗</a>
+      <span className="top-spark"><Spark values={user.spark.map((bytes, index) => [`${index}`, bytes])}/></span>
+      <span className="top-bytes">{fmtBytes(user.last_24h_bytes)}</span>
+      {account ? <span className="top-actions"><ActionButton action="pause-user" user={account.user} revision={account.revision} done={done}/><ActionButton action="rotate-token" user={account.user} revision={account.revision} done={done}/></span> : null}
+    </div>;
+  })}</div>;
 }
 
 function HistoryTable({ history }: { history: UsageHistory }) {
@@ -102,23 +111,41 @@ function LazyHistory() {
   </details>;
 }
 
+function routeIsIncidents(): boolean {
+  return window.location.pathname.replace(/^\/__react/, '') === '/admin/incidents';
+}
+
 export function UsagePage({ publicHost }: { publicHost: string }) {
   const usage = useReadResource('/api/v1/admin/usage', { validate: parseUsage });
+  const incidents = useReadResource(INCIDENTS_ENDPOINT, { validate: parseIncidents });
+  const [actionMessage, setActionMessage] = useState('');
+  const pendingIncidentScroll = useRef(routeIsIncidents());
   const [polling, setPolling] = useState('自动更新 · 30 s');
   useEffect(() => {
     if (usage.status !== 'success') return;
     const timer = window.setInterval(() => {
       setPolling('正在更新…');
       usage.retry();
+      incidents.retry();
     }, 30_000);
     return () => window.clearInterval(timer);
-  }, [usage.status, usage.retry]);
-  const refresh = () => { setPolling('正在更新…'); usage.retry(); };
+  }, [usage.status, usage.retry, incidents.retry]);
+  const refresh = () => { setPolling('正在更新…'); usage.retry(); incidents.retry(); };
+  const actionDone = (message: string) => { setActionMessage(message); usage.retry(); incidents.retry(); };
+  useEffect(() => {
+    // /admin/incidents opens this page at the incident section.
+    if (!pendingIncidentScroll.current || usage.status !== 'success' || incidents.status === 'loading' || incidents.status === 'idle') return;
+    pendingIncidentScroll.current = false;
+    const section = document.getElementById('incidents');
+    section?.scrollIntoView({ block: 'start' });
+    section?.focus({ preventScroll: true });
+  }, [usage.status, incidents.status]);
 
   return <AdminShell active="usage" pageTitle="流量分析" subtitle={`${publicHost} · 实时数据`} topbarExtra={<><button className="btn ghost btn-sm" type="button" onClick={refresh} disabled={usage.status === 'loading'}>立即刷新</button><span className="badge poll-status" data-role="usage-poll-status">{polling}</span><span className="sr-only" role="status" aria-live="polite">{polling}</span></>}>
     <div className="admin-page usage-page">
       {usage.status === 'error' ? <ErrorState error={usage.error} retry={usage.retry}/> : null}
       {usage.status === 'loading' ? <LoadingState label="正在加载流量分析…"/> : null}
+      {actionMessage ? <div className="flash" role="status">{actionMessage}</div> : null}
       {usage.status === 'success' ? <>
       <div className="metric-grid">
         <div className="metric-card"><div className="metric-k">当小时</div><div className="metric-v big">{fmtBytes(usage.data.stats.current_hour_bytes)}</div><div className="metric-sub">{usage.data.stats.online} 在线</div></div>
@@ -127,7 +154,8 @@ export function UsagePage({ publicHost }: { publicHost: string }) {
         <div className="metric-card"><div className="metric-k">本周期</div><div className="metric-v">{fmtBytes(usage.data.stats.cycle_bytes)}</div><div className="metric-sub">第 {usage.data.stats.cycle_day} / {usage.data.stats.cycle_total_days} 天</div></div>
       </div>
       <section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">过去 7 天 · 每小时</h2><div className="chart-panel-desc">基于滚动小时桶聚合。</div></div></div><HourlyChart points={usage.data.hourly_totals}/></section>
-      <div className="grid grid-2 analytics-grid"><section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">7 天 × 24 小时 热图</h2><div className="chart-panel-desc">颜色越深代表流量越高。</div></div></div><Heatmap rows={usage.data.heatmap} ts={usage.data.ts}/></section><section className="admin-section"><div className="admin-section-header"><h2 className="admin-section-title">Top 5 · 近 24 小时</h2><div className="small">活跃用户</div></div><TopUsers usage={usage.data}/></section></div>
+      <div className="grid grid-2 analytics-grid"><section className="chart-panel"><div className="chart-panel-header"><div><h2 className="chart-panel-title">7 天 × 24 小时 热图</h2><div className="chart-panel-desc">颜色越深代表流量越高。</div></div></div><Heatmap rows={usage.data.heatmap} ts={usage.data.ts}/></section><section className="admin-section user-ranking"><div className="admin-section-header"><div><h2 className="admin-section-title">用户排行 · 近 24 小时</h2><div className="small">点名称看用量画像；可直接暂停或轮换 Token</div></div><a className="small" href="/admin">全部用户 →</a></div><UserRanking usage={usage.data} incidents={incidents} done={actionDone}/></section></div>
+      <IncidentsSection incidents={incidents}/>
       <LazyHistory/>
       </> : null}
     </div>

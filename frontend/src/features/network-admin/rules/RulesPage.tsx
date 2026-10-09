@@ -167,5 +167,5 @@ export function RulesPanel({ active = true }: { active?: boolean }) {
 }
 
 export function RulesPage({ publicHost }: { publicHost: string }) {
-  return <AdminShell active="config" pageTitle="模板与路由" subtitle={`${publicHost} · 订阅匹配顺序`} topbarExtra={<span className="badge poll-status">版本受保护</span>}><RulesPanel/></AdminShell>;
+  return <AdminShell active="config" pageTitle="路由与出口" subtitle={`${publicHost} · 订阅匹配顺序`} topbarExtra={<span className="badge poll-status">版本受保护</span>}><RulesPanel/></AdminShell>;
 }

@@ -119,15 +119,20 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     for href in (
         "/admin", "/admin/usage", "/admin/health",
         "/admin/settings", "/admin/config",
-        "/admin/landing-egresses", "/admin/plans", "/admin/services",
+        "/admin/plans", "/admin/services",
     ):
         assert href in navigation
+    # 家宽出口 is a tab of 路由与出口 and 事故处理 part of 流量分析; both keep their addresses.
+    template_rules = source("frontend/src/features/network-admin/template-rules/TemplateRulesPage.tsx")
+    assert "/admin/landing-egresses" not in navigation
+    assert "'/admin/landing-egresses':" in routes and "key: 'landing'" in template_rules
+    assert "route === '/admin/incidents') return <UsagePage" in routes
     portal = source("frontend/src/features/public/PortalShell.tsx")
     for route, view in (("/admin/chat", "chat"), ("/admin/video", "video")):
         assert route in routes, "AI bookmarks must remain reachable"
         assert f"href: '{route}'" in navigation, "AI tools live in the admin sidebar"
         assert f"view={view}" not in portal, "the public portal no longer links AI tools"
-    for route, tab in (("/admin/health", "health"), ("/admin/incidents", "incidents"), ("/admin/logs", "logs")):
+    for route, tab in (("/admin/health", "health"), ("/admin/logs", "logs")):
         assert f"'{route}':" in routes
         assert f"key: '{tab}'" in operations
     assert "tab=${item.key}" in operations

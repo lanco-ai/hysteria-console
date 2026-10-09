@@ -12,8 +12,9 @@ async function main() {
   const requests = [];
   page.on('request', request => requests.push(new URL(request.url()).pathname));
   await page.goto(`${baseUrl}/__react/admin/config`);
-  await expect(page).toHaveTitle('模板与路由');
-  await expect(page.getByRole('heading', { name: '模板与路由' })).toBeVisible();
+  await expect(page).toHaveTitle('路由与出口');
+  await expect(page.getByRole('heading', { name: '路由与出口' })).toBeVisible();
+  await expect(page.getByRole('tab')).toHaveText(['订阅模板', '路由规则', '家宽出口']);
   await expect(page.locator('#config-editor')).toBeVisible();
   await expect(page.getByText(/下次拉取订阅生效 · 保存校验结构与版本 · 用户凭证由服务端注入/)).toBeVisible();
   await expect(page.getByText('模板说明与影响范围', { exact: true })).toHaveCount(0);
@@ -37,6 +38,15 @@ async function main() {
   await page.getByRole('tab', { name: '路由规则', exact: true }).click();
   await page.getByRole('tab', { name: '订阅模板', exact: true }).click();
   await expect(page.locator('#config-editor')).toHaveValue('{"draft":true}');
+  // 家宽出口 joined as the third tab and keeps its own address.
+  await page.getByRole('tab', { name: '家宽出口', exact: true }).click();
+  await expect(page).toHaveURL(/\/__react\/admin\/landing-egresses$/);
+  await expect(page.getByRole('button', { name: '保存节点' })).toBeVisible();
+  assert(requests.includes('/api/v1/admin/landing-egresses'));
+  await page.getByRole('tab', { name: '订阅模板', exact: true }).click();
+  await expect(page.locator('#config-editor')).toHaveValue('{"draft":true}');
+  await page.goBack();
+  await expect(page.getByRole('tab', { name: '家宽出口', exact: true })).toHaveAttribute('aria-selected', 'true');
   await context.close();
   await browser.close();
   console.log('React config browser acceptance passed');

@@ -64,10 +64,10 @@ export function OverviewTable({ rows, disabled, mutate, edit }: { rows: Overview
       <div className="users-toolbar">
         <input id="user-filter" type="search" placeholder="搜索…" aria-label="搜索用户名" autoComplete="off" className="user-filter-input" value={query} onChange={event => setQuery(event.target.value)}/>
         <div className="filter-chips" role="group" aria-label="状态筛选">
-          {[['all', '全部'], ['online', '在线'], ['over', '超限']].map(([value, label]) => <button
+          {([['all', '全部', rows.length], ['online', '在线', rows.filter(row => row.online > 0).length], ['over', '超限', rows.filter(row => row.percent >= 90).length]] as const).map(([value, label, count]) => <button
             key={value} type="button" className={`chip${filter === value ? ' active' : ''}`}
-            data-filter={value} aria-pressed={filter === value} onClick={() => setFilter(value!)}
-          >{label}</button>)}
+            data-filter={value} aria-pressed={filter === value} onClick={() => setFilter(value)}
+          >{label}<span className="chip-count">{count}</span></button>)}
         </div>
         <span className="filter-count" id="filter-count" role="status" aria-live="polite">{`${visible.length} / ${rows.length} 个`}</span>
       </div>

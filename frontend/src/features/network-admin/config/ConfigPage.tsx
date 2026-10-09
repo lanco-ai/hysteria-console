@@ -30,5 +30,5 @@ export function ConfigPanel({ active = true }: { active?: boolean }) {
 }
 
 export function ConfigPage({ publicHost }: { publicHost: string }) {
-  return <AdminShell active="config" pageTitle="模板与路由" subtitle={publicHost}><ConfigPanel/></AdminShell>;
+  return <AdminShell active="config" pageTitle="路由与出口" subtitle={publicHost}><ConfigPanel/></AdminShell>;
 }

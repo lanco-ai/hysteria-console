@@ -1,12 +1,3 @@
-/* =====================================================
-   INCIDENTS PAGE
-   ===================================================== */
-body.has-shell .incidents-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
 body.has-shell .operations-page {
   max-width: 1180px;
   margin-inline: auto;
@@ -25,107 +16,102 @@ body.has-shell .operations-panel-actions {
   margin-bottom: 16px;
 }
 
-body.has-shell .incidents-page .health-top-kpis {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+/* =====================================================
+   INCIDENTS · 异常与告警 (part of 流量分析)
+   ===================================================== */
+body.has-shell .incidents-section {
+  scroll-margin-top: 80px;
 }
 
-body.has-shell .incident-page-header {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
+body.has-shell .incidents-section:focus {
+  outline: none;
 }
 
-/* Recommendation action panel */
-body.has-shell .incident-rec {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-body.has-shell .incident-rec-entry {
-  display: flex;
-  align-items: center;
+body.has-shell .incidents-summary {
+  display: grid;
+  grid-template-columns: minmax(150px, .7fr) minmax(0, 1.2fr) minmax(0, 1.6fr);
   gap: 12px;
 }
 
-body.has-shell .incident-rec-badge {
+body.has-shell .incident-stat {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+}
+
+body.has-shell .incident-stat-label {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: .04em;
+}
+
+body.has-shell .incident-stat > strong {
+  font-size: 22px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+body.has-shell .incident-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.has-shell .incident-chip {
   display: inline-flex;
   align-items: center;
-  height: 36px;
-  padding: 0 16px;
-  background: var(--bg-subtle);
+  gap: 6px;
+  padding: 4px 10px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-ui);
-  font-weight: 600;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
   color: var(--text-primary);
+  font-size: var(--text-small);
+  text-decoration: none;
 }
 
-body.has-shell .incident-rec-reason {
-  font-size: var(--text-body);
+body.has-shell .incident-chip .mono {
   color: var(--text-secondary);
-  line-height: 1.5;
 }
 
-/* Dual equal-height panels */
-body.has-shell .incident-dual-grid {
+body.has-shell .incident-alerts ul {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  align-items: start;
-}
-
-body.has-shell .incident-diagnostic-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-
-/* Radar summary (compact for incidents page) */
-body.has-shell .radar-summary {
-  display: flex;
-  flex-direction: column;
   gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-body.has-shell .radar-summary-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 160px minmax(0, 1fr);
-  column-gap: 16px;
-  align-items: center;
-  font-size: var(--text-ui);
-  color: var(--text-primary);
-  padding: 4px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-body.has-shell .radar-summary-row > span:first-child {
-  min-width: 0;
-}
-
-body.has-shell .radar-summary-row > .mono {
-  width: auto;
-  justify-self: stretch;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-body.has-shell .radar-summary-row > .badge {
-  min-width: 64px;
-  justify-self: end;
-  text-align: center;
-}
-
-body.has-shell .radar-summary-row:last-child {
-  border-bottom: none;
-}
-
-/* Incident table action buttons */
-body.has-shell .incident-actions {
+body.has-shell .incident-alerts li {
   display: flex;
-  gap: 6px;
-  align-items: center;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  font-size: var(--text-small);
+}
+
+body.has-shell .incident-alerts li > span {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 600;
+}
+
+body.has-shell .incident-alerts li code {
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 900px) {
+  body.has-shell .incidents-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Config Editor */
