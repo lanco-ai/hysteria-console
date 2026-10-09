@@ -104,28 +104,33 @@ export function ServicesPage({ publicHost }: { publicHost: string }) {
   const items = (catalog?.items || []).filter(item => (category === '全部' || groupOf(item) === category) && `${item.name} ${item.description} ${item.url} ${(item.model_ids || []).join(' ')}`.toLowerCase().includes(search.toLowerCase()));
 
   return <AdminShell active="services" pageTitle="服务中心" badge={publicHost}>
-    <div className="services-page">
-      <AIServiceSettings onSettled={() => setAiSettled(true)} />
-      <section className="services-section services-websites" id="websites" aria-labelledby="websites-title">
-        <header className="services-section-heading">
-          <div><h2 id="websites-title">网站收藏</h2><p>常用网站和 API 入口，保存在服务器，仅管理员可见。</p></div>
-          <div className="services-toolbar-actions"><div className="services-search"><ServiceGlyph name="search"/><input ref={searchRef} type="search" aria-label="搜索网站" placeholder="搜索名称、用途或地址…" value={search} onChange={event => setSearch(event.target.value)}/><kbd>⌘ K</kbd></div><button className="btn service-secondary" type="button" title="刷新收藏列表" aria-label="刷新收藏列表" disabled={busy} onClick={() => void reload()}><ServiceGlyph name="refresh"/></button><button className="btn btn-primary" type="button" disabled={!catalog || busy || catalog.items.length >= 100} onClick={() => { setDraft(blank()); setFeedback(''); }}>＋ 添加网站</button></div>
-        </header>
-        {error && !draft ? <div className="err" role="alert">{error} <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void reload()}>刷新列表</button></div> : null}
-        <p className="services-feedback" role="status">{feedback}</p>
-        {draft ? <ServiceEditor key={draft.id} draft={draft} existing={!!catalog?.items.some(item => item.id === draft.id)} busy={busy} error={error} onChange={editField} onSubmit={event => void save(event)} onClose={() => { setDraft(null); setError(''); }}/>: null}
-        <div className="services-filters" aria-label="网站分组">{categories.map(value => <button key={value} type="button" aria-pressed={category === value} onClick={() => setCategory(value)}>{value}<span>{(catalog?.items || []).filter(item => value === '全部' || groupOf(item) === value).length}</span></button>)}</div>
-        <div className="services-grid">{items.map(item => <article className="service-card" key={item.id}>
-          <div className="service-card-heading"><span className="service-monogram" aria-hidden="true">{item.name.slice(0, 1).toUpperCase()}</span><div className="service-identity"><div className="service-title"><h3>{item.name}</h3><span className="service-category">{groupOf(item)}</span></div><span className="service-address" title={item.url}>{originOf(item.url)}</span></div><div className="service-card-actions" role="group" aria-label="服务操作"><a className="btn service-secondary service-open" title="打开网站" aria-label="打开网站" href={item.url} target="_blank" rel="noopener noreferrer"><Icon name="open"/></a><button className="btn service-secondary" type="button" aria-label="编辑" title="设置" disabled={busy} onClick={() => { setDraft({ ...item }); setDeleting(''); }}><Icon name="config"/></button><button className="btn service-secondary service-danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => setDeleting(item.id)}><ServiceGlyph name="delete"/></button></div></div>
-          <p className="service-description">{item.description || '暂无用途说明'}</p>
-          {item.api_base ? <div className="service-api"><span>API Base URL</span><div className="service-api-row"><code>{item.api_base}</code><button className="btn service-secondary" type="button" aria-label="复制 API 地址" onClick={() => void copy(item.api_base, item.id)}><Icon name="copy"/>{copiedId === item.id ? '已复制' : '复制'}</button></div></div> : null}
-          {item.api_base ? <ServiceModels item={item} onDetect={() => { setDraft({ ...item }); setDeleting(''); }}/> : null}
+    <div className="services-page services-layout">
+      <div className="services-columns">
+        <AIServiceSettings onSettled={() => setAiSettled(true)} />
+        <section className="services-section services-websites" id="websites" aria-labelledby="websites-title">
+          <header className="services-section-heading">
+            <div><h2 id="websites-title">网站收藏</h2><p>常用网站和 API 入口，保存在服务器，仅管理员可见。</p></div>
+            <div className="services-toolbar-actions"><button className="btn service-secondary" type="button" title="刷新收藏列表" aria-label="刷新收藏列表" disabled={busy} onClick={() => void reload()}><ServiceGlyph name="refresh"/></button><button className="btn btn-primary" type="button" disabled={!catalog || busy || catalog.items.length >= 100} onClick={() => { setDraft(blank()); setFeedback(''); }}>＋ 添加网站</button></div>
+          </header>
+          {error && !draft ? <div className="err" role="alert">{error} <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void reload()}>刷新列表</button></div> : null}
+          <p className="services-feedback" role="status">{feedback}</p>
+          {draft ? <ServiceEditor key={draft.id} draft={draft} existing={!!catalog?.items.some(item => item.id === draft.id)} busy={busy} error={error} onChange={editField} onSubmit={event => void save(event)} onClose={() => { setDraft(null); setError(''); }}/>: null}
+          <div className="services-toolbar">
+            <div className="services-filters" aria-label="网站分组">{categories.map(value => <button key={value} type="button" aria-pressed={category === value} onClick={() => setCategory(value)}>{value}<span>{(catalog?.items || []).filter(item => value === '全部' || groupOf(item) === value).length}</span></button>)}</div>
+            <div className="services-search"><ServiceGlyph name="search"/><input ref={searchRef} type="search" aria-label="搜索网站" placeholder="搜索名称、用途或地址…" value={search} onChange={event => setSearch(event.target.value)}/><kbd>⌘ K</kbd></div>
+          </div>
+          <div className="services-grid">{items.map(item => <article className="service-card" key={item.id}>
+            <div className="service-card-heading"><span className="service-monogram" aria-hidden="true">{item.name.slice(0, 1).toUpperCase()}</span><div className="service-identity"><div className="service-title"><h3>{item.name}</h3><span className="service-category">{groupOf(item)}</span></div><span className="service-address" title={item.url}>{originOf(item.url)}</span></div><div className="service-card-actions" role="group" aria-label="服务操作"><a className="btn service-secondary service-open" title="打开网站" aria-label="打开网站" href={item.url} target="_blank" rel="noopener noreferrer"><Icon name="open"/></a><button className="btn service-secondary" type="button" aria-label="编辑" title="设置" disabled={busy} onClick={() => { setDraft({ ...item }); setDeleting(''); }}><Icon name="config"/></button><button className="btn service-secondary service-danger" type="button" aria-label="删除" title="删除" disabled={busy} onClick={() => setDeleting(item.id)}><ServiceGlyph name="delete"/></button></div></div>
+            <p className="service-description">{item.description || '暂无用途说明'}</p>
+            {item.api_base ? <div className="service-api"><span>API Base URL</span><div className="service-api-row"><code>{item.api_base}</code><button className="btn service-secondary" type="button" aria-label="复制 API 地址" onClick={() => void copy(item.api_base, item.id)}><Icon name="copy"/>{copiedId === item.id ? '已复制' : '复制'}</button></div></div> : null}
+            {item.api_base ? <ServiceModels item={item} onDetect={() => { setDraft({ ...item }); setDeleting(''); }}/> : null}
 
-          {deleting === item.id ? <div className="service-delete" role="group" aria-label={`删除 ${item.name}`}><span>从收藏中移除？</span><button className="btn btn-sm" type="button" disabled={busy} onClick={() => void remove(item.id)}>确认删除</button><button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => setDeleting('')}>取消</button></div> : null}
-        </article>)}</div>
-        {!catalog && !error ? <p>正在读取收藏…</p> : catalog && !items.length ? <div className="services-empty">{catalog.items.length ? '没有匹配的网站，试试其他搜索词或分组。' : '还没有收藏，添加第一个常用网站吧。'}</div> : null}
-        <div className="services-footnote"><p>内网网址需要你的设备处于对应网络；各服务仍使用自己的登录方式。</p><span>共 {catalog?.items.length ?? 0} 个服务</span></div>
-      </section>
+            {deleting === item.id ? <div className="service-delete" role="group" aria-label={`删除 ${item.name}`}><span>从收藏中移除？</span><button className="btn btn-sm" type="button" disabled={busy} onClick={() => void remove(item.id)}>确认删除</button><button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => setDeleting('')}>取消</button></div> : null}
+          </article>)}</div>
+          {!catalog && !error ? <p>正在读取收藏…</p> : catalog && !items.length ? <div className="services-empty">{catalog.items.length ? '没有匹配的网站，试试其他搜索词或分组。' : '还没有收藏，添加第一个常用网站吧。'}</div> : null}
+          <div className="services-footnote"><p>内网网址需要你的设备处于对应网络；各服务仍使用自己的登录方式。</p><span>共 {catalog?.items.length ?? 0} 个服务</span></div>
+        </section>
+      </div>
     </div>
   </AdminShell>;
 }

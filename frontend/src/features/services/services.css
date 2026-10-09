@@ -1,4 +1,7 @@
-.services-page { display: grid; gap: 30px; max-width: 1480px; margin: 0 auto; padding: 4px 0 28px; color: #15232b; }
+.services-page { max-width: 1480px; margin: 0 auto; padding: 4px 0 28px; color: #15232b; }
+/* API 接入 and 网站收藏 sit side by side once the page itself is wide enough, whatever the sidebar state. */
+.services-layout { container: services-layout / inline-size; }
+.services-columns { display: grid; align-items: start; gap: 30px; }
 .services-page svg { width: 18px; height: 18px; flex-shrink: 0; }
 .services-page .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; min-height: 38px; font-size: 13px; }
 body.has-shell .services-page .btn-primary { background: #10563f; border-color: #10563f; color: #fff; }
@@ -17,7 +20,10 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .services-search:focus-within { border-color: #689980; box-shadow: 0 0 0 2px #e7f0e9; }
 .services-search input { width: clamp(135px, 15vw, 240px); min-width: 0; padding: 0; background: transparent; border: 0; outline: 0; box-shadow: none; font: inherit; font-size: 13px; }
 .services-search kbd { font: inherit; font-size: 11px; white-space: nowrap; background: #f4f5f6; padding: 2px 5px; border-radius: 4px; }
-.services-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.services-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 14px; }
+.services-toolbar .services-search { flex: 1 1 220px; max-width: 320px; }
+.services-toolbar .services-search input { flex: 1; width: 0; min-width: 0; }
+.services-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; }
 .service-card { min-width: 0; display: flex; flex-direction: column; padding: 22px; border: 1px solid #e2e7eb; background: #fff; border-radius: 15px; box-shadow: 0 4px 18px rgb(37 53 40 / 3%); }
 .service-card-heading { display: flex; gap: 14px; align-items: center; }
 .service-monogram { display: grid; place-items: center; width: 48px; height: 48px; flex: 0 0 auto; border-radius: 13px; background: #edf3eb; color: #345e4e; font-weight: 700; font-size: 24px; }
@@ -55,14 +61,9 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .services-editor-actions small { margin-right: auto; }
 .service-delete { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; border-top: 1px solid #e8e5df; padding-top: 12px; font-size: 12px; color: #80574b; }
 .services-empty { border: 1px dashed #d1dacb; padding: 40px 20px; border-radius: 18px; text-align: center; color: #758270; }
-@media (max-width: 1150px) {
-  .services-grid { grid-template-columns: 1fr; }
-}
 @media (max-width: 620px) {
   .services-editor-heading { align-items: stretch; flex-direction: column; gap: 12px; }
-  .services-toolbar-actions { flex-wrap: wrap; }
-  .services-search { flex: 1 1 100%; }
-  .services-search input { flex: 1; width: auto; }
+  .services-toolbar .services-search { order: -1; flex: 1 1 100%; max-width: none; }
   .service-card, .services-editor { padding: 16px; }
   .service-card-heading { gap: 10px; }
   .service-monogram { width: 40px; height: 40px; font-size: 20px; }
@@ -148,15 +149,20 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .services-section-heading h2 { margin: 0 0 4px; color: #15232b; font-size: 20px; }
 .services-section-heading p { max-width: 680px; margin: 0; color: #79847d; font-size: 13px; line-height: 1.6; }
 .services-websites { padding-top: 28px; border-top: 1px solid #e3e8e4; }
+@container services-layout (min-width: 1180px) {
+  .services-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+  .services-websites { padding-top: 0; border-top: 0; }
+}
 @media (max-width: 620px) {
   .services-section-heading { align-items: stretch; flex-direction: column; gap: 12px; }
   .services-section-heading > .btn { align-self: flex-start; }
 }
-.ai-service-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 14px; }
+.ai-service-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 14px; }
 .ai-service-assistants { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; column-gap: 26px; }
 .ai-service-assistants > header, .ai-service-assistants > .ai-service-card-note { grid-column: 1 / -1; }
 .ai-service-card { display: grid; align-content: start; gap: 14px; min-width: 0; padding: 20px; border: 1px solid #e1e7e2; border-radius: 14px; background: #fff; box-shadow: 0 4px 18px rgb(37 53 40 / 3%); scroll-margin-top: 16px; }
 .ai-service-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.ai-service-card-tools { display: flex; flex: 0 0 auto; align-items: center; gap: 4px; margin: -4px -6px 0 0; }
 .ai-service-card > header > div > span { color: #849087; font-size: 11px; }
 .ai-service-card h3 { margin: 4px 0 0; font-size: 16px; }
 .ai-service-secret-state { flex: 0 0 auto; border-radius: 20px; padding: 4px 9px; background: #f1f3f1; color: #778179; font-size: 11px; }
@@ -166,18 +172,22 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .ai-service-card-note { margin: -4px 0 0; color: #818d84; font-size: 11px; line-height: 1.6; }
 .services-page .ai-service-show-models { padding: 8px 10px; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #2f6148; }
 .services-page .ai-service-show-models:hover:not(:disabled) { background: #eef5f0; }
-.ai-service-field { display: grid; gap: 6px; min-width: 0; color: #65736a; font-size: 12px; }
-.ai-service-field input { box-sizing: border-box; width: 100%; min-width: 0; min-height: 39px; padding: 8px 10px; border: 1px solid #dce4de; border-radius: 8px; color: #26372d; background: #fff; font: inherit; font-size: 13px; }
-.ai-service-field input:focus-visible, .ai-service-binding select:focus-visible, .ai-service-catalog > summary:focus-visible { outline: 2px solid #34785a; outline-offset: 2px; }
-.ai-service-field input:disabled { background: #f5f7f5; color: #69766e; }
-.ai-service-clear-key { display: flex; gap: 8px; align-items: center; color: #7c635d; font-size: 12px; }
-.ai-service-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.ai-service-actions .btn { min-height: 34px; padding: 6px 10px; font-size: 12px; }
+.ai-service-binding select:focus-visible, .ai-service-catalog > summary:focus-visible { outline: 2px solid #34785a; outline-offset: 2px; }
+.services-page .ai-service-card-tools .btn { width: 32px; height: 32px; min-height: 32px; padding: 0; border: 1px solid transparent; border-radius: 9px; background: transparent; color: #45515e; }
+.services-page .ai-service-card-tools .btn:hover:not(:disabled) { background: #edf4ef; border-color: #d3e4d9; color: #176448; }
+.services-page .ai-service-card-tools svg { width: 16px; height: 16px; }
+.ai-service-editor .services-editor .ai-service-clear-key { display: flex; align-items: center; gap: 8px; color: #7c635d; font-size: 12px; }
+.ai-service-editor .services-editor .ai-service-clear-key input { width: auto; margin: 0; }
+.ai-service-editor .services-editor input:disabled { background: #f5f7f5; color: #69766e; }
 .ai-service-status { margin: -3px 0 0; color: #286949; font-size: 12px; line-height: 1.5; }
 .ai-service-error { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff2f1; color: #a43937; font-size: 13px; }
 .ai-service-loading { color: #768379; font-size: 13px; }
-@media (max-width: 700px) {
-  .ai-service-grid, .ai-service-assistants { grid-template-columns: 1fr; }
+.ai-service-settings { container: ai-services / inline-size; }
+@container ai-services (max-width: 700px) {
+  .ai-service-assistants { grid-template-columns: 1fr; }
+}
+@container ai-services (max-width: 560px) {
+  .ai-service-grid { grid-template-columns: 1fr; }
   .ai-service-card { padding: 15px; }
 }
 
@@ -185,14 +195,12 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .ai-service-card-summary strong { color: #2e4937; font-size: 14px; }
 .ai-service-card-summary span { color: #818d84; font-size: 11px; line-height: 1.5; }
 .ai-service-card-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.ai-service-config, .ai-service-assistant-tests { padding-top: 10px; border-top: 1px solid #edf0ed; }
-.ai-service-config summary, .ai-service-assistant-tests summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; color: #345b43; font-size: 12px; font-weight: 600; list-style: none; }
-.ai-service-config summary::-webkit-details-marker, .ai-service-assistant-tests summary::-webkit-details-marker { display: none; }
-.ai-service-config summary::after, .ai-service-assistant-tests summary::after { content: '⌄'; font-size: 15px; line-height: 1; transition: transform 150ms; }
-.ai-service-config[open] summary::after, .ai-service-assistant-tests[open] summary::after { transform: rotate(180deg); }
-.ai-service-unsaved { color: #a66a33; font-size: 11px; font-weight: 400; }
-.ai-service-config-fields { display: grid; gap: 12px; padding-top: 16px; }
-.ai-service-config summary:focus-visible, .ai-service-assistant-tests summary:focus-visible, .ai-service-catalog input:focus-visible, .ai-service-catalog select:focus-visible { outline: 2px solid #34785a; outline-offset: 2px; }
+.ai-service-assistant-tests { padding-top: 10px; border-top: 1px solid #edf0ed; }
+.ai-service-assistant-tests summary { display: flex; align-items: center; gap: 8px; width: fit-content; cursor: pointer; color: #345b43; font-size: 12px; font-weight: 600; list-style: none; }
+.ai-service-assistant-tests summary::-webkit-details-marker { display: none; }
+.ai-service-assistant-tests summary::after { content: '⌄'; font-size: 15px; line-height: 1; transition: transform 150ms; }
+.ai-service-assistant-tests[open] summary::after { transform: rotate(180deg); }
+.ai-service-assistant-tests summary:focus-visible, .ai-service-catalog input:focus-visible, .ai-service-catalog select:focus-visible { outline: 2px solid #34785a; outline-offset: 2px; }
 .ai-service-status { margin: 0; overflow-wrap: anywhere; }
 .ai-service-catalog { min-width: 0; border: 1px solid #e1e7e2; border-radius: 14px; background: #fff; box-shadow: 0 4px 18px rgb(37 53 40 / 3%); scroll-margin-top: 16px; }
 .ai-service-catalog > summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 16px; padding: 15px 20px; cursor: pointer; list-style: none; }
@@ -233,12 +241,12 @@ body.has-shell .services-page .btn-primary:hover:not(:disabled) { background: #0
 .ai-service-assistant-test-content p, .ai-service-assistant-test-content small, .ai-service-assistant-test-content [role="status"] { flex: 1 1 100%; margin: 0; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .ai-service-assistant-test-content [role="status"] { color: #286949; }
 .ai-service-assistant-test-content p, .ai-service-assistant-test-content small { color: #87918a; }
-@media (max-width: 700px) {
+@container ai-services (max-width: 560px) {
   .ai-service-catalog > summary { padding: 14px 15px; }
   .ai-service-catalog-body { padding: 0 15px 15px; }
   .ai-service-catalog-list li { align-items: flex-start; flex-direction: column; gap: 7px; }
   .ai-service-catalog-meta { justify-content: flex-start; }
 }
-@media (max-width: 540px) {
+@container ai-services (max-width: 480px) {
   .ai-service-catalog-controls label { min-width: 100%; }
 }

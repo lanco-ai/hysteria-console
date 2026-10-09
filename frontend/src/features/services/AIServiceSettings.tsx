@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Icon } from '../../shared/icons';
+import { AIServiceEditor, type AIServiceDraft } from './AIServiceEditor';
 
 type AIModel = { id: string; name: string; context_window?: number; input_token_limit?: number };
 type AIProfile = {
@@ -17,7 +19,7 @@ type AIProfile = {
 type AssistantFeature = 'plan_assistant' | 'video_assistant';
 type Feature = 'chat' | AssistantFeature | 'image_generation' | 'video_generation';
 type Catalog = { revision: string; profiles: AIProfile[]; bindings: Partial<Record<Feature, string>>; model_bindings?: Partial<Record<AssistantFeature, string>> };
-type Draft = { name: string; base_url: string; api_key: string; temperature: string; clear_api_key: boolean };
+type Draft = AIServiceDraft;
 type AssistantTest = { level: 'B' | 'C'; service_id: string; model_id: string; revision: string; tested_at: string; structured_output?: string };
 type AssistantTests = Partial<Record<'B' | 'C', AssistantTest>>;
 
@@ -37,6 +39,7 @@ function errorMessage(code: unknown): string {
   if (code === 'login_required' || code === 'admin_required') return '管理员登录已失效，请重新登录。';
   if (code === 'revision_conflict') return '设置已在其他页面更改，请刷新后重试。';
   if (code === 'unknown_service') return '该服务已移除，请刷新配置。';
+  if (code === 'invalid_service') return '配置无效：请检查接口名称、API 地址和 Temperature；媒体接口需使用 HTTPS。';
   if (code === 'service_not_configured') return '请先保存服务地址和 API Key。';
   if (code === 'authentication_failed') return 'API Key 无效或已过期。';
   if (code === 'permission_denied') return '该账号没有此服务的访问权限。';
@@ -91,7 +94,8 @@ function saveButtonBody(revision: string, draft: Draft, profile: AIProfile) {
 
 export function AIServiceSettings({ onSettled }: { onSettled?: () => void }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, Draft>>({});
+  const [editing, setEditing] = useState<{ profileId: string; draft: Draft } | null>(null);
+  const [editError, setEditError] = useState('');
   const [modelDrafts, setModelDrafts] = useState<Partial<Record<AssistantFeature, string>>>({});
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -126,33 +130,40 @@ export function AIServiceSettings({ onSettled }: { onSettled?: () => void }) {
     return () => controller.abort();
   }, []);
 
-  const updateDraft = (profile: AIProfile, patch: Partial<Draft>) => {
-    setDrafts(current => ({ ...current, [profile.id]: { ...(current[profile.id] || draftFrom(profile)), ...patch } }));
-    setProfileTests(current => { const next = { ...current }; delete next[profile.id]; return next; });
+  const editingProfile = editing ? catalog?.profiles.find(profile => profile.id === editing.profileId) : undefined;
+
+  const openEditor = (profile: AIProfile) => {
+    setEditing({ profileId: profile.id, draft: draftFrom(profile) });
+    setEditError('');
     setProfileStatus(current => ({ ...current, [profile.id]: '' }));
-    setAssistantTests(current => {
-      const next = { ...current };
-      for (const feature of assistantFeatures) {
-        if (Object.values(next[feature] || {}).some(result => result?.service_id === profile.id)) delete next[feature];
-      }
-      return next;
-    });
   };
 
-  const saveProfile = async (profile: AIProfile) => {
-    if (!catalog) return;
-    const draft = drafts[profile.id] || draftFrom(profile);
-    setBusy(`save:${profile.id}`); setError('');
+  const closeEditor = () => { setEditing(null); setEditError(''); };
+
+  const saveProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!catalog || !editing || !editingProfile) return;
+    const profile = editingProfile;
+    if (!isDirty(editing.draft, profile)) { closeEditor(); return; }
+    setBusy(`save:${profile.id}`); setEditError('');
     try {
       const next = await requestJson<Catalog>(`${endpoint}/${encodeURIComponent(profile.id)}`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saveButtonBody(catalog.revision, draft, profile)),
+        body: JSON.stringify(saveButtonBody(catalog.revision, editing.draft, profile)),
       });
       setCatalog(next);
-      setDrafts(current => { const result = { ...current }; delete result[profile.id]; return result; });
+      closeEditor();
+      setProfileTests(current => { const result = { ...current }; delete result[profile.id]; return result; });
+      setAssistantTests(current => {
+        const result = { ...current };
+        for (const feature of assistantFeatures) {
+          if (Object.values(result[feature] || {}).some(test => test?.service_id === profile.id)) delete result[feature];
+        }
+        return result;
+      });
       setProfileStatus(current => ({ ...current, [profile.id]: '设置已保存' }));
     } catch (value) {
-      setProfileStatus(current => ({ ...current, [profile.id]: value instanceof Error ? value.message : '保存失败。' }));
+      setEditError(value instanceof Error ? value.message : '保存失败。');
     } finally { setBusy(''); }
   };
 
@@ -229,7 +240,7 @@ export function AIServiceSettings({ onSettled }: { onSettled?: () => void }) {
 
   return <section className="services-section ai-service-settings" id="ai-services" aria-labelledby="ai-services-title">
     <header className="services-section-heading">
-      <div><h2 id="ai-services-title">API 接入</h2><p>AI 对话、助手和图像 / 视频生成共用这些接口。密钥只保存在服务器，页面只显示配置状态和遮罩值。</p></div>
+      <div><h2 id="ai-services-title">API 接入</h2><p>AI 对话、助手和图像 / 视频生成共用的接口；密钥只保存在服务器。</p></div>
       <button type="button" className="btn service-secondary" onClick={() => void loadCatalog()} disabled={busy !== ''}>刷新配置</button>
     </header>
     {error ? <p className="ai-service-error" role="alert">{error}</p> : null}
@@ -237,30 +248,18 @@ export function AIServiceSettings({ onSettled }: { onSettled?: () => void }) {
     {catalog ? <>
       <div className="ai-service-grid">
         {catalog.profiles.map(profile => {
-          const draft = drafts[profile.id] || draftFrom(profile);
-          const busyProfile = busy === `save:${profile.id}` || busy === `test:${profile.id}` || busy.startsWith('assistant:');
-          const hasUnsavedChanges = isDirty(draft, profile);
           const verifiedTest = profileTests[profile.id];
           const uses = features.filter(feature => catalog.bindings[feature] === profile.id);
           return <article className="ai-service-card" data-ai-service={profile.id} key={profile.id}>
-            <header><div><span>{protocolLabels[profile.protocol]}</span><h3>{profile.name}</h3></div><span className={`ai-service-secret-state${profile.api_key_configured ? ' is-ready' : ''}`}>{profile.api_key_configured ? '已配置' : '未配置'}</span></header>
+            <header><div><span>{protocolLabels[profile.protocol]}</span><h3>{profile.name}</h3></div><div className="ai-service-card-tools"><span className={`ai-service-secret-state${profile.api_key_configured ? ' is-ready' : ''}`}>{profile.api_key_configured ? '已配置' : '未配置'}</span><button type="button" className="btn ai-service-edit" aria-label="编辑配置" title="编辑配置" disabled={busy !== ''} onClick={() => openEditor(profile)}><Icon name="config"/></button></div></header>
             <div className="ai-service-card-summary"><strong>{profile.models.length} 个模型</strong><span>{profile.last_verified_at ? `最近验证 ${timeLabel(profile.last_verified_at)}` : '尚未验证连接'}</span></div>
             {uses.length ? <p className="ai-service-uses"><span>用于</span>{uses.map(feature => <span className="ai-service-use" key={feature}>{featureLabels[feature]}</span>)}</p> : null}
             <div className="ai-service-card-actions">
-              <button type="button" className="btn service-secondary" disabled={busy !== '' || !profile.api_key_configured || hasUnsavedChanges} onClick={() => void refreshModels(profile)}>{busy === `test:${profile.id}` ? '连接中…' : '测试连接'}</button>
+              <button type="button" className="btn service-secondary" disabled={busy !== '' || !profile.api_key_configured} onClick={() => void refreshModels(profile)}>{busy === `test:${profile.id}` ? '连接中…' : '测试连接'}</button>
               <button type="button" className="btn btn-ghost ai-service-show-models" disabled={!profile.models.length} onClick={() => showModels(profile)}>查看模型</button>
             </div>
-            <details className="ai-service-config"><summary>编辑配置{hasUnsavedChanges ? <span className="ai-service-unsaved">未保存</span> : null}</summary><div className="ai-service-config-fields">
-              <label className="ai-service-field">接口名称<input value={draft.name} maxLength={80} disabled={busyProfile} onChange={event => updateDraft(profile, { name: event.target.value })} /></label>
-              <label className="ai-service-field">API Base URL<input aria-label="API Base URL" type="url" value={draft.base_url} disabled={busyProfile} onChange={event => updateDraft(profile, { base_url: event.target.value })} placeholder="https://example.com/v1" /></label>
-              <label className="ai-service-field">API Key<input aria-label="API Key" type="password" value={draft.api_key} disabled={busyProfile || draft.clear_api_key} autoComplete="new-password" onChange={event => updateDraft(profile, { api_key: event.target.value })} placeholder={profile.api_key_configured ? profile.api_key_masked : '仅保存到服务器'} /></label>
-              {profile.api_key_configured ? <label className="ai-service-clear-key"><input type="checkbox" checked={draft.clear_api_key} disabled={busyProfile} onChange={event => updateDraft(profile, { clear_api_key: event.target.checked, api_key: '' })} /> 清除已保存的 Key</label> : null}
-              {profile.protocol === 'openai_compatible' ? <label className="ai-service-field">Temperature<input type="number" min="0" max="2" step="0.1" value={draft.temperature} disabled={busyProfile} onChange={event => updateDraft(profile, { temperature: event.target.value })} /></label> : null}
-              <div className="ai-service-actions"><button type="button" className="btn btn-primary" disabled={busy !== ''} onClick={() => void saveProfile(profile)}>{busy === `save:${profile.id}` ? '保存中…' : '保存设置'}</button></div>
-            </div></details>
-            {hasUnsavedChanges ? <p className="ai-service-status">有未保存修改；请先保存，再测试连接或刷新模型。</p> : null}
             {profileStatus[profile.id] ? <p className="ai-service-status" role="status">{profileStatus[profile.id]}</p> : null}
-            {verifiedTest && verifiedTest.revision === catalog.revision && !hasUnsavedChanges ? <p className="ai-service-status" role="status">A 模型列表读取通过 · {verifiedTest.models_count} 个 · 配置版本 {verifiedTest.revision} · {timeLabel(verifiedTest.tested_at)}</p> : null}
+            {verifiedTest && verifiedTest.revision === catalog.revision ? <p className="ai-service-status" role="status">A 模型列表读取通过 · {verifiedTest.models_count} 个 · 配置版本 {verifiedTest.revision} · {timeLabel(verifiedTest.tested_at)}</p> : null}
           </article>;
         })}
         <section className="ai-service-card ai-service-assistants" id="assistant-models" aria-labelledby="assistant-models-title">
@@ -271,15 +270,13 @@ export function AIServiceSettings({ onSettled }: { onSettled?: () => void }) {
             const savedModel = catalog.model_bindings?.[feature] ?? '';
             const modelId = modelDrafts[feature] ?? savedModel;
             const modelChanged = modelId !== savedModel;
-            const profileDirty = Boolean(profile && isDirty(drafts[profile.id] || draftFrom(profile), profile));
             const activeProfileTest = profile ? profileTests[profile.id] : undefined;
             const assistantTestMatches = (level: 'B' | 'C') => {
               const result = assistantTests[feature]?.[level];
               return Boolean(result && profile
                 && result.service_id === profile.id
                 && result.model_id === modelId
-                && result.revision === catalog.revision
-                && !profileDirty);
+                && result.revision === catalog.revision);
             };
             const assistantTestB = assistantTests[feature]?.B;
             const assistantTestC = assistantTests[feature]?.C;
@@ -294,10 +291,10 @@ export function AIServiceSettings({ onSettled }: { onSettled?: () => void }) {
                 <button type="button" className="btn service-secondary" disabled={busy !== '' || !profile || !modelChanged} onClick={() => void saveModel(feature)}>{busy === `binding:${feature}` ? '保存中…' : '保存模型'}</button>
               </div>
               {profile ? <details className="ai-service-assistant-tests"><summary>能力测试</summary><div className="ai-service-assistant-test-content"><p>B/C 会向上游发送真实生成请求，但不会保存计划或视频项目。</p>
-                <button type="button" className="btn service-secondary" disabled={busy !== '' || profileDirty || !modelId} onClick={() => void testAssistant(feature, 'B', profile.id, modelId)}>{busy === `assistant:${feature}:B` ? '生成测试中…' : 'B 测试所选模型生成'}</button>
-                <button type="button" className="btn service-secondary" disabled={busy !== '' || profileDirty || !modelId} onClick={() => void testAssistant(feature, 'C', profile.id, modelId)}>{busy === `assistant:${feature}:C` ? '结构校验中…' : 'C 测试助手结构'}</button>
+                <button type="button" className="btn service-secondary" disabled={busy !== '' || !modelId} onClick={() => void testAssistant(feature, 'B', profile.id, modelId)}>{busy === `assistant:${feature}:B` ? '生成测试中…' : 'B 测试所选模型生成'}</button>
+                <button type="button" className="btn service-secondary" disabled={busy !== '' || !modelId} onClick={() => void testAssistant(feature, 'C', profile.id, modelId)}>{busy === `assistant:${feature}:C` ? '结构校验中…' : 'C 测试助手结构'}</button>
                 <small>A：保存接口后测试连接并刷新模型列表。请选择模型后再运行 B/C。</small>
-                {activeProfileTest && activeProfileTest.revision === catalog.revision && !profileDirty ? <span role="status">A 模型列表读取通过 · {activeProfileTest.models_count} 个 · 配置版本 {activeProfileTest.revision} · {timeLabel(activeProfileTest.tested_at)}</span> : null}
+                {activeProfileTest && activeProfileTest.revision === catalog.revision ? <span role="status">A 模型列表读取通过 · {activeProfileTest.models_count} 个 · 配置版本 {activeProfileTest.revision} · {timeLabel(activeProfileTest.tested_at)}</span> : null}
                 {assistantTestMatches('B') && assistantTestB ? <span role="status">B 文本生成通过 · {assistantTestB.service_id} / {assistantTestB.model_id} · 配置版本 {assistantTestB.revision} · {timeLabel(assistantTestB.tested_at)}</span> : null}
                 {assistantTestMatches('C') && assistantTestC ? <span role="status">C 结构化校验通过 · {assistantTestC.service_id} / {assistantTestC.model_id} · 配置版本 {assistantTestC.revision} · {timeLabel(assistantTestC.tested_at)}{assistantTestC.structured_output === 'json_text_fallback' ? ' · JSON 文本降级后通过校验' : assistantTestC.structured_output === 'json_schema' ? ' · JSON Schema 支持' : ''}</span> : null}
               </div></details> : null}
@@ -314,5 +311,10 @@ export function AIServiceSettings({ onSettled }: { onSettled?: () => void }) {
         </div>
       </details>
     </> : null}
+    {editing && editingProfile ? <AIServiceEditor name={editingProfile.name} protocolLabel={protocolLabels[editingProfile.protocol]} draft={editing.draft}
+      keyConfigured={editingProfile.api_key_configured} keyMasked={editingProfile.api_key_masked} withTemperature={editingProfile.protocol === 'openai_compatible'}
+      busy={busy === `save:${editingProfile.id}`} error={editError}
+      onChange={patch => setEditing(current => current ? { ...current, draft: { ...current.draft, ...patch } } : current)}
+      onSubmit={event => void saveProfile(event)} onClose={closeEditor}/> : null}
   </section>;
 }
