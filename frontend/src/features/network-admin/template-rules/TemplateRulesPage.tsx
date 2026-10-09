@@ -44,7 +44,7 @@ export function TemplateRulesPage({ publicHost }: { publicHost: string }) {
         {tabs.map(item => <button key={item.key} type="button" role="tab" aria-selected={tab === item.key} className={`template-rules-tab${tab === item.key ? ' is-active' : ''}`} onClick={() => selectTab(item.key)}>{item.label}</button>)}
       </div>
       <div role="tabpanel" aria-label="订阅模板" hidden={tab !== 'template'}>
-        <ConfigPanel active={tab === 'template'}/>
+        <ConfigPanel active={tab === 'template'} openRules={() => selectTab('rules')}/>
       </div>
       <div role="tabpanel" aria-label="路由规则" hidden={tab !== 'rules'}>
         <RulesPanel active={tab === 'rules'}/>

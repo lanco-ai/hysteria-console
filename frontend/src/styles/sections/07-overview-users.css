@@ -4,6 +4,7 @@
 
 /* One slim bar: the billing cycle, its settings and cycle-wide actions. */
 .overview-cycle {
+  container-type: inline-size;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -53,6 +54,50 @@ body.has-shell .overview-cycle .cycle-config-form {
   padding: 0;
   border: 0;
   background: transparent;
+}
+
+/* Every control in the bar shares the inputs' 36px height and one outline style. */
+body.has-shell .overview-cycle .btn {
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+
+body.has-shell .overview-cycle .btn:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+body.has-shell .overview-cycle .danger-btn {
+  border-color: rgba(182, 65, 56, 0.25);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+body.has-shell .overview-cycle .danger-btn:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: #fff;
+}
+
+@container (min-width: 960px) {
+  .overview-cycle-actions {
+    padding-left: 20px;
+    border-left: 1px solid var(--hairline);
+  }
+}
+
+/* The create form's select matches its 36px text inputs. */
+body.has-shell .form-field .select {
+  height: 36px;
+  padding: 0 32px 0 10px;
+  background-position: right 10px center;
+  font-size: var(--text-ui);
 }
 
 .chip-count {

@@ -37,14 +37,11 @@ def test_calibrator_policy_fields_use_grouped_label_control_layout():
     assert "gap: 6px;" in styles
     assert "body.has-shell .calibrator-auto-grid .calibrator-auto-field > select," in styles
     assert "body.has-shell .calibrator-auto-grid .calibrator-auto-field > input {" in styles
-    assert "calibrator-auto-field-primary" in source
-    assert "calibrator-auto-field-numeric" in source
-    assert 'className="calibrator-auto-row calibrator-auto-row-primary"' in source
-    assert 'className="calibrator-auto-row calibrator-auto-row-numeric"' in source
-    assert "body.has-shell .calibrator-auto-row-primary {" in styles
-    assert "body.has-shell .calibrator-auto-row-numeric {" in styles
+    # The five fields share one two-column grid beside the decision and windows.
+    assert source.count('className="calibrator-auto-field"') == 5
+    assert "body.has-shell .calibrator-auto-grid {" in styles
     assert "grid-template-columns: repeat(2, minmax(0, 1fr));" in styles
-    assert "grid-template-columns: repeat(3, minmax(0, 1fr));" in styles
+    assert "@container (min-width: 900px)" in styles
 
 
 def test_health_quality_sections_keep_copy_and_percentages_aligned():
@@ -53,9 +50,12 @@ def test_health_quality_sections_keep_copy_and_percentages_aligned():
     styles = _frontend_styles("11-health-calibration.css")
     incident_styles = _frontend_styles("12-operations-config.css")
 
-    assert 'className="small faint mt-sm line-radar-reason"' in health_source
-    assert "body.has-shell .health-radar-section .line-radar-reason {" in styles
-    assert "padding: 12px 24px 16px;" in styles
+    # One card per line keeps its traffic, share bar and note together.
+    assert 'className="line-cards"' in health_source
+    assert 'className="line-share"' in health_source
+    assert 'className="small faint line-radar-reason"' in health_source
+    assert "body.has-shell .line-radar-reason {" in styles
+    assert "body.has-shell .line-share span {" in styles
     # Line quality is shown once, in 运维's radar; incidents no longer repeat it.
     assert "radar-summary-row" not in incidents_source + incident_styles
     assert "line_radar" not in incidents_source

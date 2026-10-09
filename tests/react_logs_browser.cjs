@@ -8,7 +8,6 @@ const adminCookie = process.env.REACT_PREVIEW_ADMIN_COOKIE || 'missing-admin-ses
 const userCookie = process.env.REACT_PREVIEW_USER_COOKIE || 'missing-user-session';
 const screenshotDir = process.env.REACT_SCREENSHOT_DIR;
 
-const columns = ['时间', '操作人', 'IP', '操作', '目标', '日期', '流量变化'];
 const navigation = [
   ['网络管理', null],
   ['用户', '/admin'],
@@ -63,8 +62,7 @@ async function snapshot(page) {
   return {
     title: await page.locator('.page-title').innerText(),
     heading: await page.locator('.admin-section-title').innerText(),
-    columns: await page.locator('.data-table th').allTextContents(),
-    cells: await page.locator('.data-table tbody tr').first().locator('td').allTextContents(),
+    entries: await page.locator('.log-entry').count(),
     links: await page.locator('.sidebar-link').evaluateAll(links => links.map(link => ({
       text: link.textContent.trim(),
       href: new URL(link.href).pathname,
@@ -73,7 +71,7 @@ async function snapshot(page) {
 }
 
 async function verifyAuthenticatedLogs(browser) {
-  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, timezoneId: 'Asia/Shanghai' });
   await addCookie(context, 'sid', adminCookie);
   const page = await context.newPage();
   const failures = collectFailures(page, 'authenticated logs');
@@ -94,16 +92,30 @@ async function verifyAuthenticatedLogs(browser) {
   assert.deepEqual(await page.locator('.sidebar-link').evaluateAll(links => links.map(link => [link.textContent.trim(), new URL(link.href).pathname])), navigation.filter(([, href]) => href));
   assert.equal(await page.locator('.sidebar-link[aria-current="page"]').count(), 1);
   assert.equal(await page.locator('.sidebar-link[aria-current="page"]').innerText(), '运维');
-  assert.deepEqual(await page.locator('.data-table th').allTextContents(), columns);
-  assert.deepEqual(await page.locator('.data-table tbody tr').first().locator('td').allTextContents(), [
-    '2026-07-18T12:00:00+08:00',
-    'preview-admin',
-    '192.0.2.10',
-    'reset_user',
-    'demo_alex',
-    '2026.7.18',
-    '1.00 GB → 0.00 B',
-  ]);
+  // One timeline: the day heading carries the date, each entry its local time,
+  // a readable action and the traffic change.
+  assert.equal(await page.locator('.admin-section-title').innerText(), '操作记录');
+  assert.match(await page.locator('.log-day-title').first().innerText(), /7 月 18 日 周六/);
+  const entry = page.locator('.log-entry').first();
+  assert.equal(await entry.locator('.log-time').innerText(), '12:00');
+  assert.equal(await entry.locator('.log-time').getAttribute('datetime'), '2026-07-18T12:00:00+08:00');
+  assert.equal(await entry.locator('.log-kind').innerText(), '流量清零');
+  assert.equal(await entry.locator('.log-title strong').innerText(), '清除用户流量');
+  assert.equal(await entry.locator('.log-target').innerText(), 'demo_alex');
+  assert.equal(await entry.locator('.log-meta').innerText(), 'preview-admin · 192.0.2.10 · 周期 2026-07');
+  assert.equal(await entry.locator('.log-detail').innerText(), '1.00 GB → 0.00 B');
+  assert.equal(await page.locator('.data-table').count(), 0, 'the duplicated time and date columns are gone');
+  await page.getByRole('button', { name: /^订阅令牌/ }).click();
+  await page.getByText('没有符合筛选的记录', { exact: true }).waitFor();
+  await page.getByRole('button', { name: /^流量清零/ }).click();
+  assert.equal(await page.locator('.log-entry').count(), 1);
+  await page.getByRole('button', { name: /^全部/ }).click();
+  await page.locator('#log-search').fill('192.0.2.10');
+  assert.equal(await page.locator('.log-entry').count(), 1);
+  await page.locator('#log-search').fill('nobody');
+  await page.getByText('没有符合筛选的记录', { exact: true }).waitFor();
+  await page.locator('#log-search').fill('');
+  assert.equal(await page.locator('.log-entry').count(), 1);
   const stylesheet = await page.locator('link[rel="stylesheet"]').getAttribute('href');
   assert.match(stylesheet, /^\/static\/react\/assets\/[^/]+\.css$/);
   assert(!stylesheet.includes('style.css'), 'React must not load the legacy stylesheet');

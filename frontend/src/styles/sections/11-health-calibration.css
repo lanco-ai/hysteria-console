@@ -1,33 +1,81 @@
 /* =====================================================
-   HEALTH PAGE — Top 4 KPIs
+   HEALTH PAGE
    ===================================================== */
-body.has-shell .hysteria-update-history .admin-section-body {
-  display: grid;
-  gap: 8px;
-  overflow-wrap: anywhere;
-}
-
-body.has-shell .hysteria-update-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-body.has-shell .hysteria-update-actions form {
-  margin: 0;
-}
-
 body.has-shell .health-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
+}
+
+/* One bar: the overall checks on the left, refresh and alert test on the right. */
+body.has-shell .health-statusbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin-bottom: 16px;
+  padding: 12px 16px 12px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+body.has-shell .health-top-kpis {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 28px;
+  min-width: 0;
+}
+
+body.has-shell .health-top-kpis .health-kpi-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+body.has-shell .health-kpi-label {
+  color: var(--text-tertiary);
+  font-size: var(--text-small);
+  font-weight: 600;
+}
+
+body.has-shell .health-kpi-card .badge {
+  gap: 6px;
+  font-weight: 600;
+}
+
+body.has-shell .health-kpi-card .badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+body.has-shell .health-statusbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+body.has-shell .health-failing-count {
+  color: var(--danger);
+  font-weight: 600;
 }
 
 /* Each probe is a compact tile; failing ones sort first and stand out. */
 body.has-shell .health-checks {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -61,200 +109,219 @@ body.has-shell .health-check.is-failing {
   color: var(--danger);
 }
 
-@media (max-width: 1100px) {
-  body.has-shell .health-checks {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+/* Line radar: one card per protocol line. */
+body.has-shell .line-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-@media (max-width: 640px) {
-  body.has-shell .health-checks {
-    grid-template-columns: 1fr;
-  }
+body.has-shell .line-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background: var(--bg-overlay);
 }
 
-/* The overall checks read as one summary line above the detailed table. */
-body.has-shell .health-top-kpis {
+body.has-shell .line-card.is-failing {
+  border-color: #f0c9c4;
+  background: var(--danger-soft);
+}
+
+body.has-shell .line-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body.has-shell .line-card-head strong {
+  min-width: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  letter-spacing: .02em;
+  overflow-wrap: anywhere;
+}
+
+body.has-shell .line-card-profile {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+body.has-shell .line-card-traffic {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+body.has-shell .line-card-bytes {
+  font-family: var(--font-num);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+body.has-shell .line-share {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--hairline);
+}
+
+body.has-shell .line-share span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--data);
+}
+
+body.has-shell .line-card-stats {
+  display: flex;
+  gap: 24px;
+  margin: 0;
+}
+
+body.has-shell .line-card-stats div {
+  display: grid;
+  gap: 2px;
+}
+
+body.has-shell .line-card-stats dt {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+}
+
+body.has-shell .line-card-stats dd {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+body.has-shell .line-card-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+body.has-shell .line-radar-reason {
+  margin-top: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* Cost calibrator: decision and windows beside the automatic policy. */
+body.has-shell .health-calibrator-section {
+  container-type: inline-size;
+}
+
+body.has-shell .calibrator-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body.has-shell .calibrator-main {
+  min-width: 0;
+}
+
+body.has-shell .calibrator-decision-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px 28px;
-  padding: 12px 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface);
-}
-
-body.has-shell .health-top-kpis .health-kpi-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-  text-align: left;
-}
-
-body.has-shell .health-top-kpis .health-kpi-label {
-  margin-bottom: 0;
-  letter-spacing: .06em;
-}
-
-body.has-shell .health-top-kpis .health-kpi-value {
-  margin-bottom: 0;
-  font-size: 14px;
-}
-
-body.has-shell .health-kpi-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  gap: 16px 20px;
   padding: 20px 24px;
-  text-align: center;
-  box-shadow: inset 0 1px 0 #fff, var(--shadow-xs);
+  border-bottom: 1px solid var(--hairline);
 }
 
-body.has-shell .health-kpi-label {
+body.has-shell .calibrator-multiple {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+body.has-shell .calibrator-multiple-label {
+  color: var(--text-tertiary);
   font-family: var(--font-label);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  margin-bottom: 10px;
 }
 
-body.has-shell .health-kpi-value {
+body.has-shell .calibrator-multiple-value {
+  color: var(--text-primary);
   font-family: var(--font-num);
   font-size: 28px;
-  font-weight: 600;
-  color: var(--text-primary);
-  line-height: 1;
-  letter-spacing: -0.02em;
-  margin-bottom: 6px;
+  font-weight: 500;
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1, "zero" 1;
+  letter-spacing: -0.02em;
+  line-height: 1;
 }
 
-body.has-shell .health-kpi-value.is-text {
-  font-family: var(--font-sans);
-  font-size: 16px;
-  font-weight: 600;
-  letter-spacing: 0;
-}
-
-body.has-shell .health-kpi-value .badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  font-size: var(--text-caption);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  border-radius: var(--radius-pill);
-}
-
-body.has-shell .health-kpi-value .badge::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-body.has-shell .health-kpi-value .badge:not(.badge-danger) {
-  color: var(--ok);
-  background: var(--ok-soft);
-}
-
-body.has-shell .health-kpi-value .badge.badge-danger {
-  color: var(--danger);
-  background: var(--danger-soft);
-}
-
-body.has-shell .health-kpi-sub {
-  font-size: var(--text-small);
+body.has-shell .calibrator-arrow {
+  flex-shrink: 0;
   color: var(--text-tertiary);
+  font-size: 20px;
 }
 
-/* =====================================================
-   HEALTH PAGE — Section helpers
-   ===================================================== */
-body.has-shell .health-page .admin-section-body.no-pad {
-  padding: 0;
+body.has-shell .calibrator-delta {
+  color: var(--text-tertiary);
+  font-family: var(--font-num);
+  font-size: 16px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
 }
 
-body.has-shell .health-radar-section .admin-section-body.no-pad,
-body.has-shell .health-calibrator-section .admin-section-body.no-pad {
-  padding: 0;
-}
-
-body.has-shell .health-radar-section .line-radar-reason {
-  display: block;
-  box-sizing: border-box;
-  margin: 0 !important;
+body.has-shell .calibrator-facts {
+  display: grid;
+  gap: 4px;
   padding: 12px 24px 16px;
   border-top: 1px solid var(--hairline);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
-/* =====================================================
-   HEALTH PAGE — Cost calibrator form area
-   ===================================================== */
-body.has-shell .calibrator-form {
-  padding: 0 20px 20px;
+body.has-shell .calibrator-auto {
+  min-width: 0;
+  padding: 18px 24px 20px;
   border-top: 1px solid var(--border);
+  background: var(--bg-overlay);
 }
 
-body.has-shell .grid.grid-3 {
+body.has-shell .calibrator-auto-header {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 4px;
+  margin-bottom: 14px;
 }
 
-body.has-shell .grid.grid-3 .switch {
+body.has-shell .calibrator-auto-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: var(--text-ui);
   color: var(--text-primary);
-  cursor: pointer;
-  align-self: center;
-}
-
-body.has-shell .grid.grid-3 label:not(.switch) {
-  display: block;
-  font-size: var(--text-small);
+  font-size: var(--text-ui);
   font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 4px;
+  cursor: pointer;
 }
 
-/* Keep the five automatic-policy fields readable instead of letting labels
-   and controls run together in the generic three-column grid. */
 body.has-shell .calibrator-auto-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-body.has-shell .calibrator-auto-row {
   display: grid;
-  min-width: 0;
-  gap: 20px;
-}
-
-body.has-shell .calibrator-auto-row-primary {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-body.has-shell .calibrator-auto-row-numeric {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 16px;
 }
 
 body.has-shell .calibrator-auto-grid .calibrator-auto-field {
@@ -262,7 +329,9 @@ body.has-shell .calibrator-auto-grid .calibrator-auto-field {
   flex-direction: column;
   gap: 6px;
   min-width: 0;
-  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: 500;
 }
 
 body.has-shell .calibrator-auto-grid .calibrator-auto-field > select,
@@ -281,172 +350,85 @@ body.has-shell .calibrator-auto-grid .calibrator-auto-field > input {
   outline: none;
 }
 
+body.has-shell .calibrator-auto-grid .calibrator-auto-field > select {
+  padding-right: 30px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2392918B' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+}
+
 body.has-shell .calibrator-auto-grid .calibrator-auto-field > select:focus-visible,
 body.has-shell .calibrator-auto-grid .calibrator-auto-field > input:focus-visible {
   border-color: var(--data);
   box-shadow: 0 0 0 3px var(--data-soft);
 }
 
-/* =====================================================
-   COST CALIBRATOR — redesigned layout
-   ===================================================== */
+body.has-shell .calibrator-save {
+  margin-top: 16px;
+}
 
-/* Section 1: Decision bar */
-body.has-shell .calibrator-decision-bar {
+@container (min-width: 900px) {
+  body.has-shell .calibrator-layout {
+    grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr);
+  }
+
+  body.has-shell .calibrator-auto {
+    border-top: 0;
+    border-left: 1px solid var(--hairline);
+  }
+}
+
+@media (max-width: 480px) {
+  body.has-shell .calibrator-auto-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Hysteria update: one row of versions and actions. */
+body.has-shell .update-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 20px;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--hairline);
+  gap: 12px 32px;
+  padding: 16px 20px;
 }
 
-body.has-shell .calibrator-multiple {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-body.has-shell .calibrator-multiple-label {
-  font-family: var(--font-label);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-body.has-shell .calibrator-multiple-value {
-  font-family: var(--font-num);
-  font-size: 28px;
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-body.has-shell .calibrator-arrow {
-  font-size: 20px;
-  color: var(--text-tertiary);
-  flex-shrink: 0;
-}
-
-body.has-shell .calibrator-delta {
-  font-family: var(--font-num);
-  font-size: 16px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-body.has-shell .calibrator-delta.delta-down { color: var(--text-secondary); }
-body.has-shell .calibrator-delta.delta-up { color: var(--warn); }
-body.has-shell .calibrator-delta:not(.delta-down):not(.delta-up) { color: var(--text-tertiary); }
-
-body.has-shell .calibrator-confidence {
-  margin-left: auto;
-}
-
-/* Window table: active row highlight */
-body.has-shell .calibrator-active-row {
-  background: var(--data-soft);
-  border-left: 2px solid var(--data);
-}
-
-body.has-shell .calibrator-active-row td:first-child {
-  border-left: 2px solid var(--data);
-}
-
-body.has-shell .calibrator-active-row td {
-  border-left: 1px solid transparent;
-}
-
-/* Section 3: Sampling details (collapsible) */
-body.has-shell .calibrator-details {
-  border-top: 1px solid var(--hairline);
-  padding: 0 24px 16px;
-}
-
-body.has-shell .calibrator-details summary {
-  padding: 12px 0;
-  font-family: var(--font-label);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  user-select: none;
-}
-
-body.has-shell .calibrator-details[open] summary {
-  border-bottom: 1px solid var(--hairline);
-  margin-bottom: 12px;
-}
-
-body.has-shell .calibrator-dl {
-  padding-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-body.has-shell .calibrator-dl-row {
+body.has-shell .update-heading {
   display: grid;
-  grid-template-columns: 130px 1fr;
-  gap: 12px;
-  font-size: var(--text-small);
+  gap: 2px;
+  margin-right: auto;
 }
 
-body.has-shell .calibrator-dl-k {
-  color: var(--text-tertiary);
-}
-
-body.has-shell .calibrator-dl-v {
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Section 4: Auto policy */
-body.has-shell .calibrator-auto {
-  border-top: 1px solid var(--border);
-  padding: 16px 24px 20px;
-}
-
-body.has-shell .calibrator-auto-header {
-  margin-bottom: 14px;
-}
-
-body.has-shell .calibrator-auto-toggle {
+body.has-shell .update-versions {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-ui);
-  font-weight: 500;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-body.has-shell .calibrator-auto-fields {
-  border: none;
-  padding: 0;
+  flex-wrap: wrap;
+  gap: 8px 28px;
   margin: 0;
-  transition: opacity var(--transition);
 }
 
-body.has-shell .calibrator-auto-fields:disabled {
-  opacity: 0.55;
-  pointer-events: none;
+body.has-shell .update-versions div {
+  display: grid;
+  gap: 2px;
 }
 
-body.has-shell .calibrator-last-check {
-  margin-top: 12px;
-  padding: 12px 16px;
-  background: var(--bg-subtle);
-  border-radius: var(--radius-xs);
+body.has-shell .update-versions dt {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+}
+
+body.has-shell .update-versions dd {
+  margin: 0;
+  font-size: var(--text-ui);
+}
+
+body.has-shell .update-actions {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
-body.has-shell .badge-ok { background: var(--bg-subtle); color: var(--text-secondary); }
-body.has-shell .badge-warn { background: var(--bg-subtle); color: var(--warn); }
+body.has-shell .update-reason {
+  padding: 0 20px 14px;
+  overflow-wrap: anywhere;
+}

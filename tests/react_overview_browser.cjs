@@ -45,6 +45,21 @@ async function realOperations(browser) {
   await expect(page.locator('.overview-cycle .cycle-config-form')).toHaveCount(1);
   await expect(page.locator('.topbar .cycle-config-form')).toHaveCount(0);
   await expect(page.locator('#total-used')).toHaveCount(0);
+  // The bar's inputs, 保存, 导出 CSV and 清空本周期用量 share one height and one centre line.
+  const cycleControls = await page.locator('.overview-cycle').locator('input, .btn').evaluateAll(nodes => nodes.map(node => {
+    const box = node.getBoundingClientRect();
+    return { height: Math.round(box.height), middle: box.top + box.height / 2 };
+  }));
+  assert.equal(cycleControls.length, 5);
+  assert.deepEqual([...new Set(cycleControls.map(item => item.height))], [36]);
+  const middles = cycleControls.map(item => item.middle);
+  assert(Math.max(...middles) - Math.min(...middles) <= 1, `cycle controls must share a centre line: ${middles}`);
+  // The create form's landing select is as tall as its text inputs.
+  await page.locator('.create-toggle').click();
+  const createHeights = await page.evaluate(() => ['#create-user', '#create-quota-gb', '#create-landing-initial-egress']
+    .map(id => Math.round(document.querySelector(id).getBoundingClientRect().height)));
+  assert.deepEqual(createHeights, [36, 36, 36]);
+  await page.locator('.create-toggle').click();
   assert((await snapshot(context)).cycle.total_used > 0, 'accounting fixture must be nonzero');
   fs.mkdirSync(screenshots, { recursive: true });
   const geometry = [];

@@ -4,7 +4,6 @@ body.has-shell .user-identity-copy { min-width: 0; }
 body.has-shell .usage-label { justify-content: space-between; margin-bottom: 4px; }
 body.has-shell .users-table .row-error { color: var(--danger); margin-top: 4px; }
 body.has-shell .form-field.form-field-wide { grid-column: 1 / -1; }
-body.has-shell .reset-all-button { margin-top: 10px; }
 
 .inline-form {
   display: flex;
@@ -282,49 +281,194 @@ body.has-shell .reset-all-button { margin-top: 10px; }
   text-underline-offset: 2px;
 }
 
-/* Landing egress management */
-body.has-shell .landing-node-list {
-  padding-bottom: 0;
+/* Landing egress management: node cards, an editor dialog and access rows. */
+body.has-shell .landing-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-body.has-shell .landing-node-list .data-table-wrap {
-  margin: 0 -24px;
-}
-
-body.has-shell .landing-node-list .data-table th:first-child,
-body.has-shell .landing-node-list .data-table td:first-child {
-  padding-left: 24px;
-}
-
-body.has-shell .landing-node-list .data-table th:last-child,
-body.has-shell .landing-node-list .data-table td:last-child {
-  padding-right: 24px;
-}
-
-body.has-shell .landing-node-actions {
+body.has-shell .landing-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+body.has-shell .landing-card.is-disabled {
+  background: var(--bg-overlay);
+}
+
+body.has-shell .landing-card.is-disabled .landing-card-name {
+  color: var(--text-secondary);
+}
+
+body.has-shell .landing-card-head {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
-  margin-top: 20px;
+  gap: 12px;
+}
+
+body.has-shell .landing-card-identity {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body.has-shell .landing-card-name {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+body.has-shell .landing-card-id {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+}
+
+body.has-shell .landing-health {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: 500;
+}
+
+body.has-shell .landing-health-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-disabled);
+}
+
+body.has-shell .landing-health.is-ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+body.has-shell .landing-health.is-ok .landing-health-dot {
+  background: var(--ok);
+}
+
+body.has-shell .landing-health.is-bad {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+body.has-shell .landing-health.is-bad .landing-health-dot {
+  background: var(--danger);
+}
+
+body.has-shell .landing-health-time {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+body.has-shell .landing-card-facts {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+body.has-shell .landing-card-facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-small);
+}
+
+body.has-shell .landing-card-facts dt {
+  color: var(--text-tertiary);
+}
+
+body.has-shell .landing-card-facts dd {
+  margin: 0;
+  color: var(--text-primary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+body.has-shell .landing-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+body.has-shell .landing-card-actions .danger-btn {
+  margin-left: auto;
+}
+
+body.has-shell .landing-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 36px 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-overlay);
+  text-align: center;
+}
+
+body.has-shell .landing-empty strong {
+  color: var(--text-primary);
+  font-size: var(--text-body-lg);
+}
+
+body.has-shell .landing-empty p {
+  max-width: 460px;
+  margin: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--text-ui);
+  line-height: 1.6;
 }
 
 body.has-shell .landing-access-list {
-  border-top: 1px solid var(--hairline);
+  display: grid;
 }
 
 body.has-shell .landing-access-row {
   display: grid;
-  grid-template-columns: minmax(140px, 0.7fr) minmax(260px, 2fr) auto;
+  grid-template-columns: minmax(140px, .6fr) minmax(0, 2fr) auto;
   align-items: center;
-  gap: 20px;
-  padding: 16px 0;
+  gap: 16px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--hairline);
 }
 
+body.has-shell .landing-access-row:first-child {
+  padding-top: 0;
+}
+
+body.has-shell .landing-access-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 body.has-shell .landing-access-user {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -334,26 +478,39 @@ body.has-shell .landing-access-user strong {
 
 body.has-shell .landing-access-choices {
   display: flex;
-  align-items: center;
-  gap: 10px 18px;
-  min-width: 0;
-  border: 0;
   flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
 }
 
 body.has-shell .landing-access-choice {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
   color: var(--text-secondary);
-  font-size: var(--text-ui);
+  font-size: var(--text-small);
   cursor: pointer;
 }
 
 body.has-shell .landing-access-choice input {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  margin: 0;
   accent-color: var(--accent);
+}
+
+body.has-shell .landing-access-choice.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 body.has-shell .landing-access-choice:has(input:disabled) {
@@ -361,47 +518,59 @@ body.has-shell .landing-access-choice:has(input:disabled) {
   cursor: not-allowed;
 }
 
-body.has-shell .landing-empty {
-  padding: 20px;
+body.has-shell .landing-access-choice:has(input:focus-visible) {
+  outline: 2px solid var(--data);
+  outline-offset: 2px;
+}
+
+body.has-shell .landing-dialog {
+  max-width: 640px;
+}
+
+body.has-shell .landing-dialog .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+body.has-shell .landing-dialog .form-field input {
+  height: 36px;
+}
+
+body.has-shell .landing-dialog .hint {
   color: var(--text-tertiary);
-  background: var(--bg-subtle);
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-sm);
-  text-align: center;
+  font-size: var(--text-caption);
+}
+
+body.has-shell .landing-dialog-note {
+  margin: 0 0 16px;
+  line-height: 1.5;
+}
+
+body.has-shell .landing-dialog .dialog-foot {
+  align-items: center;
+}
+
+body.has-shell .landing-dialog .dialog-foot .switch {
+  font-size: var(--text-ui);
+}
+
+body.has-shell .landing-dialog .dialog-foot-spacer {
+  flex: 1;
 }
 
 @media (max-width: 768px) {
-  body.has-shell .landing-node-list .data-table-wrap {
-    margin-right: -16px;
-    margin-left: -16px;
-  }
-
-  body.has-shell .landing-node-list .data-table th:first-child,
-  body.has-shell .landing-node-list .data-table td:first-child {
-    padding-left: 16px;
-  }
-
-  body.has-shell .landing-node-list .data-table th:last-child,
-  body.has-shell .landing-node-list .data-table td:last-child {
-    padding-right: 16px;
-  }
-
   body.has-shell .landing-access-row {
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 10px;
   }
 
   body.has-shell .landing-access-row .btn {
-    width: 100%;
+    justify-self: start;
   }
+}
 
-  body.has-shell .landing-node-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  body.has-shell .landing-node-actions .btn {
-    width: 100%;
+@media (max-width: 560px) {
+  body.has-shell .landing-dialog .form-grid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -20,8 +20,17 @@ async function main() {
   await expect(page.locator('.health-kpi-card')).toHaveCount(4);
   await expect(page.locator('.health-checks .health-check')).toHaveCount(15);
   await expect(page.getByRole('tab')).toHaveText(['健康状态', '清零日志']);
-  await expect(page.locator('.health-radar-section tbody tr')).toHaveCount(3);
+  // One status bar holds the overall checks and the page actions.
+  await expect(page.locator('.health-statusbar .health-kpi-card')).toHaveCount(4);
+  await expect(page.locator('.health-statusbar').getByRole('button', { name: '立即刷新' })).toBeVisible();
+  await expect(page.locator('.health-statusbar').getByRole('button', { name: '测试告警' })).toBeVisible();
+  await expect(page.locator('.health-services .admin-section-header')).toContainText('15 项 · 全部正常');
+  await expect(page.locator('.health-radar-section .line-card')).toHaveCount(3);
+  await expect(page.locator('.health-radar-section .line-card').first()).toContainText('可用用户');
   await expect(page.locator('.health-calibrator-section tbody tr')).toHaveCount(3);
+  await expect(page.locator('.health-calibrator-section .admin-section-header')).toContainText('置信度 无样本');
+  await expect(page.locator('.health-calibrator-section .calibrator-auto')).toContainText('自动调倍率');
+  await expect(page.locator('.hysteria-update-history')).toContainText('已跳过');
   await page.getByRole('button', { name: '立即刷新' }).click();
   await expect(page.locator('.health-kpi-card')).toHaveCount(4);
   await expect(page.getByRole('button', { name: '检查更新' })).toHaveCount(1);

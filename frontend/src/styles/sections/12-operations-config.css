@@ -7,15 +7,6 @@ body.has-shell .operations-page > [role='tabpanel'] > .admin-page {
   margin: 0;
 }
 
-body.has-shell .operations-panel-actions {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-
 /* =====================================================
    INCIDENTS · 异常与告警 (part of 流量分析)
    ===================================================== */
@@ -114,64 +105,6 @@ body.has-shell .incident-alerts li code {
   }
 }
 
-/* Config Editor */
-body.has-shell .code-editor {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-body.has-shell .code-editor textarea {
-  width: 100%;
-  min-height: 400px;
-  padding: 16px;
-  font-family: var(--font-mono);
-  font-size: var(--text-small);
-  line-height: 1.6;
-  color: var(--text-primary);
-  background: var(--bg-surface);
-  border: none;
-  resize: vertical;
-  outline: none;
-}
-
-body.has-shell .code-editor textarea:focus,
-body.has-shell .code-editor textarea:focus-visible {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 2px var(--accent-soft);
-}
-
-/* Rules page */
-.rule-index-column { width: 50px; }
-.rule-actions-column { width: 90px; }
-
-body.has-shell .rules-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-body.has-shell .rules-table th,
-body.has-shell .rules-table td {
-  padding: 12px 16px;
-  text-align: left;
-  vertical-align: middle;
-  border-bottom: 1px solid var(--border);
-}
-
-body.has-shell .rules-table th {
-  font-size: var(--text-caption);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  background: #F5F4F0;
-}
-
-body.has-shell .rules-table tbody tr:hover {
-  background: var(--bg-subtle);
-}
-
 /* =====================================================
    /admin/rules: 信息架构重构
    ===================================================== */
@@ -222,203 +155,544 @@ body.has-shell .template-rules-page > [role='tabpanel'] > .admin-page {
   margin: 0;
 }
 
-body.has-shell .template-rules-page > [role='tabpanel'] > .admin-page.settings-page {
-  max-width: none;
+/* ---- 订阅模板: the editor beside a live overview ---- */
+body.has-shell .template-page {
+  container-type: inline-size;
 }
 
-/* ---- Rules intro note ---- */
-body.has-shell .rules-intro {
-  margin-bottom: 24px;
-}
-
-body.has-shell .rules-intro-note {
-  font-size: var(--text-ui);
-  color: var(--text-tertiary);
-  line-height: 1.6;
-}
-
-/* ---- Rules operations grid: 双栏操作区 ---- */
-body.has-shell .rules-ops-grid {
+body.has-shell .template-layout {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-  gap: 20px;
-  margin-bottom: 20px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
 }
 
-/* ---- Individual operation panel ---- */
-body.has-shell .op-panel {
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+body.has-shell .template-editor .code-panel-header {
+  flex-wrap: wrap;
 }
 
-body.has-shell .op-panel-title {
-  font-size: var(--text-body-lg);
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 8px;
-  letter-spacing: -0.01em;
-}
-
-body.has-shell .op-panel-desc {
-  font-size: var(--text-ui);
-  color: var(--text-tertiary);
-  line-height: 1.6;
-  margin-bottom: 20px;
-}
-
-/* ---- Op form grid: 2-column field layout ---- */
-body.has-shell .op-form {
-  display: flex;
-  flex-direction: column;
-}
-
-body.has-shell .op-form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  margin-bottom: 16px;
-}
-
-body.has-shell .op-form-grid .field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 0;
-}
-
-body.has-shell .op-form-grid .field label {
-  font-size: var(--text-caption);
-  font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: 0.02em;
-}
-
-body.has-shell .op-form-grid .field .select,
-body.has-shell .op-form-grid .field .input {
-  height: 44px;
-  font-size: var(--text-ui);
-  border-radius: var(--radius-sm);
-}
-
-/* ---- Op form footer: helper left + button right ---- */
-body.has-shell .op-form-footer {
+body.has-shell .template-editor-heading {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-top: 4px;
+  gap: 10px;
 }
 
-body.has-shell .op-footer-hint {
+body.has-shell .template-editor .code-panel-actions {
+  flex-wrap: wrap;
+}
+
+body.has-shell .template-editor .code-panel-actions .btn {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: var(--text-small);
+}
+
+body.has-shell .template-jumps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+body.has-shell .template-jump {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  cursor: pointer;
+}
+
+body.has-shell .template-jump:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* The editor box owns the height; the gutter and textarea fill it. */
+body.has-shell .template-editor .code-editor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  height: min(64vh, 640px);
+  min-height: 360px;
+  overflow: hidden;
+  resize: vertical;
+}
+
+body.has-shell .template-editor .code-gutter {
+  min-width: 44px;
+  padding: 14px 10px 14px 12px;
+  overflow: hidden;
+  border-right: 1px solid var(--hairline);
+  background: var(--bg-overlay);
+  color: var(--text-disabled);
+  font-family: var(--font-mono);
   font-size: 12px;
+  line-height: 20px;
+  text-align: right;
+  white-space: pre;
+  user-select: none;
+}
+
+body.has-shell .template-editor .code-area {
+  height: 100%;
+  min-height: 0;
+  padding: 14px 16px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre;
+  tab-size: 2;
+  resize: none;
+}
+
+body.has-shell .template-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--hairline);
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+body.has-shell .template-status.is-ok {
+  color: var(--ok);
+}
+
+body.has-shell .template-status.is-warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+body.has-shell .template-status.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+body.has-shell .template-status-size {
+  margin-left: auto;
   color: var(--text-tertiary);
-  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+body.has-shell .template-overview {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+body.has-shell .template-overview-head {
+  display: grid;
+  gap: 2px;
+}
+
+body.has-shell .template-overview-title {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+}
+
+body.has-shell .template-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin: 0;
+}
+
+body.has-shell .template-facts div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body.has-shell .template-facts dt {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+}
+
+body.has-shell .template-facts dd {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+body.has-shell .template-stats {
+  display: grid;
+  column-gap: 20px;
+  border-top: 1px solid var(--hairline);
+}
+
+body.has-shell .template-stat {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+
+body.has-shell .template-stat-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+body.has-shell .template-stat-head strong {
+  font-family: var(--font-num);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+body.has-shell .template-stat-head span {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+body.has-shell .template-stat-detail {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+}
+
+body.has-shell .template-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+body.has-shell .template-chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+}
+
+body.has-shell .template-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--data);
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+body.has-shell .template-link:hover {
+  text-decoration: underline;
+}
+
+body.has-shell .template-note {
+  margin: 0;
+  line-height: 1.5;
+}
+
+@container (min-width: 960px) {
+  body.has-shell .template-layout {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+
+  body.has-shell .template-overview {
+    position: sticky;
+    top: 88px;
+  }
+}
+
+@container (max-width: 959px) {
+  body.has-shell .template-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* ---- 路由规则: the ordered list beside the add-rule and rule-pack forms ---- */
+body.has-shell .rules-page {
+  container-type: inline-size;
+}
+
+body.has-shell .rules-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+
+body.has-shell .rules-list-section {
+  container-type: inline-size;
+}
+
+body.has-shell .segmented {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+}
+
+body.has-shell .segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-small);
+  cursor: pointer;
+}
+
+body.has-shell .segmented button[aria-pressed='true'] {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+body.has-shell .segmented-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+body.has-shell .rules-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+
+body.has-shell :is(.rules-search, .log-search) {
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 360px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-ui);
+}
+
+body.has-shell :is(.rules-search, .log-search):focus-visible {
+  border-color: var(--data);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--data-soft);
+}
+
+body.has-shell .select.rules-policy-filter {
+  width: auto;
+  max-width: 240px;
+  height: 34px;
+  padding: 0 30px 0 10px;
+  border-radius: 8px;
+  background-position: right 10px center;
+  font-size: var(--text-ui);
+}
+
+body.has-shell .rules-match-count {
+  color: var(--text-tertiary);
+}
+
+body.has-shell .rule-list {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+body.has-shell .rule-row {
+  display: grid;
+  grid-template-columns: 36px 128px minmax(0, 1fr) 168px 56px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 20px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: var(--text-ui);
+}
+
+body.has-shell .rule-row:last-child {
+  border-bottom: 0;
+}
+
+body.has-shell .rule-row:hover {
+  background: var(--bg-overlay);
+}
+
+body.has-shell .rule-index {
+  color: var(--text-disabled);
+  font-family: var(--font-mono);
+  font-size: var(--text-caption);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+body.has-shell .rule-type {
+  justify-self: start;
+  max-width: 100%;
+  padding: 2px 8px;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* ---- Raw editor (Layer 2): default collapsed ---- */
-body.has-shell .rules-raw-editor {
-  margin-bottom: 24px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+body.has-shell .rule-type.family-ip {
+  background: var(--data-soft);
+  color: var(--data);
 }
 
-body.has-shell .rules-raw-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  cursor: pointer;
-  font-size: var(--text-body);
-  font-weight: 500;
+body.has-shell .rule-type.family-geo,
+body.has-shell .rule-type.family-set {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+body.has-shell .rule-type.family-logic {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+body.has-shell .rule-type.family-match {
+  background: var(--accent);
+  color: #fff;
+}
+
+body.has-shell .rule-pattern {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+body.has-shell .rule-row.is-system .rule-pattern {
   color: var(--text-secondary);
-  user-select: none;
-  list-style: none;
-  transition: background var(--transition), color var(--transition);
 }
 
-body.has-shell .rules-raw-summary::-webkit-details-marker {
-  display: none;
-}
-
-body.has-shell .rules-raw-summary::before {
-  content: '';
-  display: inline-block;
-  width: 0;
-  height: 0;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 6px solid var(--text-tertiary);
-  margin-right: 10px;
-  transition: transform var(--transition);
-  flex-shrink: 0;
-}
-
-body.has-shell .details[open] > .rules-raw-summary::before,
-body.has-shell details[open] > .rules-raw-summary::before {
-  transform: rotate(90deg);
-}
-
-body.has-shell .rules-raw-summary:hover {
+body.has-shell .rule-policy {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-self: start;
+  gap: 2px 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
   background: var(--bg-subtle);
   color: var(--text-primary);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
 }
 
-body.has-shell .rules-raw-badge {
-  font-size: var(--text-caption);
-  font-weight: 500;
+body.has-shell .rule-policy.policy-direct {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+body.has-shell .rule-policy.policy-reject {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+body.has-shell .rule-extra {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-xs);
   color: var(--text-tertiary);
-  background: var(--bg-subtle);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-pill);
-  padding: 2px 10px;
-  letter-spacing: 0.04em;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+body.has-shell .rule-op {
+  justify-self: end;
+}
+
+body.has-shell .rule-op form {
+  margin: 0;
+}
+
+body.has-shell .rules-page .btn.rule-delete {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--text-small);
+}
+
+body.has-shell .rules-page .rule-row:hover .btn.rule-delete,
+body.has-shell .rules-page .btn.rule-delete:focus-visible {
+  border-color: rgba(182, 65, 56, 0.2);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 body.has-shell .rules-raw-body {
-  padding: 0 20px 20px;
-  border-top: 1px solid var(--border);
+  padding: 16px 20px 20px;
 }
 
 body.has-shell .rules-raw-help {
-  font-size: var(--text-small);
+  margin: 0 0 12px;
   color: var(--text-tertiary);
-  margin: 16px 0;
+  font-size: var(--text-small);
   line-height: 1.5;
 }
 
 body.has-shell .rules-raw-help code {
-  font-family: var(--font-mono);
-  font-size: 12px;
   padding: 1px 5px;
-  background: var(--bg-subtle);
   border: 1px solid var(--border);
   border-radius: var(--radius-xs);
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 
 body.has-shell .rules-raw-textarea {
   width: 100%;
-  min-height: 360px;
-  max-height: 520px;
-  padding: 16px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--text-primary);
-  background-color: var(--bg-surface);
+  min-height: 420px;
+  padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  resize: vertical;
   outline: none;
-  box-shadow: var(--shadow-sm);
-  transition: border-color var(--transition), box-shadow var(--transition);
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 20px;
+  resize: vertical;
+  white-space: pre;
 }
 
 body.has-shell .rules-raw-textarea:focus {
@@ -426,53 +700,299 @@ body.has-shell .rules-raw-textarea:focus {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* ---- Responsive ---- */
-@media (max-width: 1100px) {
-  body.has-shell .rules-ops-grid {
-    grid-template-columns: 1fr;
-  }
-
-  body.has-shell .op-form-grid {
-    grid-template-columns: 1fr 1fr;
-  }
+body.has-shell .rules-raw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
 }
 
-@media (max-width: 640px) {
-  body.has-shell .op-form-grid {
-    grid-template-columns: 1fr;
-  }
-
-  body.has-shell .rules-raw-textarea {
-    min-height: 280px;
-  }
+body.has-shell .rules-raw-actions .small {
+  margin-right: auto;
 }
 
-/* Logs page */
-body.has-shell .logs-table {
-  width: 100%;
-  border-collapse: collapse;
+body.has-shell .rules-side {
+  display: grid;
+  gap: 16px;
+}
+
+body.has-shell .op-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+body.has-shell .op-panel-title {
+  margin: 0 0 12px;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+body.has-shell .op-panel-desc {
+  margin: -6px 0 12px;
+  color: var(--text-tertiary);
+  font-size: var(--text-small);
+  line-height: 1.5;
+}
+
+body.has-shell .op-form {
+  display: grid;
+  gap: 10px;
+}
+
+body.has-shell .op-form .field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+}
+
+body.has-shell .op-form .field label {
+  color: var(--text-secondary);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+body.has-shell .op-form .field :is(.select, .input) {
+  height: 36px;
+  border-radius: 8px;
   font-size: var(--text-ui);
 }
 
-body.has-shell .logs-table th,
-body.has-shell .logs-table td {
-  padding: 10px 14px;
-  text-align: left;
-  vertical-align: middle;
-  border-bottom: 1px solid var(--border);
+body.has-shell .op-form .field .select {
+  padding-left: 10px;
 }
 
-body.has-shell .logs-table th {
+body.has-shell .op-form .field .input {
+  padding: 0 10px;
+}
+
+body.has-shell .op-form-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+body.has-shell .op-form .field-help {
+  margin: -4px 0 0;
+  font-size: var(--text-caption);
+}
+
+body.has-shell .op-form .op-submit {
+  width: 100%;
+  height: 38px;
+}
+
+body.has-shell .op-footer-hint {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+  line-height: 1.4;
+  text-align: center;
+}
+
+@container (min-width: 960px) {
+  body.has-shell .rules-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+
+  body.has-shell .rules-side {
+    position: sticky;
+    top: 88px;
+  }
+}
+
+@container (max-width: 959px) {
+  body.has-shell .rules-side {
+    order: -1;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    align-items: start;
+  }
+}
+
+@container (max-width: 560px) {
+  body.has-shell .rule-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    grid-template-areas:
+      'index type op'
+      '. pattern policy';
+    gap: 6px 10px;
+    padding: 10px 16px;
+  }
+
+  body.has-shell .rule-index { grid-area: index; }
+  body.has-shell .rule-type { grid-area: type; }
+  body.has-shell .rule-pattern { grid-area: pattern; }
+  body.has-shell .rule-policy {
+    grid-area: policy;
+    justify-self: end;
+  }
+  body.has-shell .rule-op { grid-area: op; }
+
+  body.has-shell .rules-toolbar {
+    padding: 12px 16px;
+  }
+
+  body.has-shell :is(.rules-search, .select.rules-policy-filter) {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+}
+
+/* ---- 清零日志: a timeline grouped by day ---- */
+body.has-shell .log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+body.has-shell .log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+body.has-shell .log-day + .log-day {
+  margin-top: 18px;
+}
+
+body.has-shell .log-day-title {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+  font-weight: 600;
+}
+
+body.has-shell .log-entries {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  list-style: none;
+}
+
+body.has-shell .log-entry {
+  display: grid;
+  grid-template-columns: 48px 80px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--bg-surface);
+}
+
+body.has-shell .log-entry:last-child {
+  border-bottom: 0;
+}
+
+body.has-shell .log-time {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--text-small);
+  font-variant-numeric: tabular-nums;
+}
+
+body.has-shell .log-kind {
+  justify-self: start;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-subtle);
+  color: var(--text-secondary);
   font-size: var(--text-caption);
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  background: #F5F4F0;
+  white-space: nowrap;
 }
 
-body.has-shell .logs-table tbody tr:hover {
-  background: var(--bg-subtle);
+body.has-shell .log-entry.is-reset .log-kind {
+  background: var(--data-soft);
+  color: var(--data);
+}
+
+body.has-shell .log-entry.is-access .log-kind {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+body.has-shell .log-entry.is-token .log-kind {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+body.has-shell .log-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+body.has-shell .log-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  font-size: var(--text-ui);
+}
+
+body.has-shell .log-title strong {
+  font-weight: 600;
+}
+
+body.has-shell .log-target {
+  color: var(--text-secondary);
+}
+
+body.has-shell .log-meta {
+  color: var(--text-tertiary);
+  font-size: var(--text-small);
+  overflow-wrap: anywhere;
+}
+
+body.has-shell .log-detail {
+  color: var(--text-primary);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+body.has-shell .log-footnote {
+  margin-top: 12px;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  body.has-shell .log-entry {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+      'time kind'
+      '. main'
+      '. detail';
+    gap: 4px 10px;
+  }
+
+  body.has-shell .log-time { grid-area: time; }
+  body.has-shell .log-kind { grid-area: kind; }
+  body.has-shell .log-main { grid-area: main; }
+
+  body.has-shell .log-detail {
+    grid-area: detail;
+    white-space: normal;
+  }
+
+  body.has-shell .log-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
 }
 
 /* Settings page */

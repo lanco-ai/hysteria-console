@@ -481,6 +481,35 @@ body.has-shell svg.spark .spark-dot.today {
 }
 
 
+/* Buttons on the routing, egress and operations pages: outline by default, dark for the primary action. */
+body.has-shell :is(.template-page, .rules-page, .landing-page, .health-statusbar, .health-page, .logs-section) .btn:not(.btn-primary, .btn-danger, .danger-btn, .primary, .rule-delete) {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+body.has-shell :is(.template-page, .rules-page, .landing-page, .health-statusbar, .health-page, .logs-section) .btn:not(.btn-primary, .btn-danger, .danger-btn, .primary, .rule-delete):hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+body.has-shell :is(.template-page, .rules-page, .landing-page, .health-statusbar, .health-page, .logs-section) .btn.primary {
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+}
+
+body.has-shell :is(.template-page, .rules-page, .landing-page, .health-statusbar, .health-page, .logs-section) .btn.primary:hover:not(:disabled) {
+  border-color: var(--accent-hover);
+  background: var(--accent-hover);
+}
+
+body.has-shell :is(.template-page, .rules-page, .landing-page, .health-page) .danger-btn {
+  border-radius: 8px;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
   body.has-shell .metric-grid {
