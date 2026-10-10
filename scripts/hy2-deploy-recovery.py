@@ -281,6 +281,7 @@ EXACT_ALLOWED_PATHS = {
     "/root/hysteria/web_api/overview_models.py",
     "/root/hysteria/web_api/plans_routes.py",
     "/root/hysteria/web_api/plans_service.py",
+    "/root/hysteria/web_api/schedule_service.py",
     "/root/hysteria/web_api/journal_routes.py",
     "/root/hysteria/web_api/journal_service.py",
     "/root/hysteria/web_api/requests.py",

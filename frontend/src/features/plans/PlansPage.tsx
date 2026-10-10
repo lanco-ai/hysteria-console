@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { CodexShell } from '../../shared/CodexShell';
 import { loadPlanSnapshot, requestPlanAssistant, savePlanSnapshot, type PlanAssistantSuggestion, type PlanItem, type PlanQuadrant, type PlanSnapshot, type PlanStatus } from './plansApi';
 import { JournalPage } from './JournalPage';
+import { SchedulePanel } from './SchedulePanel';
+import type { TaskMarker } from './scheduleModel';
 
 const groups: Array<{ id: PlanQuadrant; title: string; hint: string }> = [
   { id: 'important_urgent', title: '重要且紧急', hint: '优先处理' },
@@ -117,6 +119,7 @@ export function PlansPage(): ReactElement {
   }, []);
   const [selectedDate, setSelectedDate] = useState(() => localDate(timezone));
   const journalPanel = window.location.hash === '#daily-timeline' ? 'timeline' : window.location.hash === '#daily-review' ? 'review' : null;
+  const scheduleView = window.location.hash === '#daily-schedule';
   const plansLinkRef = useRef<HTMLAnchorElement>(null);
   const closeJournal = useCallback(() => { plansLinkRef.current?.click(); }, []);
   const [journalProtected, setJournalProtected] = useState(false);
@@ -160,6 +163,12 @@ export function PlansPage(): ReactElement {
   const onJournalProtectionChange = useCallback((protectedDraft: boolean) => {
     journalProtectedRef.current = protectedDraft;
     setJournalProtected(protectedDraft);
+  }, []);
+  const [scheduleProtected, setScheduleProtected] = useState(false);
+  const scheduleProtectedRef = useRef(false);
+  const onScheduleProtectionChange = useCallback((protectedDraft: boolean) => {
+    scheduleProtectedRef.current = protectedDraft;
+    setScheduleProtected(protectedDraft);
   }, []);
   const itemsRef = useRef<PlanItem[]>([]);
   const saveLock = useRef(false);
@@ -238,7 +247,7 @@ export function PlansPage(): ReactElement {
         reversingHistoryRef.current = false;
         return;
       }
-      if (guardEvent.detail.sameRoute || !(protectedDraftRef.current || journalProtectedRef.current)) return;
+      if (guardEvent.detail.sameRoute || !(protectedDraftRef.current || journalProtectedRef.current || scheduleProtectedRef.current)) return;
       if (window.confirm('有未保存的计划或记录修改，确定离开此页面吗？')) {
         confirmedNavigation.current = true;
         window.setTimeout(() => { confirmedNavigation.current = false; }, 0);
@@ -257,7 +266,7 @@ export function PlansPage(): ReactElement {
   }, []);
 
   useEffect(() => {
-    if (!hasProtectedDraft && !journalProtected) return;
+    if (!hasProtectedDraft && !journalProtected && !scheduleProtected) return;
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (confirmedNavigation.current) return;
       event.preventDefault();
@@ -284,7 +293,7 @@ export function PlansPage(): ReactElement {
       window.removeEventListener('beforeunload', onBeforeUnload);
       document.removeEventListener('click', onDocumentClick, true);
     };
-  }, [hasProtectedDraft, journalProtected]);
+  }, [hasProtectedDraft, journalProtected, scheduleProtected]);
 
   const persist = async (next: PlanItem[]) => {
     if (saveLock.current || editingBlocked) return false;
@@ -329,6 +338,9 @@ export function PlansPage(): ReactElement {
 
   const changeItems = (next: PlanItem[]) => { editVersion.current += 1; replaceItems(next); setDirty(true); setSaveState(saveLock.current ? 'saving' : 'unsaved'); setFeedback(''); };
   const selectedItems = items.filter(item => item.plan_date === selectedDate);
+  const scheduleTasks = useMemo<TaskMarker[]>(() => items
+    .filter(item => item.plan_date === selectedDate && item.start_time)
+    .map(item => ({ id: item.id, title: item.title, start: item.start_time!.slice(0, 5), minutes: item.estimate_minutes, done: item.status === 'done' })), [items, selectedDate]);
   const completedCount = selectedItems.filter(item => item.status === 'done').length;
   const today = localDate(timezone);
   const dayFromToday = dayOffset(today, selectedDate);
@@ -577,7 +589,8 @@ export function PlansPage(): ReactElement {
         <div className="plans-header-side">
           <nav className="daily-section-nav" aria-label="今日页面内容">
             <a href="#daily-timeline" aria-haspopup="dialog" aria-controls="daily-journal-drawer">时间线</a>
-            <a href="#daily-plans" ref={plansLinkRef} aria-current={journalPanel ? undefined : "page"}>今日计划</a>
+            <a href="#daily-plans" ref={plansLinkRef} aria-current={journalPanel || scheduleView ? undefined : "page"}>今日计划</a>
+            <a href="#daily-schedule" aria-current={scheduleView && !journalPanel ? "page" : undefined}>行程</a>
             <a href="#daily-review" aria-haspopup="dialog" aria-controls="daily-journal-drawer">回顾</a>
           </nav>
           <div className="plans-header-actions"><button className="btn btn-secondary plans-ai-trigger" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}><PlansGlyph name="spark" />AI 建议</button><button className="btn btn-ghost plans-refresh" type="button" aria-label="刷新" title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : '重新读取计划'} onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft}><PlansGlyph name="refresh" /></button></div>
@@ -585,7 +598,7 @@ export function PlansPage(): ReactElement {
       </header>
 
       <section className="daily-plans-section" id="plans-workspace" aria-labelledby="daily-plans-heading" tabIndex={-1}>
-      <div className={`plans-composer${dirty || saveState === 'failure' || conflictDraft ? ' is-dirty' : ''}`}>
+      <div className={`plans-composer${dirty || saveState === 'failure' || conflictDraft ? ' is-dirty' : ''}`} hidden={scheduleView}>
       <form className="plans-create" onSubmit={addTask}>
         <label className="sr-only" htmlFor="plan-title">计划标题</label><input id="plan-title" value={title} onChange={event => { formDraftVersion.current += 1; setTitle(event.target.value); setFeedback(''); }} maxLength={160} placeholder="添加今天要做的事…" required disabled={editingBlocked} />
         <label className="sr-only" htmlFor="plan-quadrant">计划分类</label><select id="plan-quadrant" value={quadrant} onChange={event => setQuadrant(event.target.value as PlanQuadrant)} disabled={editingBlocked}>{groups.map(group => <option key={group.id} value={group.id}>{group.title}</option>)}</select>
@@ -599,6 +612,7 @@ export function PlansPage(): ReactElement {
       </div>
       {!assistantOpen && error ? renderPlanError() : null}
       {!assistantOpen && conflictDraft && !error ? renderConflictNotice() : null}
+      <SchedulePanel mode={scheduleView ? 'full' : 'strip'} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange} />
 
         {assistantOpen ? <><button className="plans-assistant-backdrop" type="button" tabIndex={-1} aria-label="关闭 AI 建议" onClick={closeAssistant} /><section className="plans-assistant" role="dialog" aria-modal="true" aria-labelledby="plans-assistant-title" tabIndex={-1}>
         <div className="plans-assistant-dialog">
@@ -622,7 +636,7 @@ export function PlansPage(): ReactElement {
         </div> : null}
         </div></section></> : null}
 
-      {loading && !items.length ? null : <div className="plans-grid">{groups.map(group => {
+      {loading && !items.length ? null : <div className="plans-grid" hidden={scheduleView}>{groups.map(group => {
         const groupItems = selectedItems.filter(item => item.quadrant === group.id);
         return <section className={`plans-quadrant plans-quadrant-${group.id}${groupItems.length ? '' : ' plans-quadrant-empty'}`} key={group.id} aria-label={group.title}>
           <header><div><h3>{group.title}</h3><p>{group.hint}</p></div><span>{groupItems.length}</span></header>
@@ -638,7 +652,7 @@ export function PlansPage(): ReactElement {
           })}</ul> : <p className="plans-empty">暂无计划</p>}
         </section>;
       })}</div>}
-      <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services#ai-services">服务中心</a></footer>
+      <footer className="plans-footer" hidden={scheduleView}><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services#ai-services">服务中心</a></footer>
       </section>
       <JournalPage panel={journalPanel} onClose={closeJournal} selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
     </section>

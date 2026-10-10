@@ -18,6 +18,7 @@ from .ai.assistant_schemas import plan_assistant_schema
 from .ai.service_store import AIServiceError, AIServiceStore
 from .chat_service import ChatUpstreamError
 from .plans_service import PlanStore
+from .schedule_service import ScheduleStore
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 
 
@@ -28,6 +29,20 @@ class PlanSnapshot(BaseModel):
     model_config = ConfigDict(extra='forbid')
     revision: str = Field(min_length=64, max_length=64)
     items: list[dict]
+
+
+class ScheduleDayUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    revision: str = Field(min_length=64, max_length=64)
+    day: dict
+
+
+class ScheduleRoutineUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
+    revision: str = Field(min_length=64, max_length=64)
+    routine: dict
 
 
 class ReminderAction(BaseModel):
@@ -93,8 +108,9 @@ class PlanAssistantResult(BaseModel):
     suggestions: list[PlanSuggestion] = Field(min_length=1, max_length=8)
 
 
-def register_plans_routes(app, services, dispatch, *, store=None, ai_services_store=None):
+def register_plans_routes(app, services, dispatch, *, store=None, schedule_store=None, ai_services_store=None):
     store = store or PlanStore()
+    schedule = schedule_store or ScheduleStore()
     ai_store = ai_services_store
 
     async def require_admin(request):
@@ -251,6 +267,66 @@ def register_plans_routes(app, services, dispatch, *, store=None, ai_services_st
         if isinstance(result, JSONResponse):
             return result
         return JSONResponse(result)
+
+    @app.get('/api/plans/schedule')
+    async def get_schedule(request: Request):
+        denied = await require_admin(request)
+        if denied is not None:
+            return denied
+        day = request.query_params.get('date', '')
+        try:
+            calendar_date.fromisoformat(day)
+        except ValueError:
+            return JSONResponse({'error': 'invalid_request'}, status_code=400)
+        try:
+            result = await dispatch(lambda *, headers, path: schedule.read(day), request)
+        except (OSError, RuntimeError, ValueError, state_store.StateStoreError):
+            return JSONResponse({'error': 'plans_unavailable'}, status_code=503)
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(result)
+
+    async def put_schedule_part(request, model, apply):
+        if not http_utils.is_same_origin_post(SimpleNamespace(headers=request.headers)):
+            return JSONResponse({'error': 'cross_site_request'}, status_code=403)
+        denied = await require_admin(request)
+        if denied is not None:
+            return denied
+        if request.headers.get('content-type', '').split(';', 1)[0].strip().lower() != 'application/json':
+            return JSONResponse({'error': 'json_required'}, status_code=400)
+        try:
+            body = await request.body()
+            if len(body) > 64 * 1024:
+                return JSONResponse({'error': 'request_too_large'}, status_code=413)
+            payload = model.model_validate(json.loads(body.decode('utf-8')))
+            calendar_date.fromisoformat(payload.date)
+        except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, ValueError):
+            return JSONResponse({'error': 'invalid_request'}, status_code=400)
+        try:
+            result = await dispatch(lambda *, headers, path: apply(payload), request)
+        except ValueError as exc:
+            if str(exc) == 'conflict':
+                return JSONResponse({'error': 'revision_conflict'}, status_code=409)
+            return JSONResponse({'error': 'invalid_plan'}, status_code=422)
+        except (OSError, RuntimeError, state_store.StateStoreError):
+            return JSONResponse({'error': 'plans_unavailable'}, status_code=503)
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(result)
+
+    @app.put('/api/plans/schedule/day')
+    async def put_schedule_day(request: Request):
+        return await put_schedule_part(
+            request, ScheduleDayUpdate, lambda payload: schedule.replace_day(payload.date, payload.day, payload.revision)
+        )
+
+    @app.put('/api/plans/schedule/routine')
+    async def put_schedule_routine(request: Request):
+        return await put_schedule_part(
+            request,
+            ScheduleRoutineUpdate,
+            lambda payload: schedule.replace_routine(payload.date, payload.routine, payload.revision),
+        )
 
     @app.get('/api/plans/reminders')
     async def get_due_reminders(request: Request):

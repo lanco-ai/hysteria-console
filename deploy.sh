@@ -167,6 +167,7 @@ declare -a REACT_WEB_API_MODULES=(
   overview_models.py
   plans_routes.py
   plans_service.py
+  schedule_service.py
   journal_routes.py
   journal_service.py
   requests.py
@@ -435,6 +436,7 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/overview_models.py"
   add_durable_artifact "$HY_DIR/web_api/plans_routes.py"
   add_durable_artifact "$HY_DIR/web_api/plans_service.py"
+  add_durable_artifact "$HY_DIR/web_api/schedule_service.py"
   add_durable_artifact "$HY_DIR/web_api/journal_routes.py"
   add_durable_artifact "$HY_DIR/web_api/journal_service.py"
   add_durable_artifact "$HY_DIR/web_api/requests.py"
@@ -2235,6 +2237,7 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/overview_models.py" "$HY_DIR/web_api/overview_models.py"
   render "$REPO_DIR/hysteria/web_api/plans_routes.py" "$HY_DIR/web_api/plans_routes.py"
   render "$REPO_DIR/hysteria/web_api/plans_service.py" "$HY_DIR/web_api/plans_service.py"
+  render "$REPO_DIR/hysteria/web_api/schedule_service.py" "$HY_DIR/web_api/schedule_service.py"
   render "$REPO_DIR/hysteria/web_api/journal_routes.py" "$HY_DIR/web_api/journal_routes.py"
   render "$REPO_DIR/hysteria/web_api/journal_service.py" "$HY_DIR/web_api/journal_service.py"
   render "$REPO_DIR/hysteria/web_api/requests.py" "$HY_DIR/web_api/requests.py"

@@ -317,6 +317,7 @@ def create_app(
     github_trending_avatar_proxy=None,
     github_trending_scheduler_enabled=False,
     plans_store=None,
+    schedule_store=None,
     journal_store=None,
     chat_settings_store=None,
     chat_workspace_store=None,
@@ -534,6 +535,7 @@ def create_app(
         services,
         dispatch,
         store=plans_store,
+        schedule_store=schedule_store,
         ai_services_store=ai_services_store,
     )
     register_journal_routes(app, services, dispatch, store=journal_store)
