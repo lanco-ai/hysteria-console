@@ -1,5 +1,6 @@
 """Adapters from the HTTP boundary to the legacy panel services."""
 
+import hmac
 import json
 from dataclasses import dataclass, field
 from typing import Literal, Mapping
@@ -642,7 +643,7 @@ class LegacyPanelServices:
             config = service.state_store.load_json_strict(service.alerts.CONFIG_FILE, {})
             return {
                 **service.alerts.public_config(config),
-                'revision': service.content_revision(config),
+                'revision': service.alerts.config_revision(config, service.get_hy_api_secret()),
             }
 
         return self._run_read(read)
@@ -664,7 +665,8 @@ class LegacyPanelServices:
                     current = service.state_store.load_json_strict(alerts.CONFIG_FILE, {})
                 except service.state_store.InvalidJsonState:
                     return {'ok': False, 'error': 'validation_error', 'code': 'config_unreadable'}
-                if service.content_revision(current) != value('revision'):
+                revision = alerts.config_revision(current, service.get_hy_api_secret())
+                if not hmac.compare_digest(revision.encode(), value('revision').encode()):
                     return {'ok': False, 'error': 'revision_conflict'}
                 try:
                     updated = alerts.updated_config(
@@ -687,7 +689,7 @@ class LegacyPanelServices:
             return {
                 'ok': True,
                 **alerts.public_config(updated),
-                'revision': service.content_revision(updated),
+                'revision': alerts.config_revision(updated, service.get_hy_api_secret()),
             }
 
         return self._run_operation(mutate, post_path='/admin/alerts/save')

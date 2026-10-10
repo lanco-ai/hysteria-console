@@ -9,7 +9,7 @@ revision so that editing one day never conflicts with editing the routine:
   date's routine blocks.
 """
 
-from datetime import date
+from datetime import date, timedelta
 import hashlib
 import json
 from pathlib import Path
@@ -24,7 +24,6 @@ BLOCK_STATUSES = ('planned', 'done', 'skipped')
 MAX_ROUTINE_BLOCKS = 60
 MAX_DAY_BLOCKS = 80
 MAX_DAYS = 3660
-EMPTY_DAY = {'blocks': [], 'routine_status': {}, 'note': ''}
 
 
 def _minutes(value):
@@ -156,8 +155,34 @@ def _day_key(value):
     return date.fromisoformat(value).isoformat()
 
 
+def _empty_day():
+    return {'blocks': [], 'routine_status': {}, 'note': ''}
+
+
 def _is_empty_day(day):
     return not day['blocks'] and not day['routine_status'] and not day['note']
+
+
+def _carried_over(days, day_key):
+    """The part of the previous day that runs past midnight into ``day_key``.
+
+    Its overnight blocks and routine marks let the day show the morning part
+    of, say, the previous night's sleep. Read-only: they are edited on the
+    day they start.
+    """
+    try:
+        previous = days.get((date.fromisoformat(day_key) - timedelta(days=1)).isoformat())
+    except OverflowError:
+        previous = None
+    if not previous:
+        return {'blocks': [], 'routine_status': {}}
+    return {
+        'blocks': [
+            dict(block) for block in previous['blocks']
+            if 0 < _minutes(block['end']) < _minutes(block['start'])
+        ],
+        'routine_status': dict(previous['routine_status']),
+    }
 
 
 class ScheduleStore:
@@ -183,19 +208,21 @@ class ScheduleStore:
         self.path.chmod(0o600)
 
     @staticmethod
-    def _view(day_key, routine, day):
+    def _view(day_key, routine, days):
+        day = days.get(day_key) or _empty_day()
         return {
             'date': day_key,
             'routine': routine,
             'routine_revision': _revision(routine),
             'day': day,
             'day_revision': _revision(day),
+            'previous_day': _carried_over(days, day_key),
         }
 
     def read(self, day_value):
         key = _day_key(day_value)
         routine, days = self._load()
-        return self._view(key, routine, days.get(key, dict(EMPTY_DAY)))
+        return self._view(key, routine, days)
 
     @staticmethod
     def _check_revision(revision, current):
@@ -209,7 +236,7 @@ class ScheduleStore:
         day = _validated(Day, value)
         with state_store.file_lock(self._lock_path, timeout=3):
             routine, days = self._load()
-            self._check_revision(revision, days.get(key, dict(EMPTY_DAY)))
+            self._check_revision(revision, days.get(key) or _empty_day())
             if _is_empty_day(day):
                 days.pop(key, None)
             else:
@@ -217,7 +244,7 @@ class ScheduleStore:
             if len(days) > MAX_DAYS:
                 raise ValueError('too many days')
             self._save(routine, days)
-            return self._view(key, routine, day)
+            return self._view(key, routine, days)
 
     def replace_routine(self, day_value, value, revision):
         key = _day_key(day_value)
@@ -226,5 +253,5 @@ class ScheduleStore:
             current, days = self._load()
             self._check_revision(revision, current)
             self._save(routine, days)
-            return self._view(key, routine, days.get(key, dict(EMPTY_DAY)))
+            return self._view(key, routine, days)
 

@@ -1,4 +1,4 @@
-import type { RoutineBlock, ScheduleCategory, ScheduleDay, ScheduleRoutine } from './scheduleApi';
+import type { DayBlock, RoutineBlock, ScheduleCarryOver, ScheduleCategory, ScheduleDay, ScheduleRoutine } from './scheduleApi';
 
 export const categories: Array<{ id: ScheduleCategory; label: string; hint: string }> = [
   { id: 'rest', label: '作息', hint: '睡眠、起床、午休' },
@@ -78,44 +78,66 @@ export type ScheduleEntry = {
   status: 'planned' | 'done' | 'skipped';
   notes: string;
   weekdays: number[];
+  /** Started the day before: only its part after midnight falls on this day. */
+  carried: boolean;
 };
 
 export type TaskMarker = { id: string; title: string; start: string; minutes: number; done: boolean };
 
-export function routineEntry(block: RoutineBlock, status: ScheduleEntry['status'] = 'planned'): ScheduleEntry {
+export function routineEntry(block: RoutineBlock, status: ScheduleEntry['status'] = 'planned', carried = false): ScheduleEntry {
   return {
     key: `routine:${block.id}`, kind: 'routine', id: block.id, title: block.title, category: block.category,
-    start: block.start, end: block.end, status, notes: '', weekdays: block.weekdays,
+    start: block.start, end: block.end, status, notes: '', weekdays: block.weekdays, carried,
   };
 }
 
-export function dayEntries(date: string, routine: ScheduleRoutine, day: ScheduleDay, tasks: TaskMarker[] = []): ScheduleEntry[] {
+function dayBlockEntry(block: DayBlock, carried: boolean): ScheduleEntry {
+  return {
+    key: `day:${block.id}`, kind: 'day', id: block.id, title: block.title, category: block.category,
+    start: block.start, end: block.end, status: block.status, notes: block.notes, weekdays: [], carried,
+  };
+}
+
+/** Runs past midnight into the next day, e.g. sleep 23:00–07:00; one ending at 00:00 stays on its own day. */
+export function crossesMidnight(block: Pick<ScheduleEntry, 'start' | 'end'>): boolean {
+  const end = toMinutes(block.end);
+  return end > 0 && end < toMinutes(block.start);
+}
+
+/**
+ * Everything that occupies `date`: its routine blocks, one-off blocks and plan tasks, plus the after-midnight
+ * part of what started the day before. An overnight block belongs to the day it starts on.
+ */
+export function dayEntries(date: string, routine: ScheduleRoutine, day: ScheduleDay, tasks: TaskMarker[] = [], previous?: ScheduleCarryOver): ScheduleEntry[] {
   const weekday = weekdayOf(date);
+  const yesterday = (weekday + 6) % 7;
+  const carried = [
+    ...routine.blocks.filter(block => block.weekdays.includes(yesterday) && crossesMidnight(block))
+      .map(block => routineEntry(block, previous?.routine_status[block.id] || 'planned', true)),
+    ...(previous?.blocks || []).filter(crossesMidnight).map(block => dayBlockEntry(block, true)),
+  ];
   const fromRoutine = routine.blocks.filter(block => block.weekdays.includes(weekday))
     .map(block => routineEntry(block, day.routine_status[block.id] || 'planned'));
-  const fromDay = day.blocks.map((block): ScheduleEntry => ({
-    key: `day:${block.id}`, kind: 'day', id: block.id, title: block.title, category: block.category,
-    start: block.start, end: block.end, status: block.status, notes: block.notes, weekdays: [],
-  }));
+  const fromDay = day.blocks.map(block => dayBlockEntry(block, false));
   const fromTasks = tasks.map((task): ScheduleEntry => ({
     key: `task:${task.id}`, kind: 'task', id: task.id, title: task.title, category: null,
-    start: task.start, end: toClock(toMinutes(task.start) + task.minutes), status: task.done ? 'done' : 'planned', notes: '', weekdays: [],
+    start: task.start, end: toClock(toMinutes(task.start) + task.minutes), status: task.done ? 'done' : 'planned', notes: '', weekdays: [], carried: false,
   }));
-  return [...fromRoutine, ...fromDay, ...fromTasks].sort((a, b) => toMinutes(a.start) - toMinutes(b.start) || a.title.localeCompare(b.title));
+  return [...carried, ...fromRoutine, ...fromDay, ...fromTasks]
+    .sort((a, b) => segmentOf(a).from - segmentOf(b).from || a.title.localeCompare(b.title));
 }
 
-export function containsMinute(entry: Pick<ScheduleEntry, 'start' | 'end'>, minute: number): boolean {
+/** The minutes an entry occupies on its own 0–24h axis: an overnight entry runs to midnight, a carried one from it. */
+export function segmentOf(entry: Pick<ScheduleEntry, 'start' | 'end' | 'carried'>): { from: number; to: number } {
   const from = toMinutes(entry.start);
   const to = toMinutes(entry.end);
-  return to > from ? minute >= from && minute < to : minute >= from || minute < to;
+  if (entry.carried) return { from: 0, to };
+  return { from, to: to > from ? to : 1440 };
 }
 
-/** Visible pieces of an entry on a 0–24h axis; overnight entries show as an evening and a morning piece. */
-export function segmentsOf(entry: Pick<ScheduleEntry, 'start' | 'end'>): Array<{ from: number; to: number; continued: boolean }> {
-  const from = toMinutes(entry.start);
-  const to = toMinutes(entry.end);
-  if (to > from) return [{ from, to, continued: false }];
-  return [{ from, to: 1440, continued: false }, ...(to > 0 ? [{ from: 0, to, continued: true }] : [])];
+export function containsMinute(entry: Pick<ScheduleEntry, 'start' | 'end' | 'carried'>, minute: number): boolean {
+  const { from, to } = segmentOf(entry);
+  return minute >= from && minute < to;
 }
 
 export type PlacedSegment = { entry: ScheduleEntry; from: number; to: number; continued: boolean; lane: number; lanes: number };
@@ -123,7 +145,8 @@ export type PlacedSegment = { entry: ScheduleEntry; from: number; to: number; co
 /** Side-by-side columns for overlapping segments, the way calendar apps lay out a day. */
 export function placeSegments(entries: ScheduleEntry[]): PlacedSegment[] {
   const pieces = entries.filter(entry => entry.status !== 'skipped')
-    .flatMap(entry => segmentsOf(entry).map(segment => ({ entry, ...segment, lane: 0, lanes: 1 })))
+    .map(entry => ({ entry, ...segmentOf(entry), continued: entry.carried, lane: 0, lanes: 1 }))
+    .filter(piece => piece.to > piece.from)
     .sort((a, b) => a.from - b.from || b.to - a.to);
   const placed: PlacedSegment[] = [];
   let group: PlacedSegment[] = [];
@@ -148,18 +171,32 @@ export function placeSegments(entries: ScheduleEntry[]): PlacedSegment[] {
   return placed;
 }
 
+/** Minutes per category within this day; an overnight block counts toward each day by the part it covers. */
 export function allocation(entries: ScheduleEntry[]): Record<ScheduleCategory, number> {
   const totals = Object.fromEntries(categories.map(item => [item.id, 0])) as Record<ScheduleCategory, number>;
   entries.forEach(entry => {
-    if (entry.category && entry.status !== 'skipped') totals[entry.category] += spanMinutes(entry.start, entry.end);
+    if (!entry.category || entry.status === 'skipped') return;
+    const { from, to } = segmentOf(entry);
+    totals[entry.category] += Math.max(0, to - from);
   });
   return totals;
 }
 
-export function overlapsWith(candidate: Pick<ScheduleEntry, 'start' | 'end'>, entries: ScheduleEntry[], ignoreKey = ''): ScheduleEntry[] {
-  const mine = segmentsOf(candidate);
-  return entries.filter(entry => entry.key !== ignoreKey && entry.kind !== 'task' && entry.status !== 'skipped'
-    && segmentsOf(entry).some(other => mine.some(segment => segment.from < other.to && other.from < segment.to)));
+/**
+ * Entries of this day that a candidate block would overlap. `parts` says which of its occurrences fall on
+ * the day: the one starting today, and the after-midnight part of one that started yesterday.
+ */
+export function overlapsWith(candidate: Pick<ScheduleEntry, 'start' | 'end'>, entries: ScheduleEntry[], ignoreKey = '',
+  parts: { today: boolean; carried: boolean } = { today: true, carried: false }): ScheduleEntry[] {
+  const mine = [
+    ...(parts.today ? [segmentOf({ ...candidate, carried: false })] : []),
+    ...(parts.carried && crossesMidnight(candidate) ? [segmentOf({ ...candidate, carried: true })] : []),
+  ];
+  return entries.filter(entry => {
+    if (entry.key === ignoreKey || entry.kind === 'task' || entry.status === 'skipped') return false;
+    const other = segmentOf(entry);
+    return mine.some(segment => segment.from < other.to && other.from < segment.to);
+  });
 }
 
 export function newBlockId(): string {

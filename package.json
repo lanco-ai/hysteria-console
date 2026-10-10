@@ -8,7 +8,7 @@
   "scripts": {
     "lint:js": "eslint \"tests/*.cjs\"",
     "lint:css": "stylelint \"frontend/src/**/*.css\"",
-    "test:gates": "node --experimental-vm-modules --test --test-concurrency=1 tests/frontend-quality.test.cjs tests/overview_pagehide_state.test.cjs",
+    "test:gates": "node --experimental-vm-modules --test --test-concurrency=1 tests/frontend-quality.test.cjs tests/overview_pagehide_state.test.cjs tests/schedule_model.test.cjs",
     "test:browser": "PYTHONPATH=. ${PYTHON:-python3} tests/run_react_browser.py",
     "typecheck:react": "tsc --noEmit",
     "build:react": "vite build",

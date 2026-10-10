@@ -132,6 +132,61 @@ async function preferences(context) {
     await expect(composer).toBeEnabled();
     await expect(page.getByText('Ctrl / ⌘ + Enter 发送 · Enter 换行')).toBeVisible();
 
+    // While a save is running the fields are locked and the dialog stays open, so nothing typed is lost.
+    await opener.click();
+    await dialog.getByRole('button', { name: '自定义指令', exact: true }).click();
+    await instructions.fill('保存期间不可再改');
+    let release;
+    let saveSeen = false;
+    await page.route('**/api/chat/workspace/preferences', async route => {
+      if (route.request().method() !== 'PUT') return route.continue();
+      saveSeen = true;
+      await new Promise(resolve => { release = resolve; });
+      await route.continue();
+    });
+    await save.click();
+    await expect.poll(() => saveSeen).toBe(true);
+    await expect(instructions).not.toBeEditable();
+    await expect(dialog.getByRole('button', { name: '保存中…' })).toBeDisabled();
+    await page.keyboard.press('Escape');
+    await dialog.getByRole('button', { name: '关闭窗口', exact: true }).click();
+    await expect(dialog).toBeVisible();
+    release();
+    await expect(dialog.getByText('已保存，下一条消息开始生效')).toBeVisible();
+    await expect(instructions).toBeEditable();
+    await expect(instructions).toHaveValue('保存期间不可再改');
+    assert.equal((await preferences(context)).instructions, '保存期间不可再改');
+    await page.unroute('**/api/chat/workspace/preferences');
+
+    // An empty default model means the first available model, for 新对话 as for a deleted open conversation.
+    await dialog.getByRole('button', { name: '模型与默认值', exact: true }).click();
+    await dialog.getByLabel('默认模型').selectOption('');
+    await save.click();
+    await expect(dialog.getByText('已保存，下一条消息开始生效')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    const sidebar = page.locator('.chat-history-panel');
+    await page.getByLabel('当前模型').fill('model-c');
+    await page.getByLabel('思考强度').selectOption('low');
+    await sidebar.getByRole('button', { name: '新对话', exact: true }).click();
+    await expect(page.getByLabel('当前模型')).toHaveValue('model-a');
+    await expect(page.getByLabel('思考强度')).toHaveValue('high');
+    await composer.fill('删除前的一条消息');
+    await composer.press('Control+Enter');
+    await expect(page.locator('.chat-message-user')).toContainText('删除前的一条消息');
+    await expect(page.locator('.chat-message-assistant')).toContainText('LSM Tree');
+    // Opening it from the list links it in the address bar.
+    await sidebar.locator('.chat-session-row.active .chat-session').click();
+    await expect(page).toHaveURL(/[?&]conversation=/);
+    await page.getByLabel('当前模型').fill('model-c');
+    await page.getByLabel('思考强度').selectOption('low');
+    page.once('dialog', prompt => prompt.accept());
+    await sidebar.locator('.chat-session-row.active').getByRole('button', { name: /^删除 / }).click();
+    await expect(page.locator('.chat-thread-title strong')).toHaveText('新对话');
+    await expect(page.getByLabel('当前模型')).toHaveValue('model-a');
+    await expect(page.getByLabel('思考强度')).toHaveValue('high');
+    await expect(page).not.toHaveURL(/[?&]conversation=/);
+
     // Usage moved into AI 设置.
     await opener.click();
     await dialog.getByRole('button', { name: '用量', exact: true }).click();

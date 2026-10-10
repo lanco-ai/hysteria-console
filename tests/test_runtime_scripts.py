@@ -62,6 +62,12 @@ def test_backup_excludes_live_login_sessions(tmp_path):
     (journal_dir / 'entries.json').write_text('{"schema_version":1,"items":[]}')
     (journal_dir / 'entries.json.lock').touch()
     (journal_dir / 'unrelated.json').write_text('{}')
+    plans_dir = state_dir / 'plans'
+    plans_dir.mkdir(mode=0o700)
+    (plans_dir / 'tasks.json').write_text('{"schema_version":1,"items":[]}')
+    (plans_dir / 'tasks.json.lock').touch()
+    (plans_dir / 'schedule.json').write_text('{"schema_version":1,"routine":{},"days":{}}')
+    (plans_dir / 'schedule.json.lock').touch()
     (state_dir / 'panel_sessions.json').write_text('{"sid":{"exp":9999999999}}')
     (state_dir / 'user_panel_sessions.json').write_text('{"usid":{"exp":9999999999}}')
     (state_dir / 'credential_rotation_receipts.json').write_text(
@@ -90,6 +96,10 @@ def test_backup_excludes_live_login_sessions(tmp_path):
     assert any(name.endswith('/state/journal/entries.json') for name in names)
     assert not any(name.endswith('/state/journal/entries.json.lock') for name in names)
     assert not any(name.endswith('/state/journal/unrelated.json') for name in names)
+    # 今日计划 and its 行程 live one level down and are listed explicitly.
+    assert any(name.endswith('/state/plans/tasks.json') for name in names)
+    assert any(name.endswith('/state/plans/schedule.json') for name in names)
+    assert not any(name.endswith('.json.lock') for name in names)
     assert Path(archive).stat().st_mode & 0o777 == 0o600
     assert not any(name.endswith('/state/panel_sessions.json') for name in names)
     assert not any(name.endswith('/state/user_panel_sessions.json') for name in names)

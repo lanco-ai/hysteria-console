@@ -33,6 +33,7 @@ const FIELD_ERRORS: Record<string, string> = {
   telegram_token_invalid: 'Bot Token 格式不正确，应形如 123456789:AA…（在 @BotFather 中获取）。',
   telegram_chat_invalid: 'Chat ID 应为数字 ID（群组通常以 -100 开头）或 @频道用户名。',
   webhook_url_invalid: 'Webhook 地址必须以 https:// 开头，且不能包含账号密码或空格。',
+  webhook_url_private: 'Webhook 不能指向本机或内网地址：告警由服务器发出，只能发往公网上的接收端。',
   webhook_secret_invalid: '签名密钥不能超过 256 个字符。',
   z_threshold_invalid: '异常阈值需在 1 到 10 之间。',
   min_gib_invalid: '最低流量需在 0 到 1024 GiB 之间。',

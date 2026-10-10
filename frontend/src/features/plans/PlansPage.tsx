@@ -166,8 +166,10 @@ export function PlansPage(): ReactElement {
   }, []);
   const [scheduleProtected, setScheduleProtected] = useState(false);
   const scheduleProtectedRef = useRef(false);
-  const onScheduleProtectionChange = useCallback((protectedDraft: boolean) => {
+  const scheduleDayDraftRef = useRef(false);
+  const onScheduleProtectionChange = useCallback((protectedDraft: boolean, dayDraft: boolean) => {
     scheduleProtectedRef.current = protectedDraft;
+    scheduleDayDraftRef.current = dayDraft;
     setScheduleProtected(protectedDraft);
   }, []);
   const itemsRef = useRef<PlanItem[]>([]);
@@ -185,6 +187,9 @@ export function PlansPage(): ReactElement {
   const replaceItems = useCallback((next: PlanItem[]) => { itemsRef.current = next; setItems(next); }, []);
   const changeSelectedDate = (update: (current: string) => string) => {
     const next = update(selectedDateRef.current);
+    if (next === selectedDateRef.current) return;
+    // An edit of one of this day's 行程 blocks belongs to this date; ask before it is discarded.
+    if (scheduleDayDraftRef.current && !window.confirm('行程里正在修改的安排尚未保存，切换日期会放弃这次修改。继续？')) return;
     selectedDateRef.current = next;
     setSelectedDate(next);
   };

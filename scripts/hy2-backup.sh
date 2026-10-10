@@ -201,6 +201,8 @@ for p in \
   "$HY_DIR/server.key" \
   "$HY_DIR/config.yaml" \
   "$HY_DIR/state/journal/entries.json" \
+  "$HY_DIR/state/plans/tasks.json" \
+  "$HY_DIR/state/plans/schedule.json" \
   "$TUIC_CONFIG" \
   "$XRAY_CONFIG"; do
   add_path "$p"

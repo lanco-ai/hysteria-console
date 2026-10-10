@@ -47,6 +47,8 @@ async function capture(page, filename) {
         await page.getByRole('button', { name: '打开对话列表', exact: true }).click();
       }
       await expect(list).toBeVisible();
+      // A floating list slides in; measure where it settles, not mid-animation.
+      await list.evaluate(element => Promise.all(element.getAnimations().map(animation => animation.finished)));
       const listBox = await list.boundingBox();
       assert(listBox && listBox.x >= 0 && listBox.x + listBox.width <= width, 'Conversation list fits the viewport');
       const project = page.getByRole('button', { name: '＋ 项目', exact: true });
@@ -59,6 +61,24 @@ async function capture(page, filename) {
       if (width < 1100) {
         await page.getByRole('button', { name: '收起对话列表', exact: true }).click();
         await expect(list).toHaveCount(0);
+        // Opening the floating sources panel by keyboard while the list is open moves focus into the panel.
+        await page.getByRole('button', { name: '打开对话列表', exact: true }).click();
+        await expect(list).toBeVisible();
+        const toggle = page.locator('.chat-context-toggle');
+        let reached = false;
+        for (let step = 0; step < 40 && !reached; step++) {
+          await page.keyboard.press('Tab');
+          reached = await toggle.evaluate(element => element === document.activeElement);
+        }
+        assert(reached, 'The sources toggle is reachable by keyboard');
+        await page.keyboard.press('Enter');
+        const sources = page.locator('.chat-context');
+        await expect(sources).toBeVisible();
+        await expect(list).toHaveCount(0);
+        await expect.poll(() => sources.evaluate(element => element.contains(document.activeElement))).toBe(true);
+        await page.keyboard.press('Escape');
+        await expect(sources).toHaveCount(0);
+        await expect(toggle).toBeFocused();
       } else {
         const thread = await page.locator('.chat-thread').boundingBox();
         assert(thread && listBox.x + listBox.width <= thread.x, 'Docked list sits beside the thread');

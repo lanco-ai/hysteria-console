@@ -7,7 +7,9 @@ export type RoutineBlock = BlockBase & { weekdays: number[] };
 export type DayBlock = BlockBase & { notes: string; status: ScheduleBlockStatus };
 export type ScheduleRoutine = { blocks: RoutineBlock[]; targets: Partial<Record<ScheduleCategory, number>> };
 export type ScheduleDay = { blocks: DayBlock[]; routine_status: Record<string, 'done' | 'skipped'>; note: string };
-export type ScheduleView = { date: string; routine: ScheduleRoutine; routine_revision: string; day: ScheduleDay; day_revision: string };
+/** The previous day's blocks that run past midnight, and its routine marks; read-only on this day. */
+export type ScheduleCarryOver = Pick<ScheduleDay, 'blocks' | 'routine_status'>;
+export type ScheduleView = { date: string; routine: ScheduleRoutine; routine_revision: string; day: ScheduleDay; day_revision: string; previous_day?: ScheduleCarryOver };
 
 async function scheduleRequest(url: string, init: RequestInit = {}): Promise<ScheduleView> {
   const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init });

@@ -371,6 +371,13 @@ body.has-shell .settings-account-text code {
   line-height: 1.6;
 }
 
+.settings-channel-note {
+  margin: 10px 0 0;
+  color: var(--warn);
+  font-size: var(--text-small);
+  line-height: 1.6;
+}
+
 .settings-fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

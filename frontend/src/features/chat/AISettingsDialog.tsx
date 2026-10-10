@@ -93,7 +93,9 @@ export function AISettingsDialog({ settings, models, preferences, sendKey, legac
     <button className="btn btn-primary" type="submit" disabled={busy || locked || !preferences || !dirty}>{busy ? '保存中…' : '保存设置'}</button>
   </div>;
 
-  const close = () => { if (!dirty || busy || window.confirm('放弃尚未保存的 AI 设置修改？')) onClose(); };
+  // While saving, the fields are locked and the dialog stays open, so the result — and on failure the
+  // unsaved edits — are shown here rather than lost with a closed dialog.
+  const close = () => { if (!busy && (!dirty || window.confirm('放弃尚未保存的 AI 设置修改？'))) onClose(); };
 
   return <WorkspaceDialog title="AI 设置" className="ai-settings-dialog" returnFocusTo={returnFocusTo} onClose={close}>
     <div className="ai-settings">
@@ -114,21 +116,21 @@ export function AISettingsDialog({ settings, models, preferences, sendKey, legac
             <h3>新对话默认值</h3>
             <p className="workspace-muted">只影响新开的对话；已有对话保留各自选择的模型和思考强度。</p>
             <label className="field"><span className="label">默认模型</span>
-              <select className="select" value={model} onChange={event => setModel(event.target.value)}>
+              <select className="select" value={model} disabled={busy} onChange={event => setModel(event.target.value)}>
                 <option value="">第一个可用模型</option>
                 {model && !models.some(item => item.id === model) ? <option value={model}>{model}（当前不可用）</option> : null}
                 {models.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
               </select>
             </label>
             <label className="field"><span className="label">默认思考强度</span>
-              <select className="select" value={reasoning} onChange={event => setReasoning(event.target.value as ReasoningEffort)}>
+              <select className="select" value={reasoning} disabled={busy} onChange={event => setReasoning(event.target.value as ReasoningEffort)}>
                 {REASONING.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
               </select>
             </label>
             <label className="field" htmlFor="chat-temperature"><span className="label">Temperature · {Number(temperature).toFixed(1)}</span>
               <span className="ai-settings-range">
-                <input type="range" min="0" max="2" step="0.1" value={temperature} aria-label="Temperature 滑块" onChange={event => setTemperature(event.target.value)}/>
-                <input id="chat-temperature" className="input" type="number" min="0" max="2" step="0.1" value={temperature} onChange={event => setTemperature(event.target.value)} required/>
+                <input type="range" min="0" max="2" step="0.1" value={temperature} aria-label="Temperature 滑块" disabled={busy} onChange={event => setTemperature(event.target.value)}/>
+                <input id="chat-temperature" className="input" type="number" min="0" max="2" step="0.1" value={temperature} readOnly={busy} onChange={event => setTemperature(event.target.value)} required/>
               </span>
               <small className="workspace-muted">越低越稳定，越高越发散；保存在服务中心的聊天服务上，所有使用它的功能共用。</small>
             </label>
@@ -141,7 +143,7 @@ export function AISettingsDialog({ settings, models, preferences, sendKey, legac
             <h3>自定义指令</h3>
             <p className="workspace-muted">附加到每个对话的系统提示里，例如你的背景、回答语言和格式偏好。项目指令和本次对话中的明确要求优先。</p>
             <label className="field"><span className="sr-only">自定义指令</span>
-              <textarea className="input ai-instructions" aria-label="自定义指令" rows={10} maxLength={INSTRUCTIONS_LIMIT} value={instructions} placeholder={'例如：\n我是存储方向的研究生，回答尽量用中文。\n先给结论，再给推理过程和可验证的依据。'} onChange={event => setInstructions(event.target.value)}/>
+              <textarea className="input ai-instructions" aria-label="自定义指令" rows={10} maxLength={INSTRUCTIONS_LIMIT} value={instructions} readOnly={busy} placeholder={'例如：\n我是存储方向的研究生，回答尽量用中文。\n先给结论，再给推理过程和可验证的依据。'} onChange={event => setInstructions(event.target.value)}/>
             </label>
             <span className={`ai-instructions-count${instructions.length > INSTRUCTIONS_LIMIT * 0.9 ? ' is-near' : ''}`}>{instructions.length} / {INSTRUCTIONS_LIMIT}</span>
           </section>

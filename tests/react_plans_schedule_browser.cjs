@@ -17,7 +17,9 @@ const { expect } = require('@playwright/test');
     const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, timezoneId: 'Asia/Shanghai' });
     await context.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
     const page = await context.newPage();
-    page.on('dialog', dialog => dialog.accept());
+    let dialogAnswer = 'accept';
+    const prompts = [];
+    page.on('dialog', dialog => { prompts.push(dialog.message()); return dialogAnswer === 'accept' ? dialog.accept() : dialog.dismiss(); });
     // Keep the preview server's small request budget for the plan and schedule APIs under test.
     await page.route('**/api/plans/reminders', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) }));
     await page.route('**/api/journal**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [], week_start: '2026-10-05', week_end: '2026-10-11', total: 0, counts: {} }) }));
@@ -79,11 +81,71 @@ const { expect } = require('@playwright/test');
     await expect(agenda.locator('li').filter({ has: page.locator('strong', { hasText: /^学习$/ }) })).toContainText('22:00');
     await expect(page.getByRole('textbox', { name: '今日复盘' })).toHaveValue('上午精力最好，晚上早点睡。');
 
+    // The block form is locked while it saves, so what was saved is what it showed.
+    let releaseDay;
+    let held = false;
+    await page.route('**/api/plans/schedule/day', async route => {
+      if (!held) { held = true; await new Promise(resolve => { releaseDay = resolve; }); }
+      await route.continue();
+    });
+    await form.getByLabel('做什么').fill('跨夜看书');
+    await form.getByLabel('开始时间').fill('23:30');
+    await form.getByLabel('结束时间').fill('01:30');
+    await expect(form).toContainText('零点后的部分显示在第二天');
+    await form.getByRole('button', { name: '添加' }).click();
+    await expect.poll(() => held).toBe(true);
+    await expect(form.getByLabel('做什么')).toBeDisabled();
+    releaseDay();
+    await expect(page.locator('.schedule-message')).toContainText('已加入这一天');
+    await expect(form.getByLabel('做什么')).toBeEnabled();
+    await expect(form.getByLabel('做什么')).toHaveValue('');
+    await page.unroute('**/api/plans/schedule/day');
+    // An overnight block belongs to the day it starts: only its evening part is on this day.
+    const lateBlock = page.locator('.schedule-block').filter({ hasText: '跨夜看书' });
+    await expect(lateBlock).toHaveCount(1);
+    await expect(lateBlock).not.toContainText('（续）');
+
+    // Text typed while 今日复盘 saves is kept and saved right after.
+    const note = page.getByRole('textbox', { name: '今日复盘' });
+    const noteSaves = [];
+    let releaseNote;
+    await page.route('**/api/plans/schedule/day', async route => {
+      noteSaves.push(JSON.parse(route.request().postData() || '{}').day.note);
+      if (noteSaves.length === 1) await new Promise(resolve => { releaseNote = resolve; });
+      await route.continue();
+    });
+    await note.fill('第一版复盘');
+    await note.blur();
+    await expect.poll(() => noteSaves.length).toBe(1);
+    await note.fill('第一版复盘，再补一句');
+    await note.blur();
+    releaseNote();
+    await expect.poll(() => noteSaves).toEqual(['第一版复盘', '第一版复盘，再补一句']);
+    await expect(note).toHaveValue('第一版复盘，再补一句');
+    await expect(page.locator('.schedule-note')).not.toContainText('未保存');
+    await page.unroute('**/api/plans/schedule/day');
+
+    // Switching dates while editing one of this day's blocks asks first; declining keeps the edit.
+    await page.getByRole('button', { name: '编辑 给妈妈打电话' }).click();
+    await form.getByLabel('做什么').fill('给妈妈打视频电话');
+    dialogAnswer = 'dismiss';
+    const asked = prompts.length;
+    await page.getByRole('button', { name: '后一天' }).click();
+    await expect.poll(() => prompts.length).toBe(asked + 1);
+    assert.match(prompts.at(-1), /切换日期会放弃/);
+    await expect(form.getByLabel('做什么')).toHaveValue('给妈妈打视频电话');
+    await expect(page.getByRole('button', { name: '回到今天' })).toHaveCount(0);
+    dialogAnswer = 'accept';
+    await form.getByRole('button', { name: '取消' }).click();
+
     // The next day keeps the routine but not this day's one-off block or marks.
     await page.getByRole('button', { name: '后一天' }).click();
     await expect(agenda).toContainText('早餐');
     await expect(agenda.locator('li', { hasText: '给妈妈打电话' })).toHaveCount(0);
     await expect(agenda.locator('li.is-skipped')).toHaveCount(0);
+    // The morning part of last night's block shows here, marked as continued, but is not this day's item.
+    await expect(page.locator('.schedule-block').filter({ hasText: '（续）跨夜看书' })).toHaveCount(1);
+    await expect(agenda).not.toContainText('跨夜看书');
     await page.getByRole('button', { name: '回到今天' }).click();
 
     await page.setViewportSize({ width: 390, height: 840 });

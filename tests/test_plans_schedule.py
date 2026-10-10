@@ -66,6 +66,42 @@ def test_schedule_store_rejects_stale_revisions(tmp_path):
         store.replace_routine('2026-10-10', {'blocks': []}, initial['routine_revision'])
 
 
+def test_a_day_carries_only_the_previous_days_overnight_part(tmp_path):
+    store = ScheduleStore(tmp_path / 'schedule.json')
+    friday = store.replace_day('2026-10-09', {
+        'blocks': [
+            day_block(id='party', title='聚会', category='life', start='22:00', end='02:00'),
+            day_block(id='dinner', title='晚餐', category='meal', start='18:00', end='19:00'),
+            day_block(id='late', title='加班', category='work', start='21:00', end='00:00'),
+        ],
+        'routine_status': {'sleep': 'skipped'},
+    }, store.read('2026-10-09')['day_revision'])
+    # The day itself never carries in from Thursday, which has nothing planned.
+    assert friday['previous_day'] == {'blocks': [], 'routine_status': {}}
+
+    saturday = store.read('2026-10-10')
+    assert saturday['day'] == {'blocks': [], 'routine_status': {}, 'note': ''}
+    # Only blocks that end after midnight reach Saturday; Friday's marks come along for its routine blocks.
+    assert [block['id'] for block in saturday['previous_day']['blocks']] == ['party']
+    assert saturday['previous_day']['routine_status'] == {'sleep': 'skipped'}
+    assert store.read('2026-10-11')['previous_day'] == {'blocks': [], 'routine_status': {}}
+    assert store.read('0001-01-01')['previous_day'] == {'blocks': [], 'routine_status': {}}
+
+    # Saving Saturday returns the same carried part without touching Friday.
+    saved = store.replace_day('2026-10-10', {'note': '补觉'}, saturday['day_revision'])
+    assert saved['previous_day'] == saturday['previous_day']
+    assert store.read('2026-10-09')['day_revision'] == friday['day_revision']
+
+
+def test_unplanned_days_do_not_share_one_mutable_empty_day(tmp_path):
+    store = ScheduleStore(tmp_path / 'schedule.json')
+    first, second = store.read('2026-10-09'), store.read('2026-10-10')
+    first['day']['blocks'].append(day_block())
+    first['day']['routine_status']['sleep'] = 'done'
+    assert second['day'] == {'blocks': [], 'routine_status': {}, 'note': ''}
+    assert store.read('2026-10-11')['day'] == {'blocks': [], 'routine_status': {}, 'note': ''}
+
+
 def test_clearing_a_day_removes_it_from_storage(tmp_path):
     store = ScheduleStore(tmp_path / 'schedule.json')
     saved = store.replace_day('2026-10-10', {'blocks': [day_block()]}, store.read('2026-10-10')['day_revision'])
@@ -127,3 +163,4 @@ def test_schedule_api_requires_admin_and_round_trips(tmp_path):
         reread = client.get('/api/plans/schedule?date=2026-10-10', headers=HEADERS).json()
         assert reread['routine']['targets'] == {'exercise': 30}
         assert reread['day_revision'] == saved_routine.json()['day_revision']
+        assert reread['previous_day'] == {'blocks': [], 'routine_status': {}}

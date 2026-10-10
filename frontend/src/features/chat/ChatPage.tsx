@@ -88,6 +88,8 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
   const [journalMessage, setJournalMessage] = useState<WorkspaceMessage | null>(null);
   const [branch, setBranch] = useState<{ message: WorkspaceMessage; mode: 'edit' | 'regenerate' | 'continue'; text: string; requestId: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // Read after awaits, where the render's historyOpen may be stale.
+  const historyOpenRef = useRef(false); historyOpenRef.current = historyOpen;
   const [contextOpen, setContextOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
@@ -171,13 +173,18 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     return () => { sidebarQuery.removeEventListener('change', sync); contextQuery.removeEventListener('change', sync); };
   }, [authenticated]);
   // New conversations start from the AI 设置 defaults; existing ones keep their own choice.
+  // An empty default model means the first available one, as the setting is labelled.
+  const applyNewConversationDefaults = (values: WorkspacePreferences | null = preferences) => {
+    if (!values) return;
+    setModel(current => values.default_model || models[0]?.id || current);
+    setReasoning(values.default_reasoning);
+  };
   // Keyed on the default values so saving other settings never resets a pick made for this draft.
   const defaultModel = preferences?.default_model;
   const defaultReasoning = preferences?.default_reasoning;
   useEffect(() => {
-    if (!ready || defaultReasoning === undefined || activeRef.current) return;
-    if (defaultModel) setModel(defaultModel);
-    setReasoning(defaultReasoning);
+    if (!ready || !preferences || activeRef.current) return;
+    applyNewConversationDefaults(preferences);
   }, [ready, defaultModel, defaultReasoning]);
 
   useEffect(() => {
@@ -227,12 +234,17 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     else if (open) setContextOpen(false);
   };
   // Floating panes give the thread back after a choice; docked ones stay open.
-  const settleFloatingSidebar = () => { if (!docked(DOCKED_SIDEBAR_QUERY)) setHistoryOpen(open => { if (open) paneFocus.current = 'sidebar-toggle'; return false; }); };
+  // `returnFocus` is false when another pane is opening and takes the focus itself.
+  const settleFloatingSidebar = (returnFocus = true) => {
+    if (docked(DOCKED_SIDEBAR_QUERY) || !historyOpenRef.current) return;
+    if (returnFocus) paneFocus.current = 'sidebar-toggle';
+    setHistoryOpen(false);
+  };
   const showContext = (open: boolean) => {
+    if (open && !docked(DOCKED_CONTEXT_QUERY)) settleFloatingSidebar(false);
     paneFocus.current = open ? 'context' : 'context-toggle';
     setContextOpen(open);
     if (docked(DOCKED_CONTEXT_QUERY)) savePanes({ context: open });
-    else if (open) settleFloatingSidebar();
   };
   const closeFloatingPane = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key !== 'Escape' || event.defaultPrevented) return;
@@ -267,8 +279,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
       if (!authRef.current) return false;
       if (!activeRef.current && draftRef.current.trim() && !window.confirm('新建对话会清空当前未发送的草稿，继续吗？')) return false;
       accept(null); changeDraft(''); setProjectId(nextProject); if (!nextProject && knowledgeScope === 'project') setKnowledgeScope('none'); setSelectedPapers([]); setToolRuns([]); setError(''); setNotice(''); requestRef.current = null; replaceConversationLocation(); settleFloatingSidebar();
-      if (preferences?.default_model) setModel(preferences.default_model);
-      if (preferences) setReasoning(preferences.default_reasoning);
+      applyNewConversationDefaults();
       return true;
     } catch (e) { report(e); return false; }
     finally { projectSwitchRef.current = false; setProjectSwitchPending(false); }
@@ -349,7 +360,11 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
   };
   const deleteConversation = (item: Conversation) => {
     if (!window.confirm('删除这个对话？建议先导出需要的内容。')) return;
-    void api(`/conversations/${item.id}`, 'DELETE', { revision: item.revision }).then(async () => { if (active?.id === item.id) { accept(null); changeDraft(''); } await refreshList(); }).catch(report);
+    void api(`/conversations/${item.id}`, 'DELETE', { revision: item.revision }).then(async () => {
+      // Deleting the open conversation leaves a blank one, set up like 新对话.
+      if (activeRef.current?.id === item.id) { accept(null); changeDraft(''); setSelectedPapers([]); setToolRuns([]); requestRef.current = null; replaceConversationLocation(); applyNewConversationDefaults(); }
+      await refreshList();
+    }).catch(report);
   };
   const uploadDocument = (file: File) => {
     setUploading(true); setError('');

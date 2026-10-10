@@ -78,6 +78,7 @@
 
 .schedule-side { display: grid; gap: 12px; min-width: 0; }
 .schedule-form { display: grid; gap: 12px; }
+.schedule-form-fields { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .schedule-presets, .schedule-categories { display: flex; flex-wrap: wrap; gap: 6px; }
 .schedule-categories { min-width: 0; margin: 0; padding: 0; border: 0; }
 .schedule-categories legend { margin-bottom: 6px; padding: 0; color: var(--text-secondary); font-size: 12px; }

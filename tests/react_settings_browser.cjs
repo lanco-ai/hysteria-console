@@ -149,9 +149,17 @@ async function capture(page, filename) {
     await expect(alerts.getByLabel('清除已保存的签名密钥')).not.toBeChecked();
     await expect(alerts.getByRole('button', { name: '保存告警设置' })).toBeDisabled();
 
-    // Turning a channel off removes it on save.
+    // A webhook on this host or a private network is refused with its own explanation.
+    override = { status: 422, body: { ok: false, error: 'validation_error', code: 'webhook_url_private' } };
+    await alerts.getByLabel('地址（https）').fill('https://10.0.0.1/hook');
+    await alerts.getByRole('button', { name: '保存告警设置' }).click();
+    await expect(alerts.getByRole('alert')).toContainText('Webhook 不能指向本机或内网地址');
+    await alerts.getByLabel('地址（https）').fill('');
+
+    // Turning a channel off removes it on save, and says so before saving.
     await alerts.getByRole('switch', { name: '启用 Webhook 告警' }).uncheck();
     await expect(alerts.getByLabel('地址（https）')).toHaveCount(0);
+    await expect(alerts.getByRole('note')).toContainText('保存后会删除已保存的 Webhook 地址和签名密钥');
     await alerts.getByRole('button', { name: '保存告警设置' }).click();
     await expect(alerts.getByText('Webhook · 未配置')).toBeVisible();
     assert.equal(saves.at(-1).webhook_enabled, '');

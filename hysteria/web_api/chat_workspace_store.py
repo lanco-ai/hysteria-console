@@ -36,7 +36,8 @@ def digest(value):
 # Workspace-wide AI 设置. The instructions are written by the operator and are
 # appended to every conversation's system prompt, before project instructions.
 PREFERENCE_DEFAULTS = {'instructions': '', 'default_model': '', 'default_reasoning': 'auto'}
-CUSTOM_INSTRUCTIONS_HEADER = '用户为所有对话设置的长期说明（与本次对话中的明确要求冲突时，以本次要求为准）：\n'
+# AI 设置 promises that project instructions and explicit requests win, so the prompt says so too.
+CUSTOM_INSTRUCTIONS_HEADER = '用户为所有对话设置的长期说明（与项目指令或本次对话中的明确要求冲突时，以项目指令和本次要求为准）：\n'
 
 
 class WorkspaceStore:

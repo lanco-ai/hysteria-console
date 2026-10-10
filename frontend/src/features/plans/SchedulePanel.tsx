@@ -47,7 +47,8 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   selectedDate: string;
   today: string;
   tasks: TaskMarker[];
-  onProtectionChange: (protectedDraft: boolean) => void;
+  /** `protectedDraft`: unsaved work anywhere in the panel; `dayDraft`: work that changing the date would discard. */
+  onProtectionChange: (protectedDraft: boolean, dayDraft: boolean) => void;
 }): ReactElement {
   const [view, setView] = useState<ScheduleView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -58,8 +59,12 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   const [nowMinute, setNowMinute] = useState(minuteNow);
   const [form, setForm] = useState<BlockForm>(() => blankForm());
   const [formBaseline, setFormBaseline] = useState<BlockForm>(() => blankForm());
-  const [noteDraft, setNoteDraft] = useState<string | null>(null);
+  // The block form is locked while its own save runs, so the saved values are the ones on screen.
+  const [formSaving, setFormSaving] = useState(false);
+  // 今日复盘 drafts are kept per date: switching days, or a save still in flight, never loses one.
+  const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [targetDraft, setTargetDraft] = useState<Partial<Record<ScheduleCategory, string>> | null>(null);
+  const queuedNoteSave = useRef<string | null>(null);
   const dateRef = useRef(selectedDate);
   dateRef.current = selectedDate;
   const busyRef = useRef(false);
@@ -85,7 +90,7 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   }, []);
 
   useEffect(() => {
-    setFeedback(''); setNoteDraft(null);
+    setFeedback(''); queuedNoteSave.current = null;
     setForm(current => current.editingKey ? blankForm() : current);
     setFormBaseline(current => current.editingKey ? blankForm() : current);
   }, [selectedDate]);
@@ -104,8 +109,10 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   const current = view && view.date === selectedDate ? view : null;
   const routine: ScheduleRoutine = current?.routine || { blocks: [], targets: {} };
   const day: ScheduleDay = current?.day || { blocks: [], routine_status: {}, note: '' };
-  const entries = useMemo(() => current ? dayEntries(selectedDate, current.routine, current.day, tasks) : [], [current, selectedDate, tasks]);
-  const ownEntries = entries.filter(entry => entry.kind !== 'task');
+  const entries = useMemo(() => current ? dayEntries(selectedDate, current.routine, current.day, tasks, current.previous_day) : [], [current, selectedDate, tasks]);
+  // What starts on this day; the morning part of the previous night is shown but counted on its own day.
+  const dayList = entries.filter(entry => !entry.carried);
+  const ownEntries = dayList.filter(entry => entry.kind !== 'task');
   const activeEntries = ownEntries.filter(entry => entry.status !== 'skipped');
   const doneCount = activeEntries.filter(entry => entry.status === 'done').length;
   const totals = useMemo(() => allocation(entries), [entries]);
@@ -115,15 +122,19 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   const timed = entries.filter(entry => entry.status !== 'skipped');
   const nowEntry = isToday ? [...timed].filter(entry => containsMinute(entry, nowMinute))
     .sort((a, b) => spanMinutes(a.start, a.end) - spanMinutes(b.start, b.end))[0] : undefined;
-  const nextEntry = isToday ? timed.find(entry => toMinutes(entry.start) > nowMinute && entry !== nowEntry) : undefined;
+  const nextEntry = isToday ? timed.find(entry => !entry.carried && toMinutes(entry.start) > nowMinute && entry !== nowEntry) : undefined;
   const formDirty = JSON.stringify(form) !== JSON.stringify(formBaseline);
+  const noteDraft = noteDrafts[selectedDate] ?? null;
   const noteDirty = noteDraft !== null && noteDraft !== day.note;
+  const otherDayNotes = Object.keys(noteDrafts).some(date => date !== selectedDate);
   const targetsDirty = targetDraft !== null;
+  const dayDraft = (formDirty && Boolean(form.editingKey)) || formSaving;
 
-  useLayoutEffect(() => { onProtectionChange(formDirty || noteDirty || targetsDirty || busy); }, [formDirty, noteDirty, targetsDirty, busy, onProtectionChange]);
+  useLayoutEffect(() => { onProtectionChange(formDirty || noteDirty || otherDayNotes || targetsDirty || busy, dayDraft); },
+    [formDirty, noteDirty, otherDayNotes, targetsDirty, busy, dayDraft, onProtectionChange]);
 
   // Bring the useful part of the day into view: now on today, otherwise the first block.
-  const firstStart = entries.length ? Math.min(...entries.map(entry => toMinutes(entry.start))) : 7 * 60;
+  const firstStart = dayList.length ? Math.min(...dayList.map(entry => toMinutes(entry.start))) : 7 * 60;
   useEffect(() => {
     if (mode !== 'full' || !current || !timelineRef.current) return;
     const anchor = isToday ? nowMinute - 90 : firstStart - 30;
@@ -163,7 +174,7 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
 
   const resetForm = (next = blankForm()) => { setForm(next); setFormBaseline(next); };
   const editEntry = (entry: ScheduleEntry) => {
-    if (entry.kind === 'task') return;
+    if (entry.kind === 'task' || entry.carried && entry.kind === 'day') return;
     if (formDirty && form.editingKey !== entry.key && !window.confirm('当前表单尚未保存，放弃并编辑这一项？')) return;
     resetForm(formFromEntry(entry));
     requestAnimationFrame(() => titleRef.current?.focus({ preventScroll: false }));
@@ -186,38 +197,50 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   const formWeekdays = form.repeat === 'once' ? [] : form.repeat === 'custom' ? form.weekdays : repeatWeekdays[form.repeat];
   const formValid = Boolean(form.title.trim()) && form.start !== form.end && (form.repeat === 'once' || formWeekdays.length > 0);
   const appliesToday = form.repeat === 'once' || formWeekdays.includes(weekdayOf(selectedDate));
-  const conflicts = form.start && form.end && form.start !== form.end && appliesToday ? overlapsWith(form, entries, form.editingKey) : [];
+  // A repeating overnight block that also runs the day before reaches into this morning.
+  const appliesYesterday = form.repeat !== 'once' && formWeekdays.includes((weekdayOf(selectedDate) + 6) % 7);
+  const conflicts = form.start && form.end && form.start !== form.end && (appliesToday || appliesYesterday)
+    ? overlapsWith(form, entries, form.editingKey, { today: appliesToday, carried: appliesYesterday }) : [];
 
   const submitForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!formValid || busy || !current) return;
     const block = { title: form.title.trim(), category: form.category, start: form.start, end: form.end };
     const editingKind = editingEntry?.kind;
-    let saved: boolean;
-    if (form.repeat === 'once') {
-      const id = editingKind === 'day' ? editingEntry!.id : newBlockId();
-      const existing = day.blocks.find(item => item.id === id);
-      const nextBlock = { ...block, id, notes: form.notes.trim(), status: existing?.status || 'planned' as const };
-      saved = await saveDay({ ...day, blocks: existing ? day.blocks.map(item => item.id === id ? nextBlock : item) : [...day.blocks, nextBlock] },
-        existing ? `已更新「${block.title}」` : `已加入这一天：${block.start} ${block.title}`);
-    } else {
+    const save = (): Promise<boolean> => {
+      if (form.repeat === 'once') {
+        const id = editingKind === 'day' ? editingEntry!.id : newBlockId();
+        const existing = day.blocks.find(item => item.id === id);
+        const nextBlock = { ...block, id, notes: form.notes.trim(), status: existing?.status || 'planned' as const };
+        return saveDay({ ...day, blocks: existing ? day.blocks.map(item => item.id === id ? nextBlock : item) : [...day.blocks, nextBlock] },
+          existing ? `已更新「${block.title}」` : `已加入这一天：${block.start} ${block.title}`);
+      }
       const id = editingKind === 'routine' ? editingEntry!.id : newBlockId();
       const exists = routine.blocks.some(item => item.id === id);
       const nextBlock = { ...block, id, weekdays: formWeekdays };
-      saved = await saveRoutine({ ...routine, blocks: exists ? routine.blocks.map(item => item.id === id ? nextBlock : item) : [...routine.blocks, nextBlock] },
+      return saveRoutine({ ...routine, blocks: exists ? routine.blocks.map(item => item.id === id ? nextBlock : item) : [...routine.blocks, nextBlock] },
         exists ? `已更新作息模板「${block.title}」` : `已加入作息模板（${repeatLabel(formWeekdays)}）：${block.start} ${block.title}`);
-    }
+    };
+    setFormSaving(true);
+    let saved = false;
+    try { saved = await save(); } finally { setFormSaving(false); }
     if (saved) resetForm();
+    // Locking the form dropped focus from its field or button; return it unless the user moved on.
+    requestAnimationFrame(() => { if (document.activeElement === document.body) titleRef.current?.focus({ preventScroll: true }); });
   };
 
   const removeEntry = async (entry: ScheduleEntry) => {
-    if (entry.kind === 'routine') {
-      if (!window.confirm(`从作息模板删除「${entry.title}」？所有${repeatLabel(entry.weekdays)}都不再显示它。只想今天不做，可以选择“跳过”。`)) return;
-      if (await saveRoutine({ ...routine, blocks: routine.blocks.filter(item => item.id !== entry.id) }, `已从作息模板删除「${entry.title}」`) && form.editingKey === entry.key) resetForm();
-    } else if (entry.kind === 'day') {
-      if (!window.confirm(`删除「${entry.title}」？`)) return;
-      if (await saveDay({ ...day, blocks: day.blocks.filter(item => item.id !== entry.id) }, `已删除「${entry.title}」`) && form.editingKey === entry.key) resetForm();
+    let removal: (() => Promise<boolean>) | null = null;
+    if (entry.kind === 'routine' && window.confirm(`从作息模板删除「${entry.title}」？所有${repeatLabel(entry.weekdays)}都不再显示它。只想今天不做，可以选择“跳过”。`)) {
+      removal = () => saveRoutine({ ...routine, blocks: routine.blocks.filter(item => item.id !== entry.id) }, `已从作息模板删除「${entry.title}」`);
+    } else if (entry.kind === 'day' && window.confirm(`删除「${entry.title}」？`)) {
+      removal = () => saveDay({ ...day, blocks: day.blocks.filter(item => item.id !== entry.id) }, `已删除「${entry.title}」`);
     }
+    if (!removal) return;
+    setFormSaving(true);
+    let removed = false;
+    try { removed = await removal(); } finally { setFormSaving(false); }
+    if (removed && form.editingKey === entry.key) resetForm();
   };
 
   const setStatus = (entry: ScheduleEntry, status: 'planned' | 'done' | 'skipped') => {
@@ -236,18 +259,39 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
     void saveRoutine(suggestedRoutine(), '已套用推荐作息；可以逐条修改成你自己的节奏');
   };
 
+  const changeNote = (value: string) => setNoteDrafts(drafts => {
+    const { [selectedDate]: _previous, ...others } = drafts;
+    return value === day.note ? others : { ...others, [selectedDate]: value };
+  });
   const saveNote = () => {
     if (noteDraft === null || !noteDirty) return;
-    void saveDay({ ...day, note: noteDraft.trim() }, '已保存今日复盘').then(saved => { if (saved) setNoteDraft(null); });
+    // Another save is running: save this one when it finishes, as the hint promises.
+    if (busyRef.current) { queuedNoteSave.current = selectedDate; return; }
+    const date = selectedDate;
+    const submitted = noteDraft;
+    void saveDay({ ...day, note: submitted.trim() }, '已保存今日复盘').then(saved => {
+      // Text typed while the save was running stays as a draft instead of being replaced by the saved copy.
+      if (saved) setNoteDrafts(drafts => {
+        if (drafts[date] !== submitted) return drafts;
+        const { [date]: _saved, ...others } = drafts;
+        return others;
+      });
+    });
   };
+  useEffect(() => {
+    if (busy || queuedNoteSave.current !== selectedDate) return;
+    queuedNoteSave.current = null;
+    saveNote();
+  }, [busy]);
 
   const targetValues = targetDraft || Object.fromEntries(categories.map(item => [item.id, hoursInput(routine.targets[item.id])]));
   const targetMinutes = Object.fromEntries(categories.map(item => [item.id, Math.round((Number(targetValues[item.id]) || 0) * 60)])) as Record<ScheduleCategory, number>;
   const targetTotal = Object.values(targetMinutes).reduce((sum, value) => sum + value, 0);
   const saveTargets = () => {
     if (targetTotal > 1440) return;
+    const submitted = targetDraft;
     void saveRoutine({ ...routine, targets: Object.fromEntries(Object.entries(targetMinutes).filter(([, minutes]) => minutes > 0)) }, '已保存理想的一天')
-      .then(saved => { if (saved) setTargetDraft(null); });
+      .then(saved => { if (saved) setTargetDraft(draft => draft === submitted ? null : draft); });
   };
 
   const entryTime = (entry: ScheduleEntry) => `${entry.start}–${entry.end}`;
@@ -327,9 +371,10 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
               const className = ['schedule-block', entry.category ? `schedule-cat-${entry.category}` : 'schedule-block-task', entry.status === 'done' ? 'is-done' : '', form.editingKey === entry.key ? 'is-selected' : '', piece.to - piece.from < ONE_LINE_BELOW_MINUTES ? 'is-short' : ''].filter(Boolean).join(' ');
               const label = `${piece.continued ? '（续）' : ''}${entry.title}`;
               const body = <><strong>{label}</strong><span>{entryTime(entry)}{entry.kind === 'routine' ? ' · 模板' : entry.kind === 'task' ? ' · 任务' : ''}</span></>;
-              return entry.kind === 'task'
-                ? <div key={`${entry.key}:${piece.from}`} className={className} style={style} title={`计划任务：${entry.title} ${entryTime(entry)}`}>{body}</div>
-                : <button key={`${entry.key}:${piece.from}`} type="button" className={className} style={style} aria-label={`修改 ${entry.title} ${entryTime(entry)}`} onClick={() => editEntry(entry)}>{body}</button>;
+              const key = `${entry.key}:${entry.carried ? 'carried' : 'own'}`;
+              return entry.kind === 'task' || entry.carried && entry.kind === 'day'
+                ? <div key={key} className={className} style={style} title={entry.kind === 'task' ? `计划任务：${entry.title} ${entryTime(entry)}` : `前一天开始：${entry.title} ${entryTime(entry)}，在前一天修改`}>{body}</div>
+                : <button key={key} type="button" className={className} style={style} aria-label={`修改 ${entry.title} ${entryTime(entry)}${entry.carried ? '（前一天开始）' : ''}`} onClick={() => editEntry(entry)}>{body}</button>;
             })}
             {isToday ? <div className="schedule-now-line" style={{ top: nowMinute * PX_PER_MINUTE }} aria-hidden="true"><span>{toClock(nowMinute)}</span></div> : null}
           </div>
@@ -344,7 +389,8 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
 
       <div className="schedule-side">
         <form className="schedule-card schedule-form" onSubmit={event => void submitForm(event)}>
-          <header><h3>{form.editingKey ? (editingEntry?.kind === 'routine' ? '修改作息模板' : '修改安排') : '添加安排'}</h3>{form.editingKey ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => resetForm()}>取消</button> : null}</header>
+          <header><h3>{form.editingKey ? (editingEntry?.kind === 'routine' ? '修改作息模板' : '修改安排') : '添加安排'}</h3>{form.editingKey ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => resetForm()} disabled={formSaving}>取消</button> : null}</header>
+          <fieldset className="schedule-form-fields" disabled={formSaving}>
           {!form.editingKey ? <div className="schedule-presets" aria-label="常用安排">{presets.map(preset => <button key={preset.title} type="button" className={`schedule-chip schedule-cat-${preset.category}`} onClick={() => applyPreset(preset)}>{preset.title}</button>)}</div> : null}
           <label className="schedule-field"><span>做什么</span><input ref={titleRef} value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} maxLength={80} placeholder="例如：午餐、写方案、给爸妈打电话" required /></label>
           <fieldset className="schedule-categories"><legend>类别</legend>{categories.map(item => <label key={item.id} className={`schedule-chip schedule-cat-${item.id}${form.category === item.id ? ' is-active' : ''}`} title={item.hint}>
@@ -362,8 +408,9 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
             <input type="checkbox" checked={form.weekdays.includes(index)} onChange={event => setForm({ ...form, weekdays: event.target.checked ? [...form.weekdays, index].sort() : form.weekdays.filter(day => day !== index) })} />{label}
           </label>)}</div> : null}
           {form.repeat === 'once' ? <label className="schedule-field"><span>备注</span><textarea value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} maxLength={500} rows={2} placeholder="可选：地点、要带的东西、要联系谁" /></label> : null}
+          </fieldset>
           <p className="schedule-form-hint">
-            {formDuration ? <span>共 {formDuration}{toMinutes(form.end) <= toMinutes(form.start) ? '（跨过午夜）' : ''}</span> : null}
+            {formDuration ? <span>共 {formDuration}{toMinutes(form.end) <= toMinutes(form.start) ? '（跨过午夜，零点后的部分显示在第二天）' : ''}</span> : null}
             {form.repeat !== 'once' ? <span>会出现在{repeatLabel(formWeekdays.length ? formWeekdays : [weekdayOf(selectedDate)])}的行程里。</span> : null}
             {editingEntry?.kind === 'routine' ? <span>只想改今天？先在列表中“跳过”它，再添加一条“仅这一天”的安排。</span> : null}
           </p>
@@ -375,8 +422,8 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
         </form>
 
         <section className="schedule-card schedule-agenda" aria-label="这一天的安排">
-          <header><h3>这一天的安排</h3><small>{entries.length ? `${activeEntries.length} 项 · 完成 ${doneCount}` : ''}</small></header>
-          {entries.length ? <ol>{entries.map(entry => <li key={entry.key} className={[entry.category ? `schedule-cat-${entry.category}` : 'schedule-agenda-task', entry.status === 'done' ? 'is-done' : '', entry.status === 'skipped' ? 'is-skipped' : '', isToday && nowEntry?.key === entry.key ? 'is-now' : ''].filter(Boolean).join(' ')}>
+          <header><h3>这一天的安排</h3><small>{dayList.length ? `${activeEntries.length} 项 · 完成 ${doneCount}` : ''}</small></header>
+          {dayList.length ? <ol>{dayList.map(entry => <li key={entry.key} className={[entry.category ? `schedule-cat-${entry.category}` : 'schedule-agenda-task', entry.status === 'done' ? 'is-done' : '', entry.status === 'skipped' ? 'is-skipped' : '', isToday && nowEntry === entry ? 'is-now' : ''].filter(Boolean).join(' ')}>
             <label className="schedule-agenda-check"><input type="checkbox" checked={entry.status === 'done'} disabled={entry.kind === 'task' || entry.status === 'skipped' || busy} onChange={event => setStatus(entry, event.target.checked ? 'done' : 'planned')} /><span className="sr-only">完成 {entry.title}</span></label>
             <time>{entry.start}<small>{entry.end}</small></time>
             <div className="schedule-agenda-body">
@@ -397,7 +444,7 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
     <div className="schedule-bottom">
       <section className="schedule-card schedule-note" aria-label="今日复盘">
         <header><h3>今日复盘</h3><small>精力、心情、收获，或明天想改变的一件事</small></header>
-        <textarea aria-label="今日复盘" value={noteDraft ?? day.note} onChange={event => setNoteDraft(event.target.value)} onBlur={saveNote} maxLength={2000} rows={4} placeholder="今天做成了什么？哪段时间最有精力？哪里被打断了？" disabled={!current} />
+        <textarea aria-label="今日复盘" value={noteDraft ?? day.note} onChange={event => changeNote(event.target.value)} onBlur={saveNote} maxLength={2000} rows={4} placeholder="今天做成了什么？哪段时间最有精力？哪里被打断了？" disabled={!current} />
         <div className="schedule-note-actions">{noteDirty ? <small>未保存 · 离开输入框时自动保存</small> : null}<button className="btn btn-secondary btn-sm" type="button" onClick={saveNote} disabled={!noteDirty || busy}>保存复盘</button></div>
       </section>
       <details className="schedule-card schedule-targets">

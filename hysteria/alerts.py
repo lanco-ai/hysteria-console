@@ -6,11 +6,16 @@ events dedupe per day.
 """
 import hashlib
 import hmac
+import http.client
+import io
+import ipaddress
 import json
 import logging
 import math
 import re
 import secrets
+import socket
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -88,6 +93,57 @@ def public_config(cfg):
     }
 
 
+def _public_address(address):
+    """True for a globally routable unicast address (IPv4-mapped IPv6 judged as IPv4)."""
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
+        address = address.ipv4_mapped
+    return address.is_global and not address.is_multicast
+
+
+def webhook_url_problem(url):
+    """Return why ``url`` cannot receive alerts, or '' when it can.
+
+    Alerts are POSTed from the server itself, so a webhook must not point at
+    this host or a private network. Host names are checked against what they
+    resolve to when an alert is sent (see _WebhookTransport).
+    """
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return 'webhook_url_invalid'
+    if (len(url) > 2048 or parsed.scheme != 'https' or not parsed.hostname or port == 0
+            or parsed.username is not None or parsed.password is not None
+            or any(char.isspace() for char in url)):
+        return 'webhook_url_invalid'
+    host = parsed.hostname.rstrip('.')
+    if host == 'localhost' or host.endswith('.localhost'):
+        return 'webhook_url_private'
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return ''
+    return '' if _public_address(address) else 'webhook_url_private'
+
+
+def config_revision(cfg, secret):
+    """Compare-and-swap revision for alerts.json that cannot confirm a guessed secret.
+
+    The file holds write-only credentials, so a plain content hash handed to
+    the console would let anyone holding it test guesses offline. Keying the
+    hash with a server-side secret keeps it opaque while any edit still
+    changes it.
+    """
+    key = hmac.new(
+        str(secret).encode('utf-8'), b'hy2 alerts config revision', hashlib.sha256,
+    ).digest()
+    payload = json.dumps(
+        cfg if isinstance(cfg, dict) else {},
+        ensure_ascii=False, sort_keys=True, separators=(',', ':'),
+    ).encode('utf-8')
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+
+
 def _bounded_number(raw, limits, code):
     try:
         value = float(str(raw).strip())
@@ -120,14 +176,9 @@ def updated_config(cfg, values):
     if values.get('webhook_enabled'):
         stored = _section(current, 'webhook')
         url = str(values.get('webhook_url') or '').strip() or str(stored.get('url') or '')
-        try:
-            parsed = urllib.parse.urlsplit(url)
-        except ValueError:
-            raise AlertConfigError('webhook_url_invalid') from None
-        if (len(url) > 2048 or parsed.scheme != 'https' or not parsed.hostname
-                or parsed.username is not None or parsed.password is not None
-                or any(char.isspace() for char in url)):
-            raise AlertConfigError('webhook_url_invalid')
+        problem = webhook_url_problem(url)
+        if problem:
+            raise AlertConfigError(problem)
         if values.get('webhook_secret_clear'):
             secret = ''
         else:
@@ -443,10 +494,85 @@ def _post_telegram(cfg, message, *, opener):
         return False
 
 
+def _resolved_public(address):
+    try:
+        return _public_address(ipaddress.ip_address(address.split('%', 1)[0]))
+    except ValueError:
+        return False
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS to addresses vetted in advance; TLS still verifies the URL's host name."""
+
+    def __init__(self, host, port, *, addresses, timeout):
+        super().__init__(host, port, timeout=timeout)
+        self._addresses = list(addresses)
+        self._tls = ssl.create_default_context()
+
+    def connect(self):
+        # Try each vetted address in turn, as socket.create_connection does for a name.
+        error = OSError('webhook host has no address')
+        for address in self._addresses:
+            try:
+                sock = socket.create_connection((address, self.port), self.timeout)
+            except OSError as exc:
+                error = exc
+                continue
+            try:
+                self.sock = self._tls.wrap_socket(sock, server_hostname=self.host)
+            except BaseException:
+                sock.close()
+                raise
+            return
+        raise error
+
+
+class _WebhookTransport:
+    """POST a webhook without proxies or redirects, only to a public address.
+
+    Every address the host name resolves to must be public, and the request
+    goes only to the addresses that were checked, so a later DNS answer cannot
+    switch the target to this host or a private network. A redirect is a
+    failed delivery rather than a second request.
+    """
+
+    def __init__(self, resolve=socket.getaddrinfo, connection=_PinnedHTTPSConnection):
+        self._resolve = resolve
+        self._connection = connection
+
+    def urlopen(self, request, timeout):
+        parts = urllib.parse.urlsplit(request.full_url)
+        port = parts.port or 443
+        answers = self._resolve(parts.hostname, port, type=socket.SOCK_STREAM)
+        addresses = list(dict.fromkeys(answer[4][0] for answer in answers))
+        if not addresses or not all(_resolved_public(address) for address in addresses):
+            raise OSError('webhook destination is not a public address')
+        connection = self._connection(parts.hostname, port, addresses=addresses, timeout=timeout)
+        try:
+            path = (parts.path or '/') + (f'?{parts.query}' if parts.query else '')
+            connection.request(
+                request.get_method(), path, body=request.data, headers=dict(request.header_items()),
+            )
+            response = connection.getresponse()
+            body = response.read(64 * 1024)
+            if not 200 <= response.status < 300:
+                raise OSError(f'webhook answered HTTP {response.status}')
+            return io.BytesIO(body)
+        finally:
+            connection.close()
+
+
+_WEBHOOK_TRANSPORT = _WebhookTransport()
+
+
 def _post_webhook(cfg, event, *, opener):
     """Return True on a successful POST, False on transport failure."""
     url = cfg.get('url')
     if not url:
+        return False
+    # Also covers a hand-written alerts.json that the console never validated.
+    if webhook_url_problem(str(url)):
+        log.warning('webhook alert refused: destination not allowed')
         return False
     body = json.dumps(event, ensure_ascii=True).encode('utf-8')
     headers = {'Content-Type': 'application/json'}
@@ -486,7 +612,8 @@ def dispatch(event, *, config=None, opener=None):
                 result['failed'].append('telegram')
         if cfg.get('webhook'):
             result['attempted'].append('webhook')
-            if not _post_webhook(cfg['webhook'], event, opener=transport):
+            webhook_transport = opener if opener is not None else _WEBHOOK_TRANSPORT
+            if not _post_webhook(cfg['webhook'], event, opener=webhook_transport):
                 result['failed'].append('webhook')
     except Exception as exc:
         # A programmer/configuration error inside a transport is still a

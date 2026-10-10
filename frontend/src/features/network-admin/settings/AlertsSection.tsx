@@ -121,6 +121,7 @@ export function AlertsSection() {
         </div>
         <input className="settings-switch" type="checkbox" role="switch" aria-label="启用 Telegram 告警" checked={draft.telegramEnabled} disabled={!!busy} onChange={event => change('telegramEnabled', event.target.checked)}/>
       </div>
+      {settings.telegram.configured && !draft.telegramEnabled ? <p className="settings-channel-note" role="note">保存后会删除已保存的 Bot Token 和 Chat ID；以后重新开启需要重新填写。</p> : null}
       {draft.telegramEnabled ? <div className="settings-fields">
         <div className="form-field">
           <label htmlFor="alert-telegram-token">Bot Token</label>
@@ -138,10 +139,11 @@ export function AlertsSection() {
       <div className="settings-channel-head">
         <div>
           <strong>Webhook</strong>
-          <small>以 JSON POST 发送；填写签名密钥后，请求头 X-Hy2-Signature 会带上 HMAC-SHA256 签名，便于接收端验证来源。</small>
+          <small>以 JSON POST 发送到公网上的接收端（不能是本机或内网地址）；填写签名密钥后，请求头 X-Hy2-Signature 会带上 HMAC-SHA256 签名，便于接收端验证来源。</small>
         </div>
         <input className="settings-switch" type="checkbox" role="switch" aria-label="启用 Webhook 告警" checked={draft.webhookEnabled} disabled={!!busy} onChange={event => change('webhookEnabled', event.target.checked)}/>
       </div>
+      {settings.webhook.configured && !draft.webhookEnabled ? <p className="settings-channel-note" role="note">保存后会删除已保存的 Webhook 地址和签名密钥；以后重新开启需要重新填写。</p> : null}
       {draft.webhookEnabled ? <div className="settings-fields">
         <div className="form-field form-field-wide">
           <label htmlFor="alert-webhook-url">地址（https）</label>

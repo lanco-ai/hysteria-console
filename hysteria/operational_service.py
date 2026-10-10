@@ -199,9 +199,9 @@ class OperationalService:
 
     def _fire_test_alert(self, cfg, actor):
         """Dispatch a synthetic alert on a background daemon thread so a slow or
-        unreachable channel never blocks the admin request thread. SSRF note: the
-        webhook URL is operator-supplied (admin-equivalent trust); no allowlisting
-        by design. Returns the started thread (handy for tests)."""
+        unreachable channel never blocks the admin request thread. The webhook
+        transport refuses local and private destinations and redirects
+        (alerts._WebhookTransport). Returns the started thread (handy for tests)."""
         event = {
             'kind': 'test',
             'user': actor or 'admin',

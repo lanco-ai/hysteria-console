@@ -311,8 +311,9 @@ def test_preferences_save_with_revision_and_reach_every_system_prompt(env):
     assert client.post(f"/api/chat/conversations/{c['id']}/turns", json=turn(c)).status_code == 200
     system = provider.received[0]['content']
     assert '回答用中文。\n先给结论。' in system
-    # Workspace-wide instructions come before the more specific project instructions.
+    # Workspace-wide instructions come before the more specific project instructions, which take precedence.
     assert system.index('先给结论') < system.index('Ask questions')
+    assert '冲突时，以项目指令和本次要求为准' in system
     assert client.get('/api/chat/workspace/export').json()['preferences'] == saved
 
     cleared = client.put(url, json={**values, 'revision': 1, 'instructions': '   '}).json()
