@@ -25,16 +25,16 @@ const { expect } = require('@playwright/test');
     await page.route('**/api/journal**', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [], week_start: '2026-10-05', week_end: '2026-10-11', total: 0, counts: {} }) }));
 
     await page.goto(`${base}/admin/plans`);
-    const strip = page.locator('.schedule-strip');
-    await expect(strip).toContainText('还没有安排这一天');
-    await expect(page.locator('.plans-grid')).toBeVisible();
-    await strip.click();
-    await expect(page).toHaveURL(/#daily-schedule$/);
+    // 行程 sits beside 今日计划 in the same view.
     const views = page.getByRole('navigation', { name: '今日页面内容' });
-    await expect(views.getByRole('link', { name: '行程' })).toHaveAttribute('aria-current', 'page');
-    await expect(page.locator('.plans-composer')).toBeHidden();
-    await expect(page.locator('.plans-grid')).toBeHidden();
+    await expect(views.getByRole('link', { name: '计划与行程' })).toHaveAttribute('aria-current', 'page');
+    await expect(page.locator('.plans-grid')).toBeVisible();
+    await expect(page.locator('.plans-composer')).toBeVisible();
+    await expect(page.locator('.schedule-empty')).toContainText('规划你的一天');
     await expect(page.locator('.schedule-strip')).toHaveCount(0);
+    const planBox = await page.locator('.daily-plans-section').boundingBox();
+    const scheduleBox = await page.locator('.daily-schedule-section').boundingBox();
+    assert(planBox.x + planBox.width <= scheduleBox.x && Math.abs(planBox.y - scheduleBox.y) < 4, '今日计划 and 行程 sit side by side at 1440px');
 
     await page.getByRole('button', { name: '套用推荐作息' }).first().click();
     await expect(page.locator('.schedule-message')).toContainText('已套用推荐作息');
@@ -154,12 +154,15 @@ const { expect } = require('@playwright/test');
     assert(mobileWidth <= 390, `schedule should fit 390px (scrollWidth ${mobileWidth}px)`);
     await shot(page, 'plans-schedule-mobile.png');
 
+    // The other view hides the schedule; coming back keeps it as it was.
     await page.setViewportSize({ width: 1440, height: 960 });
-    await views.getByRole('link', { name: '今日计划' }).click();
+    await views.getByRole('link', { name: '时间线与回顾' }).click();
+    await expect(page.locator('.daily-schedule-section')).toBeHidden();
+    await views.getByRole('link', { name: '计划与行程' }).click();
     await expect(page.locator('.plans-grid')).toBeVisible();
-    await expect(page.locator('.schedule-strip')).toBeVisible();
-    await shot(page, 'plans-with-schedule-strip.png');
-    console.log('PASS: day schedule routine, one-off blocks, marks, note and view switching');
+    await expect(agenda).toContainText('给妈妈打电话');
+    await shot(page, 'plans-with-schedule.png');
+    console.log('PASS: day schedule beside the plan: routine, one-off blocks, marks, note and view switching');
     await context.close();
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

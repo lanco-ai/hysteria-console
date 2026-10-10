@@ -40,8 +40,9 @@ function hoursInput(minutes: number | undefined): string {
   return minutes ? String(Math.round(minutes / 15) / 4) : '';
 }
 
-export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProtectionChange }: {
-  mode: 'full' | 'strip';
+export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onProtectionChange }: {
+  /** False while another view of the page is shown; the panel stays mounted so drafts survive switching. */
+  visible: boolean;
   /** False while the page's own plan snapshot is loading; the schedule waits so page load needs no extra concurrent request. */
   ready: boolean;
   selectedDate: string;
@@ -136,11 +137,11 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   // Bring the useful part of the day into view: now on today, otherwise the first block.
   const firstStart = dayList.length ? Math.min(...dayList.map(entry => toMinutes(entry.start))) : 7 * 60;
   useEffect(() => {
-    if (mode !== 'full' || !current || !timelineRef.current) return;
+    if (!visible || !current || !timelineRef.current) return;
     const anchor = isToday ? nowMinute - 90 : firstStart - 30;
     timelineRef.current.scrollTop = Math.max(0, anchor) * PX_PER_MINUTE;
     // Only on a new day or when the view opens, not on every tick or edit.
-  }, [mode, current?.date]);
+  }, [visible, current?.date]);
 
   // The change shows at once and is rolled back if the server refuses it.
   const commit = async (optimistic: (base: ScheduleView) => ScheduleView, work: (base: ScheduleView) => Promise<ScheduleView>, success: string) => {
@@ -297,19 +298,6 @@ export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProte
   const entryTime = (entry: ScheduleEntry) => `${entry.start}–${entry.end}`;
   const statusNotice = error ? <div className="schedule-message is-error" role="alert"><span>{error}</span>{current || loadFailed ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => void reload()} disabled={loading || busy}>重新读取</button> : null}</div>
     : feedback ? <div className="schedule-message" role="status">{feedback}</div> : null;
-
-  if (mode === 'strip') {
-    const summary = !current ? (loadFailed ? '行程暂时无法读取' : '正在读取行程…')
-      : !ownEntries.length ? '还没有安排这一天：作息、三餐、工作、学习、思考与联系'
-        : nowEntry ? `现在 · ${nowEntry.title} ${entryTime(nowEntry)}${nextEntry ? `　下一项 · ${nextEntry.start} ${nextEntry.title}` : ''}`
-          : nextEntry ? `下一项 · ${nextEntry.start} ${nextEntry.title}`
-            : `已安排 ${activeEntries.length} 项 · 完成 ${doneCount} 项 · 专注 ${formatHours(focusMinutes)}`;
-    return <a className={`schedule-strip${nowEntry?.category ? ` schedule-cat-${nowEntry.category}` : ''}`} href="#daily-schedule">
-      <span className="schedule-strip-label">{isToday ? '今日行程' : '这一天的行程'}</span>
-      <span className="schedule-strip-summary">{summary}</span>
-      <span className="schedule-strip-action">进入行程 →</span>
-    </a>;
-  }
 
   const placed = placeSegments(entries);
   const hours = Array.from({ length: 25 }, (_, hour) => hour);

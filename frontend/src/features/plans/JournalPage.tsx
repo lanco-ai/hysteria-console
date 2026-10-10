@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { JournalInlineEditor } from './JournalInlineEditor';
 import { useJournalAutosave } from './useJournalAutosave';
-import { JournalDrawer } from './JournalDrawer';
 import { journalKindLabels as labels } from './journalLabels';
 import { deleteJournal, downloadJournal, listJournal, loadJournalSummary, type JournalDraft, type JournalKind, type JournalRecord, type JournalSummary } from './journalApi';
 
@@ -44,9 +43,10 @@ function weekEnd(day: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-export function JournalPage({ panel, onClose, selectedDate, onSelectDate, timezone, onDraftProtectionChange }: {
-  panel: 'timeline' | 'review' | null; onClose: () => void;
-  selectedDate: string; onSelectDate: (day: string) => void; timezone: string;
+export function JournalPage({ visible, selectedDate, timezone, onDraftProtectionChange }: {
+  /** False while the plan view is shown; the records stay mounted so drafts survive switching views. */
+  visible: boolean;
+  selectedDate: string; timezone: string;
   onDraftProtectionChange: (protectedDraft: boolean) => void;
 }): ReactElement {
   const [items, setItems] = useState<JournalRecord[]>([]);
@@ -61,6 +61,7 @@ export function JournalPage({ panel, onClose, selectedDate, onSelectDate, timezo
   const [reviewWeek, setReviewWeek] = useState(() => weekStart(selectedDate));
   const readGeneration = useRef(0);
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const reviewEditorRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => { setReviewWeek(weekStart(selectedDate)); }, [selectedDate]);
   const visibleSummary = summary?.week_start === reviewWeek ? summary : null;
@@ -99,14 +100,15 @@ export function JournalPage({ panel, onClose, selectedDate, onSelectDate, timezo
     return () => controller.abort();
   }, [reviewWeek, items]);
 
-  const context = useMemo(() => ({
-    date: panel === 'review' ? reviewWeek : selectedDate,
-    kind: panel === 'review' ? 'weekly_review' as const : (kindFilter || 'life') as JournalKind,
-    timezone, weekly: panel === 'review',
-  }), [panel, reviewWeek, selectedDate, kindFilter, timezone]);
-  const writer = useJournalAutosave(context, () => void reload());
+  // The timeline and the weekly review sit side by side, so each has its own writer and draft.
+  const timelineContext = useMemo(() => ({ date: selectedDate, kind: (kindFilter || 'life') as JournalKind, timezone, weekly: false }), [selectedDate, kindFilter, timezone]);
+  const reviewContext = useMemo(() => ({ date: reviewWeek, kind: 'weekly_review' as const, timezone, weekly: true }), [reviewWeek, timezone]);
+  const writer = useJournalAutosave(timelineContext, () => void reload());
+  const reviewWriter = useJournalAutosave(reviewContext, () => void reload());
   const writingBusy = writer.state === 'saving';
-  useLayoutEffect(() => { onDraftProtectionChange(writer.dirty || writingBusy); }, [writer.dirty, writingBusy, onDraftProtectionChange]);
+  const reviewBusy = reviewWriter.state === 'saving';
+  useLayoutEffect(() => { onDraftProtectionChange(writer.dirty || writingBusy || reviewWriter.dirty || reviewBusy); },
+    [writer.dirty, writingBusy, reviewWriter.dirty, reviewBusy, onDraftProtectionChange]);
 
   function edit(item: JournalRecord) {
     if (writingBusy) return;
@@ -125,22 +127,33 @@ export function JournalPage({ panel, onClose, selectedDate, onSelectDate, timezo
     finally { setBusy(false); }
   }
 
-  const visibleItems = items.filter(item => item.id !== writer.record?.id);
-  const editor = <JournalInlineEditor writer={writer} context={context} inputRef={editorRef} empty={!loading && !readFailed && !items.length} onReload={() => void reload()} />;
-  return <JournalDrawer open={panel !== null} onClose={onClose} viewKey={panel || 'closed'} title={panel === 'review' ? '回顾' : '生活与学习时间线'}
-    tools={panel === 'timeline' ? <div className="journal-filters"><label className="journal-search">搜索<input aria-label="搜索记录" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="标题、正文或结构化内容" /></label><label>查看日期<input aria-label="记录日期" type="date" value={selectedDate} onChange={event => onSelectDate(event.target.value)} /></label><label>分类<select aria-label="筛选分类" value={kindFilter} onChange={event => setKindFilter(event.target.value)}><option value="">全部</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div> : null}
-    footer={<><p className="journal-privacy-note">记录存于本机私人空间；正文不会发送给 AI 服务。</p><button className="btn btn-ghost btn-sm journal-export" type="button" onClick={() => void downloadJournal().catch(cause => setError(cause instanceof Error ? cause.message : '导出失败'))}>导出 JSON</button></>}>
-    <div className="journal-page">
-    <section className="daily-timeline-section" aria-label="时间线记录" tabIndex={0} hidden={panel !== 'timeline'}>
-    <div className="journal-timeline-primary">
-      {query || kindFilter ? <p className="journal-filter-note">搜索范围为全部日期；清空搜索与分类后按日期查看。</p> : null}
-      {panel !== 'review' ? editor : null}
-      {loading ? <p>正在读取记录…</p> : readFailed ? <div className="journal-read-failed"><p>当前筛选的记录暂时无法显示。</p><button className="btn btn-secondary" type="button" onClick={() => void reload()}>重试读取记录</button></div> : visibleItems.length ? <ol className="journal-timeline">{visibleItems.map(item => <li key={item.id}><article><header><div><time dateTime={item.occurred_at}>{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.occurred_at))}</time><span className="journal-kind">{labels[item.kind]}</span></div><div><button className="btn btn-ghost btn-sm" type="button" onClick={() => edit(item)} aria-label={`编辑 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>编辑</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => void remove(item)} aria-label={`删除 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>删除</button></div></header>{item.chat_source ? <a href={`/admin/chat?conversation=${encodeURIComponent(item.chat_source.conversation_id)}`}>来自 AI 对话：{item.chat_source.title}</a> : null}{item.title ? <h3>{item.title}</h3> : null}{item.body ? <p>{item.body}</p> : null}{recordDetails(item).length ? <dl className="journal-details">{recordDetails(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}{item.ended_at ? <small>结束：{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, timeStyle: 'short' }).format(new Date(item.ended_at))}</small> : null}</article></li>)}</ol> : query || kindFilter ? <p className="journal-filter-note">没有其他符合筛选条件的记录。</p> : null}
-    </div>
+  // A record open in either writer is shown there, not again in the list.
+  const visibleItems = items.filter(item => item.id !== writer.record?.id && item.id !== reviewWriter.record?.id);
+  const searching = Boolean(query || kindFilter);
+  return <div className="daily-split daily-split-journal" hidden={!visible}>
+    <section className="daily-timeline-section" aria-labelledby="journal-timeline-title">
+      <header className="daily-column-head"><h3 id="journal-timeline-title">时间线</h3><small>{searching ? '搜索全部日期' : '这一天的生活与学习记录'}</small></header>
+      <div className="journal-filters"><label className="journal-search">搜索<input aria-label="搜索记录" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="标题、正文或结构化内容" /></label><label>分类<select aria-label="筛选分类" value={kindFilter} onChange={event => setKindFilter(event.target.value)}><option value="">全部</option>{Object.entries(labels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label></div>
+      <div className="journal-timeline-primary">
+        {searching ? <p className="journal-filter-note">搜索范围为全部日期；清空搜索与分类后按日期查看。</p> : null}
+        <JournalInlineEditor writer={writer} context={timelineContext} inputRef={editorRef} empty={!loading && !readFailed && !items.length} onReload={() => void reload()}
+          label="记录内容" statusId="journal-autosave-state" newLabel="另记一条"
+          placeholder={{ empty: '这一天暂无记录。可以先记下一件小事。', more: '在这里记下一件事、一个想法，或今天的收获…' }} />
+        {loading ? <p>正在读取记录…</p> : readFailed ? <div className="journal-read-failed"><p>当前筛选的记录暂时无法显示。</p><button className="btn btn-secondary" type="button" onClick={() => void reload()}>重试读取记录</button></div> : visibleItems.length ? <ol className="journal-timeline">{visibleItems.map(item => <li key={item.id}><article><header><div><time dateTime={item.occurred_at}>{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.occurred_at))}</time><span className="journal-kind">{labels[item.kind]}</span></div><div><button className="btn btn-ghost btn-sm" type="button" onClick={() => edit(item)} aria-label={`编辑 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>编辑</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => void remove(item)} aria-label={`删除 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>删除</button></div></header>{item.chat_source ? <a href={`/admin/chat?conversation=${encodeURIComponent(item.chat_source.conversation_id)}`}>来自 AI 对话：{item.chat_source.title}</a> : null}{item.title ? <h3>{item.title}</h3> : null}{item.body ? <p>{item.body}</p> : null}{recordDetails(item).length ? <dl className="journal-details">{recordDetails(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}{item.ended_at ? <small>结束：{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, timeStyle: 'short' }).format(new Date(item.ended_at))}</small> : null}</article></li>)}</ol> : searching ? <p className="journal-filter-note">没有其他符合筛选条件的记录。</p> : null}
+      </div>
     </section>
-    <section className="daily-review-section" aria-label="每周回顾" tabIndex={0} hidden={panel !== 'review'}>
-      <div className="journal-review">{panel === 'review' ? editor : null}<div className="journal-week-nav"><button className="btn btn-ghost" type="button" onClick={() => setReviewWeek(day => shiftWeek(day, -1))}>上周</button><strong>{reviewWeek} — {weekEnd(reviewWeek)}</strong><button className="btn btn-ghost" type="button" onClick={() => setReviewWeek(day => shiftWeek(day, 1))}>下周</button></div><h3>本周记录</h3>{summaryErrorWeek === reviewWeek ? <p className="journal-message journal-error" role="alert">本周记录读取失败</p> : visibleSummary ? <><p>共 {visibleSummary.total} 条；只统计记录数量，不把篇数当作学习进步。</p><ul className="journal-counts">{Object.entries(visibleSummary.counts).map(([kind, count]) => <li key={kind}>{labels[kind as JournalKind]}：{count}</li>)}</ul><ul className="journal-review-list">{visibleSummary.items.map(item => <li key={item.id}><span>{item.local_date} · {labels[item.kind]}</span><strong>{recordSummary(item)}</strong></li>)}</ul></> : <p>正在读取本周记录…</p>}</div>
+    <section className="daily-review-section" aria-labelledby="journal-review-title">
+      <div className="journal-review">
+        <header className="daily-column-head"><h3 id="journal-review-title">本周回顾</h3><small>整理这一周，而不只是记下一天</small></header>
+        <div className="journal-week-nav"><button className="btn btn-ghost" type="button" onClick={() => setReviewWeek(day => shiftWeek(day, -1))}>上周</button><strong>{reviewWeek} — {weekEnd(reviewWeek)}</strong><button className="btn btn-ghost" type="button" onClick={() => setReviewWeek(day => shiftWeek(day, 1))}>下周</button></div>
+        <JournalInlineEditor writer={reviewWriter} context={reviewContext} inputRef={reviewEditorRef} empty={Boolean(visibleSummary && !visibleSummary.counts.weekly_review)} onReload={() => void reload()}
+          label="本周回顾内容" statusId="journal-review-autosave-state" newLabel="另写一条回顾"
+          placeholder={{ empty: '这一周还没有回顾。做成了什么、学到了什么、下周想调整什么？', more: '再补充一点这一周的回顾…' }} />
+        <h4>本周记录</h4>
+        {summaryErrorWeek === reviewWeek ? <p className="journal-message journal-error" role="alert">本周记录读取失败</p> : visibleSummary ? <><p>共 {visibleSummary.total} 条；只统计记录数量，不把篇数当作学习进步。</p><ul className="journal-counts">{Object.entries(visibleSummary.counts).map(([kind, count]) => <li key={kind}>{labels[kind as JournalKind]}：{count}</li>)}</ul><ul className="journal-review-list">{visibleSummary.items.map(item => <li key={item.id}><span>{item.local_date} · {labels[item.kind]}</span><strong>{recordSummary(item)}</strong></li>)}</ul></> : <p>正在读取本周记录…</p>}
+      </div>
     </section>
-    {error ? <p className="journal-message journal-error" role="alert">{error}</p> : null}
-  </div></JournalDrawer>;
+    {error ? <p className="journal-message journal-error daily-split-wide" role="alert">{error}</p> : null}
+    <footer className="journal-footer daily-split-wide"><p className="journal-privacy-note">记录存于本机私人空间；正文不会发送给 AI 服务。</p><button className="btn btn-ghost btn-sm journal-export" type="button" onClick={() => void downloadJournal().catch(cause => setError(cause instanceof Error ? cause.message : '导出失败'))}>导出 JSON</button></footer>
+  </div>;
 }

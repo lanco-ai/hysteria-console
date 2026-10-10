@@ -15,11 +15,13 @@ const { expect } = require('@playwright/test');
     catch (error) { failures.push(name); console.error(`FAIL: ${name}: ${error.stack}`); }
     finally { await context.close(); }
   }
-  async function saved(page, text) {
-    await page.getByLabel('记录内容').fill(text);
-    await page.getByLabel('记录内容').press('Control+Enter');
-    await expect(page.locator('#journal-autosave-state')).toHaveText('已自动保存');
+  // The timeline and the weekly review each have their own box beside each other.
+  async function saved(page, text, box = '记录内容', state = '#journal-autosave-state') {
+    await page.getByLabel(box, { exact: true }).fill(text);
+    await page.getByLabel(box, { exact: true }).press('Control+Enter');
+    await expect(page.locator(state)).toHaveText('已自动保存');
   }
+  const savedRecap = (page, text) => saved(page, text, '本周回顾内容', '#journal-review-autosave-state');
   async function records(context, q) { return (await (await context.request.get(`${base}/api/journal?q=${encodeURIComponent(q)}`)).json()).items; }
   try {
     await scenario('failed autosave protects text and navigation while closed', async page => {
@@ -36,7 +38,7 @@ const { expect } = require('@playwright/test');
       await expect(page.getByRole('alert')).toContainText('登录已失效');
       await page.clock.runFor(20_000); assert.equal(writes, 1, 'failure must stop automatic retries');
       assert.equal(await page.evaluate(() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented; }), true);
-      await page.getByRole('button', { name: '关闭记录面板' }).click();
+      await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '计划与行程' }).click();
       page.once('dialog', dialog => dialog.dismiss());
       await page.getByRole('link', { name: '服务中心' }).first().click();
       await expect(page).toHaveURL(/\/admin\/plans/);
@@ -162,7 +164,7 @@ const { expect } = require('@playwright/test');
 
     await scenario('failed draft keeps its original day and category when filters change', async (page, context) => {
       await page.goto(`${base}/admin/plans#daily-timeline`);
-      await page.getByLabel('记录日期').fill('2026-09-21');
+      await page.getByLabel('计划日期').fill('2026-09-21');
       await page.getByLabel('筛选分类').selectOption('paper');
       let failing = true;
       await page.route('**/api/journal', async route => {
@@ -171,9 +173,9 @@ const { expect } = require('@playwright/test');
       });
       await page.getByLabel('记录内容').fill('Bound to original date and category'); await page.getByLabel('记录内容').press('Control+Enter');
       await expect(page.getByRole('alert')).toBeVisible();
-      await page.getByLabel('记录日期').fill('2026-09-22'); await page.getByLabel('筛选分类').selectOption('life');
+      await page.getByLabel('计划日期').fill('2026-09-22'); await page.getByLabel('筛选分类').selectOption('life');
       await expect(page.getByLabel('记录内容')).toHaveValue('Bound to original date and category');
-      await expect(page.locator('.journal-inline-state')).toContainText('2026-09-21 · 论文阅读');
+      await expect(page.locator('.daily-timeline-section .journal-inline-state')).toContainText('2026-09-21 · 论文阅读');
       failing = false; await page.getByRole('button', { name: '重试保存' }).click(); await expect(page.locator('#journal-autosave-state')).toHaveText('已自动保存');
       const [record] = await records(context, 'Bound to original'); assert.equal(record.local_date, '2026-09-21'); assert.equal(record.kind, 'paper');
       await page.getByRole('button', { name: '另记一条' }).click(); await saved(page, 'Bound to new selected day');
@@ -183,11 +185,11 @@ const { expect } = require('@playwright/test');
     await scenario('past weekly recap belongs to the selected week', async (page, context) => {
       await page.goto(`${base}/admin/plans#daily-review`);
       await page.getByRole('button', { name: '上周' }).click();
-      await saved(page, 'Past selected week direct recap');
+      await savedRecap(page, 'Past selected week direct recap');
       const [record] = await records(context, 'Past selected week');
       assert.equal(record.kind, 'weekly_review'); assert.equal(record.local_date, '2026-09-21');
       await expect(page.locator('.journal-counts')).toContainText('每周回顾：1');
-      await page.getByRole('button', { name: '上周' }).click(); await expect(page.getByLabel('记录内容')).toHaveValue('');
+      await page.getByRole('button', { name: '上周' }).click(); await expect(page.getByLabel('本周回顾内容', { exact: true })).toHaveValue('');
     });
 
     await scenario('late old-date reads cannot replace a newer selection', async page => {
@@ -200,10 +202,10 @@ const { expect } = require('@playwright/test');
           await route.fulfill({ json: { items: [] } }).catch(() => {});
         } else await route.continue();
       });
-      await page.getByLabel('记录日期').fill('2026-11-10'); await expect.poll(() => Boolean(releaseOld)).toBe(true);
-      await page.getByLabel('记录日期').fill('2026-11-11'); await saved(page, 'New selection survives old read');
+      await page.getByLabel('计划日期').fill('2026-11-10'); await expect.poll(() => Boolean(releaseOld)).toBe(true);
+      await page.getByLabel('计划日期').fill('2026-11-11'); await saved(page, 'New selection survives old read');
       releaseOld(); await page.clock.runFor(100);
-      await expect(page.getByLabel('记录日期')).toHaveValue('2026-11-11'); await expect(page.getByLabel('记录内容')).toHaveValue('New selection survives old read');
+      await expect(page.getByLabel('计划日期')).toHaveValue('2026-11-11'); await expect(page.getByLabel('记录内容')).toHaveValue('New selection survives old read');
       await expect(page.locator('#journal-autosave-state')).toHaveText('已自动保存');
     });
 
@@ -211,7 +213,7 @@ const { expect } = require('@playwright/test');
       await page.goto(`${base}/admin/plans#daily-timeline`); await saved(page, 'Earlier reader entry');
       await page.getByRole('button', { name: '另记一条' }).click(); await expect(page.locator('.journal-timeline')).toContainText('Earlier reader entry');
       await page.route('**/api/journal?*', route => route.fulfill({ status: 503, json: { error: 'journal_unavailable' } }));
-      await page.getByLabel('记录日期').fill('2026-11-12');
+      await page.getByLabel('计划日期').fill('2026-11-12');
       await expect(page.getByRole('alert')).toContainText('记录读取失败'); await expect(page.locator('.journal-timeline')).toHaveCount(0);
       await expect(page.getByLabel('记录内容')).toBeEnabled();
       await page.getByLabel('记录内容').fill('Draft during read outage');
@@ -219,7 +221,7 @@ const { expect } = require('@playwright/test');
     });
 
     await scenario('weekly navigation hides old counts during a delayed failure', async page => {
-      await page.goto(`${base}/admin/plans#daily-review`); await saved(page, 'Current week only direct recap');
+      await page.goto(`${base}/admin/plans#daily-review`); await savedRecap(page, 'Current week only direct recap');
       await expect(page.locator('.journal-counts')).toContainText('每周回顾：1');
       let release;
       await page.route('**/api/journal/summary?*', async route => {

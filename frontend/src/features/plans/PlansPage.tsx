@@ -118,10 +118,10 @@ export function PlansPage(): ReactElement {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
   }, []);
   const [selectedDate, setSelectedDate] = useState(() => localDate(timezone));
-  const journalPanel = window.location.hash === '#daily-timeline' ? 'timeline' : window.location.hash === '#daily-review' ? 'review' : null;
-  const scheduleView = window.location.hash === '#daily-schedule';
-  const plansLinkRef = useRef<HTMLAnchorElement>(null);
-  const closeJournal = useCallback(() => { plansLinkRef.current?.click(); }, []);
+  // Two views, each two columns: 今日计划 beside 行程, and 时间线 beside 回顾. The older
+  // #daily-schedule and #daily-review links open the view that holds them.
+  const hash = window.location.hash;
+  const journalView = hash === '#daily-timeline' || hash === '#daily-review';
   const [journalProtected, setJournalProtected] = useState(false);
   const [items, setItems] = useState<PlanItem[]>([]);
   const [revision, setRevision] = useState('');
@@ -240,6 +240,18 @@ export function PlansPage(): ReactElement {
     void reload(controller.signal);
     return () => controller.abort();
   }, [reload]);
+
+  // An older link to 行程 or 回顾 opens the view holding it. Side by side it is already in view;
+  // when the columns stack, scroll to it once the plan has loaded and the layout has settled.
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || loading) return;
+    deepLinkHandled.current = true;
+    const selector = window.location.hash === '#daily-schedule' ? '.daily-schedule-section' : window.location.hash === '#daily-review' ? '.daily-review-section' : '';
+    const target = selector ? document.querySelector<HTMLElement>(selector) : null;
+    const first = target?.parentElement?.firstElementChild;
+    if (target && first && target.getBoundingClientRect().top > first.getBoundingClientRect().top + 1) target.scrollIntoView();
+  }, [loading]);
 
   useLayoutEffect(() => {
     const beforeClientPopState = (event: Event) => {
@@ -588,22 +600,23 @@ export function PlansPage(): ReactElement {
           <div className="plans-date-meta">
             <input className="plans-date-input" aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} />
             {dayFromToday !== 0 ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => changeSelectedDate(() => today)}>回到今天</button> : null}
-            {selectedItems.length ? <span className="plans-progress">已完成 {completedCount} / {selectedItems.length}<span className="plans-progress-bar" aria-hidden="true"><span style={{ width: `${Math.round(completedCount / selectedItems.length * 100)}%` }} /></span></span> : null}
+            {selectedItems.length && !journalView ? <span className="plans-progress">已完成 {completedCount} / {selectedItems.length}<span className="plans-progress-bar" aria-hidden="true"><span style={{ width: `${Math.round(completedCount / selectedItems.length * 100)}%` }} /></span></span> : null}
           </div>
         </div>
         <div className="plans-header-side">
           <nav className="daily-section-nav" aria-label="今日页面内容">
-            <a href="#daily-timeline" aria-haspopup="dialog" aria-controls="daily-journal-drawer">时间线</a>
-            <a href="#daily-plans" ref={plansLinkRef} aria-current={journalPanel || scheduleView ? undefined : "page"}>今日计划</a>
-            <a href="#daily-schedule" aria-current={scheduleView && !journalPanel ? "page" : undefined}>行程</a>
-            <a href="#daily-review" aria-haspopup="dialog" aria-controls="daily-journal-drawer">回顾</a>
+            <a href="#daily-plans" aria-current={journalView ? undefined : 'page'}>计划与行程</a>
+            <a href="#daily-timeline" aria-current={journalView ? 'page' : undefined}>时间线与回顾</a>
           </nav>
-          <div className="plans-header-actions"><button className="btn btn-secondary plans-ai-trigger" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}><PlansGlyph name="spark" />AI 建议</button><button className="btn btn-ghost plans-refresh" type="button" aria-label="刷新" title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : '重新读取计划'} onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft}><PlansGlyph name="refresh" /></button></div>
+          <div className="plans-header-actions" hidden={journalView}><button className="btn btn-secondary plans-ai-trigger" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}><PlansGlyph name="spark" />AI 建议</button><button className="btn btn-ghost plans-refresh" type="button" aria-label="刷新" title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : '重新读取计划'} onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft}><PlansGlyph name="refresh" /></button></div>
         </div>
       </header>
 
-      <section className="daily-plans-section" id="plans-workspace" aria-labelledby="daily-plans-heading" tabIndex={-1}>
-      <div className={`plans-composer${dirty || saveState === 'failure' || conflictDraft ? ' is-dirty' : ''}`} hidden={scheduleView}>
+      <div className="daily-views">
+      <div className="daily-split daily-split-plans" hidden={journalView}>
+      <section className="daily-plans-section" id="plans-workspace" aria-labelledby="daily-plans-title" tabIndex={-1}>
+      <header className="daily-column-head"><h3 id="daily-plans-title">今日计划</h3><small>按重要与紧急分组；添加后立即保存</small></header>
+      <div className={`plans-composer${dirty || saveState === 'failure' || conflictDraft ? ' is-dirty' : ''}`}>
       <form className="plans-create" onSubmit={addTask}>
         <label className="sr-only" htmlFor="plan-title">计划标题</label><input id="plan-title" value={title} onChange={event => { formDraftVersion.current += 1; setTitle(event.target.value); setFeedback(''); }} maxLength={160} placeholder="添加今天要做的事…" required disabled={editingBlocked} />
         <label className="sr-only" htmlFor="plan-quadrant">计划分类</label><select id="plan-quadrant" value={quadrant} onChange={event => setQuadrant(event.target.value as PlanQuadrant)} disabled={editingBlocked}>{groups.map(group => <option key={group.id} value={group.id}>{group.title}</option>)}</select>
@@ -617,7 +630,31 @@ export function PlansPage(): ReactElement {
       </div>
       {!assistantOpen && error ? renderPlanError() : null}
       {!assistantOpen && conflictDraft && !error ? renderConflictNotice() : null}
-      <SchedulePanel mode={scheduleView ? 'full' : 'strip'} ready={!loading} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange} />
+      {loading && !items.length ? null : <div className="plans-grid">{groups.map(group => {
+        const groupItems = selectedItems.filter(item => item.quadrant === group.id);
+        return <section className={`plans-quadrant plans-quadrant-${group.id}${groupItems.length ? '' : ' plans-quadrant-empty'}`} key={group.id} aria-label={group.title}>
+          <header><div><h3>{group.title}</h3><p>{group.hint}</p></div><span>{groupItems.length}</span></header>
+          {groupItems.length ? <ul>{groupItems.map(item => {
+            const expanded = openTaskId === item.id;
+            const meta = [item.start_time, `${item.estimate_minutes} 分钟`, item.due_at ? `截止 ${taskTime(item.due_at, item.plan_date)}` : '', item.reminder_at ? `提醒 ${taskTime(item.reminder_at, item.plan_date)}` : ''].filter(Boolean).join(' · ');
+            return <li className={[item.status === 'done' ? 'is-done' : '', expanded ? 'is-expanded' : ''].filter(Boolean).join(' ') || undefined} key={item.id}>
+            <label className="plans-task-check"><input type="checkbox" checked={item.status === 'done'} onChange={event => updateTask(item.id, { status: event.target.checked ? 'done' : 'todo' })} disabled={editingBlocked || pendingDeleteId === item.id} /><span className="sr-only">标记完成</span></label>
+            <div className="plans-task-body"><div className="plans-task-title"><strong>{item.title}</strong><button className="btn btn-ghost btn-sm plans-task-toggle" type="button" aria-expanded={expanded} aria-controls={expanded ? `plan-task-controls-${item.id}` : undefined} aria-label={`调整 ${item.title}`} title="状态、分类、提醒和删除" onClick={() => setOpenTaskId(current => current === item.id ? null : item.id)}>⋯</button></div>{item.notes ? <p>{item.notes}</p> : null}<small>{item.status === 'in_progress' ? <span className="plans-task-state">进行中</span> : null}{meta}</small>
+              {expanded ? <div className="plans-task-controls" id={`plan-task-controls-${item.id}`}><select aria-label={`${item.title}状态`} value={item.status} onChange={event => updateTask(item.id, { status: event.target.value as PlanStatus })} disabled={editingBlocked || pendingDeleteId === item.id}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><select aria-label={`${item.title}分类`} value={item.quadrant} onChange={event => updateTask(item.id, { quadrant: event.target.value as PlanQuadrant })} disabled={editingBlocked || pendingDeleteId === item.id}>{groups.map(option => <option value={option.id} key={option.id}>{option.title}</option>)}</select><label className="plans-task-reminder">提醒<input aria-label={`${item.title}提醒`} type="datetime-local" value={localInputValue(item.reminder_at)} onChange={event => updateTask(item.id, { reminder_at: isoFromLocalInput(event.target.value) })} disabled={editingBlocked || pendingDeleteId === item.id} /></label><button className="btn btn-ghost btn-sm plans-delete" type="button" aria-label={`删除 ${item.title}`} onClick={() => void removeTask(item.id)} disabled={editingBlocked || saving}>删除</button></div> : null}
+            </div>
+          </li>;
+          })}</ul> : <p className="plans-empty">暂无计划</p>}
+        </section>;
+      })}</div>}
+      <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services#ai-services">服务中心</a></footer>
+      </section>
+      <section className="daily-schedule-section" aria-labelledby="daily-schedule-title">
+        <header className="daily-column-head"><h3 id="daily-schedule-title">行程</h3><small>作息、三餐、工作与学习的时间安排</small></header>
+        <SchedulePanel visible={!journalView} ready={!loading} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange} />
+      </section>
+      </div>
+      <JournalPage visible={journalView} selectedDate={selectedDate} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
+      </div>
 
         {assistantOpen ? <><button className="plans-assistant-backdrop" type="button" tabIndex={-1} aria-label="关闭 AI 建议" onClick={closeAssistant} /><section className="plans-assistant" role="dialog" aria-modal="true" aria-labelledby="plans-assistant-title" tabIndex={-1}>
         <div className="plans-assistant-dialog">
@@ -640,26 +677,6 @@ export function PlansPage(): ReactElement {
           <button className="btn btn-primary" type="button" onClick={() => void applySuggestions()} disabled={saving || suggestionIssues.size > 0 || !assistantSuggestions.some(item => item.selected)}>{saving ? '保存中…' : '保存选中建议'}</button>
         </div> : null}
         </div></section></> : null}
-
-      {loading && !items.length ? null : <div className="plans-grid" hidden={scheduleView}>{groups.map(group => {
-        const groupItems = selectedItems.filter(item => item.quadrant === group.id);
-        return <section className={`plans-quadrant plans-quadrant-${group.id}${groupItems.length ? '' : ' plans-quadrant-empty'}`} key={group.id} aria-label={group.title}>
-          <header><div><h3>{group.title}</h3><p>{group.hint}</p></div><span>{groupItems.length}</span></header>
-          {groupItems.length ? <ul>{groupItems.map(item => {
-            const expanded = openTaskId === item.id;
-            const meta = [item.start_time, `${item.estimate_minutes} 分钟`, item.due_at ? `截止 ${taskTime(item.due_at, item.plan_date)}` : '', item.reminder_at ? `提醒 ${taskTime(item.reminder_at, item.plan_date)}` : ''].filter(Boolean).join(' · ');
-            return <li className={[item.status === 'done' ? 'is-done' : '', expanded ? 'is-expanded' : ''].filter(Boolean).join(' ') || undefined} key={item.id}>
-            <label className="plans-task-check"><input type="checkbox" checked={item.status === 'done'} onChange={event => updateTask(item.id, { status: event.target.checked ? 'done' : 'todo' })} disabled={editingBlocked || pendingDeleteId === item.id} /><span className="sr-only">标记完成</span></label>
-            <div className="plans-task-body"><div className="plans-task-title"><strong>{item.title}</strong><button className="btn btn-ghost btn-sm plans-task-toggle" type="button" aria-expanded={expanded} aria-controls={expanded ? `plan-task-controls-${item.id}` : undefined} aria-label={`调整 ${item.title}`} title="状态、分类、提醒和删除" onClick={() => setOpenTaskId(current => current === item.id ? null : item.id)}>⋯</button></div>{item.notes ? <p>{item.notes}</p> : null}<small>{item.status === 'in_progress' ? <span className="plans-task-state">进行中</span> : null}{meta}</small>
-              {expanded ? <div className="plans-task-controls" id={`plan-task-controls-${item.id}`}><select aria-label={`${item.title}状态`} value={item.status} onChange={event => updateTask(item.id, { status: event.target.value as PlanStatus })} disabled={editingBlocked || pendingDeleteId === item.id}>{Object.entries(statusLabels).map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select><select aria-label={`${item.title}分类`} value={item.quadrant} onChange={event => updateTask(item.id, { quadrant: event.target.value as PlanQuadrant })} disabled={editingBlocked || pendingDeleteId === item.id}>{groups.map(option => <option value={option.id} key={option.id}>{option.title}</option>)}</select><label className="plans-task-reminder">提醒<input aria-label={`${item.title}提醒`} type="datetime-local" value={localInputValue(item.reminder_at)} onChange={event => updateTask(item.id, { reminder_at: isoFromLocalInput(event.target.value) })} disabled={editingBlocked || pendingDeleteId === item.id} /></label><button className="btn btn-ghost btn-sm plans-delete" type="button" aria-label={`删除 ${item.title}`} onClick={() => void removeTask(item.id)} disabled={editingBlocked || saving}>删除</button></div> : null}
-            </div>
-          </li>;
-          })}</ul> : <p className="plans-empty">暂无计划</p>}
-        </section>;
-      })}</div>}
-      <footer className="plans-footer" hidden={scheduleView}><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services#ai-services">服务中心</a></footer>
-      </section>
-      <JournalPage panel={journalPanel} onClose={closeJournal} selectedDate={selectedDate} onSelectDate={day => changeSelectedDate(() => day)} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
     </section>
   </CodexShell>;
 }

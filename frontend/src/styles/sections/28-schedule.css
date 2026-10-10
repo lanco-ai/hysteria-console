@@ -10,15 +10,8 @@
 .schedule-dot { display: inline-block; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--cat, var(--text-tertiary)); }
 .schedule-muted { margin: 8px 0 0; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; }
 
-/* The one-line entry shown above the four quadrants. */
-.schedule-strip { --cat: #59745c; --cat-soft: #edf3ec; display: flex; align-items: center; gap: 14px; min-height: 48px; box-sizing: border-box; margin-top: 12px; padding: 8px 16px; overflow: hidden; border: 1px solid var(--border); border-left: 4px solid var(--cat); border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); text-decoration: none; transition: border-color var(--transition), background-color var(--transition); }
-.schedule-strip:hover { background: var(--cat-soft); }
-.schedule-strip:focus-visible { outline: 2px solid #59745c; outline-offset: 2px; }
-.schedule-strip-label { flex: 0 0 auto; color: var(--cat); font-size: 12px; font-weight: 700; letter-spacing: .04em; }
-.schedule-strip-summary { flex: 1; min-width: 0; overflow: hidden; color: var(--text-secondary); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
-.schedule-strip-action { flex: 0 0 auto; color: var(--text-primary); font-size: 13px; font-weight: 600; }
-
-.schedule { margin-top: 16px; }
+/* The panel reflows by its own width: it is the right column beside 今日计划 on wide pages. */
+.schedule { container: schedule / inline-size; }
 .schedule-card { min-width: 0; box-sizing: border-box; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
 .schedule-card > header, .schedule-card > summary { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .schedule-card h3 { margin: 0; font-size: 15px; }
@@ -49,13 +42,14 @@
 .schedule-message { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid #c6d8c0; border-radius: 10px; background: #f1f8ef; color: var(--text-secondary); font-size: 13px; }
 .schedule-message.is-error { border-color: #e9c4bd; background: #fff3f0; color: #84392b; }
 
-.schedule-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 12px; align-items: start; margin-top: 12px; }
-.schedule-timeline-card { min-width: 0; padding: 16px 12px 12px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
+/* The time axis grows to the height of the cards beside it, so a tall form shows more of the day. */
+.schedule-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 12px; margin-top: 12px; }
+.schedule-timeline-card { display: flex; flex-direction: column; min-width: 0; padding: 16px 12px 12px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
 .schedule-timeline-card > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding-right: 4px; }
 .schedule-timeline-card h3 { margin: 0; font-size: 15px; }
 .schedule-timeline-card > header small { color: var(--text-tertiary); font-size: 12px; }
 .schedule-timeline-state { min-height: 200px; }
-.schedule-timeline { position: relative; height: min(720px, calc(100dvh - 240px)); min-height: 420px; margin-top: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.schedule-timeline { position: relative; flex: 1 1 0; min-height: max(420px, min(720px, calc(100dvh - 240px))); max-height: 1460px; margin-top: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .schedule-timeline-canvas { position: relative; cursor: copy; }
 .schedule-hour { position: absolute; right: 0; left: 0; height: 0; border-top: 1px solid var(--hairline); pointer-events: none; }
 .schedule-hour > span { position: absolute; top: -8px; left: 0; padding-right: 6px; background: var(--bg-surface); color: var(--text-tertiary); font-family: var(--font-num); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -76,8 +70,8 @@
 .schedule-empty p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .schedule-empty .btn + .btn { margin-top: -4px; }
 
-.schedule-side { display: grid; gap: 12px; min-width: 0; }
-.schedule-form { display: grid; gap: 12px; }
+.schedule-side { display: grid; gap: 12px; align-content: start; align-items: start; min-width: 0; }
+.schedule-form { display: grid; gap: 12px; container: schedule-form / inline-size; }
 .schedule-form-fields { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .schedule-presets, .schedule-categories { display: flex; flex-wrap: wrap; gap: 6px; }
 .schedule-categories { min-width: 0; margin: 0; padding: 0; border: 0; }
@@ -142,7 +136,12 @@ body.has-shell .schedule-agenda-actions .btn { min-height: 26px; padding: 2px 6p
 .schedule-routine small { color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
 body.has-shell .schedule-routine li .btn { min-height: 26px; padding: 2px 6px; font-size: 11px; }
 
-@media (max-width: 1080px) {
+/* Very wide: the form and the day's list sit side by side next to the time axis. */
+@container schedule (min-width: 1150px) {
+  .schedule-main { grid-template-columns: minmax(0, 1fr) minmax(620px, 780px); }
+  .schedule-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container schedule (max-width: 900px) {
   .schedule-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .schedule-allocation { grid-column: 1 / -1; grid-row: 2; }
   .schedule-main { grid-template-columns: minmax(0, 1fr); }
@@ -150,17 +149,18 @@ body.has-shell .schedule-routine li .btn { min-height: 26px; padding: 2px 6px; f
   .schedule-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .schedule-note { grid-column: 1 / -1; }
 }
-@media (max-width: 760px) {
-  .schedule-strip { flex-wrap: wrap; gap: 4px 12px; padding-block: 10px; }
-  .schedule-strip-summary { flex-basis: 100%; order: 3; white-space: normal; }
-  .schedule-strip-action { margin-left: auto; }
+@container schedule (max-width: 640px) {
   .schedule-overview, .schedule-side, .schedule-bottom { grid-template-columns: minmax(0, 1fr); }
   .schedule-allocation { grid-row: auto; }
-  .schedule-timeline { height: min(560px, calc(100dvh - 180px)); min-height: 360px; }
-  .schedule-time-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .schedule-time-row .schedule-field:last-child { grid-column: 1 / -1; }
   .schedule-empty { margin-left: 52px; }
-  .schedule-agenda-actions { opacity: 1; }
   .schedule-routine li { grid-template-columns: 8px 76px minmax(0, 1fr) auto; }
   .schedule-routine li small { display: none; }
+}
+@container schedule-form (max-width: 380px) {
+  .schedule-time-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .schedule-time-row .schedule-field:last-child { grid-column: 1 / -1; }
+}
+@media (max-width: 760px) {
+  .schedule-timeline { min-height: max(360px, min(560px, calc(100dvh - 180px))); }
+  .schedule-agenda-actions { opacity: 1; }
 }

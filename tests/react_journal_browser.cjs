@@ -19,7 +19,8 @@ const fs = require('node:fs');
     await expect(page.locator('.journal-timeline-primary textarea[aria-label="记录内容"]')).toBeVisible();
     await expect(box).toHaveAttribute('placeholder', '这一天暂无记录。可以先记下一件小事。');
     await expect(page.locator('.journal-editor, .journal-extra-fields, .journal-optional')).toHaveCount(0);
-    for (const label of ['记录类型', '开始时间', '结束时间', '记录标题']) await expect(page.getByLabel(label, { exact: true })).toHaveCount(0);
+    // The journal has no structured form (the 行程 view beside it keeps its own time fields).
+    for (const label of ['记录类型', '开始时间', '结束时间', '记录标题']) await expect(page.locator('.daily-split-journal').getByLabel(label, { exact: true })).toHaveCount(0);
     for (const name of ['写记录', '保存记录']) await expect(page.getByRole('button', { name, exact: true })).toHaveCount(0);
     await expect(page.getByText('关闭面板后，草稿保留在当前页面。')).toHaveCount(0);
     await expect(page.getByText('时间与至少一项内容必填。')).toHaveCount(0);
@@ -28,16 +29,15 @@ const fs = require('node:fs');
       await page.setViewportSize({ width, height: 900 });
       await page.evaluate(() => document.fonts.ready);
       if (width < 1100) await expect.poll(() => page.locator('.sidebar').evaluate(element => element.getBoundingClientRect().right)).toBeLessThan(1);
-      const layout = await page.locator('#daily-journal-drawer').evaluate(element => {
-        const drawer = element.getBoundingClientRect();
-        const title = element.querySelector('#journal-drawer-title').getBoundingClientRect();
-        return { fit: element.scrollWidth <= element.clientWidth, right: drawer.right, centerDifference: title.x + title.width / 2 - drawer.x - drawer.width / 2 };
-      });
-      assert(layout.fit && layout.right <= width + 1 && Math.abs(layout.centerDifference) < 2, `drawer should fit and center the heading at ${width}px`);
-      const date = await page.getByLabel('记录日期').boundingBox();
+      // The timeline and the weekly review share the page: side by side when wide, stacked otherwise.
+      const timeline = await page.locator('.daily-timeline-section').boundingBox();
+      const review = await page.locator('.daily-review-section').boundingBox();
+      if (width >= 1440) assert(timeline.x + timeline.width <= review.x && Math.abs(timeline.y - review.y) < 4, `timeline and review sit side by side at ${width}px`);
+      else assert(review.y >= timeline.y + timeline.height, `review follows the timeline at ${width}px`);
+      const search = await page.getByLabel('搜索记录').boundingBox();
       const category = await page.getByLabel('筛选分类').boundingBox();
-      assert(Math.abs(date.y - category.y) < 2, 'date and category stay on the same toolbar row');
-      assert(await page.locator('.journal-drawer-body').evaluate(element => element.scrollWidth <= element.clientWidth));
+      assert(Math.abs(search.y - category.y) < 2, 'search and category stay on the same toolbar row');
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `no horizontal overflow at ${width}px`);
       if (process.env.REACT_SCREENSHOT_DIR) {
         fs.mkdirSync(process.env.REACT_SCREENSHOT_DIR, { recursive: true });
         await page.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, `journal-direct-${name}-${width}.png`) });
@@ -88,26 +88,23 @@ const fs = require('node:fs');
     await expect(page.locator('.journal-timeline li')).toHaveCount(0);
     await expect(page.getByText('没有其他符合筛选条件的记录。')).toBeVisible();
     await page.getByLabel('搜索记录').fill('');
-    await page.getByLabel('记录日期').fill('2026-09-28');
+    await page.getByLabel('计划日期').fill('2026-09-28');
     await box.fill('A paper note on the selected day');
     await page.clock.runFor(1300);
     await expect(page.locator('#journal-autosave-state')).toHaveText('已自动保存');
     const paper = (await (await context.request.get(`${base}/api/journal?date=2026-09-28&kind=paper`)).json()).items;
     assert.equal(paper.length, 1); assert.equal(paper[0].local_date, '2026-09-28');
-    await page.getByRole('button', { name: '关闭记录面板' }).click();
-    await page.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '回顾' }).click();
+    // The weekly review beside the timeline counts the week's records.
     await expect(page.locator('.journal-review')).toBeVisible();
     await expect(page.locator('.journal-counts')).toContainText('论文阅读：1');
     await expect(page.locator('.journal-counts')).toContainText('雅思练习：1');
     await expect(page.locator('.journal-review textarea')).toHaveCount(1);
-    await page.getByRole('button', { name: '导出 JSON' }).focus();
-    await page.keyboard.press('Tab');
-    await expect(page.getByRole('button', { name: '关闭记录面板' })).toBeFocused();
+    await expect(page.getByLabel('本周回顾内容', { exact: true })).toBeVisible();
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: '导出 JSON' }).click();
     assert.equal((await download).suggestedFilename(), 'life-learning-journal.json');
     assert.deepEqual(errors, []);
     await context.close();
-    console.log('PASS: direct content box, removed form, autosave persistence, metadata, search/category, recap/export and 390/768/1440px layout');
+    console.log('PASS: direct content box, removed form, autosave persistence, metadata, search/category, recap beside the timeline, export and 390/768/1440px layout');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
