@@ -244,6 +244,25 @@ async function verifyEmptyAndRecovery(browser) {
   await context.close();
 }
 
+async function verifyScheduledResetLabel(browser) {
+  const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, timezoneId: 'Asia/Shanghai' });
+  await addCookie(context, 'sid', adminCookie);
+  const page = await context.newPage();
+  await page.route('**/api/v1/admin/logs', route => route.fulfill({ json: { limit: 300, rows: [
+    { time: '2026-09-14T16:00:25Z', actor: 'system', ip: '', action: 'reset_usage_all_auto_day21', target: 'all_users', month: '2026-09', detail: '' },
+  ] } }));
+  await gotoReact(page);
+  const entry = page.locator('.log-entry').first();
+  await entry.waitFor();
+  // The day21 suffix is a historical name; the reset runs on the configured settlement day.
+  assert.equal(await entry.locator('.log-title strong').innerText(), '结算日自动清零');
+  assert.equal(await entry.locator('.log-target').innerText(), '全部用户');
+  assert.equal(await entry.locator('.log-meta').innerText(), '系统自动 · 周期 2026-09');
+  assert.equal(await entry.locator('.log-time').innerText(), '00:00');
+  assert.match(await page.locator('.log-day-title').first().innerText(), /9 月 15 日/);
+  await context.close();
+}
+
 async function verifyShellKeyboardAndPreferences(browser) {
   const desktop = await browser.newContext({ viewport: { width: 1024, height: 768 } });
   await addCookie(desktop, 'sid', adminCookie);
@@ -310,6 +329,7 @@ async function verifyShellKeyboardAndPreferences(browser) {
     await verifyAuthenticatedLogs(browser);
     await verifyAuthenticationBoundaries(browser);
     await verifyEmptyAndRecovery(browser);
+    await verifyScheduledResetLabel(browser);
     await verifyShellKeyboardAndPreferences(browser);
     console.log('PASS: React logs real API, auth boundaries, recovery, shell parity, mobile focus, and preferences');
   } finally {

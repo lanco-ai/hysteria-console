@@ -109,15 +109,15 @@ function NodeDialog({ node, revision, busy, run, close }: { node: LandingNode | 
         <div className="form-grid landing-node-grid">
           <div className="form-field"><label htmlFor="landing-node-id">节点 ID</label><input id="landing-node-id" name="id" required autoComplete="off" pattern="[a-z0-9][a-z0-9\-]{0,62}" title="小写字母、数字或连字符，最多 63 位" defaultValue={node?.id ?? ''} readOnly={Boolean(node)} disabled={busy}/><span className="hint">{node ? '编辑时不可修改' : '小写字母、数字或连字符；与已有节点相同则更新该节点'}</span></div>
           <div className="form-field"><label htmlFor="landing-node-name">显示名称</label><input id="landing-node-name" name="name" required defaultValue={node?.name ?? ''} disabled={busy}/></div>
-          <div className="form-field"><label htmlFor="landing-socks-ip">SOCKS5 IP</label><input id="landing-socks-ip" name="socks_ip" required autoComplete="off" disabled={busy}/></div>
-          <div className="form-field"><label htmlFor="landing-socks-port">SOCKS5 端口</label><input id="landing-socks-port" name="socks_port" type="number" min={1} max={65535} required disabled={busy}/></div>
+          <div className="form-field"><label htmlFor="landing-socks-ip">SOCKS5 IP</label><input id="landing-socks-ip" name="socks_ip" required={!node} autoComplete="off" placeholder={node ? '留空保持不变' : undefined} disabled={busy}/></div>
+          <div className="form-field"><label htmlFor="landing-socks-port">SOCKS5 端口</label><input id="landing-socks-port" name="socks_port" type="number" min={1} max={65535} required={!node} placeholder={node ? '留空保持不变' : undefined} disabled={busy}/></div>
           <div className="form-field"><label htmlFor="landing-socks-username">SOCKS5 用户名</label><input id="landing-socks-username" name="socks_username" autoComplete="off" placeholder={node ? '留空保持不变' : '可选'} disabled={busy}/></div>
           <div className="form-field"><label htmlFor="landing-socks-password">SOCKS5 密码</label><input id="landing-socks-password" name="socks_password" type="password" autoComplete="new-password" placeholder={node ? '留空保持不变' : '可选'} disabled={busy}/></div>
           <div className="form-field"><label htmlFor="landing-expected-exit-ip">预期出口 IP</label><input id="landing-expected-exit-ip" name="expected_exit_ip" required autoComplete="off" defaultValue={node?.exit_ip ?? ''} disabled={busy}/></div>
           <div className="form-field"><label htmlFor="landing-isp">运营商</label><input id="landing-isp" name="isp" placeholder="可选" defaultValue={node?.isp ?? ''} disabled={busy}/></div>
           <div className="form-field"><label htmlFor="landing-region">地区</label><input id="landing-region" name="region" placeholder="可选" defaultValue={node?.region ?? ''} disabled={busy}/></div>
         </div>
-        <p className="small faint landing-dialog-note">{node ? 'SOCKS5 IP 与端口不会回传到页面，需重新填写；用户名和密码留空则保留原值。' : '用户名和密码需同时填写或同时留空。凭据只写入服务器，不会在页面回显。'}</p>
+        <p className="small faint landing-dialog-note">{node ? 'SOCKS5 地址、端口和凭据不会回传到页面；留空的项保持原值，填写则替换。' : '用户名和密码需同时填写或同时留空。凭据只写入服务器，不会在页面回显。'}</p>
         <div className="dialog-foot">
           <label className="switch"><input name="enabled" type="checkbox" value="1" defaultChecked={node ? node.enabled : true} disabled={busy}/>启用节点</label>
           <span className="dialog-foot-spacer"/>

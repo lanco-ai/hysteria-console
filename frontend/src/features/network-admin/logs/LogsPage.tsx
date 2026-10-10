@@ -36,10 +36,10 @@ const RAW_ACTIONS: Record<string, string> = {
 };
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
-/** The server labels manual actions; scheduled resets arrive as raw keys. */
+/** The server labels manual actions; scheduled resets arrive as raw keys. Their
+ * "day21" suffix is a historical name, not the configured settlement day. */
 function actionLabel(action: string): string {
-  const auto = action.match(/^reset_usage_all_auto_day(\d+)$/);
-  if (auto) return `周期自动清零（每月 ${Number(auto[1])} 日）`;
+  if (/^reset_usage_all_auto_day\d+$/.test(action)) return '结算日自动清零';
   return RAW_ACTIONS[action] ?? action;
 }
 

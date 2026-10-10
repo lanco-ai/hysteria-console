@@ -467,6 +467,70 @@ def test_health_check_rejects_node_changed_during_probe(tmp_path, monkeypatch):
     assert le.load_registry()["nodes"]["la-home-1"]["health"] is None
 
 
+def _save_node_form(**overrides):
+    form = {
+        "id": "la-home-1",
+        "name": "洛杉矶新名称",
+        "socks_ip": "",
+        "socks_port": "",
+        "socks_username": "",
+        "socks_password": "",
+        "expected_exit_ip": "1.1.1.1",
+        "isp": "Example ISP",
+        "region": "Los Angeles",
+        "enabled": "1",
+        "registry_revision": ss.content_revision(le.load_registry()),
+    }
+    form.update(overrides)
+    return form
+
+
+def test_edit_with_blank_socks_endpoint_keeps_the_stored_one(tmp_path, monkeypatch):
+    # The admin API never returns the endpoint, so the editor submits it blank.
+    _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+
+    with _running_server() as server:
+        status, _headers, _body = _request(
+            server, "POST", "/admin/landing-egress/save", form=_save_node_form(),
+        )
+
+    assert status == 303
+    saved = le.load_registry()["nodes"]["la-home-1"]
+    assert saved["name"] == "洛杉矶新名称"
+    assert (saved["socks_ip"], saved["socks_port"]) == ("8.8.8.8", 1080)
+    assert (saved["socks_username"], saved["socks_password"]) == ("proxy-user", "proxy-secret")
+
+
+def test_edit_can_change_only_the_socks_port(tmp_path, monkeypatch):
+    _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+
+    with _running_server() as server:
+        status, _headers, _body = _request(
+            server, "POST", "/admin/landing-egress/save",
+            form=_save_node_form(socks_port="2080"),
+        )
+
+    assert status == 303
+    saved = le.load_registry()["nodes"]["la-home-1"]
+    assert (saved["socks_ip"], saved["socks_port"]) == ("8.8.8.8", 2080)
+
+
+def test_new_node_still_requires_a_socks_endpoint(tmp_path, monkeypatch):
+    _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(ss, "is_logged_in", lambda _handler: True)
+
+    with _running_server() as server:
+        status, _headers, _body = _request(
+            server, "POST", "/admin/landing-egress/save",
+            form=_save_node_form(id="sf-home-2", name="新节点"),
+        )
+
+    assert status == 422
+    assert "sf-home-2" not in le.load_registry()["nodes"]
+
+
 def test_stale_registry_save_cannot_resurrect_rotated_credentials(
     tmp_path, monkeypatch,
 ):

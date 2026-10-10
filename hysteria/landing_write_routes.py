@@ -152,9 +152,17 @@ def _save(handler, ctx, form, query, request_user_revision):
             handler.send_response_body(409, '节点列表已更新，请刷新后重试')
             return
         existing = registry.get('nodes', {}).get(node_id, {})
+        socks_ip = (form.get('socks_ip') or [''])[0]
+        socks_port = (form.get('socks_port') or [''])[0]
         username = (form.get('socks_username') or [''])[0]
         password = (form.get('socks_password') or [''])[0]
         if isinstance(existing, dict):
+            # The admin API never returns the SOCKS5 endpoint or credentials,
+            # so an edit that leaves them blank keeps the stored values.
+            if not socks_ip.strip() and existing.get('socks_ip'):
+                socks_ip = existing['socks_ip']
+            if not socks_port.strip() and existing.get('socks_port'):
+                socks_port = existing['socks_port']
             if not username and existing.get('socks_username'):
                 username = existing['socks_username']
             if not password and existing.get('socks_password'):
@@ -162,8 +170,8 @@ def _save(handler, ctx, form, query, request_user_revision):
         raw_node = {
             'id': node_id,
             'name': (form.get('name') or [''])[0],
-            'socks_ip': (form.get('socks_ip') or [''])[0],
-            'socks_port': (form.get('socks_port') or [''])[0],
+            'socks_ip': socks_ip,
+            'socks_port': socks_port,
             'socks_username': username,
             'socks_password': password,
             'expected_exit_ip': (form.get('expected_exit_ip') or [''])[0],
