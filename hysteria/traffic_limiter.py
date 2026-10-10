@@ -1131,11 +1131,16 @@ def main():
     )
 
     def update_calibration():
+        # Every tick feeds the hourly NIC ledger and its baseline: the provider
+        # meters the whole NIC, idle ticks included. The multiplier itself only
+        # learns from, and is only re-evaluated on, ticks where users moved bytes.
         cost_calibrator.update_sample(
             COST_CALIBRATION_FILE,
             app_raw_bytes=app_raw_bytes,
             now=now,
         )
+        if app_raw_bytes <= 0:
+            return None
         auto_result = cost_calibrator.maybe_auto_adjust(
             COST_CALIBRATION_FILE,
             current_multiplier=DISPLAY_MULTIPLIER,
@@ -1147,15 +1152,14 @@ def main():
             restart_subscription_async()
         return auto_result
 
-    if app_raw_bytes > 0:
-        _run_auxiliary(
-            "cost calibration",
-            update_calibration,
-            unavailable=any(
-                _optional_unavailable(unavailable_optional, path)
-                for path in calibration_paths
-            ),
-        )
+    _run_auxiliary(
+        "cost calibration",
+        update_calibration,
+        unavailable=any(
+            _optional_unavailable(unavailable_optional, path)
+            for path in calibration_paths
+        ),
+    )
 
     def refresh_online_snapshot():
         online_resp = get("/online")

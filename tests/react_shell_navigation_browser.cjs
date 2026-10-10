@@ -92,6 +92,25 @@ async function main() {
       await context.close();
     }
 
+    const staleContext = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    await staleContext.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: baseUrl }]);
+    const stalePage = await staleContext.newPage();
+    await stalePage.route('**/api/plans/reminders', route => route.fulfill({ json: { items: [] } }));
+    let blockedChunk;
+    await stalePage.route(/\/assets\/UsagePage-[^/]+\.js$/, route => { blockedChunk = route; });
+    await stalePage.goto(`${baseUrl}/__react/admin`);
+    await expect(stalePage.locator('.overview-cycle')).toBeVisible();
+    // The background preload has asked for 流量分析's code; it stays pending.
+    await expect.poll(() => Boolean(blockedChunk)).toBe(true);
+    await stalePage.locator('.sidebar-link[href="/admin/usage"]').click();
+    await stalePage.locator('.sidebar-link[href="/admin/health"]').click();
+    await expect(stalePage).toHaveURL(`${baseUrl}/__react/admin/health`);
+    await blockedChunk.abort('failed');
+    await stalePage.waitForTimeout(1500);
+    await expect(stalePage).toHaveURL(`${baseUrl}/__react/admin/health`);
+    await expect(stalePage.getByRole('tab', { name: '健康状态' })).toHaveAttribute('aria-selected', 'true');
+    await staleContext.close();
+
     const reminderContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await reminderContext.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: baseUrl }]);
     const reminderPage = await reminderContext.newPage();

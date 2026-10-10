@@ -382,13 +382,9 @@ body.has-shell .template-chip {
 
 body.has-shell .template-link {
   justify-self: start;
-  padding: 0;
-  border: 0;
-  background: none;
   color: var(--data);
-  font: inherit;
   font-size: var(--text-small);
-  cursor: pointer;
+  text-decoration: none;
 }
 
 body.has-shell .template-link:hover {

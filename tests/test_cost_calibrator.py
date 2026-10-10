@@ -120,6 +120,31 @@ def test_update_sample_keeps_eight_days_of_samples_and_all_nic_bytes_hourly(tmp_
     assert sum(bucket['total'] for bucket in state['net_hourly'].values()) == 1000 * 240
 
 
+def test_samples_span_idle_ticks_while_the_hourly_ledger_advances_every_tick(tmp_path):
+    path = tmp_path / 'cost_calibration.json'
+    now = datetime(2026, 6, 3, 12, 0, 0)
+    ticks = ((0, 100, 1000), (30, 0, 1600), (90, 100, 2000))
+    for minutes, app_raw, total in ticks:
+        state = cc.update_sample(
+            path,
+            app_raw_bytes=app_raw,
+            now=now + timedelta(minutes=minutes),
+            net_totals={'rx': total, 'tx': 0, 'total': total, 'ifaces': ['eth0']},
+        )
+        if app_raw == 0:
+            # The idle tick moves the ledger baseline but not the sample baseline.
+            assert (state['last']['total'], state['sample_last']['total']) == (1600, 1000)
+
+    # The sample still spans the idle tick, so idle NIC bytes count toward the cost ratio.
+    assert [sample['net_total_delta'] for sample in state['samples']] == [1000]
+    # The ledger books each tick's NIC bytes in that tick's own hour.
+    assert state['net_hourly'] == {
+        cc._net_hour_key(now + timedelta(minutes=30)): {'rx': 600, 'tx': 0, 'total': 600},
+        cc._net_hour_key(now + timedelta(minutes=90)): {'rx': 400, 'tx': 0, 'total': 400},
+    }
+    assert (state['last']['total'], state['sample_last']['total']) == (2000, 2000)
+
+
 def test_missing_hourly_totals_are_seeded_from_existing_samples(tmp_path):
     import json
 

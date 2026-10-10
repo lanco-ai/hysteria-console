@@ -123,19 +123,22 @@ if (readReactHistoryIndex(window.history.state) === null) {
 
 // Opening another page starts at its top, as a full page load would; back and
 // forward keep the browser's scroll restoration, and #fragments their target.
-let scrollToTopOnRender = false;
+// The intent names the location it was pushed for, so it can never fire on a
+// later navigation; every push replaces it and back/forward clears it.
+let scrollToTopFor: string | null = null;
 
 function pushReactHistory(path: string): void {
   const leaving = window.location.pathname;
   reactHistoryIndex += 1;
   window.history.pushState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
   reactHistoryLocation = window.location.href;
-  if (window.location.pathname !== leaving && !window.location.hash) scrollToTopOnRender = true;
+  scrollToTopFor = window.location.pathname !== leaving && !window.location.hash ? window.location.href : null;
 }
 
 function replaceReactHistory(path: string): void {
   window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
   reactHistoryLocation = window.location.href;
+  if (scrollToTopFor !== null) scrollToTopFor = window.location.href;
 }
 
 function isReactDocumentPath(pathname: string): boolean {
@@ -182,6 +185,7 @@ function installClientNavigation(onNavigate: () => void): () => void {
     const nextIndex = readReactHistoryIndex(event.state);
     if (nextIndex !== null) reactHistoryIndex = nextIndex;
     reactHistoryLocation = nextLocation;
+    scrollToTopFor = null;
     navigationSequence += 1;
     onNavigate();
   };
@@ -218,7 +222,7 @@ function installClientNavigation(onNavigate: () => void): () => void {
     const token = ++navigationSequence;
     void preloadLocation(next).then(
       () => { if (token !== navigationSequence) return; pushReactHistory(next); onNavigate(); },
-      () => { window.location.assign(next); },
+      () => { if (token === navigationSequence) window.location.assign(next); },
     );
   };
   window.addEventListener('popstate', onPopState);
@@ -287,7 +291,7 @@ function AdminRoute({ route, locationKey, publicHost, authenticated, status }: {
   if (route === '/admin/logs' || route === '/admin/health') return <OperationsPage locationKey={locationKey} publicHost={publicHost}/>;
   if (route === '/admin/settings') return <SettingsPage publicHost={publicHost}/>;
   if (route === '/admin/usage' || route === '/admin/incidents') return <UsagePage publicHost={publicHost}/>;
-  if (route === '/admin/config' || route === '/admin/rules' || route === '/admin/landing-egresses') return <TemplateRulesPage publicHost={publicHost}/>;
+  if (route === '/admin/config' || route === '/admin/rules' || route === '/admin/landing-egresses') return <TemplateRulesPage locationKey={locationKey} publicHost={publicHost}/>;
   if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
   if (route === '/admin/plans') return <PlansPage/>;
   if (route === '/admin/shop') return <ShopAdminPage/>;
@@ -385,14 +389,14 @@ function App() {
     const target = currentLocationKey();
     return preloadLocation(target).then(
       () => { if (currentLocationKey() === target) setLocationKey(target); },
-      () => { window.location.replace(target); },
+      () => { if (currentLocationKey() === target) window.location.replace(target); },
     );
   }, []);
   const navigate = useCallback((path: string) => {
     const token = ++navigationSequence;
     void preloadLocation(path).then(
       () => { if (token !== navigationSequence) return; pushReactHistory(path); setLocationKey(currentLocationKey()); },
-      () => { window.location.assign(path); },
+      () => { if (token === navigationSequence) window.location.assign(path); },
     );
   }, []);
   const closeLogin = useCallback(() => { setLoginRequested(false); if (LOGIN_ROUTES.has(route)) navigate(previewPath('/')); }, [navigate, route]);
@@ -414,13 +418,12 @@ function App() {
     setLocationKey(currentLocationKey());
   }, [route, session]);
 
+  useLayoutEffect(() => { applyRouteDocument(route); }, [route, location.search]);
   useLayoutEffect(() => {
-    applyRouteDocument(route);
-    if (scrollToTopOnRender) {
-      scrollToTopOnRender = false;
-      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    }
-  }, [route, location.search]);
+    if (scrollToTopFor === null || scrollToTopFor !== locationKey) return;
+    scrollToTopFor = null;
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [locationKey]);
   useEffect(() => installClientNavigation(() => { void syncLocation(); }), [syncLocation]);
   useEffect(() => {
     if (!isProtectedAdminRoute || !authenticated) return undefined;

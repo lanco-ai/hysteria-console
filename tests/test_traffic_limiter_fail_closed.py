@@ -407,6 +407,64 @@ def test_main_preserves_hysteria_protocol_delta_when_merging_xray(
     }
 
 
+@pytest.mark.parametrize("user_bytes", [0, 300])
+def test_every_tick_feeds_the_nic_ledger_but_only_traffic_reevaluates_the_multiplier(
+    tmp_path, monkeypatch, user_bytes
+):
+    # The provider meters the whole NIC, so idle ticks must advance the hourly
+    # ledger and its baseline instead of folding into the next active tick.
+    paths = _configure_state(tmp_path, monkeypatch)
+    _write(
+        paths["COST_CALIBRATION_FILE"],
+        {
+            "last": {"ts": "2026-07-03T11:58:30", "rx": 100, "tx": 100, "total": 200, "ifaces": ["eth0"]},
+            "samples": [],
+            "net_hourly": {},
+        },
+    )
+    monkeypatch.setattr(
+        tl.cost_calibrator,
+        "read_net_totals",
+        lambda: {"rx": 150, "tx": 250, "total": 400, "ifaces": ["eth0"]},
+    )
+    auto_calls = []
+    monkeypatch.setattr(
+        tl.cost_calibrator,
+        "maybe_auto_adjust",
+        lambda *_args, **_kwargs: auto_calls.append(1) or {"applied": False},
+    )
+
+    def fake_get(path):
+        if path == "/traffic?clear=1":
+            return {"alice": {"tx": user_bytes, "rx": 0}} if user_bytes else {}
+        if path == "/online":
+            return {}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(tl, "local_now", lambda: datetime(2026, 7, 3, 12))
+    monkeypatch.setattr(tl, "get", fake_get)
+    monkeypatch.setattr(tl, "get_xray_traffic", lambda: {})
+    monkeypatch.setattr(tl, "get_tuic_traffic", lambda: {})
+    monkeypatch.setattr(
+        tl.xray_config, "apply_user_plan", lambda *_args, **_kwargs: False
+    )
+    monkeypatch.setattr(
+        tl.tuic_config, "sync_user_plan", lambda *_args, **_kwargs: False
+    )
+    monkeypatch.setattr(
+        tl.static_access, "recover_if_pending", lambda *_args, **_kwargs: False
+    )
+    monkeypatch.setattr(tl, "check_alerts", lambda *_args, **_kwargs: None)
+
+    tl.main()
+
+    state = json.loads(paths["COST_CALIBRATION_FILE"].read_text(encoding="utf-8"))
+    assert state["last"]["total"] == 400
+    assert sum(bucket["total"] for bucket in state["net_hourly"].values()) == 200
+    assert len(state["samples"]) == (1 if user_bytes else 0)
+    assert len(auto_calls) == (1 if user_bytes else 0)
+
+
 def test_authoritative_daily_commits_before_legacy_usage_and_survives_failure(
     tmp_path, monkeypatch
 ):
@@ -677,7 +735,8 @@ def test_tuic_payload_credits_quota_once_without_wire_double_count(tmp_path, mon
     assert plans[0]['alice'] is None  # 500 * 2.28 exceeds 1024 quota
     assert costs == [500]
     tl.main()
-    assert costs == [500]  # Existing calibrator skips a zero-byte tick.
+    # The second tick moved no user bytes: it still feeds the NIC ledger (0 app bytes).
+    assert costs == [500, 0]
     assert json.loads(paths['USAGE_DAILY_FILE'].read_text())[now.strftime('%Y-%m-%d')]['alice']['total'] == 500
 
 

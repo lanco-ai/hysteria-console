@@ -43,7 +43,7 @@ async function main() {
   assert(!requests.includes('/admin/config.fragment'));
   assert.equal(await page.locator('.sidebar-nav a[href="/admin/rules"]').count(), 0);
   // The overview links straight to the rules tab.
-  await page.getByRole('button', { name: '在「路由规则」中管理 →' }).click();
+  await page.getByRole('link', { name: '在「路由规则」中管理 →' }).click();
   await expect(page).toHaveURL(/\/__react\/admin\/config\?tab=rules$/);
   await expect(page.getByRole('heading', { name: '当前规则列表' })).toBeVisible();
   assert(requests.includes('/api/v1/admin/rules'));
@@ -69,6 +69,19 @@ async function main() {
   await expect(page.locator('#config-editor')).toHaveValue('{"draft":true}');
   await page.goBack();
   await expect(page.getByRole('tab', { name: '家宽出口', exact: true })).toHaveAttribute('aria-selected', 'true');
+  // The sidebar entry, the tabs and back/forward always agree with the address.
+  await page.locator('.sidebar-link[href="/admin/config"]').click();
+  await expect(page).toHaveURL(/\/__react\/admin\/config$/);
+  await expect(page.getByRole('tab', { name: '订阅模板', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#config-editor')).toHaveValue('{"draft":true}');
+  await page.goBack();
+  await expect(page.getByRole('tab', { name: '家宽出口', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.goForward();
+  await expect(page.getByRole('tab', { name: '订阅模板', exact: true })).toHaveAttribute('aria-selected', 'true');
+  await page.getByRole('tab', { name: '订阅模板', exact: true }).focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(/\/__react\/admin\/config\?tab=rules$/);
+  await expect(page.getByRole('tab', { name: '路由规则', exact: true })).toBeFocused();
   // On a phone the editor and overview stack without horizontal overflow.
   await page.getByRole('tab', { name: '订阅模板', exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });

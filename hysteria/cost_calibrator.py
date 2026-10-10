@@ -155,18 +155,25 @@ def update_sample(path, *, app_raw_bytes, now=None, net_totals=None, max_samples
     state = state_store.load_json(path, {})
     samples = list(state.get('samples') or [])
     prev = state.get('last') or {}
+    # A multiplier sample measures the NIC since the previous sample, so NIC
+    # bytes from idle ticks still count toward the provider-cost ratio; only
+    # the hourly ledger advances from the previous tick.
+    sample_prev = state.get('sample_last') or prev
     hourly = state.get('net_hourly')
     hourly = dict(hourly) if isinstance(hourly, dict) else _seed_net_hourly(samples)
     current = _parse_ts(last['ts'])
 
-    if prev:
-        rx_delta = _non_negative_delta(last, prev, 'rx')
-        tx_delta = _non_negative_delta(last, prev, 'tx')
-        total_delta = _non_negative_delta(last, prev, 'total')
-        if rx_delta is not None and tx_delta is not None and total_delta is not None:
-            if current is not None:
-                _add_net_hour(hourly, current, rx_delta, tx_delta, total_delta)
-            if app_raw > 0:
+    if prev and current is not None:
+        deltas = [_non_negative_delta(last, prev, key) for key in ('rx', 'tx', 'total')]
+        if None not in deltas:
+            _add_net_hour(hourly, current, *deltas)
+    sample_last = sample_prev
+    if app_raw > 0:
+        if sample_prev:
+            rx_delta, tx_delta, total_delta = (
+                _non_negative_delta(last, sample_prev, key) for key in ('rx', 'tx', 'total')
+            )
+            if rx_delta is not None and tx_delta is not None and total_delta is not None:
                 samples.append({
                     'ts': last['ts'],
                     'app_raw_bytes': app_raw,
@@ -174,6 +181,7 @@ def update_sample(path, *, app_raw_bytes, now=None, net_totals=None, max_samples
                     'net_tx_delta': tx_delta,
                     'net_total_delta': total_delta,
                 })
+        sample_last = last
 
     if current is not None:
         cutoff = current - timedelta(hours=SAMPLE_RETENTION_HOURS)
@@ -182,6 +190,7 @@ def update_sample(path, *, app_raw_bytes, now=None, net_totals=None, max_samples
         hourly = {key: value for key, value in hourly.items() if key >= oldest_hour}
     state = {
         'last': last,
+        'sample_last': sample_last,
         'samples': samples[-int(max_samples):],
         'net_hourly': hourly,
     }

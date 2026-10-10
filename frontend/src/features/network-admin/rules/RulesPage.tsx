@@ -24,13 +24,18 @@ function isSystemRule(rule: string): boolean {
 
 type RuleParts = { type: string; pattern: string; action: string; extra: string };
 
-/** Splits TYPE,payload,policy[,option]; logical rules carry a parenthesised payload and MATCH has none. */
+// Rule types whose payload is a parenthesised condition that may contain commas.
+// Other payloads split on plain commas, as the client does (a DOMAIN-REGEX may
+// hold an escaped, unbalanced parenthesis).
+const PARENTHESISED_TYPES = new Set(['AND', 'OR', 'NOT', 'SUB-RULE']);
+
+/** Splits TYPE,payload,policy[,option]; logical and SUB-RULE payloads stay whole and MATCH has none. */
 export function ruleParts(rule: string): RuleParts {
   const comma = rule.indexOf(',');
   const type = (comma < 0 ? rule : rule.slice(0, comma)).trim();
-  const rest = comma < 0 ? '' : rule.slice(comma + 1);
+  const rest = comma < 0 ? '' : rule.slice(comma + 1).trimStart();
   if (type === 'MATCH') return { type, pattern: '', action: rest.split(',')[0]?.trim() ?? '', extra: '' };
-  if ((type === 'AND' || type === 'OR' || type === 'NOT') && rest.startsWith('(')) {
+  if (PARENTHESISED_TYPES.has(type) && rest.startsWith('(')) {
     let depth = 0;
     for (let index = 0; index < rest.length; index += 1) {
       if (rest[index] === '(') depth += 1;
@@ -88,7 +93,10 @@ export function RulesPanel({ active = true }: { active?: boolean }) {
   const rules = useReadResource(RULES_ENDPOINT, { validate: parseRules });
   const formAction = useFormAction();
   const [draft, setDraft] = useState('');
+  // The list forms post the latest revision; the text draft keeps the revision it
+  // was based on, so list changes never discard it and a stale save is refused.
   const [revision, setRevision] = useState('');
+  const [draftRevision, setDraftRevision] = useState('');
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState('');
   const [pack, setPack] = useState('');
@@ -103,10 +111,12 @@ export function RulesPanel({ active = true }: { active?: boolean }) {
   }, [active]);
 
   useEffect(() => {
-    if (rules.status === 'success' && !dirty) {
+    if (rules.status !== 'success') return;
+    setRevision(rules.data.revision);
+    setPack(current => current || rules.data.packs[0]?.key || '');
+    if (!dirty) {
       setDraft(rules.data.rules.join('\n'));
-      setRevision(rules.data.revision);
-      setPack(current => current || rules.data.packs[0]?.key || '');
+      setDraftRevision(rules.data.revision);
     }
   }, [rules.status, rules.data, dirty]);
 
@@ -125,7 +135,6 @@ export function RulesPanel({ active = true }: { active?: boolean }) {
         onResult: result => {
           if (result.ok) {
             if (result.revision) setRevision(result.revision);
-            setDirty(false);
             setMessage(successMessage ?? operationMessage(result));
             rules.retry();
           } else {
@@ -140,11 +149,12 @@ export function RulesPanel({ active = true }: { active?: boolean }) {
   const save = async () => {
     setMessage('正在保存…');
     await formAction.run(
-      signal => saveRules({ rules_raw: draft, template_revision: revision }, signal),
+      signal => saveRules({ rules_raw: draft, template_revision: draftRevision }, signal),
       {
         onResult: result => {
           if (result.ok) {
             setRevision(result.revision);
+            setDraftRevision(result.revision);
             setDirty(false);
             setMessage('路由规则已保存；用户下次拉取订阅时生效');
             rules.retry();
@@ -209,11 +219,12 @@ export function RulesPanel({ active = true }: { active?: boolean }) {
           </li>)}</ol> : <div className="empty">{parsed.length ? '没有符合条件的规则' : '暂无规则'}</div>}
         </> : <div className="rules-raw-body">
           <div className="rules-raw-help">每行一条规则，格式：<code>TYPE,匹配值,动作</code>。保存后覆盖模板中的全部规则，请谨慎操作。</div>
+          {dirty && draftRevision !== revision ? <div className="err rules-raw-stale" role="status">规则在这份草稿之后已被修改，保存会因版本冲突被拒绝。请先复制你的修改，放弃草稿后再重新编辑。</div> : null}
           <label className="sr-only" htmlFor="rules-raw">全部路由规则</label>
           <textarea id="rules-raw" className="rules-raw-textarea" spellCheck={false} value={draft} onChange={event => { setDraft(event.target.value); setDirty(true); }} disabled={formAction.busy}/>
           <div className="rules-raw-actions">
             <span className="small faint">{draft ? draft.split('\n').filter(line => line.trim()).length : 0} 行{dirty ? ' · 有未保存的修改' : ''}</span>
-            <button className="btn secondary" type="button" onClick={() => { setDraft(rules.data.rules.join('\n')); setRevision(rules.data.revision); setDirty(false); setMessage('已恢复最新版本'); }} disabled={formAction.busy || !dirty}>放弃草稿</button>
+            <button className="btn secondary" type="button" onClick={() => { setDraft(rules.data.rules.join('\n')); setDraftRevision(rules.data.revision); setRevision(rules.data.revision); setDirty(false); setMessage('已恢复最新版本'); }} disabled={formAction.busy || !dirty}>放弃草稿</button>
             <button className="btn btn-danger" type="button" onClick={() => void save()} disabled={formAction.busy || !dirty}>覆盖全部规则</button>
           </div>
         </div>}

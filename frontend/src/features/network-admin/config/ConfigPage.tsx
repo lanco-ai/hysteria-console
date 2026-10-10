@@ -47,7 +47,7 @@ const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const named = (value: unknown, key: string): string => { const item = record(value)[key]; return typeof item === 'string' ? item : ''; };
 
-function TemplateOverview({ config, fromDraft, openRules }: { config: Record<string, unknown>; fromDraft: boolean; openRules?: (() => void) | undefined }) {
+function TemplateOverview({ config, fromDraft, rulesHref }: { config: Record<string, unknown>; fromDraft: boolean; rulesHref?: string | undefined }) {
   const proxies = list(config.proxies);
   const groups = list(config['proxy-groups']);
   const rules = list(config.rules);
@@ -72,13 +72,13 @@ function TemplateOverview({ config, fromDraft, openRules }: { config: Record<str
       <div className="template-stat"><div className="template-stat-head"><strong>{proxies.length}</strong><span>个节点</span></div>{types.size ? <div className="template-stat-detail">{[...types].map(([type, count]) => count > 1 ? `${type} ×${count}` : type).join(' · ')}</div> : null}</div>
       <div className="template-stat"><div className="template-stat-head"><strong>{groups.length}</strong><span>个策略组</span></div>{groups.length ? <div className="template-chips">{groups.map((group, index) => <span className="template-chip" key={`${named(group, 'name')}-${index}`} title={named(group, 'type')}>{named(group, 'name') || '未命名'}</span>)}</div> : null}</div>
       <div className="template-stat"><div className="template-stat-head"><strong>{providers}</strong><span>个规则集</span></div></div>
-      <div className="template-stat"><div className="template-stat-head"><strong>{rules.length}</strong><span>条规则</span></div>{openRules ? <button className="template-link" type="button" onClick={openRules}>在「路由规则」中管理 →</button> : null}</div>
+      <div className="template-stat"><div className="template-stat-head"><strong>{rules.length}</strong><span>条规则</span></div>{rulesHref ? <a className="template-link" href={rulesHref}>在「路由规则」中管理 →</a> : null}</div>
     </div>
     <p className="small faint template-note">下次拉取订阅生效 · 保存校验结构与版本 · 用户凭证由服务端注入</p>
   </aside>;
 }
 
-export function ConfigPanel({ active = true, openRules }: { active?: boolean; openRules?: () => void }) {
+export function ConfigPanel({ active = true, rulesHref }: { active?: boolean; rulesHref?: string }) {
   const config = useReadResource(CONFIG_ENDPOINT, { validate: parseConfig });
   const [draft, setDraft] = useState('');
   const [revision, setRevision] = useState('');
@@ -133,7 +133,7 @@ export function ConfigPanel({ active = true, openRules }: { active?: boolean; op
           <span className="template-status-size">{lineCount} 行 · {draft.length.toLocaleString()} 字符</span>
         </div>
       </section>
-      <TemplateOverview config={check.ok ? check.value : config.data.config} fromDraft={check.ok} openRules={openRules}/>
+      <TemplateOverview config={check.ok ? check.value : config.data.config} fromDraft={check.ok} rulesHref={rulesHref}/>
     </div>
   </div>;
 }
