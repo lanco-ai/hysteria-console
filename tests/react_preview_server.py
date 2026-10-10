@@ -504,7 +504,9 @@ def _handler(api_client, allowed_assets):
                 '/api/v1/shop/admin',
                 '/api/v1/admin/services',
                 '/api/ai/service-bindings',
-            } or request_path.startswith(('/api/ai/services/', '/api/journal/', '/api/chat/', '/api/plans/schedule/')):
+            } or request_path.startswith(
+                ('/api/ai/services/', '/api/journal/', '/api/chat/', '/api/plans/schedule/')
+            ):
                 self._json_api()
                 return
             super().do_PUT()

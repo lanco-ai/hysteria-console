@@ -7,6 +7,8 @@ import {
 } from './scheduleModel';
 
 const PX_PER_MINUTE = 1;
+// Title and time stack in about 38px; shorter blocks put them on one line.
+const ONE_LINE_BELOW_MINUTES = 40;
 const focusCategories: ScheduleCategory[] = ['work', 'study', 'think'];
 
 type BlockForm = {
@@ -38,8 +40,10 @@ function hoursInput(minutes: number | undefined): string {
   return minutes ? String(Math.round(minutes / 15) / 4) : '';
 }
 
-export function SchedulePanel({ mode, selectedDate, today, tasks, onProtectionChange }: {
+export function SchedulePanel({ mode, ready, selectedDate, today, tasks, onProtectionChange }: {
   mode: 'full' | 'strip';
+  /** False while the page's own plan snapshot is loading; the schedule waits so page load needs no extra concurrent request. */
+  ready: boolean;
   selectedDate: string;
   today: string;
   tasks: TaskMarker[];
@@ -81,13 +85,16 @@ export function SchedulePanel({ mode, selectedDate, today, tasks, onProtectionCh
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
     setFeedback(''); setNoteDraft(null);
     setForm(current => current.editingKey ? blankForm() : current);
     setFormBaseline(current => current.editingKey ? blankForm() : current);
+  }, [selectedDate]);
+  useEffect(() => {
+    if (!ready) return;
+    const controller = new AbortController();
     void reload(controller.signal);
     return () => controller.abort();
-  }, [selectedDate, reload]);
+  }, [selectedDate, ready, reload]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMinute(minuteNow()), 30_000);
@@ -317,7 +324,7 @@ export function SchedulePanel({ mode, selectedDate, today, tasks, onProtectionCh
             {placed.map(piece => {
               const { entry } = piece;
               const style = { top: piece.from * PX_PER_MINUTE, height: Math.max(14, (piece.to - piece.from) * PX_PER_MINUTE - 2), left: `calc(52px + (100% - 58px) * ${piece.lane / piece.lanes})`, width: `calc((100% - 58px) / ${piece.lanes} - 4px)` };
-              const className = ['schedule-block', entry.category ? `schedule-cat-${entry.category}` : 'schedule-block-task', entry.status === 'done' ? 'is-done' : '', form.editingKey === entry.key ? 'is-selected' : '', piece.to - piece.from < 30 ? 'is-short' : ''].filter(Boolean).join(' ');
+              const className = ['schedule-block', entry.category ? `schedule-cat-${entry.category}` : 'schedule-block-task', entry.status === 'done' ? 'is-done' : '', form.editingKey === entry.key ? 'is-selected' : '', piece.to - piece.from < ONE_LINE_BELOW_MINUTES ? 'is-short' : ''].filter(Boolean).join(' ');
               const label = `${piece.continued ? '（续）' : ''}${entry.title}`;
               const body = <><strong>{label}</strong><span>{entryTime(entry)}{entry.kind === 'routine' ? ' · 模板' : entry.kind === 'task' ? ' · 任务' : ''}</span></>;
               return entry.kind === 'task'

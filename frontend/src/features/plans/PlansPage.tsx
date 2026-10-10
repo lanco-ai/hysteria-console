@@ -612,7 +612,7 @@ export function PlansPage(): ReactElement {
       </div>
       {!assistantOpen && error ? renderPlanError() : null}
       {!assistantOpen && conflictDraft && !error ? renderConflictNotice() : null}
-      <SchedulePanel mode={scheduleView ? 'full' : 'strip'} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange} />
+      <SchedulePanel mode={scheduleView ? 'full' : 'strip'} ready={!loading} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange} />
 
         {assistantOpen ? <><button className="plans-assistant-backdrop" type="button" tabIndex={-1} aria-label="关闭 AI 建议" onClick={closeAssistant} /><section className="plans-assistant" role="dialog" aria-modal="true" aria-labelledby="plans-assistant-title" tabIndex={-1}>
         <div className="plans-assistant-dialog">

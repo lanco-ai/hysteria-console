@@ -15,7 +15,7 @@ const { expect } = require('@playwright/test');
     const nav = page.getByRole('navigation', { name: '今日页面内容' });
     const drawer = page.locator('#daily-journal-drawer');
     const close = page.getByRole('button', { name: '关闭记录面板' });
-    await expect(nav.getByRole('link')).toHaveCount(3);
+    await expect(nav.getByRole('link')).toHaveText(['时间线', '今日计划', '行程', '回顾']);
     await expect(page.locator('.plans-summary')).toHaveCount(0);
     await expect(page.getByText(/项完成 · 时区/)).toHaveCount(0);
     await expect(drawer).toBeHidden();
