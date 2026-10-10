@@ -40,6 +40,15 @@ async function capture(page, filename) {
       await expect(page.getByLabel('聊天消息')).toBeEnabled();
       await page.evaluate(() => document.fonts.ready);
 
+      // The conversation list is docked from 1100px and floats over the thread below that.
+      const list = page.locator('.chat-history-panel');
+      if (width < 1100) {
+        await expect(list).toHaveCount(0);
+        await page.getByRole('button', { name: '打开对话列表', exact: true }).click();
+      }
+      await expect(list).toBeVisible();
+      const listBox = await list.boundingBox();
+      assert(listBox && listBox.x >= 0 && listBox.x + listBox.width <= width, 'Conversation list fits the viewport');
       const project = page.getByRole('button', { name: '＋ 项目', exact: true });
       await project.click();
       await assertCentered(page.getByRole('dialog', { name: '新建学习项目' }), width, height);
@@ -47,6 +56,13 @@ async function capture(page, filename) {
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(project).toBeFocused();
+      if (width < 1100) {
+        await page.getByRole('button', { name: '收起对话列表', exact: true }).click();
+        await expect(list).toHaveCount(0);
+      } else {
+        const thread = await page.locator('.chat-thread').boundingBox();
+        assert(thread && listBox.x + listBox.width <= thread.x, 'Docked list sits beside the thread');
+      }
 
       const toolsButton = page.getByRole('button', { name: '搜索与工具', exact: true });
       const scope = page.getByLabel('回答使用的知识库范围');
@@ -57,15 +73,22 @@ async function capture(page, filename) {
       if (width >= 768) {
         assert(Math.abs(toolsBox.y + toolsBox.height / 2 - scopeBox.y - scopeBox.height / 2) <= 3, 'Desktop composer controls share one row');
       }
-      assert(Math.max(toolsBox.y + toolsBox.height, scopeBox.y + scopeBox.height) <= textareaBox.y, 'Controls do not overlap the writing area');
+      assert(Math.min(toolsBox.y, scopeBox.y) >= textareaBox.y + textareaBox.height, 'Controls sit below the writing area without overlapping it');
+      // The send button must stay clear of the floating Lanco Agent button.
+      const sendBox = await page.getByRole('button', { name: '发送 ↑', exact: true }).boundingBox();
+      const launcherBox = await page.getByRole('button', { name: '打开 Lanco Agent', exact: true }).boundingBox();
+      assert(sendBox && launcherBox);
+      assert(launcherBox.y + launcherBox.height <= sendBox.y || launcherBox.x >= sendBox.x + sendBox.width, 'Agent button does not cover the send button');
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No page horizontal overflow');
       await capture(page, `composer-${width}.png`);
 
       for (const [buttonName, title, filename] of [
-        ['知识库', '个人知识库', 'knowledge'],
-        ['AI 用量', 'AI 用量', 'usage'],
+        ['AI 设置', 'AI 设置', 'ai-settings'],
         ['搜索与工具', '搜索与工具', 'tools'],
+        ['知识库', '个人知识库', 'knowledge'],
       ]) {
+        // The knowledge base lives in the sources panel, which floats below 1400px.
+        if (buttonName === '知识库') await page.getByRole('button', { name: /论文资料/ }).click();
         const opener = page.getByRole('button', { name: buttonName, exact: true });
         await opener.click();
         const dialog = page.getByRole('dialog', { name: title });
@@ -89,6 +112,12 @@ async function capture(page, filename) {
           await close.click();
           await page.setViewportSize({ width, height });
         } else {
+          if (title === 'AI 设置') {
+            await dialog.getByRole('button', { name: '用量', exact: true }).click();
+            await expect(dialog.getByText('输入 tokens', { exact: true })).toBeVisible();
+            assert(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth), 'AI settings sections fit the dialog');
+            await capture(page, `ai-settings-usage-${width}.png`);
+          }
           await dialog.getByRole('button', { name: '关闭窗口', exact: true }).click();
         }
         await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -97,7 +126,7 @@ async function capture(page, filename) {
       assert.deepEqual(errors, []);
       await context.close();
     }
-    console.log('PASS: centered chat dialogs, scrollable content, keyboard close/focus and aligned composer at 390/768/1440px');
+    console.log('PASS: docked/floating conversation list, centered chat dialogs, scrollable content, keyboard close/focus and aligned composer at 390/768/1440px');
   } finally {
     await browser.close();
   }

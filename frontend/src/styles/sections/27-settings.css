@@ -1,0 +1,475 @@
+/* =====================================================
+   设置 · section nav beside stacked cards
+   ===================================================== */
+
+body.has-shell .admin-page.settings-page {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  align-items: start;
+  gap: 28px;
+  max-width: 1080px;
+}
+
+.settings-nav {
+  position: sticky;
+  top: 84px;
+  display: grid;
+  gap: 2px;
+}
+
+.settings-nav a {
+  display: grid;
+  gap: 1px;
+  padding: 9px 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.settings-nav a span {
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+
+.settings-nav a small {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+}
+
+.settings-nav a:hover {
+  color: var(--text-primary);
+  background: rgba(17, 17, 17, .04);
+}
+
+.settings-nav a[aria-current="location"] {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border-color: var(--hairline);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04);
+}
+
+.settings-sections {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+
+.settings-card {
+  min-width: 0;
+  padding: 24px 26px;
+  scroll-margin-top: 84px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(25, 45, 55, .025);
+}
+
+.settings-card-head {
+  margin-bottom: 18px;
+}
+
+.settings-card-head h2 {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.settings-card-head p {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--text-small);
+  line-height: 1.7;
+}
+
+.settings-muted {
+  color: var(--text-tertiary);
+  font-size: var(--text-small);
+  line-height: 1.6;
+}
+
+.settings-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
+  white-space: nowrap;
+}
+
+.settings-chip i {
+  width: 7px;
+  height: 7px;
+  background: var(--text-disabled);
+  border-radius: 50%;
+}
+
+.settings-chip.is-on {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.settings-chip.is-on i {
+  background: var(--ok);
+}
+
+/* A native checkbox drawn as a switch, so it stays the real click target. */
+.settings-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 20px;
+  margin: 2px 0 0;
+  background: var(--border);
+  border-radius: var(--radius-pill);
+  appearance: none;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.settings-switch::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .2);
+  transition: transform var(--transition);
+}
+
+.settings-switch:checked {
+  background: var(--text-primary);
+}
+
+.settings-switch:checked::before {
+  transform: translateX(16px);
+}
+
+.settings-switch:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+
+.settings-switch:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-actions > span:first-child {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+/* 账号与安全 */
+.settings-account {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--bg-overlay);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+
+.settings-avatar {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  color: #fff;
+  background: var(--text-primary);
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.settings-account-text {
+  display: grid;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-account-label {
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+}
+
+body.has-shell .settings-account-text code {
+  justify-self: start;
+  min-width: 1ch;
+  min-height: 1.4em;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0;
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-password {
+  display: grid;
+  gap: 14px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--hairline);
+}
+
+.settings-password > * {
+  max-width: 540px;
+}
+
+.settings-password h3 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-password .form-field input,
+.settings-fields .form-field input {
+  height: 40px;
+  border-radius: 8px;
+}
+
+.settings-password .settings-actions {
+  justify-content: flex-start;
+}
+
+.settings-password .settings-actions .btn-primary {
+  height: 40px;
+  margin-left: auto;
+  padding: 0 20px;
+}
+
+.password-strength {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+}
+
+.password-strength-bar {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  width: 112px;
+}
+
+.password-strength-bar i {
+  height: 4px;
+  background: var(--hairline);
+  border-radius: 2px;
+  transition: background var(--transition);
+}
+
+.password-strength[data-level="0"] i:first-child,
+.password-strength[data-level="1"] i:first-child {
+  background: var(--danger);
+}
+
+.password-strength[data-level="0"] > span:last-child {
+  color: var(--danger);
+}
+
+.password-strength[data-level="2"] i:nth-child(-n+2) {
+  background: var(--warn);
+}
+
+.password-strength[data-level="3"] i:nth-child(-n+3) {
+  background: #4f8f62;
+}
+
+.password-strength[data-level="4"] i {
+  background: var(--ok);
+}
+
+.password-match {
+  min-height: 16px;
+  color: var(--text-tertiary);
+  font-size: var(--text-caption);
+}
+
+.password-match.is-match {
+  color: var(--ok);
+}
+
+.password-match.is-mismatch {
+  color: var(--warn);
+}
+
+/* 告警通知 */
+.settings-alerts {
+  display: grid;
+  gap: 14px;
+}
+
+.settings-channel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-channel {
+  min-width: 0;
+  margin: 0;
+  padding: 16px 18px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+
+.settings-channel-head,
+.settings-pref {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-channel-head > div,
+.settings-pref > div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.settings-channel-head strong,
+.settings-pref label {
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+
+.settings-pref label {
+  cursor: pointer;
+}
+
+.settings-channel-head small,
+.settings-pref small {
+  color: var(--text-tertiary);
+  font-size: var(--text-small);
+  line-height: 1.6;
+}
+
+.settings-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+  margin-top: 14px;
+}
+
+.settings-fields .form-field-wide {
+  grid-column: 1 / -1;
+}
+
+.settings-fields .switch {
+  margin-top: 4px;
+  font-size: var(--text-small);
+}
+
+.settings-message {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-small);
+  line-height: 1.6;
+}
+
+.settings-message.is-ok { color: var(--ok); }
+.settings-message.is-err { color: var(--danger); }
+.settings-message.is-info { color: var(--text-secondary); }
+
+.settings-message .btn-sm {
+  color: var(--text-primary);
+  border-color: var(--border);
+  border-radius: 8px;
+}
+
+.settings-alerts .settings-actions .btn {
+  height: 38px;
+  padding: 0 16px;
+}
+
+/* 界面偏好 */
+.settings-pref {
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+
+@media (max-width: 880px) {
+  body.has-shell .admin-page.settings-page {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .settings-nav {
+    position: static;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .settings-nav a {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    background: var(--bg-surface);
+    border-color: var(--hairline);
+  }
+
+  .settings-nav a small {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .settings-card {
+    padding: 18px 16px;
+  }
+
+  .settings-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-account {
+    flex-wrap: wrap;
+  }
+
+  .settings-channel {
+    padding: 14px;
+  }
+
+  .settings-alerts .settings-actions .btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-switch,
+  .settings-switch::before {
+    transition: none;
+  }
+}

@@ -211,6 +211,9 @@ def isolated_preview(directory):
         patch.setattr(ss, 'HY_API_SECRET_FILE', str(root / 'api_secret'))
         _seed_state(root, patch, users={'demo_alex': DEMO})
         patch.setattr(ss.alerts, 'STATE_FILE', root / 'alerts.json')
+        # 设置 · 告警通知 reads and writes the channel config; keep it fictional too.
+        patch.setattr(ss.alerts, 'CONFIG_FILE', root / 'alerts-config.json')
+        patch.setattr(ss.alerts, 'CONFIG_LOCK_FILE', root / 'alerts-config.lock')
         ss.alerts.STATE_FILE.write_text(json.dumps({'quota_80': {'demo_alex': '2026-07-14'}}))
         ss.RESET_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         ss.RESET_LOG_FILE.write_text(

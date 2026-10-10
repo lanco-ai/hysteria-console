@@ -143,6 +143,7 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
 def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authenticated():
     """Anonymous chat must not read browser history or invoke the chat proxy."""
     page = source('frontend/src/features/chat/ChatPage.tsx')
+    sidebar = source('frontend/src/features/chat/ConversationSidebar.tsx')
     api = source('frontend/src/features/chat/chatApi.ts')
     styles = source('frontend/src/styles/sections/18-chat.css')
     browser = source('tests/react_chat_browser.cjs')
@@ -153,7 +154,8 @@ def test_chat_page_uses_the_unified_shell_and_defers_private_state_until_authent
     assert 'import { CodexShell, type CodexShellProps }' in page
     assert 'shell: Shell = CodexShell' in page
     assert '<Shell active="chat"' in page
-    assert 'chat-history-panel' in page
+    assert '<ConversationSidebar' in page
+    assert 'chat-history-panel' in sidebar
     assert 'historyOpen' in page
     assert '<AdminShell' not in page
     assert 'historyOpen && authenticated' in page

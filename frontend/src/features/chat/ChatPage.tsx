@@ -1,26 +1,51 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentType, type KeyboardEvent } from 'react';
 import { CodexShell, type CodexShellProps } from '../../shared/CodexShell';
+import { AISettingsDialog, SEND_KEY_STORAGE, type SendKey } from './AISettingsDialog';
 import { ChatMessage } from './ChatMessage';
-import { ChatSettings } from './ChatSettings';
 import { ChatJournalDialog } from './ChatJournalDialog';
+import { ContextPanel } from './ContextPanel';
+import { ConversationSidebar } from './ConversationSidebar';
 import { ProjectDialog } from './ProjectDialog';
 import { ProjectSelectorDialog } from './ProjectSelectorDialog';
 import { KnowledgeDialog } from './KnowledgeDialog';
 import { MemoryDialog } from './MemoryDialog';
 import { ToolsDialog } from './ToolsDialog';
 import { WorkspaceDialog } from './WorkspaceDialog';
-import { loadChatModels, loadChatSettings, saveChatSettings, type ChatModel, type ChatSettings as Settings, type ReasoningEffort } from './chatApi';
-import { workspaceRequest as api, streamTurn, uploadPaper, saveDownload, WorkspaceApiError, type Conversation, type LearningProject, type Paper, type WorkspaceMessage } from './workspaceApi';
+import { loadChatModels, loadChatSettings, type ChatModel, type ChatSettings as Settings, type ReasoningEffort } from './chatApi';
+import { workspaceRequest as api, streamTurn, uploadPaper, saveDownload, WorkspaceApiError, type Conversation, type LearningProject, type Paper, type WorkspaceMessage, type WorkspacePreferences } from './workspaceApi';
 
 export type ChatPageProps = { publicHost: string; authenticated?: boolean; onUnauthenticated?: () => void; shell?: ComponentType<CodexShellProps> };
 const LEGACY_KEY = 'hy2.chat.sessions.v1';
 const DRAFT_KEY = 'hy2.chat.unsent.v2';
+const PANES_KEY = 'hy2.chat.panes.v1';
+// Below these widths the conversation list and the context panel float over the thread.
+const DOCKED_SIDEBAR_QUERY = '(min-width: 1100px)';
+const DOCKED_CONTEXT_QUERY = '(min-width: 1400px)';
+const QUICK_PROMPTS = ['用提问检验我对 LSM Tree 的理解', '帮我梳理论文的研究问题与局限', '陪我练习雅思口语，并解释纠错原因', '一起检查我今天一个想法的依据'];
 
 function replaceConversationLocation(id?: string) {
   const query = new URLSearchParams();
   if (id) query.set('conversation', id);
   const suffix = query.toString();
   window.history.replaceState(window.history.state, '', `${window.location.pathname}${suffix ? `?${suffix}` : ''}`);
+}
+
+type Panes = { sidebar?: boolean; context?: boolean };
+
+function docked(query: string) {
+  return window.matchMedia(query).matches;
+}
+
+// Open/closed choices are remembered only for docked panes; floating ones always start closed.
+function readPanes(): Panes {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(PANES_KEY) || '{}');
+    return value && typeof value === 'object' ? value as Panes : {};
+  } catch { return {}; }
+}
+
+function savePanes(change: Panes) {
+  try { localStorage.setItem(PANES_KEY, JSON.stringify({ ...readPanes(), ...change })); } catch { /* The choice still applies now. */ }
 }
 
 export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticated, shell: Shell = CodexShell }: ChatPageProps) {
@@ -37,6 +62,8 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
   const [model, setModel] = useState('');
   const [reasoning, setReasoning] = useState<ReasoningEffort>('auto');
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [preferences, setPreferences] = useState<WorkspacePreferences | null>(null);
+  const [sendKey, setSendKey] = useState<SendKey>('enter');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [knowledgeScope, setKnowledgeScope] = useState('none');
@@ -45,17 +72,23 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
   const [summaryEditor, setSummaryEditor] = useState<string | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [toolRuns, setToolRuns] = useState<string[]>([]);
-  const [usage, setUsage] = useState<{ requests: number; reported_requests: number; prompt_tokens: number; completion_tokens: number } | null>(null);
   const [projectEditor, setProjectEditor] = useState<LearningProject | 'new' | null>(null);
   const [projectSelectorOpen, setProjectSelectorOpen] = useState(false);
   const [projectSwitchPending, setProjectSwitchPending] = useState(false);
   const projectSwitchRef = useRef(false);
   const projectButtonRef = useRef<HTMLButtonElement>(null);
   const projectEditorFocus = useRef<HTMLElement | null>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const sidebarToggleRef = useRef<HTMLButtonElement>(null);
+  const contextRef = useRef<HTMLElement>(null);
+  const contextToggleRef = useRef<HTMLButtonElement>(null);
+  // Set by explicit open/close actions so focus follows the pane instead of falling back to <body>.
+  const paneFocus = useRef<'sidebar' | 'sidebar-toggle' | 'context' | 'context-toggle' | null>(null);
   const [journalMessage, setJournalMessage] = useState<WorkspaceMessage | null>(null);
   const [branch, setBranch] = useState<{ message: WorkspaceMessage; mode: 'edit' | 'regenerate' | 'continue'; text: string; requestId: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [papersOpen, setPapersOpen] = useState(false);
+  const [contextOpen, setContextOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
   const draftRef = useRef('');
@@ -102,7 +135,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
 
   useEffect(() => { if (authProp !== undefined) return; let live = true; void fetch('/api/session', { credentials: 'same-origin' }).then(r => r.json()).then((value: { role?: string }) => { if (live) setFallbackAuth(value.role === 'admin'); }).catch(() => {}); return () => { live = false; }; }, [authProp]);
   useEffect(() => {
-    if (!authenticated) { setSessions([]); accept(null); setProjects([]); setPapers([]); setLegacy([]); setProjectEditor(null); setProjectSelectorOpen(false); setJournalMessage(null); setBranch(null); setKnowledgeOpen(false); setToolsOpen(false); setToolRuns([]); setMemoryOpen(false); setMemorySource(null); setSummaryEditor(null); setSettingsOpen(false); setUsage(null); setError(''); setNotice(''); setDraftConflict(false); draftConflictRef.current = false; setDraft(''); draftRef.current = ''; setReady(false); controller.current?.abort(); return; }
+    if (!authenticated) { setSessions([]); accept(null); setProjects([]); setPapers([]); setLegacy([]); setProjectEditor(null); setProjectSelectorOpen(false); setJournalMessage(null); setBranch(null); setKnowledgeOpen(false); setToolsOpen(false); setToolRuns([]); setMemoryOpen(false); setMemorySource(null); setSummaryEditor(null); setSettingsOpen(false); setPreferences(null); setHistoryOpen(false); setContextOpen(false); setError(''); setNotice(''); setDraftConflict(false); draftConflictRef.current = false; setDraft(''); draftRef.current = ''; setReady(false); controller.current?.abort(); return; }
     let live = true;
     void Promise.all([api<{ items: LearningProject[] }>('/projects'), api<{ items: Conversation[] }>('/conversations')]).then(async ([p, c]) => {
       if (!live) return; setProjects(p.items); setSessions(c.items);
@@ -119,9 +152,33 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     }).catch(e => { if (live) { report(e); setReady(true); } });
     void loadChatSettings().then(s => { if (live) setSettings(s); }).catch(report);
     void loadChatModels().then(m => { if (live) { setModels(m); setModel(value => value || m[0]?.id || ''); } }).catch(report);
+    void api<WorkspacePreferences>('/workspace/preferences').then(value => { if (live) setPreferences(value); }).catch(report);
     try { const data: unknown = JSON.parse(localStorage.getItem(LEGACY_KEY) || '[]'); if (Array.isArray(data)) setLegacy(data); } catch { setNotice('旧对话数据无法解析，浏览器原始记录仍保留。'); }
+    // Layout preferences are read only once signed in, like the conversation state.
+    try { setSendKey(localStorage.getItem(SEND_KEY_STORAGE) === 'mod-enter' ? 'mod-enter' : 'enter'); } catch { /* Defaults apply. */ }
+    const panes = readPanes();
+    setHistoryOpen(docked(DOCKED_SIDEBAR_QUERY) && panes.sidebar !== false);
+    setContextOpen(docked(DOCKED_CONTEXT_QUERY) && panes.context === true);
     return () => { live = false; controller.current?.abort(); };
   }, [authenticated, accept, changeDraft, report]);
+  // Crossing a breakpoint re-applies the remembered docked layout instead of leaving a drawer over the thread.
+  useEffect(() => {
+    if (!authenticated) return;
+    const sidebarQuery = window.matchMedia(DOCKED_SIDEBAR_QUERY);
+    const contextQuery = window.matchMedia(DOCKED_CONTEXT_QUERY);
+    const sync = () => { const panes = readPanes(); setHistoryOpen(sidebarQuery.matches && panes.sidebar !== false); setContextOpen(contextQuery.matches && panes.context === true); };
+    sidebarQuery.addEventListener('change', sync); contextQuery.addEventListener('change', sync);
+    return () => { sidebarQuery.removeEventListener('change', sync); contextQuery.removeEventListener('change', sync); };
+  }, [authenticated]);
+  // New conversations start from the AI 设置 defaults; existing ones keep their own choice.
+  // Keyed on the default values so saving other settings never resets a pick made for this draft.
+  const defaultModel = preferences?.default_model;
+  const defaultReasoning = preferences?.default_reasoning;
+  useEffect(() => {
+    if (!ready || defaultReasoning === undefined || activeRef.current) return;
+    if (defaultModel) setModel(defaultModel);
+    setReasoning(defaultReasoning);
+  }, [ready, defaultModel, defaultReasoning]);
 
   useEffect(() => {
     if (!authenticated || !ready) return;
@@ -158,6 +215,32 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
   useEffect(() => { if (follow.current && messagesRef.current) messagesRef.current.scrollTop = messagesRef.current.scrollHeight; }, [active?.messages]);
   useEffect(() => { const warn = (event: BeforeUnloadEvent) => { if (busyRef.current || (draftRef.current && draftRef.current !== activeRef.current?.draft)) { event.preventDefault(); event.returnValue = ''; } }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, []);
 
+  useEffect(() => {
+    const target = paneFocus.current; paneFocus.current = null;
+    const element = target === 'sidebar' ? sidebarRef.current : target === 'sidebar-toggle' ? sidebarToggleRef.current : target === 'context' ? contextRef.current : target === 'context-toggle' ? contextToggleRef.current : null;
+    element?.focus({ preventScroll: true });
+  }, [historyOpen, contextOpen]);
+  const showSidebar = (open: boolean) => {
+    paneFocus.current = open ? 'sidebar' : 'sidebar-toggle';
+    setHistoryOpen(open);
+    if (docked(DOCKED_SIDEBAR_QUERY)) savePanes({ sidebar: open });
+    else if (open) setContextOpen(false);
+  };
+  // Floating panes give the thread back after a choice; docked ones stay open.
+  const settleFloatingSidebar = () => { if (!docked(DOCKED_SIDEBAR_QUERY)) setHistoryOpen(open => { if (open) paneFocus.current = 'sidebar-toggle'; return false; }); };
+  const showContext = (open: boolean) => {
+    paneFocus.current = open ? 'context' : 'context-toggle';
+    setContextOpen(open);
+    if (docked(DOCKED_CONTEXT_QUERY)) savePanes({ context: open });
+    else if (open) settleFloatingSidebar();
+  };
+  const closeFloatingPane = (event: KeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Escape' || event.defaultPrevented) return;
+    if (contextOpen && !docked(DOCKED_CONTEXT_QUERY)) { event.preventDefault(); showContext(false); }
+    else if (historyOpen && !docked(DOCKED_SIDEBAR_QUERY)) { event.preventDefault(); showSidebar(false); }
+  };
+  const chooseSendKey = (value: SendKey) => { setSendKey(value); try { localStorage.setItem(SEND_KEY_STORAGE, value); } catch { /* Applies to this page. */ } };
+
   const resolveDraft = async (keepLocal: boolean) => {
     const item = activeRef.current; if (!item) return;
     setBusy(true);
@@ -172,7 +255,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     if (busyRef.current) return;
     try {
       await saveDraft(); const item = await api<Conversation>(`/conversations/${id}`);
-      accept(item); changeDraft(item.draft); setProjectId(item.project_id || ''); if (item.model) setModel(item.model); setReasoning(item.reasoningEffort); setSelectedPapers(item.draft_document_ids || []); setToolRuns(item.draft_tool_run_ids || []); setHistoryOpen(false); setError(''); setNotice(''); requestRef.current = null; follow.current = true;
+      accept(item); changeDraft(item.draft); setProjectId(item.project_id || ''); if (item.model) setModel(item.model); setReasoning(item.reasoningEffort); setSelectedPapers(item.draft_document_ids || []); setToolRuns(item.draft_tool_run_ids || []); settleFloatingSidebar(); setError(''); setNotice(''); requestRef.current = null; follow.current = true;
       replaceConversationLocation(id);
     } catch (e) { report(e); }
   };
@@ -183,7 +266,9 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
       await saveDraft();
       if (!authRef.current) return false;
       if (!activeRef.current && draftRef.current.trim() && !window.confirm('新建对话会清空当前未发送的草稿，继续吗？')) return false;
-      accept(null); changeDraft(''); setProjectId(nextProject); if (!nextProject && knowledgeScope === 'project') setKnowledgeScope('none'); setSelectedPapers([]); setToolRuns([]); setError(''); setNotice(''); requestRef.current = null; replaceConversationLocation(); setHistoryOpen(false);
+      accept(null); changeDraft(''); setProjectId(nextProject); if (!nextProject && knowledgeScope === 'project') setKnowledgeScope('none'); setSelectedPapers([]); setToolRuns([]); setError(''); setNotice(''); requestRef.current = null; replaceConversationLocation(); settleFloatingSidebar();
+      if (preferences?.default_model) setModel(preferences.default_model);
+      if (preferences) setReasoning(preferences.default_reasoning);
       return true;
     } catch (e) { report(e); return false; }
     finally { projectSwitchRef.current = false; setProjectSwitchPending(false); }
@@ -258,39 +343,94 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     const text = `# ${active.title}\n\n` + active.messages.map(m => `## ${m.role === 'user' ? '你' : 'AI'}\n\n${m.content}\n\n${m.citations.map(c => `[${c.id}] ${c.title} · 第 ${c.page} 页\n> ${c.quote.replaceAll('\n', '\n> ')}`).join('\n\n')}`).join('\n\n');
     saveDownload(text, 'learning-conversation.md', 'text/markdown');
   };
+  const renameConversation = (item: Conversation) => {
+    const title = window.prompt('对话标题', item.title)?.trim(); if (!title) return;
+    void api<Conversation>(`/conversations/${item.id}`, 'PATCH', { title, revision: item.revision }).then(async next => { if (active?.id === next.id) accept(next); await refreshList(); }).catch(report);
+  };
+  const deleteConversation = (item: Conversation) => {
+    if (!window.confirm('删除这个对话？建议先导出需要的内容。')) return;
+    void api(`/conversations/${item.id}`, 'DELETE', { revision: item.revision }).then(async () => { if (active?.id === item.id) { accept(null); changeDraft(''); } await refreshList(); }).catch(report);
+  };
+  const uploadDocument = (file: File) => {
+    setUploading(true); setError('');
+    void uploadPaper(projectId, file).then(async () => { await refreshPapers(); setNotice('资料已保存，处理完成后可勾选提问。'); }).catch(report).finally(() => setUploading(false));
+  };
   const locked = !authenticated || !ready || busy || uploading || projectSwitchPending;
+  const sendHint = sendKey === 'enter' ? 'Enter 发送 · Shift + Enter 换行' : 'Ctrl / ⌘ + Enter 发送 · Enter 换行';
+  const paperTitle = (id: string) => papers.find(p => p.id === id)?.title || '资料';
+
   const toolbar = <div className="chat-topbar-controls">
-    <button className="btn btn-ghost btn-sm chat-history-toggle" aria-label={historyOpen ? '关闭历史记录' : '打开历史记录'} aria-expanded={historyOpen} onClick={() => setHistoryOpen(!historyOpen)} disabled={!authenticated}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.4 5.2h11.2M4.4 10h11.2M4.4 14.8h7.2" /></svg><span>历史</span><span className="chat-history-count">{sessions.length}</span></button>
     <label><span className="sr-only">当前模型</span><input className="chat-toolbar-select chat-toolbar-model-input" aria-label="当前模型" list="workspace-models" value={model} onChange={e => setModel(e.target.value)} disabled={locked} placeholder="选择或输入模型" /><datalist id="workspace-models">{models.map(m => <option value={m.id} key={m.id}>{m.name}</option>)}</datalist></label>
     <select aria-label="思考强度" className="chat-toolbar-select chat-toolbar-select-small" value={reasoning} onChange={e => setReasoning(e.target.value as ReasoningEffort)} disabled={locked}><option value="auto">自动</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
-    <button className="btn btn-ghost btn-sm" aria-label="AI 用量" disabled={!authenticated} onClick={() => { void api<{ requests: number; reported_requests: number; prompt_tokens: number; completion_tokens: number }>('/workspace/usage').then(setUsage).catch(report); }}>用量</button>
-    <button className="btn btn-ghost btn-sm" aria-label="设置" onClick={() => setSettingsOpen(true)} disabled={!authenticated}>设置</button>
+    <button ref={settingsButtonRef} className="btn btn-ghost btn-sm chat-settings-trigger" type="button" aria-label="AI 设置" title="AI 设置" onClick={() => { setSettingsOpen(true); void api<WorkspacePreferences>('/workspace/preferences').then(value => { if (authRef.current) setPreferences(value); }).catch(report); }} disabled={!authenticated}><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M4.9 15.1l1.4-1.4M13.7 6.3l1.4-1.4"/></svg><span>AI 设置</span></button>
   </div>;
 
   return <Shell active="chat" badge={publicHost} pageTitle="AI 对话" topbarExtra={toolbar} agentEnabled={authenticated}>
-    <section className="chat-page personal-workspace">
-      <div className="workspace-project-bar"><button ref={projectButtonRef} type="button" className="workspace-project-trigger" aria-label={`选择学习项目：${project?.name || '自由对话'}`} aria-haspopup="dialog" aria-expanded={projectSelectorOpen} disabled={locked} onClick={() => setProjectSelectorOpen(true)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 6a1.5 1.5 0 0 1 1.5-1.5h4l2 2h6a1.5 1.5 0 0 1 1.5 1.5v7a1.5 1.5 0 0 1-1.5 1.5H4A1.5 1.5 0 0 1 2.5 15Z" /></svg><span>{project?.name || '自由对话'}</span><span className="workspace-project-chevron" aria-hidden="true">⌄</span></button>
-        <div className="workspace-actions"><button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setKnowledgeOpen(true)}>知识库</button>{project && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => { setMemorySource(null); setMemoryOpen(true); }}>项目记忆</button>}<button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setProjectEditor('new')}>＋ 项目</button>{project && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setProjectEditor(project)}>项目目标</button>}<button className="btn btn-secondary btn-sm" disabled={locked || !projectId} onClick={() => setPapersOpen(!papersOpen)}>论文资料 · {papers.length}</button><button className="btn btn-primary btn-sm" disabled={locked} onClick={() => { void newConversation(); }}>新对话</button></div>
-      </div>
-      {project?.goal && <p className="workspace-goal">{project.goal}</p>}
-      {legacy.length > 0 && <div className="workspace-banner"><span>发现此浏览器的旧对话，可导入服务器后跨设备使用。</span><button className="btn btn-secondary btn-sm" disabled={locked} onClick={() => { void importLegacy(); }}>导入旧对话（{legacy.length}）</button></div>}
-      {papersOpen && projectId && <section className="workspace-papers card" aria-label="论文资料"><div className="workspace-actions"><label className="btn btn-secondary">{uploading ? '正在上传…' : '上传资料'}<input className="sr-only" type="file" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp" disabled={locked} aria-label="上传论文" onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (!file) return; setUploading(true); setError(''); void uploadPaper(projectId, file).then(async () => { await refreshPapers(); setNotice('资料已保存，处理完成后可勾选提问。'); }).catch(report).finally(() => setUploading(false)); }} /></label><span className="workspace-muted">PDF / DOCX / TXT / MD / 图片 · 文档 ≤ 10 MB · 图片 ≤ 4 MB / 800 万像素</span></div>
-        <p className="workspace-muted">勾选资料后，相关片段会发送给当前模型；图片还会发送图片本身，请选择支持视觉的模型。PDF 最多 200 页，其中扫描页最多 30 页。</p>
-        {papers.map(p => <div className="workspace-paper" key={p.id}><label><input type="checkbox" checked={selectedPapers.includes(p.id)} disabled={locked || (!!p.status && p.status !== 'ready') || (!selectedPapers.includes(p.id) && selectedPapers.length >= 8)} onChange={e => setSelectedPapers(current => e.target.checked ? [...current, p.id] : current.filter(id => id !== p.id))} />{p.title} <small>{p.status === 'queued' ? '排队中' : p.status === 'processing' ? '正在解析 / 识别文字…' : p.status === 'error' ? new WorkspaceApiError(422, p.error || 'invalid_document').message : p.media_type === 'application/pdf' ? `${p.page_count} 页` : p.has_image ? '图片 · 可用于视觉提问' : '已提取文字'}</small></label><a href={`/api/chat/documents/${p.id}/file`} target="_blank" rel="noreferrer">原文</a>{p.status === 'error' && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => { void api(`/documents/${p.id}/retry`, 'POST').then(refreshPapers).catch(report); }}>重试</button>}<button type="button" className="btn btn-ghost btn-sm" disabled={locked} onClick={() => { if (!window.confirm('删除原文件？历史回答中的引用片段会保留。')) return; void api(`/documents/${p.id}`, 'DELETE').then(async () => { setSelectedPapers(ids => ids.filter(id => id !== p.id)); await refreshPapers(); }).catch(report); }}>删除</button></div>)}
-        {!papers.length && <p>上传后可在当前项目中反复引用。</p>}
-      </section>}
-      <div className={`chat-layout${historyOpen ? '' : ' history-collapsed'}`}>
-        {historyOpen && authenticated && <aside className="chat-history-panel card"><div className="chat-history"><header className="chat-sidebar-header"><strong>对话历史</strong><button className="btn btn-ghost btn-sm" onClick={() => setHistoryOpen(false)}>隐藏</button></header><label className="chat-search"><input type="search" aria-label="搜索对话" placeholder="搜索标题和正文" value={search} onChange={e => setSearch(e.target.value)} /></label><div className="chat-session-list">{sessions.map(s => <div className={`chat-session-row${s.id === active?.id ? ' active' : ''}`} key={s.id}><button className="chat-session" disabled={locked} onClick={() => { void switchTo(s.id); }}><span>{s.title}</span><small>{s.message_count} 条 · {new Date(s.updatedAt).toLocaleDateString()}</small></button><div className="chat-session-actions"><button aria-label={`重命名 ${s.title}`} disabled={locked} onClick={() => { const title = window.prompt('对话标题', s.title)?.trim(); if (!title) return; void api<Conversation>(`/conversations/${s.id}`, 'PATCH', { title, revision: s.revision }).then(async item => { if (active?.id === item.id) accept(item); await refreshList(); }).catch(report); }}>…</button><button aria-label={`删除 ${s.title}`} disabled={locked} onClick={() => { if (!window.confirm('删除这个对话？建议先导出需要的内容。')) return; void api(`/conversations/${s.id}`, 'DELETE', { revision: s.revision }).then(async () => { if (active?.id === s.id) { accept(null); changeDraft(''); } await refreshList(); }).catch(report); }}>×</button></div></div>)}{!sessions.length && <p className="chat-sidebar-empty">没有匹配的对话</p>}</div><p className="workspace-muted">记录保存在服务器</p></div></aside>}
-        <section className="chat-thread card"><header className="chat-thread-heading"><div className="chat-thread-title"><div><strong>{active?.title || '开始一段学习对话'}</strong><span>{busy ? '正在生成并保存' : active ? '服务器已保存' : '围绕一个问题，慢慢想清楚'}</span></div></div><div className="workspace-actions">{active && <><button className="btn btn-ghost btn-sm" disabled={locked || !!active.active} onClick={() => setSummaryEditor(active.summary?.text || '')}>长期上下文</button><button className="btn btn-ghost btn-sm" onClick={exportCurrent}>导出</button><button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { void api<Conversation>(`/conversations/${active.id}`).then(accept).catch(report); }}>刷新</button></>}</div></header>
-          <div ref={messagesRef} className="chat-messages" role="log" aria-live="polite" onScroll={e => { const node = e.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 60; }}>
-            {active?.parent_conversation_id && <p className="workspace-muted">当前为独立分支 · <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => { void switchTo(active.parent_conversation_id!); }}>返回原对话</button></p>}
-            {active?.messages.length ? active.messages.map(m => <ChatMessage key={m.id} message={m} disabled={locked || !!active.active} pending={m.status === 'streaming' && !m.content} {...(project ? { onMemory: () => { setMemorySource(m); setMemoryOpen(true); } } : {})} onBranch={mode => setBranch({ message: m, mode, text: mode === 'edit' ? m.content : '', requestId: crypto.randomUUID() })} {...(m.role === 'assistant' ? { onJournal: () => setJournalMessage(m) } : {})} />) : <div className="chat-empty-state"><div className="chat-empty-mark">✦</div><h2>把问题想明白</h2><p>讨论原理、阅读论文，也记录你的理解如何变化。</p><div className="chat-quick-prompts">{['用提问检验我对 LSM Tree 的理解', '帮我梳理论文的研究问题与局限', '陪我练习雅思口语，并解释纠错原因', '一起检查我今天一个想法的依据'].map(prompt => <button type="button" key={prompt} disabled={locked} onClick={() => changeDraft(prompt)}>{prompt}</button>)}</div></div>}
+    <section className={`chat-page personal-workspace chat-workbench${historyOpen && authenticated ? ' has-sidebar' : ''}${contextOpen && authenticated ? ' has-context' : ''}`} onKeyDown={closeFloatingPane}>
+      {historyOpen && authenticated && <ConversationSidebar panelRef={sidebarRef} sessions={sessions} activeId={active?.id || ''} search={search} disabled={locked} projectName={project?.name || ''} projectGoal={project?.goal || ''} projectButtonRef={projectButtonRef} projectSelectorOpen={projectSelectorOpen}
+        onSearch={setSearch} onNew={() => { void newConversation(); }} onSelect={id => { void switchTo(id); }} onRename={renameConversation} onDelete={deleteConversation}
+        onPickProject={() => setProjectSelectorOpen(true)} onCreateProject={() => setProjectEditor('new')} onCollapse={() => showSidebar(false)} />}
+      {historyOpen && authenticated && <button type="button" className="chat-scrim chat-scrim-sidebar" aria-label="关闭对话列表" tabIndex={-1} onClick={() => showSidebar(false)}/>}
+
+      <section className="chat-thread card">
+        <header className="chat-thread-heading">
+          {!historyOpen && <div className="chat-thread-nav">
+            <button ref={sidebarToggleRef} type="button" className="chat-icon-button" aria-label="打开对话列表" title="打开对话列表" disabled={!authenticated} onClick={() => showSidebar(true)}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 5.5h12M4 10h12M4 14.5h8"/></svg></button>
+            <button type="button" className="chat-icon-button" aria-label="新对话" title="新对话" disabled={locked} onClick={() => { void newConversation(); }}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4.5v11M4.5 10h11"/></svg></button>
+          </div>}
+          <div className="chat-thread-title">
+            <strong>{active?.title || '新对话'}</strong>
+            <span>{project?.name || '自由对话'} · {busy ? '正在生成并保存' : active ? '服务器已保存' : '围绕一个问题，慢慢想清楚'}</span>
           </div>
-          <div className="chat-composer"><div className="chat-composer-toolbar"><div className="workspace-actions"><button ref={toolsButtonRef} className="btn btn-ghost btn-sm" disabled={locked || !!active?.active} onClick={() => { void openTools(); }}>搜索与工具</button>{toolRuns.length > 0 && <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => setToolRuns([])}>已附 {toolRuns.length} 份工具结果 · 移除</button>}</div><label className="workspace-context-scope">知识库范围<select aria-label="回答使用的知识库范围" value={knowledgeScope} disabled={locked} onChange={e => setKnowledgeScope(e.target.value)}><option value="none">仅勾选资料</option>{projectId && <option value="project">自动检索当前项目</option>}<option value="all">自动检索全部个人资料</option></select></label></div>{knowledgeScope !== 'none' && <small>相关原文片段会发送给当前模型。</small>}{selectedPapers.length > 0 && <small>本次使用 {selectedPapers.length} 份资料</small>}<textarea aria-label="聊天消息" value={draft} maxLength={12000} onChange={e => changeDraft(e.target.value)} onKeyDown={e => { if (!e.nativeEvent.isComposing && e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); } }} placeholder="写下你的问题、解释或想法…" rows={3} disabled={!authenticated || !ready || busy || !!active?.active} /><div className="chat-composer-footer"><span>{draftStatus || 'Enter 发送 · Shift + Enter 换行'}</span>{busy || active?.active ? <button className="btn btn-secondary" onClick={() => { void stop(); }}>停止</button> : <button className="btn btn-primary" disabled={locked || draftConflict || !draft.trim() || !model.trim()} onClick={() => { void send(); }}>发送 ↑</button>}</div></div>
-        </section>
-      </div>
-      {draftConflict && <div className="workspace-banner" role="alert"><span>另一处修改了草稿。本机文字已保留，请选择：</span><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { void resolveDraft(true); }}>保留本机草稿并保存</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { void resolveDraft(false); }}>使用服务器草稿</button></div>}
-      {notice && <div className="chat-notice" role="status">{notice}</div>}{error && <div className="err" role="alert">{error}</div>}
+          <div className="workspace-actions chat-thread-actions">
+            {active && <><button className="btn btn-ghost btn-sm" type="button" disabled={locked || !!active.active} onClick={() => setSummaryEditor(active.summary?.text || '')}>长期上下文</button><button className="btn btn-ghost btn-sm" type="button" onClick={exportCurrent}>导出</button><button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => { void api<Conversation>(`/conversations/${active.id}`).then(accept).catch(report); }}>刷新</button></>}
+            <button ref={contextToggleRef} className={`btn btn-sm chat-context-toggle${contextOpen ? ' is-active' : ''}`} type="button" aria-expanded={contextOpen} disabled={!authenticated} onClick={() => showContext(!contextOpen)}>
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 3.5h5.5L15 7v9.5H6Z"/><path d="M11.5 3.5V7H15M8.5 10.5h4M8.5 13.5h4"/></svg>
+              <span>论文资料 · {papers.length}{selectedPapers.length ? ` · 已选 ${selectedPapers.length}` : ''}</span>
+            </button>
+          </div>
+        </header>
+        {legacy.length > 0 && <div className="workspace-banner"><span>发现此浏览器的旧对话，可导入服务器后跨设备使用。</span><button className="btn btn-secondary btn-sm" disabled={locked} onClick={() => { void importLegacy(); }}>导入旧对话（{legacy.length}）</button></div>}
+        <div ref={messagesRef} className="chat-messages" role="log" aria-live="polite" onScroll={e => { const node = e.currentTarget; follow.current = node.scrollHeight - node.scrollTop - node.clientHeight < 60; }}>
+          {active?.parent_conversation_id && <p className="workspace-muted chat-branch-note">当前为独立分支 · <button className="btn btn-ghost btn-sm" disabled={locked} onClick={() => { void switchTo(active.parent_conversation_id!); }}>返回原对话</button></p>}
+          {active?.messages.length ? active.messages.map(m => <ChatMessage key={m.id} message={m} disabled={locked || !!active.active} pending={m.status === 'streaming' && !m.content} {...(project ? { onMemory: () => { setMemorySource(m); setMemoryOpen(true); } } : {})} onBranch={mode => setBranch({ message: m, mode, text: mode === 'edit' ? m.content : '', requestId: crypto.randomUUID() })} {...(m.role === 'assistant' ? { onJournal: () => setJournalMessage(m) } : {})} />) : <div className="chat-empty-state">
+            <div className="chat-empty-mark" aria-hidden="true">✦</div>
+            <h2>把问题想明白</h2>
+            <p>讨论原理、阅读论文，也记录你的理解如何变化。</p>
+            <div className="chat-quick-prompts">{QUICK_PROMPTS.map(prompt => <button type="button" key={prompt} disabled={locked} onClick={() => changeDraft(prompt)}>{prompt}</button>)}</div>
+            <p className="workspace-muted chat-empty-meta">{model ? `当前模型 ${model}` : '尚未选择模型'}{project ? ` · 项目 ${project.name}` : ''}</p>
+          </div>}
+        </div>
+        {draftConflict && <div className="workspace-banner" role="alert"><span>另一处修改了草稿。本机文字已保留，请选择：</span><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { void resolveDraft(true); }}>保留本机草稿并保存</button><button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => { void resolveDraft(false); }}>使用服务器草稿</button></div>}
+        {notice && <div className="chat-notice" role="status">{notice}</div>}{error && <div className="err" role="alert">{error}</div>}
+        <div className="chat-composer">
+          {(selectedPapers.length > 0 || toolRuns.length > 0 || knowledgeScope !== 'none') && <div className="chat-attachments" aria-label="本次附加">
+            {selectedPapers.map(id => <span className="chat-chip" key={id}><span>{paperTitle(id)}</span><button type="button" aria-label={`不再使用 ${paperTitle(id)}`} disabled={locked} onClick={() => setSelectedPapers(current => current.filter(item => item !== id))}>×</button></span>)}
+            {toolRuns.length > 0 && <button className="chat-chip" type="button" disabled={locked} onClick={() => setToolRuns([])}>已附 {toolRuns.length} 份工具结果 · 移除</button>}
+            {knowledgeScope !== 'none' && <span className="chat-chip is-info">自动检索的原文片段会发送给当前模型</span>}
+          </div>}
+          <textarea aria-label="聊天消息" value={draft} maxLength={12000} onChange={e => changeDraft(e.target.value)} onKeyDown={e => {
+            if (e.nativeEvent.isComposing || e.key !== 'Enter') return;
+            const modifier = e.ctrlKey || e.metaKey;
+            if (sendKey === 'enter' ? !e.shiftKey && !modifier : modifier) { e.preventDefault(); void send(); }
+          }} placeholder="写下你的问题、解释或想法…" rows={3} disabled={!authenticated || !ready || busy || !!active?.active} />
+          <div className="chat-composer-footer">
+            <div className="chat-composer-tools">
+              <button ref={toolsButtonRef} className="btn btn-ghost btn-sm" type="button" disabled={locked || !!active?.active} onClick={() => { void openTools(); }}>搜索与工具</button>
+              <label className="workspace-context-scope"><span>知识库</span><select aria-label="回答使用的知识库范围" value={knowledgeScope} disabled={locked} onChange={e => setKnowledgeScope(e.target.value)}><option value="none">仅勾选资料</option>{projectId && <option value="project">自动检索当前项目</option>}<option value="all">自动检索全部个人资料</option></select></label>
+            </div>
+            <span className="chat-composer-hint">{draftStatus || sendHint}</span>
+            {busy || active?.active ? <button className="btn btn-secondary" type="button" onClick={() => { void stop(); }}>停止</button> : <button className="btn btn-primary" type="button" disabled={locked || draftConflict || !draft.trim() || !model.trim()} onClick={() => { void send(); }}>发送 ↑</button>}
+          </div>
+        </div>
+      </section>
+
+      {contextOpen && authenticated && <ContextPanel panelRef={contextRef} project={project} papers={papers} selected={selectedPapers} locked={locked} uploading={uploading} onUpload={uploadDocument}
+        onTogglePaper={(id, on) => setSelectedPapers(current => on ? [...current, id] : current.filter(item => item !== id))}
+        onRetryPaper={id => { void api(`/documents/${id}/retry`, 'POST').then(refreshPapers).catch(report); }}
+        onDeletePaper={id => { if (!window.confirm('删除原文件？历史回答中的引用片段会保留。')) return; void api(`/documents/${id}`, 'DELETE').then(async () => { setSelectedPapers(ids => ids.filter(item => item !== id)); await refreshPapers(); }).catch(report); }}
+        onOpenKnowledge={() => setKnowledgeOpen(true)} onOpenMemory={() => { setMemorySource(null); setMemoryOpen(true); }} onEditProject={() => { if (project) setProjectEditor(project); }} onClose={() => showContext(false)} />}
+      {contextOpen && authenticated && <button type="button" className="chat-scrim chat-scrim-context" aria-label="关闭资料面板" tabIndex={-1} onClick={() => showContext(false)}/>}
     </section>
     {projectSelectorOpen && authenticated && <ProjectSelectorDialog projects={projects} currentId={projectId} disabled={locked} returnFocusTo={projectButtonRef.current} onClose={() => setProjectSelectorOpen(false)} onSelect={newConversation} onCreate={() => { setProjectSelectorOpen(false); projectEditorFocus.current = projectButtonRef.current; setProjectEditor('new'); }} />}
     {projectEditor && <ProjectDialog project={projectEditor === 'new' ? null : projectEditor} {...(projectEditorFocus.current ? { returnFocusTo: projectEditorFocus.current } : {})} onClose={() => { setProjectEditor(null); projectEditorFocus.current = null; }} onSaved={p => { setProjectEditor(null); projectEditorFocus.current = null; void api<{ items: LearningProject[] }>('/projects').then(r => setProjects(r.items)).catch(report); if (p && projectEditor === 'new') void newConversation(p.id); if (!p) void newConversation(''); }} />}
@@ -300,7 +440,8 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     {memoryOpen && project && authenticated && <MemoryDialog project={project} {...(memorySource && active ? { source: { conversation: active, message: memorySource } } : {})} onClose={() => { setMemoryOpen(false); setMemorySource(null); }} onSaved={p => setProjects(current => current.map(x => x.id === p.id ? p : x))} />}
     {summaryEditor !== null && active && authenticated && <WorkspaceDialog title="长期上下文" onClose={() => setSummaryEditor(null)}><p>对话过长时，会使用当前模型自动整理早期内容。原消息完整保存，摘要可以检查和修改。</p>{active.summary ? <><textarea className="input" aria-label="早期对话摘要" rows={10} value={summaryEditor} maxLength={4000} onChange={e => setSummaryEditor(e.target.value)} /><div className="workspace-actions"><button className="btn btn-primary" disabled={busy} onClick={() => { setBusy(true); void api<Conversation>(`/conversations/${active.id}/context`, 'PATCH', { revision: active.revision, text: summaryEditor }).then(item => { accept(item); setSummaryEditor(null); }).catch(report).finally(() => setBusy(false)); }}>保存摘要</button><small>清空后保存可删除摘要；下次长对话会重新整理。</small></div></> : <p>当前对话暂不需要摘要，后续超过上下文长度时会自动生成。</p>}</WorkspaceDialog>}
     {branch && authenticated && <WorkspaceDialog title={branch.mode === 'edit' ? '编辑问题' : branch.mode === 'regenerate' ? '重新生成回答' : '从这里继续'} onClose={() => { if (!busy) setBranch(null); }}><p>原对话会保留，新分支只带入此处之前的对话内容。</p>{branch.mode === 'edit' && <textarea className="input" aria-label="修改问题" rows={6} maxLength={12000} value={branch.text} disabled={busy} onChange={e => setBranch({ ...branch, text: e.target.value, requestId: crypto.randomUUID() })} />}<button className="btn btn-primary" disabled={busy || (branch.mode === 'edit' && !branch.text.trim())} onClick={() => { void createBranch(); }}>{busy ? '正在创建…' : branch.mode === 'continue' ? '创建分支' : '创建分支并生成'}</button></WorkspaceDialog>}
-    {usage && <WorkspaceDialog title="AI 用量" onClose={() => setUsage(null)}><p>已保存对话中的请求：{usage.requests} 次</p><p>输入 tokens：{usage.prompt_tokens.toLocaleString()} · 输出 tokens：{usage.completion_tokens.toLocaleString()}</p><p className="workspace-muted">其中 {usage.reported_requests} 次由服务返回了用量。包含自动摘要和工具建议请求，分支共用的历史只计一次。未返回的用量不估算；不包含导入的旧记录与已删除的对话。</p></WorkspaceDialog>}
-    {settingsOpen && <WorkspaceDialog title="设置" onClose={() => setSettingsOpen(false)}><ChatSettings settings={settings} busy={busy} feedback="" onSave={async values => { try { setSettings(await saveChatSettings(values)); setNotice('设置已保存'); return true; } catch (e) { report(e); return false; } }} onExport={() => { void api<unknown>('/workspace/export').then(value => saveDownload(JSON.stringify(value, null, 2), 'learning-workspace.json')).catch(report); }} /></WorkspaceDialog>}
+    {settingsOpen && authenticated && <AISettingsDialog settings={settings} models={models} preferences={preferences} sendKey={sendKey} legacyCount={legacy.length} locked={locked} returnFocusTo={settingsButtonRef.current}
+      onSendKey={chooseSendKey} onPreferences={setPreferences} onSettings={setSettings}
+      onImportLegacy={() => { void importLegacy(); }} onError={report} onClose={() => setSettingsOpen(false)} />}
   </Shell>;
 }

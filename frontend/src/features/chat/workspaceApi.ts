@@ -6,6 +6,8 @@ export type WorkspaceMessage = ChatMessageData & { id: string; status: string; c
 export type Conversation = { id: string; title: string; project_id: string | null; messages: WorkspaceMessage[]; revision: number; updatedAt: number; draft: string; model: string; reasoningEffort: ReasoningEffort; active: string | null; message_count?: number; parent_conversation_id?: string; branch_from_message_id?: string; branch_mode?: string; draft_document_ids?: string[]; draft_tool_run_ids?: string[]; summary?: { text: string; through_message_id: string; edited?: boolean; updatedAt: number } };
 export type LearningProject = { id: string; name: string; goal: string; instructions: string; revision: number; memories?: { id: string; text: string; source?: { conversation_id: string; message_id: string } | null }[] };
 export type Paper = { id: string; project_id: string; title: string; page_count: number; size: number; media_type: string; status?: 'queued' | 'processing' | 'ready' | 'error'; error?: string; has_image?: boolean; index_status?: 'queued' | 'processing' | 'ready' | 'error'; chunk_count?: number };
+export type WorkspacePreferences = { instructions: string; default_model: string; default_reasoning: ReasoningEffort; revision: number };
+export type WorkspaceUsage = { requests: number; reported_requests: number; prompt_tokens: number; completion_tokens: number };
 export type WorkspaceEvent = { type: string; conversation?: Conversation; text?: string; error?: string; notice?: string; usage?: Record<string, number> };
 
 const errors: Record<string, string> = {
@@ -69,6 +71,7 @@ const errors: Record<string, string> = {
   document_storage_full: '论文存储已达到 200 MB 或 200 个文件的限制。',
   conversation_full: '这个对话已达到 500 条消息，请新建对话继续。',
   generation_failed: '生成中断，已收到的内容已保存。请检查模型服务后再试。',
+  revision_conflict: 'AI 设置已在其他窗口修改，请关闭后重新打开再保存。',
 };
 
 export class WorkspaceApiError extends Error {

@@ -8,6 +8,7 @@ export type ChatSettings = {
   api_key_configured: boolean;
   protocol?: 'openai_compatible';
   name?: string;
+  service_name?: string;
 };
 
 export type ReasoningEffort = 'auto' | 'low' | 'medium' | 'high';

@@ -29,6 +29,8 @@ async function main() {
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${base}/__react/admin/chat`);
+      // The project switcher lives in the conversation list, which floats below 1100px.
+      if (width < 1100) await page.getByRole('button', { name: '打开对话列表', exact: true }).click();
       await expect(trigger).toBeEnabled();
       await expect(trigger).toHaveAccessibleName('选择学习项目：自由对话');
       await trigger.click();
@@ -68,9 +70,12 @@ async function main() {
     await expect(trigger).toHaveAccessibleName('选择学习项目：AI 与存储');
     await expect(page.locator('.workspace-goal')).toHaveText(alpha.goal);
     await expect(page.getByLabel('聊天消息')).toHaveValue('');
-    await expect(page.getByRole('button', { name: '项目记忆', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '项目目标', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: /论文资料/ })).toBeEnabled();
+    const sources = page.getByRole('complementary', { name: '资料与上下文' });
+    await page.getByRole('button', { name: /论文资料/ }).click();
+    await expect(sources.getByRole('button', { name: '项目记忆', exact: true })).toBeVisible();
+    await expect(sources.getByRole('button', { name: '项目目标', exact: true })).toBeVisible();
+    await expect(sources.getByLabel('上传论文', { exact: true })).toBeEnabled();
+    await expect(sources).toContainText(alpha.goal);
     evidence.assertions.push('cancelled draft discard stays open/current; confirmed switch preserves goal/memory/papers actions');
     const conversation = await (await context.request.post(`${base}/api/chat/conversations`, { data: { project_id: alpha.id } })).json();
     await page.goto(`${base}/__react/admin/chat?conversation=${conversation.id}`);
@@ -124,7 +129,9 @@ async function main() {
     await expect(dialog).toHaveCount(0);
     await expect(trigger).toHaveAccessibleName('选择学习项目：自由对话');
     await expect(page.locator('.workspace-goal')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: /论文资料/ })).toBeDisabled();
+    await expect(sources).toContainText('自由对话，不关联学习项目');
+    await expect(sources.getByLabel('上传论文', { exact: true })).toHaveCount(0);
+    await expect(sources.getByRole('button', { name: '项目记忆', exact: true })).toHaveCount(0);
     await trigger.click();
     await dialog.getByRole('button', { name: '关闭窗口', exact: true }).click();
     await expect(trigger).toBeFocused();

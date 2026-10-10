@@ -76,10 +76,18 @@ const fs = require('node:fs');
     assert.equal((await (await context.request.get(`${base}/api/chat/conversations/${conversationId}`)).json()).draft, '');
     await mobile.getByRole('button', { name: '使用服务器草稿' }).click();
     await expect(mobile.getByLabel('聊天消息')).toHaveValue('');
-    await mobile.getByRole('button', { name: '打开历史记录' }).click();
+    // Phones float the conversation list over the thread; Escape and the close control both dismiss it.
+    await mobile.getByRole('button', { name: '打开对话列表' }).click();
     await expect(mobile.locator('.chat-history-panel')).toBeVisible();
-    await mobile.getByRole('button', { name: '隐藏', exact: true }).click();
-    await page.getByRole('button', { name: '打开历史记录' }).click();
+    await expect(mobile.locator('.chat-history-panel')).toBeFocused();
+    await mobile.keyboard.press('Escape');
+    await expect(mobile.locator('.chat-history-panel')).toHaveCount(0);
+    await expect(mobile.getByRole('button', { name: '打开对话列表' })).toBeFocused();
+    await mobile.getByRole('button', { name: '打开对话列表' }).click();
+    await mobile.getByRole('button', { name: '收起对话列表' }).click();
+    await expect(mobile.locator('.chat-history-panel')).toHaveCount(0);
+    // Wide screens keep the list docked beside the thread.
+    await expect(page.locator('.chat-history-panel')).toBeVisible();
     await page.getByRole('searchbox', { name: '搜索对话' }).fill('sequential');
     await expect(page.locator('.chat-session')).toHaveCount(0); // quotations alone are not searched
     await page.getByRole('searchbox', { name: '搜索对话' }).fill('写入放大');
