@@ -27,6 +27,7 @@ from web_api.github_trending_source import SourceError
 from web_api.github_trending_store import TrendingStore
 from web_api.journal_service import JournalStore
 from web_api.plans_service import PlanStore
+from web_api.schedule_service import ScheduleStore
 from web_api.service_center import ServiceCenterStore
 from web_api.services import LegacyPanelServices
 from web_api.shop_source import normalize_products
@@ -503,7 +504,7 @@ def _handler(api_client, allowed_assets):
                 '/api/v1/shop/admin',
                 '/api/v1/admin/services',
                 '/api/ai/service-bindings',
-            } or request_path.startswith(('/api/ai/services/', '/api/journal/', '/api/chat/')):
+            } or request_path.startswith(('/api/ai/services/', '/api/journal/', '/api/chat/', '/api/plans/schedule/')):
                 self._json_api()
                 return
             super().do_PUT()
@@ -686,6 +687,7 @@ def preview_server(port=0, *, overview_fixture=False):
                         backup_dir=preview_ai_root / 'migration-backup',
                     ),
                     plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
+                    schedule_store=ScheduleStore(Path(directory) / 'plans' / 'schedule.json'),
                     journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
                     chat_workspace_store=PreviewWorkspaceStore(
                         Path(directory) / 'chat' / 'workspace.sqlite3'

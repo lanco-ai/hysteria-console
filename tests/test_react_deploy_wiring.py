@@ -42,6 +42,7 @@ WEB_API_MODULES = (
     'overview_models.py',
     'plans_routes.py',
     'plans_service.py',
+    'schedule_service.py',
     'journal_routes.py',
     'journal_service.py',
     'requests.py',
