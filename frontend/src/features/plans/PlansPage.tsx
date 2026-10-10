@@ -241,16 +241,15 @@ export function PlansPage(): ReactElement {
     return () => controller.abort();
   }, [reload]);
 
-  // An older link to 行程 or 回顾 opens the view holding it. Side by side it is already in view;
-  // when the columns stack, scroll to it once the plan has loaded and the layout has settled.
+  // An older link to 行程 opens the plan view. On wide pages the time axis is already in view; when the
+  // panes stack it is below the plan, so scroll to it once the plan has loaded and the layout settled.
+  // (JournalPage does the same for #daily-review.)
   const deepLinkHandled = useRef(false);
   useEffect(() => {
     if (deepLinkHandled.current || loading) return;
     deepLinkHandled.current = true;
-    const selector = window.location.hash === '#daily-schedule' ? '.daily-schedule-section' : window.location.hash === '#daily-review' ? '.daily-review-section' : '';
-    const target = selector ? document.querySelector<HTMLElement>(selector) : null;
-    const first = target?.parentElement?.firstElementChild;
-    if (target && first && target.getBoundingClientRect().top > first.getBoundingClientRect().top + 1) target.scrollIntoView();
+    const target = window.location.hash === '#daily-schedule' ? document.querySelector<HTMLElement>('.daily-schedule-section') : null;
+    if (target && target.getBoundingClientRect().top > window.innerHeight * 0.6) target.scrollIntoView();
   }, [loading]);
 
   useLayoutEffect(() => {
@@ -592,6 +591,19 @@ export function PlansPage(): ReactElement {
     <div className="plans-error-actions"><button className="btn btn-ghost btn-sm" type="button" onClick={restoreConflictDraft}>恢复本地冲突草稿</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => { if (window.confirm('丢弃本地冲突草稿？')) setConflictDraft(null); }}>丢弃本地草稿</button></div>
   </div>;
 
+  const openCount = selectedItems.length - completedCount;
+  const urgentOpen = selectedItems.filter(item => item.quadrant === 'important_urgent' && item.status !== 'done').length;
+  const nextTask = selectedItems.filter(item => item.status !== 'done' && item.start_time).sort((a, b) => a.start_time!.localeCompare(b.start_time!))[0];
+  const taskSummary = <article className="schedule-card day-task-summary">
+    <p className="schedule-card-label">今日任务</p>
+    {selectedItems.length ? <>
+      <h3>{completedCount} <small>/ {selectedItems.length}</small></h3>
+      <span className="schedule-meter" aria-hidden="true"><span style={{ width: `${Math.round(completedCount / selectedItems.length * 100)}%` }} /></span>
+      <p className="plans-progress">已完成 {completedCount} / {selectedItems.length}{openCount ? ` · 还有 ${openCount} 项${urgentOpen ? `，重要且紧急 ${urgentOpen} 项` : ''}` : ' · 全部完成'}</p>
+      {nextTask ? <p className="schedule-next">下一项 <strong>{nextTask.start_time!.slice(0, 5)} {nextTask.title}</strong></p> : null}
+    </> : <><h3>还没有任务</h3><p>在“今日计划”里写下今天要做的事。</p></>}
+  </article>;
+
   return <CodexShell active="plans" pageTitle="今日计划">
     <section className="plans-page" aria-label="今日计划">
       <header className="plans-header">
@@ -600,7 +612,6 @@ export function PlansPage(): ReactElement {
           <div className="plans-date-meta">
             <input className="plans-date-input" aria-label="计划日期" type="date" value={selectedDate} onChange={event => changeSelectedDate(() => event.target.value)} />
             {dayFromToday !== 0 ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => changeSelectedDate(() => today)}>回到今天</button> : null}
-            {selectedItems.length && !journalView ? <span className="plans-progress">已完成 {completedCount} / {selectedItems.length}<span className="plans-progress-bar" aria-hidden="true"><span style={{ width: `${Math.round(completedCount / selectedItems.length * 100)}%` }} /></span></span> : null}
           </div>
         </div>
         <div className="plans-header-side">
@@ -608,14 +619,16 @@ export function PlansPage(): ReactElement {
             <a href="#daily-plans" aria-current={journalView ? undefined : 'page'}>计划与行程</a>
             <a href="#daily-timeline" aria-current={journalView ? 'page' : undefined}>时间线与回顾</a>
           </nav>
-          <div className="plans-header-actions" hidden={journalView}><button className="btn btn-secondary plans-ai-trigger" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}><PlansGlyph name="spark" />AI 建议</button><button className="btn btn-ghost plans-refresh" type="button" aria-label="刷新" title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : '重新读取计划'} onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft}><PlansGlyph name="refresh" /></button></div>
         </div>
       </header>
 
       <div className="daily-views">
-      <div className="daily-split daily-split-plans" hidden={journalView}>
+      <SchedulePanel visible={!journalView} ready={!loading} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange}>{schedule => <div className="day-board" hidden={journalView}>
+      {/* Today at a glance, then the plan, the day board and the side cards. */}
+      <div className="day-summary">{schedule.now}{taskSummary}{schedule.progress}{schedule.allocation}</div>
+      <div className="day-left">
       <section className="daily-plans-section" id="plans-workspace" aria-labelledby="daily-plans-title" tabIndex={-1}>
-      <header className="daily-column-head"><h3 id="daily-plans-title">今日计划</h3><small>按重要与紧急分组；添加后立即保存</small></header>
+      <header className="daily-column-head plans-pane-head"><h3 id="daily-plans-title">今日计划</h3><small>按重要与紧急分组</small><div className="plans-header-actions"><button className="btn btn-secondary plans-ai-trigger" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}><PlansGlyph name="spark" />AI 建议</button><button className="btn btn-ghost plans-refresh" type="button" aria-label="刷新" title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : '重新读取计划'} onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft}><PlansGlyph name="refresh" /></button></div></header>
       <div className={`plans-composer${dirty || saveState === 'failure' || conflictDraft ? ' is-dirty' : ''}`}>
       <form className="plans-create" onSubmit={addTask}>
         <label className="sr-only" htmlFor="plan-title">计划标题</label><input id="plan-title" value={title} onChange={event => { formDraftVersion.current += 1; setTitle(event.target.value); setFeedback(''); }} maxLength={160} placeholder="添加今天要做的事…" required disabled={editingBlocked} />
@@ -648,12 +661,11 @@ export function PlansPage(): ReactElement {
       })}</div>}
       <footer className="plans-footer"><span>AI 只生成建议草稿；任务仅在你确认后保存。</span><a href="/admin/services#ai-services">服务中心</a></footer>
       </section>
-      <section className="daily-schedule-section" aria-labelledby="daily-schedule-title">
-        <header className="daily-column-head"><h3 id="daily-schedule-title">行程</h3><small>作息、三餐、工作与学习的时间安排</small></header>
-        <SchedulePanel visible={!journalView} ready={!loading} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange} />
-      </section>
+      <aside className="day-side" aria-label="安排与复盘">{schedule.editor}{schedule.note}{schedule.targets}{schedule.routine}</aside>
       </div>
-      <JournalPage visible={journalView} selectedDate={selectedDate} timezone={timezone} onDraftProtectionChange={onJournalProtectionChange} />
+      <div className="daily-schedule-section">{schedule.board}</div>
+      </div>}</SchedulePanel>
+      <JournalPage visible={journalView} selectedDate={selectedDate} today={today} timezone={timezone} onSelectDate={day => changeSelectedDate(() => day)} onDraftProtectionChange={onJournalProtectionChange} />
       </div>
 
         {assistantOpen ? <><button className="plans-assistant-backdrop" type="button" tabIndex={-1} aria-label="关闭 AI 建议" onClick={closeAssistant} /><section className="plans-assistant" role="dialog" aria-modal="true" aria-labelledby="plans-assistant-title" tabIndex={-1}>

@@ -8,19 +8,48 @@ body.has-shell:has(.plans-page) .topbar-inner { max-width: 2200px; }
 .daily-section-nav a:hover, .daily-section-nav a[aria-current="page"] { background: #e7ece2; color: var(--text-primary); }
 .daily-section-nav a:focus-visible, .plans-page :is(button, input, select, textarea, summary):focus-visible { outline: 2px solid #59745c; outline-offset: 2px; }
 
-/* Two views, each in two columns side by side when the page is wide enough: 今日计划 beside
-   行程, and 时间线 beside 回顾. The columns stack on narrower pages. A container query, so the
-   split follows the sidebar state too. */
+/* Two views of the day. 计划与行程 is a day board: today at a glance on top, then the plan, the
+   day's time axis and the side cards (three panes when wide, two when medium, one when narrow).
+   时间线与回顾 has a week bar over the day's records and the weekly review. Container queries, so
+   the layout follows the sidebar state too. */
 .daily-views { container: daily-views / inline-size; }
-.daily-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px 24px; align-items: start; }
-.daily-split-wide { grid-column: 1 / -1; }
-@container daily-views (min-width: 1080px) {
-  .daily-split-plans { grid-template-columns: minmax(400px, 2fr) minmax(0, 3fr); }
-  .daily-split-journal { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); }
-  /* The usually shorter column stays in view while the page scrolls the other; it scrolls itself if taller than the window. */
-  .daily-split-plans > .daily-plans-section, .daily-split-journal > .daily-review-section { position: sticky; top: 84px; max-height: calc(100dvh - 100px); overflow-y: auto; }
+.day-board { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "summary" "tasks" "board" "side"; gap: 20px; align-items: start; }
+.day-summary { display: grid; grid-area: summary; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.day-summary > .schedule-now, .day-summary > .schedule-allocation { grid-column: 1 / -1; }
+.day-left { display: contents; }
+.daily-plans-section { grid-area: tasks; }
+.daily-schedule-section { grid-area: board; min-width: 0; }
+.day-side { display: grid; grid-area: side; gap: 12px; align-content: start; min-width: 0; }
+@container daily-views (min-width: 940px) {
+  .day-board { grid-template-columns: minmax(330px, 1fr) minmax(0, 1.45fr); grid-template-areas: "summary summary" "left board"; }
+  .day-summary { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .day-summary > .schedule-now { grid-column: auto; }
+  .day-left { display: flex; flex-direction: column; gap: 20px; grid-area: left; min-width: 0; }
+  /* The day's board stays in view and fills the window while the page scrolls the other panes. */
+  .daily-schedule-section { position: sticky; top: 84px; height: calc(100dvh - 100px); min-height: 560px; }
 }
-.daily-plans-section, .daily-schedule-section, .daily-timeline-section, .daily-review-section { min-width: 0; scroll-margin-top: 82px; }
+@container daily-views (min-width: 1360px) {
+  .day-board { grid-template-columns: minmax(340px, .95fr) minmax(0, 1.55fr) minmax(340px, 1fr); grid-template-areas: "summary summary summary" "tasks board side"; }
+  .day-summary { grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr) minmax(0, .85fr) minmax(0, 1.65fr); }
+  .day-summary > .schedule-allocation { grid-column: auto; }
+  .day-left { display: contents; }
+}
+.day-task-summary h3 { font-size: 20px; line-height: 1.3; }
+.day-task-summary h3 small { color: var(--text-tertiary); font-size: 14px; font-weight: 500; }
+.day-task-summary > p:not(.schedule-card-label) { margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.day-task-summary .schedule-next { padding-top: 8px; border-top: 1px dashed var(--hairline); }
+.plans-pane-head { align-items: center; }
+.plans-pane-head .plans-header-actions { margin-left: auto; }
+
+.journal-board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px 24px; align-items: start; }
+.journal-board > .journal-week-nav, .journal-board > .journal-board-wide { grid-column: 1 / -1; }
+@container daily-views (min-width: 940px) {
+  .journal-board { grid-template-columns: minmax(0, 1.35fr) minmax(360px, 1fr); }
+  /* The weekly review stays in view beside a long day; it scrolls itself if taller than the window. */
+  .journal-board > .daily-review-section { position: sticky; top: 84px; max-height: calc(100dvh - 100px); overflow-y: auto; }
+}
+.daily-plans-section, .daily-timeline-section, .daily-review-section { min-width: 0; scroll-margin-top: 82px; }
+.daily-schedule-section { scroll-margin-top: 82px; }
 .daily-plans-section:focus { outline: none; }
 .daily-column-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; margin: 0 0 12px; }
 .daily-column-head h3 { margin: 0; color: #14202b; font-size: 16px; font-weight: 700; }
@@ -46,9 +75,26 @@ body.has-shell:has(.plans-page) .topbar-inner { max-width: 2200px; }
 .journal-review { min-width: 0; padding: 18px 20px 20px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
 .journal-review > h4 { margin: 0 0 6px; font-size: 14px; }
 .journal-review > p { margin: 0 0 10px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
-.journal-week-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 6px; margin: 0 0 14px; padding: 6px; border-radius: 10px; background: var(--bg-subtle); font-size: 13px; }
-.journal-week-nav strong { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: center; overflow-wrap: anywhere; }
-body.has-shell .journal-week-nav .btn { padding-inline: 10px; }
+.journal-week-nav { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px 18px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
+.journal-week-title { display: grid; gap: 2px; min-width: 0; }
+.journal-week-title span { color: var(--text-tertiary); font-size: 11px; font-weight: 650; letter-spacing: .08em; }
+.journal-week-title strong { font-family: var(--font-num); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.journal-week-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+.journal-day { display: grid; justify-items: center; gap: 1px; min-width: 0; padding: 7px 4px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-page); color: var(--text-secondary); cursor: pointer; font: inherit; }
+.journal-day:hover { border-color: var(--border); background: white; }
+.journal-day span { font-size: 11px; }
+.journal-day b { color: var(--text-primary); font-family: var(--font-num); font-size: 17px; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.journal-day small { min-height: 15px; color: var(--text-tertiary); font-size: 11px; }
+.journal-day.is-today b { color: #2f6148; }
+.journal-day.is-today span::after { color: #2f6148; content: ' · 今天'; }
+.journal-day[aria-pressed="true"] { border-color: #59745c; background: #e7ece2; color: var(--text-primary); box-shadow: inset 0 0 0 1px #59745c; }
+.journal-day:focus-visible { outline: 2px solid #59745c; outline-offset: 2px; }
+.journal-week-step { display: flex; gap: 4px; }
+@container daily-views (max-width: 760px) {
+  .journal-week-nav { grid-template-columns: minmax(0, 1fr) auto; }
+  .journal-week-days { grid-column: 1 / -1; grid-row: 2; gap: 4px; }
+  .journal-day.is-today span::after { content: ''; }
+}
 .journal-filters { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 12px; margin: 0 0 16px; }
 .journal-filters label { display: grid; gap: 6px; color: var(--text-secondary); font-size: 12px; }
 .journal-filters input, .journal-filters select { width: 100%; min-width: 0; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; }
@@ -71,7 +117,9 @@ body.has-shell .journal-week-nav .btn { padding-inline: 10px; }
 .journal-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 10px; padding: 0; list-style: none; }
 .journal-counts li { padding: 7px 10px; border-radius: 7px; background: #e9eee5; font-size: 12px; }
 .journal-review-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.journal-review-list li { display: flex; flex-wrap: wrap; overflow-wrap: anywhere; gap: 4px 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 12px; }
+.journal-review-list li { border-top: 1px solid var(--border); }
+.journal-review-list button { display: flex; flex-wrap: wrap; gap: 2px 12px; width: 100%; padding: 8px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; font-size: 12px; text-align: left; overflow-wrap: anywhere; }
+.journal-review-list button:hover, .journal-review-list button[aria-current="date"] { background: var(--bg-subtle); }
 .journal-review-list span { color: var(--text-tertiary); }
 @media (max-width: 680px) {
   .journal-timeline header { flex-wrap: wrap; }
@@ -92,9 +140,6 @@ body.has-shell .journal-week-nav .btn { padding-inline: 10px; }
 .plans-date-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 8px 0 0 36px; color: var(--text-secondary); font-size: 13px; }
 .plans-date-input { min-height: 32px; padding: 3px 8px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: 13px; }
 .plans-date-input:hover { border-color: var(--border); }
-.plans-progress { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-.plans-progress-bar { position: relative; width: 84px; height: 6px; overflow: hidden; border-radius: 999px; background: #e7ebe4; }
-.plans-progress-bar > span { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: #4f8a68; transition: width var(--transition-md); }
 .plans-header-side { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; }
 .plans-header-actions { display: flex; align-items: center; gap: 6px; }
 .plans-header-actions .btn { gap: 6px; }
@@ -129,7 +174,9 @@ body.has-shell .plans-header-actions .plans-refresh { width: 36px; padding: 0; }
 .daily-plans-section { container: plan-column / inline-size; }
 .plans-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
 @container plan-column (max-width: 600px) {
-  .plans-grid { grid-template-columns: minmax(0, 1fr); }
+  .plans-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .plans-quadrant { min-height: 0; }
+  .plans-quadrant-empty .plans-empty { margin: 6px 0 0; text-align: left; }
 }
 @container plan-column (max-width: 520px) {
   .plans-create { grid-template-columns: minmax(0, 1fr) auto; }

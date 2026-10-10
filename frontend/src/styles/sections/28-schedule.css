@@ -10,15 +10,12 @@
 .schedule-dot { display: inline-block; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--cat, var(--text-tertiary)); }
 .schedule-muted { margin: 8px 0 0; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; }
 
-/* The panel reflows by its own width: it is the right column beside 今日计划 on wide pages. */
-.schedule { container: schedule / inline-size; }
 .schedule-card { min-width: 0; box-sizing: border-box; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
 .schedule-card > header, .schedule-card > summary { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .schedule-card h3 { margin: 0; font-size: 15px; }
 .schedule-card > header small, .schedule-card > summary small { color: var(--text-tertiary); font-size: 12px; }
 .schedule-card-label { margin: 0 0 8px; color: var(--text-tertiary); font-size: 11px; font-weight: 650; letter-spacing: .08em; }
 
-.schedule-overview { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.5fr) minmax(0, .8fr); gap: 12px; }
 .schedule-now { border-left: 4px solid var(--cat, var(--border)); }
 .schedule-now h3, .schedule-progress h3 { overflow-wrap: anywhere; font-size: 20px; line-height: 1.3; }
 .schedule-progress h3 small { color: var(--text-tertiary); font-size: 14px; font-weight: 500; }
@@ -42,14 +39,21 @@
 .schedule-message { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid #c6d8c0; border-radius: 10px; background: #f1f8ef; color: var(--text-secondary); font-size: 13px; }
 .schedule-message.is-error { border-color: #e9c4bd; background: #fff3f0; color: #84392b; }
 
-/* The time axis grows to the height of the cards beside it, so a tall form shows more of the day. */
-.schedule-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 12px; margin-top: 12px; }
-.schedule-timeline-card { display: flex; flex-direction: column; min-width: 0; padding: 16px 12px 12px 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); }
-.schedule-timeline-card > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding-right: 4px; }
-.schedule-timeline-card h3 { margin: 0; font-size: 15px; }
-.schedule-timeline-card > header small { color: var(--text-tertiary); font-size: 12px; }
+/* The day board: the time axis or the same day as a checklist. It is as tall as the window on wide
+   pages and has a fixed height when the panes stack. */
+.schedule-board { display: flex; flex-direction: column; height: max(440px, min(720px, calc(100dvh - 160px))); padding: 12px 10px 10px 14px; }
+@container daily-views (min-width: 940px) {
+  .daily-schedule-section .schedule-board { height: 100%; }
+}
+.schedule-board-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding-right: 4px; }
+.schedule-board-head small { color: var(--text-tertiary); font-size: 12px; }
+.schedule-board-switch { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--hairline); border-radius: 9px; background: var(--bg-page); }
+.schedule-board-switch button { min-height: 28px; padding: 3px 14px; border: 0; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.schedule-board-switch button[aria-pressed="true"] { background: #e7ece2; color: var(--text-primary); }
+.schedule-board-switch button:focus-visible { outline: 2px solid #59745c; outline-offset: 1px; }
+.schedule-board > .schedule-message { margin-top: 10px; }
 .schedule-timeline-state { min-height: 200px; }
-.schedule-timeline { position: relative; flex: 1 1 0; min-height: max(420px, min(720px, calc(100dvh - 240px))); max-height: 1460px; margin-top: 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.schedule-timeline { position: relative; flex: 1 1 0; min-height: 0; margin-top: 10px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .schedule-timeline-canvas { position: relative; cursor: copy; }
 .schedule-hour { position: absolute; right: 0; left: 0; height: 0; border-top: 1px solid var(--hairline); pointer-events: none; }
 .schedule-hour > span { position: absolute; top: -8px; left: 0; padding-right: 6px; background: var(--bg-surface); color: var(--text-tertiary); font-family: var(--font-num); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -70,7 +74,6 @@
 .schedule-empty p { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .schedule-empty .btn + .btn { margin-top: -4px; }
 
-.schedule-side { display: grid; gap: 12px; align-content: start; align-items: start; min-width: 0; }
 .schedule-form { display: grid; gap: 12px; container: schedule-form / inline-size; }
 .schedule-form-fields { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
 .schedule-presets, .schedule-categories { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -96,7 +99,8 @@
 .schedule-form-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .schedule-danger { margin-right: auto; color: var(--danger); }
 
-.schedule-agenda ol { display: grid; gap: 2px; max-height: 520px; margin: 10px 0 0; padding: 0; overflow-y: auto; list-style: none; }
+.schedule-agenda { flex: 1 1 0; min-height: 0; margin-top: 10px; overflow-y: auto; overscroll-behavior: contain; }
+.schedule-agenda ol { display: grid; gap: 2px; margin: 0; padding: 0 4px 0 0; list-style: none; }
 .schedule-agenda li { display: grid; grid-template-columns: 18px 44px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 6px 8px 8px; border-left: 3px solid var(--cat, #aab1ab); border-radius: 6px; }
 .schedule-agenda li:hover { background: var(--bg-overlay); }
 .schedule-agenda li.is-now { background: var(--cat-soft); }
@@ -114,7 +118,6 @@
 .schedule-agenda li:hover .schedule-agenda-actions, .schedule-agenda-actions:focus-within { opacity: 1; }
 body.has-shell .schedule-agenda-actions .btn { min-height: 26px; padding: 2px 6px; font-size: 11px; }
 
-.schedule-bottom { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; margin-top: 12px; }
 .schedule-note textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 10px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 10px; background: white; color: var(--text-primary); font: inherit; font-size: 13px; line-height: 1.7; resize: vertical; }
 .schedule-note-actions, .schedule-targets-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; color: var(--text-tertiary); font-size: 11px; }
 .schedule-note-actions small { margin-right: auto; color: var(--warn); }
@@ -136,31 +139,26 @@ body.has-shell .schedule-agenda-actions .btn { min-height: 26px; padding: 2px 6p
 .schedule-routine small { color: var(--text-tertiary); font-size: 11px; white-space: nowrap; }
 body.has-shell .schedule-routine li .btn { min-height: 26px; padding: 2px 6px; font-size: 11px; }
 
-/* Very wide: the form and the day's list sit side by side next to the time axis. */
-@container schedule (min-width: 1150px) {
-  .schedule-main { grid-template-columns: minmax(0, 1fr) minmax(620px, 780px); }
-  .schedule-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@container schedule (max-width: 900px) {
-  .schedule-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .schedule-allocation { grid-column: 1 / -1; grid-row: 2; }
-  .schedule-main { grid-template-columns: minmax(0, 1fr); }
-  .schedule-side { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .schedule-bottom { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .schedule-note { grid-column: 1 / -1; }
-}
-@container schedule (max-width: 640px) {
-  .schedule-overview, .schedule-side, .schedule-bottom { grid-template-columns: minmax(0, 1fr); }
-  .schedule-allocation { grid-row: auto; }
-  .schedule-empty { margin-left: 52px; }
-  .schedule-routine li { grid-template-columns: 8px 76px minmax(0, 1fr) auto; }
-  .schedule-routine li small { display: none; }
-}
 @container schedule-form (max-width: 380px) {
   .schedule-time-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .schedule-time-row .schedule-field:last-child { grid-column: 1 / -1; }
 }
 @media (max-width: 760px) {
-  .schedule-timeline { min-height: max(360px, min(560px, calc(100dvh - 180px))); }
+  .schedule-board { height: max(400px, min(600px, calc(100dvh - 140px))); }
   .schedule-agenda-actions { opacity: 1; }
+  .schedule-empty { margin-left: 52px; }
+  .schedule-routine li { grid-template-columns: 8px 76px minmax(0, 1fr) auto; }
+  .schedule-routine li small { display: none; }
 }
+
+/* The editor folds to a new-block button and quick picks until a block is added or edited. */
+.schedule-composer { display: grid; gap: 10px; }
+.schedule-composer > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.schedule-composer .schedule-muted { margin: 0; }
+.schedule-form > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.schedule-form-status { display: flex; gap: 6px; }
+.schedule-status-button { flex: 1; min-height: 34px; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--text-secondary); cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; }
+.schedule-status-button:hover:not(:disabled) { border-color: #59745c; color: var(--text-primary); }
+.schedule-status-button[aria-pressed="true"] { border-color: #59745c; background: #e7ece2; color: var(--text-primary); }
+.schedule-status-button:disabled { opacity: .55; cursor: default; }
+.schedule-status-button:focus-visible { outline: 2px solid #59745c; outline-offset: 2px; }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react';
 import { loadSchedule, saveScheduleDay, saveScheduleRoutine, type ScheduleCategory, type ScheduleDay, type ScheduleRoutine, type ScheduleView } from './scheduleApi';
 import {
   allocation, categories, categoryLabel, containsMinute, dayEntries, formatDuration, formatHours, newBlockId, overlapsWith, placeSegments,
@@ -40,7 +40,19 @@ function hoursInput(minutes: number | undefined): string {
   return minutes ? String(Math.round(minutes / 15) / 4) : '';
 }
 
-export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onProtectionChange }: {
+/** The schedule's pieces, placed by the page: the summary cards, the day board and the side cards. */
+export type ScheduleParts = {
+  now: ReactNode;
+  progress: ReactNode;
+  allocation: ReactNode;
+  board: ReactNode;
+  editor: ReactNode;
+  note: ReactNode;
+  targets: ReactNode;
+  routine: ReactNode;
+};
+
+export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onProtectionChange, children }: {
   /** False while another view of the page is shown; the panel stays mounted so drafts survive switching. */
   visible: boolean;
   /** False while the page's own plan snapshot is loading; the schedule waits so page load needs no extra concurrent request. */
@@ -50,6 +62,7 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
   tasks: TaskMarker[];
   /** `protectedDraft`: unsaved work anywhere in the panel; `dayDraft`: work that changing the date would discard. */
   onProtectionChange: (protectedDraft: boolean, dayDraft: boolean) => void;
+  children: (parts: ScheduleParts) => ReactNode;
 }): ReactElement {
   const [view, setView] = useState<ScheduleView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,6 +75,10 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
   const [formBaseline, setFormBaseline] = useState<BlockForm>(() => blankForm());
   // The block form is locked while its own save runs, so the saved values are the ones on screen.
   const [formSaving, setFormSaving] = useState(false);
+  // The editor stays folded to a new-block button and quick picks until a block is added or edited.
+  const [editorOpen, setEditorOpen] = useState(false);
+  // The day board shows the time axis or the same day as a checklist.
+  const [boardView, setBoardView] = useState<'timeline' | 'list'>('timeline');
   // 今日复盘 drafts are kept per date: switching days, or a save still in flight, never loses one.
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
   const [targetDraft, setTargetDraft] = useState<Partial<Record<ScheduleCategory, string>> | null>(null);
@@ -71,6 +88,8 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
   const busyRef = useRef(false);
   const timelineRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
+  const newBlockRef = useRef<HTMLButtonElement>(null);
+  const refocusNewBlock = useRef(false);
   const loadGeneration = useRef(0);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
@@ -90,10 +109,10 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     }
   }, []);
 
+  // A block being edited belongs to the previous date; a new block's draft carries over.
   useEffect(() => {
     setFeedback(''); queuedNoteSave.current = null;
-    setForm(current => current.editingKey ? blankForm() : current);
-    setFormBaseline(current => current.editingKey ? blankForm() : current);
+    if (form.editingKey) { setForm(blankForm()); setFormBaseline(blankForm()); setEditorOpen(false); }
   }, [selectedDate]);
   useEffect(() => {
     if (!ready) return;
@@ -140,8 +159,8 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     if (!visible || !current || !timelineRef.current) return;
     const anchor = isToday ? nowMinute - 90 : firstStart - 30;
     timelineRef.current.scrollTop = Math.max(0, anchor) * PX_PER_MINUTE;
-    // Only on a new day or when the view opens, not on every tick or edit.
-  }, [visible, current?.date]);
+    // Only on a new day or when the time axis opens, not on every tick or edit.
+  }, [visible, current?.date, boardView]);
 
   // The change shows at once and is rolled back if the server refuses it.
   const commit = async (optimistic: (base: ScheduleView) => ScheduleView, work: (base: ScheduleView) => Promise<ScheduleView>, success: string) => {
@@ -174,22 +193,27 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
   );
 
   const resetForm = (next = blankForm()) => { setForm(next); setFormBaseline(next); };
+  // The form renders once the editor opens, so focus waits a frame.
+  const focusTitle = (preventScroll = false) => requestAnimationFrame(() => titleRef.current?.focus({ preventScroll }));
+  const openEditor = () => { setEditorOpen(true); focusTitle(); };
+  const closeEditor = () => { resetForm(); setEditorOpen(false); refocusNewBlock.current = true; };
   const editEntry = (entry: ScheduleEntry) => {
     if (entry.kind === 'task' || entry.carried && entry.kind === 'day') return;
     if (formDirty && form.editingKey !== entry.key && !window.confirm('当前表单尚未保存，放弃并编辑这一项？')) return;
     resetForm(formFromEntry(entry));
-    requestAnimationFrame(() => titleRef.current?.focus({ preventScroll: false }));
+    setEditorOpen(true);
+    focusTitle();
   };
   const applyPreset = (preset: BlockPreset) => {
     setForm(currentForm => ({ ...currentForm, title: preset.title, category: preset.category, start: preset.start, end: preset.end }));
-    titleRef.current?.focus();
+    openEditor();
   };
   const startAt = (minute: number) => {
     if (formDirty && !window.confirm('当前表单尚未保存，放弃并从这个时间新建？')) return;
     const start = Math.floor(minute / 15) * 15;
     const next = { ...blankForm(toClock(start), toClock(Math.min(start + 60, 1439))), category: form.category };
     resetForm(next);
-    titleRef.current?.focus();
+    openEditor();
   };
 
   // A routine block edited from the template list may not occur on the selected weekday.
@@ -225,7 +249,10 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     setFormSaving(true);
     let saved = false;
     try { saved = await save(); } finally { setFormSaving(false); }
-    if (saved) resetForm();
+    if (saved) {
+      closeEditor();
+      return;
+    }
     // Locking the form dropped focus from its field or button; return it unless the user moved on.
     requestAnimationFrame(() => { if (document.activeElement === document.body) titleRef.current?.focus({ preventScroll: true }); });
   };
@@ -241,7 +268,7 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     setFormSaving(true);
     let removed = false;
     try { removed = await removal(); } finally { setFormSaving(false); }
-    if (removed && form.editingKey === entry.key) resetForm();
+    if (removed && form.editingKey === entry.key) closeEditor();
   };
 
   const setStatus = (entry: ScheduleEntry, status: 'planned' | 'done' | 'skipped') => {
@@ -304,154 +331,173 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
   const visibleCategories = categories.filter(item => totals[item.id] || routine.targets[item.id]);
   const routineByStart = [...routine.blocks].sort((a, b) => toMinutes(a.start) - toMinutes(b.start));
   const formDuration = form.start && form.end && form.start !== form.end ? formatDuration(spanMinutes(form.start, form.end)) : '';
+  const formOpen = editorOpen || Boolean(form.editingKey) || formDirty || formSaving;
+  // Folding removes the focused field or button; hand focus to the new-block button instead of <body>.
+  useLayoutEffect(() => {
+    if (formOpen || !refocusNewBlock.current) return;
+    refocusNewBlock.current = false;
+    if (!document.activeElement || document.activeElement === document.body) newBlockRef.current?.focus({ preventScroll: true });
+  }, [formOpen]);
+  // Editing one of this day's own blocks also offers its done/skipped state for the day.
+  const statusEntry = form.editingKey ? dayList.find(entry => entry.key === form.editingKey && entry.kind !== 'task') : undefined;
 
-  return <section className="schedule" id="daily-schedule-panel" aria-label="这一天的行程">
-    <div className="schedule-overview">
-      <article className={`schedule-card schedule-now${nowEntry?.category ? ` schedule-cat-${nowEntry.category}` : ''}`}>
-        <p className="schedule-card-label">{isToday ? `现在 · ${toClock(nowMinute)}` : `星期${weekdayLabels[weekdayOf(selectedDate)]} · 这一天`}</p>
-        {isToday && nowEntry ? <>
-          <h3>{nowEntry.title}</h3>
-          <p>{entryTime(nowEntry)} · {nowEntry.category ? categoryLabel[nowEntry.category] : '计划任务'}</p>
-          {(() => {
-            const total = spanMinutes(nowEntry.start, nowEntry.end);
-            const elapsed = (nowMinute - toMinutes(nowEntry.start) + 1440) % 1440;
-            return <><span className="schedule-meter" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.round(elapsed / total * 100))}%` }} /></span><small>还剩 {formatDuration(Math.max(0, total - elapsed))}</small></>;
-          })()}
-        </> : isToday ? <><h3>{ownEntries.length ? '空白时段' : '还没有安排'}</h3><p>{ownEntries.length ? '留白也是安排：休息、散步，或处理一件小事。' : '先放进作息和三餐，再安排工作与学习。'}</p></>
-          : <><h3>已安排 {activeEntries.length} 项</h3><p>完成 {doneCount} 项 · 专注 {formatHours(focusMinutes)}</p></>}
-        {nextEntry ? <p className="schedule-next">下一项 <strong>{nextEntry.start} {nextEntry.title}</strong></p> : null}
-      </article>
-      <article className="schedule-card schedule-allocation">
-        <p className="schedule-card-label">时间分配 · 已安排 {formatHours(plannedMinutes)} / 24h</p>
-        <div className="schedule-allocation-bar" role="img" aria-label={visibleCategories.map(item => `${item.label} ${formatHours(totals[item.id])}`).join('，') || '尚未安排'}>
-          {categories.map(item => totals[item.id] ? <span key={item.id} className={`schedule-cat-${item.id}`} style={{ flexGrow: totals[item.id] }} /> : null)}
-          <span className="schedule-allocation-free" style={{ flexGrow: Math.max(0, 1440 - plannedMinutes) }} />
-        </div>
-        {visibleCategories.length ? <ul className="schedule-legend">{visibleCategories.map(item => {
-          const target = routine.targets[item.id] || 0;
-          const state = target ? (totals[item.id] >= target ? ' is-met' : ' is-short') : '';
-          return <li key={item.id} className={`schedule-cat-${item.id}${state}`}><span className="schedule-dot" aria-hidden="true" />{item.label}<strong>{formatHours(totals[item.id])}</strong>{target ? <small>/ 目标 {formatHours(target)}</small> : null}</li>;
-        })}</ul> : <p className="schedule-muted">安排之后，这里会显示每类时间的占比，并与理想的一天对比。</p>}
-      </article>
-      <article className="schedule-card schedule-progress">
-        <p className="schedule-card-label">完成度</p>
-        <h3>{doneCount} <small>/ {activeEntries.length}</small></h3>
-        <span className="schedule-meter" aria-hidden="true"><span style={{ width: `${activeEntries.length ? Math.round(doneCount / activeEntries.length * 100) : 0}%` }} /></span>
-        <p>专注 {formatHours(focusMinutes)} · 运动 {formatHours(totals.exercise)} · 联系 {formatHours(totals.connect)}</p>
-      </article>
+  const now = <article className={`schedule-card schedule-now${nowEntry?.category ? ` schedule-cat-${nowEntry.category}` : ''}`}>
+    <p className="schedule-card-label">{isToday ? `现在 · ${toClock(nowMinute)}` : `星期${weekdayLabels[weekdayOf(selectedDate)]} · 这一天`}</p>
+    {isToday && nowEntry ? <>
+      <h3>{nowEntry.title}</h3>
+      <p>{entryTime(nowEntry)} · {nowEntry.category ? categoryLabel[nowEntry.category] : '计划任务'}</p>
+      {(() => {
+        const total = spanMinutes(nowEntry.start, nowEntry.end);
+        const elapsed = (nowMinute - toMinutes(nowEntry.start) + 1440) % 1440;
+        return <><span className="schedule-meter" aria-hidden="true"><span style={{ width: `${Math.min(100, Math.round(elapsed / total * 100))}%` }} /></span><small>还剩 {formatDuration(Math.max(0, total - elapsed))}</small></>;
+      })()}
+    </> : isToday ? <><h3>{ownEntries.length ? '空白时段' : '还没有安排'}</h3><p>{ownEntries.length ? '留白也是安排：休息、散步，或处理一件小事。' : '先放进作息和三餐，再安排工作与学习。'}</p></>
+      : <><h3>已安排 {activeEntries.length} 项</h3><p>完成 {doneCount} 项 · 专注 {formatHours(focusMinutes)}</p></>}
+    {nextEntry ? <p className="schedule-next">下一项 <strong>{nextEntry.start} {nextEntry.title}</strong></p> : null}
+  </article>;
+
+  const allocationCard = <article className="schedule-card schedule-allocation">
+    <p className="schedule-card-label">时间分配 · 已安排 {formatHours(plannedMinutes)} / 24h</p>
+    <div className="schedule-allocation-bar" role="img" aria-label={visibleCategories.map(item => `${item.label} ${formatHours(totals[item.id])}`).join('，') || '尚未安排'}>
+      {categories.map(item => totals[item.id] ? <span key={item.id} className={`schedule-cat-${item.id}`} style={{ flexGrow: totals[item.id] }} /> : null)}
+      <span className="schedule-allocation-free" style={{ flexGrow: Math.max(0, 1440 - plannedMinutes) }} />
     </div>
+    {visibleCategories.length ? <ul className="schedule-legend">{visibleCategories.map(item => {
+      const target = routine.targets[item.id] || 0;
+      const state = target ? (totals[item.id] >= target ? ' is-met' : ' is-short') : '';
+      return <li key={item.id} className={`schedule-cat-${item.id}${state}`}><span className="schedule-dot" aria-hidden="true" />{item.label}<strong>{formatHours(totals[item.id])}</strong>{target ? <small>/ 目标 {formatHours(target)}</small> : null}</li>;
+    })}</ul> : <p className="schedule-muted">安排之后，这里会显示每类时间的占比，并与理想的一天对比。</p>}
+  </article>;
 
-    {statusNotice}
+  const progress = <article className="schedule-card schedule-progress">
+    <p className="schedule-card-label">行程完成度</p>
+    <h3>{doneCount} <small>/ {activeEntries.length}</small></h3>
+    <span className="schedule-meter" aria-hidden="true"><span style={{ width: `${activeEntries.length ? Math.round(doneCount / activeEntries.length * 100) : 0}%` }} /></span>
+    <p>专注 {formatHours(focusMinutes)} · 运动 {formatHours(totals.exercise)} · 联系 {formatHours(totals.connect)}</p>
+  </article>;
 
-    <div className="schedule-main">
-      <section className="schedule-timeline-card" aria-label="时间轴">
-        <header><h3>时间轴</h3><small>点击空白处从该时间新建；点击色块修改</small></header>
-        {!current ? <p className="schedule-muted schedule-timeline-state">{loadFailed ? '行程暂时无法读取。' : '正在读取行程…'}</p> : <div className="schedule-timeline" ref={timelineRef}>
-          <div className="schedule-timeline-canvas" style={{ height: 1440 * PX_PER_MINUTE }}
-            onClick={event => {
-              if (event.target !== event.currentTarget) return;
-              startAt((event.clientY - event.currentTarget.getBoundingClientRect().top) / PX_PER_MINUTE);
-            }}>
-            {hours.map(hour => <div key={hour} className="schedule-hour" style={{ top: hour * 60 * PX_PER_MINUTE }} aria-hidden="true"><span>{String(hour).padStart(2, '0')}:00</span></div>)}
-            {placed.map(piece => {
-              const { entry } = piece;
-              const style = { top: piece.from * PX_PER_MINUTE, height: Math.max(14, (piece.to - piece.from) * PX_PER_MINUTE - 2), left: `calc(52px + (100% - 58px) * ${piece.lane / piece.lanes})`, width: `calc((100% - 58px) / ${piece.lanes} - 4px)` };
-              const className = ['schedule-block', entry.category ? `schedule-cat-${entry.category}` : 'schedule-block-task', entry.status === 'done' ? 'is-done' : '', form.editingKey === entry.key ? 'is-selected' : '', piece.to - piece.from < ONE_LINE_BELOW_MINUTES ? 'is-short' : ''].filter(Boolean).join(' ');
-              const label = `${piece.continued ? '（续）' : ''}${entry.title}`;
-              const body = <><strong>{label}</strong><span>{entryTime(entry)}{entry.kind === 'routine' ? ' · 模板' : entry.kind === 'task' ? ' · 任务' : ''}</span></>;
-              const key = `${entry.key}:${entry.carried ? 'carried' : 'own'}`;
-              return entry.kind === 'task' || entry.carried && entry.kind === 'day'
-                ? <div key={key} className={className} style={style} title={entry.kind === 'task' ? `计划任务：${entry.title} ${entryTime(entry)}` : `前一天开始：${entry.title} ${entryTime(entry)}，在前一天修改`}>{body}</div>
-                : <button key={key} type="button" className={className} style={style} aria-label={`修改 ${entry.title} ${entryTime(entry)}${entry.carried ? '（前一天开始）' : ''}`} onClick={() => editEntry(entry)}>{body}</button>;
-            })}
-            {isToday ? <div className="schedule-now-line" style={{ top: nowMinute * PX_PER_MINUTE }} aria-hidden="true"><span>{toClock(nowMinute)}</span></div> : null}
-          </div>
-          {!ownEntries.length ? <div className="schedule-empty">
-            <h4>规划你的一天</h4>
-            <p>先用一份推荐作息打底：起床、三餐、工作、学习、运动、联系家人、复盘和睡觉，之后逐条改成自己的节奏。</p>
-            <button className="btn btn-primary" type="button" onClick={applySuggestedRoutine} disabled={busy}>套用推荐作息</button>
-            <button className="btn btn-ghost" type="button" onClick={() => titleRef.current?.focus()}>自己从零安排</button>
-          </div> : null}
-        </div>}
-      </section>
+  const timeline = !current ? <p className="schedule-muted schedule-timeline-state">{loadFailed ? '行程暂时无法读取。' : '正在读取行程…'}</p> : <div className="schedule-timeline" ref={timelineRef}>
+    <div className="schedule-timeline-canvas" style={{ height: 1440 * PX_PER_MINUTE }}
+      onClick={event => {
+        if (event.target !== event.currentTarget) return;
+        startAt((event.clientY - event.currentTarget.getBoundingClientRect().top) / PX_PER_MINUTE);
+      }}>
+      {hours.map(hour => <div key={hour} className="schedule-hour" style={{ top: hour * 60 * PX_PER_MINUTE }} aria-hidden="true"><span>{String(hour).padStart(2, '0')}:00</span></div>)}
+      {placed.map(piece => {
+        const { entry } = piece;
+        const style = { top: piece.from * PX_PER_MINUTE, height: Math.max(14, (piece.to - piece.from) * PX_PER_MINUTE - 2), left: `calc(52px + (100% - 58px) * ${piece.lane / piece.lanes})`, width: `calc((100% - 58px) / ${piece.lanes} - 4px)` };
+        const className = ['schedule-block', entry.category ? `schedule-cat-${entry.category}` : 'schedule-block-task', entry.status === 'done' ? 'is-done' : '', form.editingKey === entry.key ? 'is-selected' : '', piece.to - piece.from < ONE_LINE_BELOW_MINUTES ? 'is-short' : ''].filter(Boolean).join(' ');
+        const label = `${piece.continued ? '（续）' : ''}${entry.title}`;
+        const body = <><strong>{label}</strong><span>{entryTime(entry)}{entry.kind === 'routine' ? ' · 模板' : entry.kind === 'task' ? ' · 任务' : ''}</span></>;
+        const key = `${entry.key}:${entry.carried ? 'carried' : 'own'}`;
+        return entry.kind === 'task' || entry.carried && entry.kind === 'day'
+          ? <div key={key} className={className} style={style} title={entry.kind === 'task' ? `计划任务：${entry.title} ${entryTime(entry)}` : `前一天开始：${entry.title} ${entryTime(entry)}，在前一天修改`}>{body}</div>
+          : <button key={key} type="button" className={className} style={style} aria-label={`修改 ${entry.title} ${entryTime(entry)}${entry.carried ? '（前一天开始）' : ''}`} onClick={() => editEntry(entry)}>{body}</button>;
+      })}
+      {isToday ? <div className="schedule-now-line" style={{ top: nowMinute * PX_PER_MINUTE }} aria-hidden="true"><span>{toClock(nowMinute)}</span></div> : null}
+    </div>
+    {!ownEntries.length ? <div className="schedule-empty">
+      <h4>规划你的一天</h4>
+      <p>先用一份推荐作息打底：起床、三餐、工作、学习、运动、联系家人、复盘和睡觉，之后逐条改成自己的节奏。</p>
+      <button className="btn btn-primary" type="button" onClick={applySuggestedRoutine} disabled={busy}>套用推荐作息</button>
+      <button className="btn btn-ghost" type="button" onClick={openEditor}>自己从零安排</button>
+    </div> : null}
+  </div>;
 
-      <div className="schedule-side">
-        <form className="schedule-card schedule-form" onSubmit={event => void submitForm(event)}>
-          <header><h3>{form.editingKey ? (editingEntry?.kind === 'routine' ? '修改作息模板' : '修改安排') : '添加安排'}</h3>{form.editingKey ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => resetForm()} disabled={formSaving}>取消</button> : null}</header>
-          <fieldset className="schedule-form-fields" disabled={formSaving}>
-          {!form.editingKey ? <div className="schedule-presets" aria-label="常用安排">{presets.map(preset => <button key={preset.title} type="button" className={`schedule-chip schedule-cat-${preset.category}`} onClick={() => applyPreset(preset)}>{preset.title}</button>)}</div> : null}
-          <label className="schedule-field"><span>做什么</span><input ref={titleRef} value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} maxLength={80} placeholder="例如：午餐、写方案、给爸妈打电话" required /></label>
-          <fieldset className="schedule-categories"><legend>类别</legend>{categories.map(item => <label key={item.id} className={`schedule-chip schedule-cat-${item.id}${form.category === item.id ? ' is-active' : ''}`} title={item.hint}>
-            <input type="radio" name="schedule-category" value={item.id} checked={form.category === item.id} onChange={() => setForm({ ...form, category: item.id })} />{item.label}
-          </label>)}</fieldset>
-          <div className="schedule-time-row">
-            <label className="schedule-field"><span>开始</span><input type="time" aria-label="开始时间" value={form.start} step={300} onChange={event => setForm({ ...form, start: event.target.value })} required /></label>
-            <label className="schedule-field"><span>结束</span><input type="time" aria-label="结束时间" value={form.end} step={300} onChange={event => setForm({ ...form, end: event.target.value })} required /></label>
-            <label className="schedule-field"><span>重复</span><select aria-label="重复" value={form.repeat} onChange={event => setForm({ ...form, repeat: event.target.value as RepeatMode, weekdays: event.target.value === 'custom' ? (form.weekdays.length ? form.weekdays : [weekdayOf(selectedDate)]) : form.weekdays })} disabled={Boolean(editingEntry && editingEntry.kind === 'day')}>
-              {!editingEntry || editingEntry.kind === 'day' ? <option value="once">仅这一天</option> : null}
-              <option value="daily">每天（作息）</option><option value="weekdays">工作日</option><option value="weekend">周末</option><option value="custom">自定义</option>
-            </select></label>
-          </div>
-          {form.repeat === 'custom' ? <div className="schedule-weekdays" role="group" aria-label="重复的星期">{weekdayLabels.map((label, index) => <label key={label} className={form.weekdays.includes(index) ? 'is-active' : ''}>
-            <input type="checkbox" checked={form.weekdays.includes(index)} onChange={event => setForm({ ...form, weekdays: event.target.checked ? [...form.weekdays, index].sort() : form.weekdays.filter(day => day !== index) })} />{label}
-          </label>)}</div> : null}
-          {form.repeat === 'once' ? <label className="schedule-field"><span>备注</span><textarea value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} maxLength={500} rows={2} placeholder="可选：地点、要带的东西、要联系谁" /></label> : null}
-          </fieldset>
-          <p className="schedule-form-hint">
-            {formDuration ? <span>共 {formDuration}{toMinutes(form.end) <= toMinutes(form.start) ? '（跨过午夜，零点后的部分显示在第二天）' : ''}</span> : null}
-            {form.repeat !== 'once' ? <span>会出现在{repeatLabel(formWeekdays.length ? formWeekdays : [weekdayOf(selectedDate)])}的行程里。</span> : null}
-            {editingEntry?.kind === 'routine' ? <span>只想改今天？先在列表中“跳过”它，再添加一条“仅这一天”的安排。</span> : null}
-          </p>
-          {conflicts.length ? <p className="schedule-form-warning" role="status">与{conflicts.slice(0, 3).map(item => `「${item.title}」`).join('')}时间重叠，仍可保存。</p> : null}
-          <div className="schedule-form-actions">
-            {editingEntry && editingEntry.kind !== 'task' ? <button className="btn btn-ghost schedule-danger" type="button" onClick={() => void removeEntry(editingEntry)} disabled={busy}>删除</button> : null}
-            <button className="btn btn-primary" type="submit" disabled={!formValid || busy || !current}>{busy ? '保存中…' : form.editingKey ? '保存修改' : '添加'}</button>
-          </div>
-        </form>
-
-        <section className="schedule-card schedule-agenda" aria-label="这一天的安排">
-          <header><h3>这一天的安排</h3><small>{dayList.length ? `${activeEntries.length} 项 · 完成 ${doneCount}` : ''}</small></header>
-          {dayList.length ? <ol>{dayList.map(entry => <li key={entry.key} className={[entry.category ? `schedule-cat-${entry.category}` : 'schedule-agenda-task', entry.status === 'done' ? 'is-done' : '', entry.status === 'skipped' ? 'is-skipped' : '', isToday && nowEntry === entry ? 'is-now' : ''].filter(Boolean).join(' ')}>
-            <label className="schedule-agenda-check"><input type="checkbox" checked={entry.status === 'done'} disabled={entry.kind === 'task' || entry.status === 'skipped' || busy} onChange={event => setStatus(entry, event.target.checked ? 'done' : 'planned')} /><span className="sr-only">完成 {entry.title}</span></label>
-            <time>{entry.start}<small>{entry.end}</small></time>
-            <div className="schedule-agenda-body">
-              <strong>{entry.title}</strong>
-              <span>{entry.category ? categoryLabel[entry.category] : '计划任务'}{entry.kind === 'routine' ? ` · 作息模板（${repeatLabel(entry.weekdays)}）` : ''}{entry.kind === 'task' ? ' · 在“今日计划”中管理' : ''}{entry.status === 'skipped' ? ' · 已跳过' : ''}</span>
-              {entry.notes ? <p>{entry.notes}</p> : null}
-            </div>
-            {entry.kind !== 'task' ? <div className="schedule-agenda-actions">
-              {entry.status === 'skipped' ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => setStatus(entry, 'planned')} disabled={busy}>恢复</button>
-                : <button className="btn btn-ghost btn-sm" type="button" onClick={() => setStatus(entry, 'skipped')} disabled={busy} aria-label={`跳过 ${entry.title}`}>跳过</button>}
-              <button className="btn btn-ghost btn-sm" type="button" onClick={() => editEntry(entry)} aria-label={`编辑 ${entry.title}`}>编辑</button>
-            </div> : null}
-          </li>)}</ol> : <p className="schedule-muted">{current ? '还没有安排。可以从上方的常用安排开始。' : ''}</p>}
-        </section>
+  const agenda = <section className="schedule-agenda" aria-label="这一天的安排">
+    {dayList.length ? <ol>{dayList.map(entry => <li key={entry.key} className={[entry.category ? `schedule-cat-${entry.category}` : 'schedule-agenda-task', entry.status === 'done' ? 'is-done' : '', entry.status === 'skipped' ? 'is-skipped' : '', isToday && nowEntry === entry ? 'is-now' : ''].filter(Boolean).join(' ')}>
+      <label className="schedule-agenda-check"><input type="checkbox" checked={entry.status === 'done'} disabled={entry.kind === 'task' || entry.status === 'skipped' || busy} onChange={event => setStatus(entry, event.target.checked ? 'done' : 'planned')} /><span className="sr-only">完成 {entry.title}</span></label>
+      <time>{entry.start}<small>{entry.end}</small></time>
+      <div className="schedule-agenda-body">
+        <strong>{entry.title}</strong>
+        <span>{entry.category ? categoryLabel[entry.category] : '计划任务'}{entry.kind === 'routine' ? ` · 作息模板（${repeatLabel(entry.weekdays)}）` : ''}{entry.kind === 'task' ? ' · 在“今日计划”中管理' : ''}{entry.status === 'skipped' ? ' · 已跳过' : ''}</span>
+        {entry.notes ? <p>{entry.notes}</p> : null}
       </div>
-    </div>
-
-    <div className="schedule-bottom">
-      <section className="schedule-card schedule-note" aria-label="今日复盘">
-        <header><h3>今日复盘</h3><small>精力、心情、收获，或明天想改变的一件事</small></header>
-        <textarea aria-label="今日复盘" value={noteDraft ?? day.note} onChange={event => changeNote(event.target.value)} onBlur={saveNote} maxLength={2000} rows={4} placeholder="今天做成了什么？哪段时间最有精力？哪里被打断了？" disabled={!current} />
-        <div className="schedule-note-actions">{noteDirty ? <small>未保存 · 离开输入框时自动保存</small> : null}<button className="btn btn-secondary btn-sm" type="button" onClick={saveNote} disabled={!noteDirty || busy}>保存复盘</button></div>
-      </section>
-      <details className="schedule-card schedule-targets">
-        <summary><h3>理想的一天</h3><small>为每类时间设定每日目标，时间分配会与它对比</small></summary>
-        <div className="schedule-target-grid">{categories.map(item => <label key={item.id} className={`schedule-cat-${item.id}`}><span><span className="schedule-dot" aria-hidden="true" />{item.label}</span>
-          <input type="number" aria-label={`${item.label}目标小时`} min={0} max={24} step={0.25} value={targetValues[item.id] ?? ''} placeholder="0" onChange={event => setTargetDraft({ ...targetValues, [item.id]: event.target.value })} /><small>小时</small>
-        </label>)}</div>
-        <div className="schedule-targets-actions"><small className={targetTotal > 1440 ? 'is-error' : ''}>合计 {formatHours(targetTotal)}{targetTotal > 1440 ? ' · 超过 24 小时' : ''}</small>
-          {targetsDirty ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => setTargetDraft(null)}>还原</button> : null}
-          <button className="btn btn-secondary btn-sm" type="button" onClick={saveTargets} disabled={!targetsDirty || busy || targetTotal > 1440}>保存目标</button></div>
-      </details>
-      <details className="schedule-card schedule-routine">
-        <summary><h3>作息模板</h3><small>{routine.blocks.length ? `${routine.blocks.length} 条重复安排，按星期自动出现在每天` : '每天重复的作息、三餐和固定时段'}</small></summary>
-        {routineByStart.length ? <ul>{routineByStart.map(block => <li key={block.id} className={`schedule-cat-${block.category}`}>
-          <span className="schedule-dot" aria-hidden="true" /><time>{block.start}–{block.end}</time><strong>{block.title}</strong><small>{repeatLabel(block.weekdays)}</small>
-          <button className="btn btn-ghost btn-sm" type="button" aria-label={`编辑模板 ${block.title}`} onClick={() => editEntry(routineEntry(block))}>编辑</button>
-        </li>)}</ul> : <p className="schedule-muted">还没有作息模板。</p>}
-        <button className="btn btn-ghost btn-sm" type="button" onClick={applySuggestedRoutine} disabled={busy || !current}>{routine.blocks.length ? '用推荐作息替换' : '套用推荐作息'}</button>
-      </details>
-    </div>
+      {entry.kind !== 'task' ? <div className="schedule-agenda-actions">
+        {entry.status === 'skipped' ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => setStatus(entry, 'planned')} disabled={busy}>恢复</button>
+          : <button className="btn btn-ghost btn-sm" type="button" onClick={() => setStatus(entry, 'skipped')} disabled={busy} aria-label={`跳过 ${entry.title}`}>跳过</button>}
+        <button className="btn btn-ghost btn-sm" type="button" onClick={() => editEntry(entry)} aria-label={`编辑 ${entry.title}`}>编辑</button>
+      </div> : null}
+    </li>)}</ol> : <p className="schedule-muted">{current ? '还没有安排。可以从“添加安排”的常用安排开始。' : ''}</p>}
   </section>;
+
+  const board = <section className="schedule-card schedule-board" aria-label="这一天的行程">
+    <header className="schedule-board-head">
+      <div className="schedule-board-switch" role="group" aria-label="行程的显示方式">
+        <button type="button" aria-pressed={boardView === 'timeline'} onClick={() => setBoardView('timeline')}>时间轴</button>
+        <button type="button" aria-pressed={boardView === 'list'} onClick={() => setBoardView('list')}>清单</button>
+      </div>
+      <small>{boardView === 'timeline' ? '点击空白处从该时间新建；点击色块修改、完成或跳过' : dayList.length ? `${activeEntries.length} 项 · 完成 ${doneCount}` : ''}</small>
+    </header>
+    {statusNotice}
+    {boardView === 'timeline' ? timeline : agenda}
+  </section>;
+
+  const editor = !formOpen ? <section className="schedule-card schedule-composer" aria-label="添加安排">
+    <header><h3>添加安排</h3><button ref={newBlockRef} className="btn btn-secondary btn-sm" type="button" onClick={openEditor} disabled={!current}>＋ 新建安排</button></header>
+    <p className="schedule-muted">点击时间轴的空白处从那个时间开始，或选一个常用安排：</p>
+    <div className="schedule-presets" aria-label="常用安排">{presets.map(preset => <button key={preset.title} type="button" className={`schedule-chip schedule-cat-${preset.category}`} onClick={() => applyPreset(preset)} disabled={!current}>{preset.title}</button>)}</div>
+  </section> : <form className="schedule-card schedule-form" aria-label={form.editingKey ? '修改安排' : '添加安排'} onSubmit={event => void submitForm(event)}>
+    <header><h3>{form.editingKey ? (editingEntry?.kind === 'routine' ? '修改作息模板' : '修改安排') : '添加安排'}</h3><button className="btn btn-ghost btn-sm" type="button" onClick={closeEditor} disabled={formSaving}>取消</button></header>
+    {statusEntry ? <div className="schedule-form-status" role="group" aria-label={`${statusEntry.title}这一天的状态`}>
+      <button type="button" className="schedule-status-button" aria-pressed={statusEntry.status === 'done'} onClick={() => setStatus(statusEntry, statusEntry.status === 'done' ? 'planned' : 'done')} disabled={busy}>已完成</button>
+      <button type="button" className="schedule-status-button" aria-pressed={statusEntry.status === 'skipped'} onClick={() => setStatus(statusEntry, statusEntry.status === 'skipped' ? 'planned' : 'skipped')} disabled={busy}>{statusEntry.kind === 'routine' ? '今天跳过' : '跳过'}</button>
+    </div> : null}
+    <fieldset className="schedule-form-fields" disabled={formSaving}>
+    {!form.editingKey ? <div className="schedule-presets" aria-label="常用安排">{presets.map(preset => <button key={preset.title} type="button" className={`schedule-chip schedule-cat-${preset.category}`} onClick={() => applyPreset(preset)}>{preset.title}</button>)}</div> : null}
+    <label className="schedule-field"><span>做什么</span><input ref={titleRef} value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} maxLength={80} placeholder="例如：午餐、写方案、给爸妈打电话" required /></label>
+    <fieldset className="schedule-categories"><legend>类别</legend>{categories.map(item => <label key={item.id} className={`schedule-chip schedule-cat-${item.id}${form.category === item.id ? ' is-active' : ''}`} title={item.hint}>
+      <input type="radio" name="schedule-category" value={item.id} checked={form.category === item.id} onChange={() => setForm({ ...form, category: item.id })} />{item.label}
+    </label>)}</fieldset>
+    <div className="schedule-time-row">
+      <label className="schedule-field"><span>开始</span><input type="time" aria-label="开始时间" value={form.start} step={300} onChange={event => setForm({ ...form, start: event.target.value })} required /></label>
+      <label className="schedule-field"><span>结束</span><input type="time" aria-label="结束时间" value={form.end} step={300} onChange={event => setForm({ ...form, end: event.target.value })} required /></label>
+      <label className="schedule-field"><span>重复</span><select aria-label="重复" value={form.repeat} onChange={event => setForm({ ...form, repeat: event.target.value as RepeatMode, weekdays: event.target.value === 'custom' ? (form.weekdays.length ? form.weekdays : [weekdayOf(selectedDate)]) : form.weekdays })} disabled={Boolean(editingEntry && editingEntry.kind === 'day')}>
+        {!editingEntry || editingEntry.kind === 'day' ? <option value="once">仅这一天</option> : null}
+        <option value="daily">每天（作息）</option><option value="weekdays">工作日</option><option value="weekend">周末</option><option value="custom">自定义</option>
+      </select></label>
+    </div>
+    {form.repeat === 'custom' ? <div className="schedule-weekdays" role="group" aria-label="重复的星期">{weekdayLabels.map((label, index) => <label key={label} className={form.weekdays.includes(index) ? 'is-active' : ''}>
+      <input type="checkbox" checked={form.weekdays.includes(index)} onChange={event => setForm({ ...form, weekdays: event.target.checked ? [...form.weekdays, index].sort() : form.weekdays.filter(day => day !== index) })} />{label}
+    </label>)}</div> : null}
+    {form.repeat === 'once' ? <label className="schedule-field"><span>备注</span><textarea value={form.notes} onChange={event => setForm({ ...form, notes: event.target.value })} maxLength={500} rows={2} placeholder="可选：地点、要带的东西、要联系谁" /></label> : null}
+    </fieldset>
+    <p className="schedule-form-hint">
+      {formDuration ? <span>共 {formDuration}{toMinutes(form.end) <= toMinutes(form.start) ? '（跨过午夜，零点后的部分显示在第二天）' : ''}</span> : null}
+      {form.repeat !== 'once' ? <span>会出现在{repeatLabel(formWeekdays.length ? formWeekdays : [weekdayOf(selectedDate)])}的行程里。</span> : null}
+      {editingEntry?.kind === 'routine' ? <span>只想改这一天？用上面的“今天跳过”，再添加一条“仅这一天”的安排。</span> : null}
+    </p>
+    {conflicts.length ? <p className="schedule-form-warning" role="status">与{conflicts.slice(0, 3).map(item => `「${item.title}」`).join('')}时间重叠，仍可保存。</p> : null}
+    <div className="schedule-form-actions">
+      {editingEntry && editingEntry.kind !== 'task' ? <button className="btn btn-ghost schedule-danger" type="button" onClick={() => void removeEntry(editingEntry)} disabled={busy}>删除</button> : null}
+      <button className="btn btn-primary" type="submit" disabled={!formValid || busy || !current}>{busy ? '保存中…' : form.editingKey ? '保存修改' : '添加'}</button>
+    </div>
+  </form>;
+
+  const note = <section className="schedule-card schedule-note" aria-label="今日复盘">
+    <header><h3>今日复盘</h3><small>精力、心情、收获，或明天想改变的一件事</small></header>
+    <textarea aria-label="今日复盘" value={noteDraft ?? day.note} onChange={event => changeNote(event.target.value)} onBlur={saveNote} maxLength={2000} rows={4} placeholder="今天做成了什么？哪段时间最有精力？哪里被打断了？" disabled={!current} />
+    <div className="schedule-note-actions">{noteDirty ? <small>未保存 · 离开输入框时自动保存</small> : null}<button className="btn btn-secondary btn-sm" type="button" onClick={saveNote} disabled={!noteDirty || busy}>保存复盘</button></div>
+  </section>;
+
+  const targets = <details className="schedule-card schedule-targets">
+    <summary><h3>理想的一天</h3><small>每类时间的每日目标，时间分配会与它对比</small></summary>
+    <div className="schedule-target-grid">{categories.map(item => <label key={item.id} className={`schedule-cat-${item.id}`}><span><span className="schedule-dot" aria-hidden="true" />{item.label}</span>
+      <input type="number" aria-label={`${item.label}目标小时`} min={0} max={24} step={0.25} value={targetValues[item.id] ?? ''} placeholder="0" onChange={event => setTargetDraft({ ...targetValues, [item.id]: event.target.value })} /><small>小时</small>
+    </label>)}</div>
+    <div className="schedule-targets-actions"><small className={targetTotal > 1440 ? 'is-error' : ''}>合计 {formatHours(targetTotal)}{targetTotal > 1440 ? ' · 超过 24 小时' : ''}</small>
+      {targetsDirty ? <button className="btn btn-ghost btn-sm" type="button" onClick={() => setTargetDraft(null)}>还原</button> : null}
+      <button className="btn btn-secondary btn-sm" type="button" onClick={saveTargets} disabled={!targetsDirty || busy || targetTotal > 1440}>保存目标</button></div>
+  </details>;
+
+  const routineCard = <details className="schedule-card schedule-routine">
+    <summary><h3>作息模板</h3><small>{routine.blocks.length ? `${routine.blocks.length} 条重复安排，按星期自动出现在每天` : '每天重复的作息、三餐和固定时段'}</small></summary>
+    {routineByStart.length ? <ul>{routineByStart.map(block => <li key={block.id} className={`schedule-cat-${block.category}`}>
+      <span className="schedule-dot" aria-hidden="true" /><time>{block.start}–{block.end}</time><strong>{block.title}</strong><small>{repeatLabel(block.weekdays)}</small>
+      <button className="btn btn-ghost btn-sm" type="button" aria-label={`编辑模板 ${block.title}`} onClick={() => editEntry(routineEntry(block))}>编辑</button>
+    </li>)}</ul> : <p className="schedule-muted">还没有作息模板。</p>}
+    <button className="btn btn-ghost btn-sm" type="button" onClick={applySuggestedRoutine} disabled={busy || !current}>{routine.blocks.length ? '用推荐作息替换' : '套用推荐作息'}</button>
+  </details>;
+
+  return <>{children({ now, progress, allocation: allocationCard, board, editor, note, targets, routine: routineCard })}</>;
 }
