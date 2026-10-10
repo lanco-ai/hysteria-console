@@ -632,6 +632,66 @@ class LegacyPanelServices:
 
         return self._run_read(read)
 
+    def read_admin_alerts(self, *, headers, path):
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+
+        def read():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            config = service.state_store.load_json_strict(service.alerts.CONFIG_FILE, {})
+            return {
+                **service.alerts.public_config(config),
+                'revision': service.content_revision(config),
+            }
+
+        return self._run_read(read)
+
+    def submit_alert_settings(self, *, headers, path, form, client_address=('', 0)):
+        del client_address
+        request = self._bridge(headers=headers, path=path)
+        service = self.service_module
+        alerts = service.alerts
+
+        def value(name):
+            return str((form.get(name) or [''])[0])
+
+        def mutate():
+            if not service.is_logged_in(request):
+                raise LoginRequired
+            with service.state_store.file_lock(alerts.CONFIG_LOCK_FILE, timeout=5):
+                try:
+                    current = service.state_store.load_json_strict(alerts.CONFIG_FILE, {})
+                except service.state_store.InvalidJsonState:
+                    return {'ok': False, 'error': 'validation_error', 'code': 'config_unreadable'}
+                if service.content_revision(current) != value('revision'):
+                    return {'ok': False, 'error': 'revision_conflict'}
+                try:
+                    updated = alerts.updated_config(
+                        current,
+                        {
+                            'telegram_enabled': value('telegram_enabled') == '1',
+                            'telegram_bot_token': value('telegram_bot_token'),
+                            'telegram_chat_id': value('telegram_chat_id'),
+                            'webhook_enabled': value('webhook_enabled') == '1',
+                            'webhook_url': value('webhook_url'),
+                            'webhook_secret': value('webhook_secret'),
+                            'webhook_secret_clear': value('webhook_secret_clear') == '1',
+                            'anomaly_z_threshold': value('anomaly_z_threshold'),
+                            'anomaly_min_gib': value('anomaly_min_gib'),
+                        },
+                    )
+                except alerts.AlertConfigError as exc:
+                    return {'ok': False, 'error': 'validation_error', 'code': exc.code}
+                alerts.save_config(updated)
+            return {
+                'ok': True,
+                **alerts.public_config(updated),
+                'revision': service.content_revision(updated),
+            }
+
+        return self._run_operation(mutate, post_path='/admin/alerts/save')
+
     def submit_health_operation(
         self,
         *,

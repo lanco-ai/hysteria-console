@@ -492,7 +492,7 @@ def create_app(
     register_compatibility_routes(app, services, dispatch)
     register_user_detail_routes(app, services, dispatch)
     register_operation_routes(app, services, dispatch_form_write, dispatch)
-    register_health_routes(app, services, dispatch_form_write)
+    register_health_routes(app, services, dispatch_form_write, dispatch)
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
     register_subscription_routes(app, services, dispatch)

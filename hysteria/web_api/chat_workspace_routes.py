@@ -62,6 +62,14 @@ class Turn(Revision):
     tool_run_ids: list[str] = Field(default_factory=list, max_length=3)
 
 
+class Preferences(Input):
+    # All fields are required: saving replaces the workspace's AI 设置 as a whole.
+    revision: int = Field(ge=0, strict=True)
+    instructions: str = Field(max_length=2000)
+    default_model: str = Field(max_length=256)
+    default_reasoning: Literal['auto', 'low', 'medium', 'high']
+
+
 class KnowledgeSearch(Input):
     query: str = Field(min_length=1, max_length=2000)
     project_id: str | None = Field(default=None, max_length=80)
@@ -216,6 +224,16 @@ def register_workspace_routes(app, services, dispatch, dispatch_stream, *, store
     async def usage(request: Request):
         await guard(request)
         return await run(request, store.usage)
+
+    @app.get('/api/chat/workspace/preferences')
+    async def preferences(request: Request):
+        await guard(request)
+        return await run(request, store.preferences)
+
+    @app.put('/api/chat/workspace/preferences')
+    async def save_preferences(request: Request):
+        await guard(request)
+        return await run(request, store.save_preferences, await data(request, Preferences, limit=16 * 1024))
 
     @app.post('/api/chat/import/legacy')
     async def import_legacy(request: Request):

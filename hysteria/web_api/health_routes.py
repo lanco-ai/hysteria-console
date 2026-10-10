@@ -5,8 +5,12 @@ from functools import partial
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from .operation_models import HealthOperationResponse
-from .services import LoginRequired
+from .operation_models import (
+    AlertSettingsMutationResponse,
+    AlertSettingsResponse,
+    HealthOperationResponse,
+)
+from .services import LoginRequired, StateUnavailable
 
 _ERROR_STATUS = {
     'update_busy': 409,
@@ -28,7 +32,15 @@ def _health_operation_response(payload, *, action):
     return JSONResponse(status_code=status, content=model.model_dump())
 
 
-def register_health_routes(app, services, dispatch_form_write):
+def _alert_settings_response(payload):
+    model = AlertSettingsMutationResponse.model_validate(payload)
+    if not model.ok:
+        status = 409 if model.error == 'revision_conflict' else 422
+        return JSONResponse(status_code=status, content=model.model_dump(exclude_none=True))
+    return JSONResponse(model.model_dump(exclude_none=True))
+
+
+def register_health_routes(app, services, dispatch_form_write, dispatch=None):
     router = APIRouter()
 
     async def dispatch_health(request: Request, *, action):
@@ -61,5 +73,31 @@ def register_health_routes(app, services, dispatch_form_write):
     @router.post('/api/v1/admin/health/multiplier-auto')
     async def save_multiplier_policy(request: Request):
         return await dispatch_health(request, action='multiplier-auto')
+
+    if dispatch is not None:
+
+        @router.api_route('/api/v1/admin/alerts', methods=['GET', 'HEAD'])
+        async def alert_settings(request: Request):
+            try:
+                payload = await dispatch(services.read_admin_alerts, request)
+            except LoginRequired:
+                return JSONResponse(status_code=401, content={'error': 'login_required'})
+            except StateUnavailable:
+                return JSONResponse(status_code=503, content={'error': 'state_unavailable'})
+            if isinstance(payload, JSONResponse):
+                return payload
+            return JSONResponse(
+                AlertSettingsResponse.model_validate(payload).model_dump(),
+                headers={'Cache-Control': 'no-store'},
+            )
+
+    @router.post('/api/v1/admin/alerts/save')
+    async def save_alert_settings(request: Request):
+        try:
+            return await dispatch_form_write(
+                services.submit_alert_settings, request, _alert_settings_response
+            )
+        except LoginRequired:
+            return JSONResponse(status_code=401, content={'error': 'login_required'})
 
     app.include_router(router)

@@ -33,6 +33,12 @@ def digest(value):
     return hashlib.sha256(encoded(value).encode()).hexdigest()
 
 
+# Workspace-wide AI 设置. The instructions are written by the operator and are
+# appended to every conversation's system prompt, before project instructions.
+PREFERENCE_DEFAULTS = {'instructions': '', 'default_model': '', 'default_reasoning': 'auto'}
+CUSTOM_INSTRUCTIONS_HEADER = '用户为所有对话设置的长期说明（与本次对话中的明确要求冲突时，以本次要求为准）：\n'
+
+
 class WorkspaceStore:
     def __init__(self, path=DEFAULT_PATH):
         self.path = Path(path)
@@ -68,6 +74,7 @@ class WorkspaceStore:
                     CREATE TABLE IF NOT EXISTS tool_runs (id TEXT PRIMARY KEY, data TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS tool_plans (id TEXT PRIMARY KEY, data TEXT NOT NULL);
                     CREATE TABLE IF NOT EXISTS tool_artifacts (id TEXT PRIMARY KEY, data TEXT NOT NULL, raw BLOB NOT NULL);
+                    CREATE TABLE IF NOT EXISTS preferences (id TEXT PRIMARY KEY, data TEXT NOT NULL);
                     PRAGMA user_version=2;
                 ''')
             self._ready = True
@@ -451,6 +458,9 @@ class WorkspaceStore:
                 citations = [{**c, 'id': f'S{i}'} for i, c in enumerate(combined[:8], 1)]
             project = self._get(db, 'projects', item['project_id']) if item['project_id'] else None
             system = '你是个人学习助手。区分事实、推测和待验证观点。帮助用户自己解释与思考。'
+            instructions = self._preferences(db)['instructions']
+            if instructions:
+                system += '\n' + CUSTOM_INSTRUCTIONS_HEADER + instructions
             if project:
                 system += '\n学习目标：' + project['goal'] + '\n项目指令：' + project['instructions']
                 if project.get('memories'):
@@ -530,9 +540,35 @@ class WorkspaceStore:
             self._save(db, item)
             return True
 
+    @staticmethod
+    def _preferences(db):
+        row = db.execute("SELECT data FROM preferences WHERE id='workspace'").fetchone()
+        stored = json.loads(row[0]) if row else {}
+        return {**PREFERENCE_DEFAULTS, **{key: stored[key] for key in PREFERENCE_DEFAULTS if key in stored},
+                'revision': int(stored.get('revision', 0))}
+
+    def preferences(self):
+        with self.db() as db:
+            return self._preferences(db)
+
+    def save_preferences(self, values):
+        with self.db() as db:
+            current = self._preferences(db)
+            if values['revision'] != current['revision']:
+                raise WorkspaceError('revision_conflict', 409)
+            data = {
+                'instructions': values['instructions'].replace('\r\n', '\n').strip(),
+                'default_model': values['default_model'].strip(),
+                'default_reasoning': values['default_reasoning'],
+                'revision': current['revision'] + 1,
+            }
+            db.execute('INSERT OR REPLACE INTO preferences VALUES (?,?)', ('workspace', json.dumps(data, ensure_ascii=False)))
+            return data
+
     def export(self):
         with self.db() as db:
-            return {'schema_version': 1, 'projects': [json.loads(r[0]) for r in db.execute('SELECT data FROM projects')],
+            return {'schema_version': 1, 'preferences': self._preferences(db),
+                    'projects': [json.loads(r[0]) for r in db.execute('SELECT data FROM projects')],
                     'conversations': [json.loads(r[0]) for r in db.execute('SELECT data FROM conversations')],
                     'documents': [json.loads(r[0]) for r in db.execute('SELECT data FROM documents')],
                     'tool_runs': [json.loads(r[0]) for r in db.execute('SELECT data FROM tool_runs')]}

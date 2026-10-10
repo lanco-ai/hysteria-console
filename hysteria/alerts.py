@@ -9,6 +9,7 @@ import hmac
 import json
 import logging
 import math
+import re
 import secrets
 import time
 import urllib.error
@@ -31,6 +32,122 @@ log = logging.getLogger('hy2.alerts')
 
 _STATE_KEYS = ('quota_80', 'quota_100', 'anomaly', 'expiry_soon', 'expiry_expired')
 _CLAIM_KEYS = frozenset(('key', 'token', 'claimed_at'))
+
+
+# Console-managed settings (设置 · 告警通知). Secrets are write-only: the console
+# sees whether a channel is configured, never its token, URL or signing secret.
+CONFIG_LOCK_FILE = Path('/root/hysteria/state/alerts-config.lock')
+TELEGRAM_TOKEN_RE = re.compile(r'^\d{5,16}:[A-Za-z0-9_-]{30,64}$')
+TELEGRAM_CHAT_RE = re.compile(r'^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,63})$')
+Z_THRESHOLD_LIMITS = (1.0, 10.0)
+MIN_GIB_LIMITS = (0.0, 1024.0)
+
+
+class AlertConfigError(ValueError):
+    """A console alert setting is invalid; ``code`` names the field."""
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+def _section(cfg, name):
+    value = cfg.get(name) if isinstance(cfg, dict) else None
+    return value if isinstance(value, dict) else {}
+
+
+def _webhook_host(url):
+    try:
+        return urllib.parse.urlsplit(url).hostname or ''
+    except ValueError:
+        return ''
+
+
+def public_config(cfg):
+    """Channel status and thresholds for the console, without any secret."""
+    cfg = cfg if isinstance(cfg, dict) else {}
+    telegram = _section(cfg, 'telegram')
+    webhook = _section(cfg, 'webhook')
+    try:
+        z_threshold = float(cfg.get('anomaly_z_threshold', DEFAULT_Z_THRESHOLD))
+        min_bytes = int(cfg.get('anomaly_min_bytes', DEFAULT_MIN_BYTES))
+    except (TypeError, ValueError):
+        z_threshold, min_bytes = DEFAULT_Z_THRESHOLD, DEFAULT_MIN_BYTES
+    return {
+        'telegram': {
+            'configured': bool(telegram.get('bot_token') and telegram.get('chat_id')),
+            'chat_id': str(telegram.get('chat_id') or ''),
+        },
+        'webhook': {
+            'configured': bool(webhook.get('url')),
+            'host': _webhook_host(str(webhook.get('url') or '')),
+            'signed': bool(webhook.get('secret')),
+        },
+        'anomaly_z_threshold': z_threshold,
+        'anomaly_min_gib': round(min_bytes / (1 << 30), 2),
+    }
+
+
+def _bounded_number(raw, limits, code):
+    try:
+        value = float(str(raw).strip())
+    except ValueError:
+        raise AlertConfigError(code) from None
+    if not math.isfinite(value) or not limits[0] <= value <= limits[1]:
+        raise AlertConfigError(code)
+    return value
+
+
+def updated_config(cfg, values):
+    """Merge console form values into the alert config.
+
+    A blank token, URL or secret keeps the stored value, so saving never needs
+    them re-entered; turning a channel off removes it. Keys the console does
+    not manage are preserved. Raises AlertConfigError naming the bad field.
+    """
+    current = cfg if isinstance(cfg, dict) else {}
+    managed = ('telegram', 'webhook', 'anomaly_z_threshold', 'anomaly_min_bytes')
+    result = {key: value for key, value in current.items() if key not in managed}
+    if values.get('telegram_enabled'):
+        stored = _section(current, 'telegram')
+        token = str(values.get('telegram_bot_token') or '').strip() or str(stored.get('bot_token') or '')
+        chat_id = str(values.get('telegram_chat_id') or '').strip()
+        if not TELEGRAM_TOKEN_RE.fullmatch(token):
+            raise AlertConfigError('telegram_token_invalid')
+        if not TELEGRAM_CHAT_RE.fullmatch(chat_id):
+            raise AlertConfigError('telegram_chat_invalid')
+        result['telegram'] = {'bot_token': token, 'chat_id': chat_id}
+    if values.get('webhook_enabled'):
+        stored = _section(current, 'webhook')
+        url = str(values.get('webhook_url') or '').strip() or str(stored.get('url') or '')
+        try:
+            parsed = urllib.parse.urlsplit(url)
+        except ValueError:
+            raise AlertConfigError('webhook_url_invalid') from None
+        if (len(url) > 2048 or parsed.scheme != 'https' or not parsed.hostname
+                or parsed.username is not None or parsed.password is not None
+                or any(char.isspace() for char in url)):
+            raise AlertConfigError('webhook_url_invalid')
+        if values.get('webhook_secret_clear'):
+            secret = ''
+        else:
+            secret = str(values.get('webhook_secret') or '').strip() or str(stored.get('secret') or '')
+        if len(secret) > 256:
+            raise AlertConfigError('webhook_secret_invalid')
+        result['webhook'] = {'url': url, **({'secret': secret} if secret else {})}
+    result['anomaly_z_threshold'] = _bounded_number(
+        values.get('anomaly_z_threshold', DEFAULT_Z_THRESHOLD), Z_THRESHOLD_LIMITS, 'z_threshold_invalid')
+    min_gib = _bounded_number(
+        values.get('anomaly_min_gib', DEFAULT_MIN_BYTES / (1 << 30)), MIN_GIB_LIMITS, 'min_gib_invalid')
+    result['anomaly_min_bytes'] = int(min_gib * (1 << 30))
+    return result
+
+
+def save_config(cfg, path=None):
+    """Atomically write alerts.json, readable by root only."""
+    target = Path(path) if path is not None else CONFIG_FILE
+    state_store.save_json(target, cfg)
+    target.chmod(0o600)
 
 
 def load_config(path=None):

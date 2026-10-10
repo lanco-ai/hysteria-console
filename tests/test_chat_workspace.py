@@ -288,3 +288,35 @@ def test_pdf_page_numbers_and_original_text():
     citation = retrieve('write amplification', [({'id': 'doc', 'title': 'Paper', 'sha256': 'hash'}, pages)])[0]
     assert citation['page'] == 2
     assert 'LSM' in citation['quote']
+
+
+def test_preferences_save_with_revision_and_reach_every_system_prompt(env):
+    store, _, provider, client = env
+    url = '/api/chat/workspace/preferences'
+    assert client.get(url).json() == {'instructions': '', 'default_model': '', 'default_reasoning': 'auto', 'revision': 0}
+    values = {'revision': 0, 'instructions': '  回答用中文。\r\n先给结论。  ', 'default_model': ' test-model ', 'default_reasoning': 'high'}
+    saved = client.put(url, json=values).json()
+    assert saved == {'instructions': '回答用中文。\n先给结论。', 'default_model': 'test-model', 'default_reasoning': 'high', 'revision': 1}
+    assert client.get(url).json() == saved
+    # A stale revision is refused instead of silently overwriting.
+    assert client.put(url, json=values).status_code == 409
+    assert client.put(url, json={**values, 'revision': 1, 'default_reasoning': 'max'}).status_code == 422
+    assert client.put(url, json={**values, 'revision': 1, 'instructions': 'x' * 2001}).status_code == 422
+    assert client.put(url, json={'revision': 1}).status_code == 422
+    assert client.get(url, headers={'cookie': ''}).status_code == 401
+    assert client.put(url, json={**values, 'revision': 1}, headers={'origin': 'https://evil.invalid'}).status_code == 403
+
+    p = project(store)
+    c = client.post('/api/chat/conversations', json={'project_id': p['id']}).json()
+    assert client.post(f"/api/chat/conversations/{c['id']}/turns", json=turn(c)).status_code == 200
+    system = provider.received[0]['content']
+    assert '回答用中文。\n先给结论。' in system
+    # Workspace-wide instructions come before the more specific project instructions.
+    assert system.index('先给结论') < system.index('Ask questions')
+    assert client.get('/api/chat/workspace/export').json()['preferences'] == saved
+
+    cleared = client.put(url, json={**values, 'revision': 1, 'instructions': '   '}).json()
+    assert cleared['instructions'] == '' and cleared['revision'] == 2
+    c = client.get(f"/api/chat/conversations/{c['id']}").json()
+    assert client.post(f"/api/chat/conversations/{c['id']}/turns", json=turn(c, request_id='request_0002')).status_code == 200
+    assert '长期说明' not in provider.received[0]['content']
