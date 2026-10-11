@@ -1,7 +1,8 @@
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ReactElement } from 'react';
-import { journalKindLabels } from './journalLabels';
+import { Component, useId, type ReactElement, type ReactNode } from 'react';
+import type { Element, Root } from 'hast';
+import { journalKindLabels, zonedDay, zonedTime } from './journalLabels';
 import type { JournalDraft, JournalRecord } from './journalApi';
 
 const detailLabels: Partial<Record<keyof JournalDraft, string>> = {
@@ -22,21 +23,99 @@ export function recordDetails(item: JournalRecord): Array<[string, string]> {
   return values;
 }
 
+// Parsing and rendering Markdown recurse once per nesting level, so text nested this deep
+// (quotes, lists, emphasis runs) is shown as plain text rather than risking the page.
+const MAX_NESTING = 20;
+const LIST_MARKER = /^(?:[-*+]|\d{1,9}[.)])(?=[ \t])/;
+
+function nestingDepth(line: string): number {
+  let depth = 0;
+  let indent = 0;
+  let index = 0;
+  while (index < line.length) {
+    const char = line[index];
+    if (char === ' ' || char === '\t') { indent += char === '\t' ? 4 : 1; index += 1; continue; }
+    if (char === '>') { depth += 1; index += 1; continue; }
+    const marker = LIST_MARKER.exec(line.slice(index, index + 11));
+    if (!marker) break;
+    depth += 1;
+    index += marker[0].length;
+  }
+  return depth + Math.floor(indent / 2);
+}
+
+function tooDeep(text: string): boolean {
+  return /[*_~]{48,}/.test(text) || text.split('\n').some(line => nestingDepth(line) > MAX_NESTING);
+}
+
+const plain = (text: string) => <div className="journal-markdown is-plain"><p>{text}</p></div>;
+
+/** One record's Markdown failing to render shows its plain text; the rest of the page carries on. */
+class MarkdownBoundary extends Component<{ text: string; children: ReactNode }, { failed: boolean }> {
+  override state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  override componentDidUpdate(previous: { text: string }) {
+    if (previous.text !== this.props.text && this.state.failed) this.setState({ failed: false });
+  }
+  override render() { return this.state.failed ? plain(this.props.text) : this.props.children; }
+}
+
+/** Footnotes get ids from this record's prefix; the label's fixed id is prefixed here too. */
+function prefixFootnoteLabel(prefix: string) {
+  const label = `${prefix}footnote-label`;
+  return (tree: Root) => {
+    const stack: Array<Root | Element> = [tree];
+    while (stack.length) {
+      for (const child of stack.pop()!.children) {
+        if (child.type !== 'element') continue;
+        const properties = child.properties;
+        if (properties.id === 'footnote-label') properties.id = label;
+        const describedBy = properties.ariaDescribedBy;
+        if (Array.isArray(describedBy)) properties.ariaDescribedBy = describedBy.map(id => id === 'footnote-label' ? label : id);
+        stack.push(child);
+      }
+    }
+  };
+}
+
+// Defined once, so a re-render keeps the rendered elements instead of replacing them.
+const components: Components = {
+  // Links within the record (footnotes) scroll here; the page's own #fragments choose its view.
+  a: ({ node: _node, href = '', children, ...props }) => href.startsWith('#')
+    ? <a {...props} href={href} onClick={event => { event.preventDefault(); document.getElementById(href.slice(1))?.scrollIntoView({ block: 'center' }); }}>{children}</a>
+    : <a {...props} href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
+  img: ({ alt }) => <span>[图片：{alt || '未加载外部图片'}]</span>,
+  // A wide table scrolls inside the record instead of widening the page.
+  table: ({ node: _node, ...props }) => <div className="journal-markdown-table"><table {...props} /></div>,
+};
+
 /**
  * A record's text written in Markdown. Raw HTML is dropped and outside images are not loaded:
  * the records are private, and a picture link would tell its host when they are read.
  */
 export function JournalMarkdown({ text }: { text: string }): ReactElement {
-  return <div className="journal-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={{
-    a: ({ href, children }) => <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>,
-    img: ({ alt }) => <span>[图片：{alt || '未加载外部图片'}]</span>,
-  }}>{text}</ReactMarkdown></div>;
+  // Several records share the page, so each one's footnote ids start with its own prefix.
+  const prefix = `jm-${useId().replace(/[^A-Za-z0-9_-]/g, '')}-`;
+  if (tooDeep(text)) return plain(text);
+  return <MarkdownBoundary text={text}><div className="journal-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml
+    rehypePlugins={[[prefixFootnoteLabel, prefix]]}
+    remarkRehypeOptions={{ clobberPrefix: prefix, footnoteLabel: '脚注', footnoteBackLabel: '返回正文' }}
+    components={components}>{text}</ReactMarkdown></div></MarkdownBoundary>;
 }
 
 const dayFormat = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', timeZone: 'UTC' });
 
 function clock(item: JournalRecord, value: string): string {
-  return new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value));
+  return zonedTime(value, item.timezone, { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+}
+
+/** When the record happened, with the end's date when it ends on another day. */
+function span(item: JournalRecord): string {
+  if (!item.ended_at) return clock(item, item.occurred_at);
+  const endDay = zonedDay(item.ended_at, item.timezone);
+  const [, month, day] = endDay.split('-').map(Number);
+  const endDate = endDay !== zonedDay(item.occurred_at, item.timezone) ? `${month}月${day}日 ` : '';
+  return `${clock(item, item.occurred_at)}–${endDate}${clock(item, item.ended_at)}`;
 }
 
 /** All records as one Markdown document: a section per day, oldest first, each record with its fields. */
@@ -49,8 +128,7 @@ export function journalMarkdown(items: JournalRecord[], exportedAt = new Date())
       day = item.local_date;
       lines.push(`## ${dayFormat.format(new Date(`${day}T12:00:00Z`))}`, '');
     }
-    const time = clock(item, item.occurred_at) + (item.ended_at ? `–${clock(item, item.ended_at)}` : '');
-    lines.push(`### ${time} · ${journalKindLabels[item.kind]}${item.title ? ` · ${item.title}` : ''}`, '');
+    lines.push(`### ${span(item)} · ${journalKindLabels[item.kind]}${item.title ? ` · ${item.title}` : ''}`, '');
     if (item.chat_source) lines.push(`> 来自 AI 对话：${item.chat_source.title}`, '');
     if (item.body.trim()) lines.push(item.body.trim(), '');
     const details = recordDetails(item);

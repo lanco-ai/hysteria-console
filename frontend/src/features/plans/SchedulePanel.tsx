@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type ReactElement, type ReactNode } from 'react';
 import type { PlanAssistantBlock, PlanScheduleChange } from './plansApi';
-import { loadSchedule, saveScheduleDay, saveScheduleRoutine, type DayBlock, type ScheduleCategory, type ScheduleDay, type ScheduleRoutine, type ScheduleView } from './scheduleApi';
+import { loadSchedule, saveScheduleDay, saveScheduleRoutine, ScheduleRequestError, type DayBlock, type ScheduleCategory, type ScheduleDay, type ScheduleRoutine, type ScheduleView } from './scheduleApi';
 import {
   allocation, categories, categoryLabel, containsMinute, dayEntries, formatDuration, formatHours, newBlockId, overlapsWith, placeSegments,
   presets, repeatLabel, repeatModeFor, repeatWeekdays, routineEntry, spanMinutes, suggestedRoutine, toClock, toMinutes, weekdayLabels, weekdayOf,
@@ -52,12 +52,18 @@ export type ScheduleParts = {
   routine: ReactNode;
 };
 
+/** How applying AI changes ended: `conflict` when another device saved the day first. */
+export type ScheduleApplyResult = 'saved' | 'conflict' | 'busy' | 'failed';
+
 /** What the page's AI assistant needs from the day's time axis: its blocks, and a way to apply changes. */
 export type ScheduleController = {
   date: string;
+  /** Changes whenever the day or the routine is saved, here or on another device (after a reload). */
+  revision: string;
   blocks: () => PlanAssistantBlock[];
   describe: (change: PlanScheduleChange) => string;
-  apply: (changes: PlanScheduleChange[]) => Promise<boolean>;
+  apply: (changes: PlanScheduleChange[]) => Promise<ScheduleApplyResult>;
+  reload: () => Promise<void>;
 };
 
 export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onProtectionChange, controllerRef, children }: {
@@ -100,6 +106,8 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
   const newBlockRef = useRef<HTMLButtonElement>(null);
   const refocusNewBlock = useRef(false);
   const loadGeneration = useRef(0);
+  // The HTTP status of the last failed save, so the AI dialog can tell a conflict from an outage.
+  const lastFailure = useRef(0);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     const generation = ++loadGeneration.current;
@@ -173,6 +181,7 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
 
   // The change shows at once and is rolled back if the server refuses it.
   const commit = async (optimistic: (base: ScheduleView) => ScheduleView, work: (base: ScheduleView) => Promise<ScheduleView>, success: string) => {
+    lastFailure.current = 0;
     if (!current || busyRef.current) return false;
     busyRef.current = true;
     const base = current;
@@ -186,6 +195,7 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     } catch (cause) {
       setView(latest => latest && latest.date === base.date ? base : latest);
       setError(cause instanceof Error ? cause.message : '行程保存失败');
+      lastFailure.current = cause instanceof ScheduleRequestError ? cause.status : 0;
       return false;
     } finally {
       busyRef.current = false;
@@ -300,18 +310,21 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     if (change.action === 'remove') return `${target.kind === 'routine' ? '这一天不做' : '删除'}「${target.title}」${entryTime(target)}`;
     return `调整「${target.title}」→ ${change.start}–${change.end}${change.title && change.title !== target.title ? `，改为「${change.title}」` : ''}${target.kind === 'routine' ? '（只改这一天）' : ''}`;
   };
-  const applyChanges = async (changes: PlanScheduleChange[]): Promise<boolean> => {
-    if (!current) return false;
+  const applyChanges = async (changes: PlanScheduleChange[]): Promise<ScheduleApplyResult> => {
+    if (!current) return 'failed';
+    if (busyRef.current) return 'busy';
     let blocks = [...day.blocks];
     const marks = { ...day.routine_status };
     const newBlock = (change: PlanScheduleChange, notes = ''): DayBlock => ({
       id: newBlockId(), title: change.title.trim().slice(0, 80), category: change.category as ScheduleCategory,
       start: change.start, end: change.end, notes, status: 'planned',
     });
+    // One change per block: a second one for the same routine block would add a second replacement.
+    const changed = new Set<string>();
     for (const change of changes) {
       const target = change.target_id ? ownEntries.find(entry => entry.id === change.target_id) : undefined;
       if (change.action === 'add') blocks.push(newBlock(change));
-      else if (!target) continue;
+      else if (!target || changed.has(target.key)) continue;
       else if (change.action === 'remove') {
         if (target.kind === 'day') blocks = blocks.filter(item => item.id !== target.id); else marks[target.id] = 'skipped';
       } else if (target.kind === 'day') {
@@ -320,13 +333,17 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
         marks[target.id] = 'skipped';
         blocks.push(newBlock({ ...change, title: change.title || target.title, category: change.category || target.category || 'life' }, `这一天代替作息模板「${target.title}」`));
       }
+      if (target) changed.add(target.key);
     }
-    return saveDay({ ...day, blocks, routine_status: marks }, `已按 AI 建议调整这一天的行程（${changes.length} 项）`);
+    if (await saveDay({ ...day, blocks, routine_status: marks }, `已按 AI 建议调整这一天的行程（${changes.length} 项）`)) return 'saved';
+    return lastFailure.current === 409 ? 'conflict' : 'failed';
   };
   useLayoutEffect(() => {
     if (!controllerRef) return;
     controllerRef.current = current ? {
       date: current.date,
+      revision: `${current.day_revision}|${current.routine_revision}`,
+      reload: () => reload(),
       blocks: () => ownEntries.filter(entry => entry.category).map(entry => ({
         id: entry.id, kind: entry.kind as 'routine' | 'day', title: entry.title, category: entry.category as ScheduleCategory,
         start: entry.start, end: entry.end, status: entry.status,

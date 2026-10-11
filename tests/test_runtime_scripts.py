@@ -113,6 +113,50 @@ def test_backup_excludes_live_login_sessions(tmp_path):
     )
 
 
+def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
+    hy_dir = tmp_path / 'hysteria'
+    state_dir = hy_dir / 'state'
+    files = {
+        'ai/services.json': '{"profiles":{}}',
+        'ai/migration-backup/old.json': '{}',
+        'shop/source-merchant.json': '{"revision":1}',
+        'shop/prodseller.key': 'key',
+        'shop/source.json': '{"items":[]}',
+        'video/settings.json': '{}',
+        'video/workflows.json': '{"workflows":[]}',
+        'video/runs.json': '{"runs":[]}',
+        'video/assets/upload-1.png': 'png',
+        'chat/settings.json': '{}',
+    }
+    for name, text in files.items():
+        path = state_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    (state_dir / 'ai' / 'services.json.lock').touch()
+    env = isolated_backup_env(tmp_path, hy_dir)
+
+    def backed_up():
+        archive = subprocess.run(
+            ['bash', str(ROOT / 'scripts/hy2-backup.sh')], check=True, capture_output=True, text=True, env=env,
+        )
+        with tarfile.open(archive.stdout.strip(), 'r:gz') as tf:
+            return {name.split('/state/', 1)[1] for name in tf.getnames() if '/state/' in name}, archive.stderr
+
+    names, _ = backed_up()
+    # Settings, the merchant's prices and copy, the reseller key and the user's video work are kept.
+    for name in ('ai/services.json', 'shop/source-merchant.json', 'shop/prodseller.key', 'video/settings.json',
+                 'video/workflows.json', 'video/runs.json', 'video/assets/upload-1.png', 'chat/settings.json'):
+        assert name in names, name
+    # Supplier caches are re-fetched, and migration leftovers and locks are not state.
+    assert not {'shop/source.json', 'ai/migration-backup/old.json', 'ai/services.json.lock'} & names
+    # Assets beyond the size limit are left out with a warning, rather than copied into every archive.
+    env['HY2_BACKUP_ASSETS_MAX_BYTES'] = '2'
+    time.sleep(1.1)
+    names, warning = backed_up()
+    assert 'video/assets/upload-1.png' not in names and 'video/workflows.json' in names
+    assert 'HY2_BACKUP_ASSETS_MAX_BYTES' in warning
+
+
 def test_restore_check_accepts_plain_backup_archive(tmp_path):
     hy_dir = tmp_path / 'hysteria'
     state_dir = hy_dir / 'state'

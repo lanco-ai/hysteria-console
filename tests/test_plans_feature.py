@@ -406,6 +406,25 @@ def test_plan_assistant_suggests_changes_to_the_days_time_axis(tmp_path, plan_mo
     assert 'schedule_changes' in schema['required'] and schema['properties']['suggestions']['minItems'] == 0
 
 
+def test_plan_assistant_keeps_one_change_per_block(tmp_path, plan_model):
+    change = {'action': 'update', 'target_id': 'deep-work', 'title': '深度工作', 'category': 'work', 'reason': ''}
+    response = ask_with_blocks(tmp_path, plan_model, {
+        'summary': '推迟深度工作。',
+        'suggestions': [],
+        'schedule_changes': [
+            {**change, 'start': '13:00', 'end': '14:00'},
+            # A second change to the same block would add a second replacement; it is dropped.
+            {**change, 'start': '14:00', 'end': '15:00'},
+            {**change, 'action': 'remove', 'title': '', 'category': '', 'start': '', 'end': ''},
+            {**change, 'action': 'add', 'target_id': '', 'title': '散步', 'category': 'exercise', 'start': '19:00', 'end': '19:30'},
+        ],
+    })
+    assert response.status_code == 200, response.text
+    assert [(item['action'], item['target_id'], item['start']) for item in response.json()['schedule_changes']] == [
+        ('update', 'deep-work', '13:00'), ('add', '', '19:00'),
+    ]
+
+
 @pytest.mark.parametrize('changes', [
     # An addition needs a real block: a known category, valid times and a duration.
     [{'action': 'add', 'target_id': '', 'title': '写周报', 'category': 'nap', 'start': '14:00', 'end': '15:00', 'reason': ''}],

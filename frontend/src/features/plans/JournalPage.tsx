@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { JournalInlineEditor } from './JournalInlineEditor';
 import { useJournalAutosave } from './useJournalAutosave';
-import { journalKindLabels as labels } from './journalLabels';
+import { journalKindLabels as labels, zonedTime } from './journalLabels';
 import { JournalMarkdown, recordDetails } from './journalMarkdown';
 import { deleteJournal, downloadJournal, downloadJournalMarkdown, listJournal, loadJournalSummary, type JournalKind, type JournalRecord, type JournalSummary } from './journalApi';
 
@@ -45,6 +45,8 @@ export function JournalPage({ visible, selectedDate, today, timezone, onSelectDa
   const [summaryErrorWeek, setSummaryErrorWeek] = useState<string | null>(null);
   // Bumped by saves and deletes: the week's summary is re-read after a change, not after every day's read.
   const [changes, setChanges] = useState(0);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const summaryChecked = useRef('');
   const reviewWeek = weekStart(selectedDate);
   const readGeneration = useRef(0);
   const editorRef = useRef<HTMLTextAreaElement>(null);
@@ -85,16 +87,28 @@ export function JournalPage({ visible, selectedDate, today, timezone, onSelectDa
 
   useEffect(() => {
     const controller = new AbortController();
-    setSummaryErrorWeek(null);
+    setSummaryErrorWeek(null); setSummaryLoading(true);
     void loadJournalSummary(reviewWeek, controller.signal).then(result => {
       if (!controller.signal.aborted) setSummary(result);
     }).catch(() => {
       if (!controller.signal.aborted) {
         setSummaryErrorWeek(reviewWeek);
       }
-    });
+    }).finally(() => { if (!controller.signal.aborted) setSummaryLoading(false); });
     return () => controller.abort();
   }, [reviewWeek, changes]);
+
+  // Another device may have changed the week. When the day just read disagrees with the week's
+  // summary, re-read the summary, once for each such reading of the day.
+  useEffect(() => {
+    if (loading || readFailed || summaryLoading || query || kindFilter || summary?.week_start !== reviewWeek) return;
+    const known = new Map(summary.items.filter(item => item.local_date === selectedDate).map(item => [item.id, item.revision]));
+    if (known.size === items.length && items.every(item => known.get(item.id) === item.revision)) return;
+    const reading = `${selectedDate}|${items.map(item => `${item.id}:${item.revision}`).join(',')}`;
+    if (summaryChecked.current === reading) return;
+    summaryChecked.current = reading;
+    setChanges(value => value + 1);
+  }, [items, loading, readFailed, summaryLoading, query, kindFilter, summary, reviewWeek, selectedDate]);
 
   // One writing box: a weekly review is a record like any other, written with 分类 set to 每周回顾.
   const timelineContext = useMemo(() => ({ date: selectedDate, kind: (kindFilter || 'life') as JournalKind, timezone, weekly: false }), [selectedDate, kindFilter, timezone]);
@@ -152,7 +166,7 @@ export function JournalPage({ visible, selectedDate, today, timezone, onSelectDa
         <JournalInlineEditor writer={writer} context={timelineContext} inputRef={editorRef} empty={!loading && !readFailed && !items.length} onReload={() => void reload()}
           label="记录内容" statusId="journal-autosave-state" newLabel="另记一条"
           placeholder={{ empty: '这一天暂无记录。可以先记下一件小事。支持 Markdown。', more: '在这里记下一件事、一个想法，或今天的收获…（支持 Markdown）' }} />
-        {loading ? <p>正在读取记录…</p> : readFailed ? <div className="journal-read-failed"><p>当前筛选的记录暂时无法显示。</p><button className="btn btn-secondary" type="button" onClick={() => void reload()}>重试读取记录</button></div> : visibleItems.length ? <ol className="journal-timeline">{visibleItems.map(item => <li key={item.id}><article><header><div><time dateTime={item.occurred_at}>{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(item.occurred_at))}</time><span className="journal-kind">{labels[item.kind]}</span></div><div><button className="btn btn-ghost btn-sm" type="button" onClick={() => edit(item)} aria-label={`编辑 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>编辑</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => void remove(item)} aria-label={`删除 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>删除</button></div></header>{item.chat_source ? <a href={`/admin/chat?conversation=${encodeURIComponent(item.chat_source.conversation_id)}`}>来自 AI 对话：{item.chat_source.title}</a> : null}{item.title ? <h3>{item.title}</h3> : null}{item.body ? <JournalMarkdown text={item.body} /> : null}{recordDetails(item).length ? <dl className="journal-details">{recordDetails(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}{item.ended_at ? <small>结束：{new Intl.DateTimeFormat('zh-CN', { timeZone: item.timezone, timeStyle: 'short' }).format(new Date(item.ended_at))}</small> : null}</article></li>)}</ol> : searching ? <p className="journal-filter-note">没有其他符合筛选条件的记录。</p> : null}
+        {loading ? <p>正在读取记录…</p> : readFailed ? <div className="journal-read-failed"><p>当前筛选的记录暂时无法显示。</p><button className="btn btn-secondary" type="button" onClick={() => void reload()}>重试读取记录</button></div> : visibleItems.length ? <ol className="journal-timeline">{visibleItems.map(item => <li key={item.id}><article><header><div><time dateTime={item.occurred_at}>{zonedTime(item.occurred_at, item.timezone, { dateStyle: 'medium', timeStyle: 'short' })}</time><span className="journal-kind">{labels[item.kind]}</span></div><div><button className="btn btn-ghost btn-sm" type="button" onClick={() => edit(item)} aria-label={`编辑 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>编辑</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => void remove(item)} aria-label={`删除 ${item.title || labels[item.kind]}`} disabled={busy || writingBusy}>删除</button></div></header>{item.chat_source ? <a href={`/admin/chat?conversation=${encodeURIComponent(item.chat_source.conversation_id)}`}>来自 AI 对话：{item.chat_source.title}</a> : null}{item.title ? <h3>{item.title}</h3> : null}{item.body ? <JournalMarkdown text={item.body} /> : null}{recordDetails(item).length ? <dl className="journal-details">{recordDetails(item).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl> : null}{item.ended_at ? <small>结束：{zonedTime(item.ended_at, item.timezone, { timeStyle: 'short' })}</small> : null}</article></li>)}</ol> : searching ? <p className="journal-filter-note">没有其他符合筛选条件的记录。</p> : null}
       </div>
     </section>
     <section className="daily-review-section" aria-labelledby="journal-week-title" ref={reviewRef}>

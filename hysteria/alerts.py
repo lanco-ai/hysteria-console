@@ -46,6 +46,11 @@ TELEGRAM_TOKEN_RE = re.compile(r'^\d{5,16}:[A-Za-z0-9_-]{30,64}$')
 TELEGRAM_CHAT_RE = re.compile(r'^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,63})$')
 Z_THRESHOLD_LIMITS = (1.0, 10.0)
 MIN_GIB_LIMITS = (0.0, 1024.0)
+_NAT64 = ipaddress.ip_network('64:ff9b::/96')
+# Alerts are sent from the traffic limiter's run, so one webhook may not hold it for long:
+# at most this many of a name's addresses are tried, within this many seconds in all.
+WEBHOOK_MAX_ADDRESSES = 4
+WEBHOOK_CONNECT_BUDGET_SECONDS = 10.0
 
 
 class AlertConfigError(ValueError):
@@ -94,9 +99,17 @@ def public_config(cfg):
 
 
 def _public_address(address):
-    """True for a globally routable unicast address (IPv4-mapped IPv6 judged as IPv4)."""
-    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped:
-        address = address.ipv4_mapped
+    """True for a globally routable unicast address (IPv4-mapped IPv6 judged as IPv4).
+
+    IPv6 forms that hand an IPv4 address to a translator (NAT64 64:ff9b::/96, the
+    deprecated IPv4-compatible ::a.b.c.d) are refused: where they lead depends on the
+    network they are sent from, not on the address itself.
+    """
+    if isinstance(address, ipaddress.IPv6Address):
+        if address.ipv4_mapped:
+            address = address.ipv4_mapped
+        elif address in _NAT64 or int(address) >> 32 == 0:
+            return False
     return address.is_global and not address.is_multicast
 
 
@@ -510,11 +523,17 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
         self._tls = ssl.create_default_context()
 
     def connect(self):
-        # Try each vetted address in turn, as socket.create_connection does for a name.
+        # Try each vetted address in turn, as socket.create_connection does for a name,
+        # within one time budget for all of them.
         error = OSError('webhook host has no address')
+        deadline = time.monotonic() + WEBHOOK_CONNECT_BUDGET_SECONDS
         for address in self._addresses:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                error = OSError('webhook connection timed out')
+                break
             try:
-                sock = socket.create_connection((address, self.port), self.timeout)
+                sock = socket.create_connection((address, self.port), min(self.timeout, remaining))
             except OSError as exc:
                 error = exc
                 continue
@@ -547,17 +566,19 @@ class _WebhookTransport:
         addresses = list(dict.fromkeys(answer[4][0] for answer in answers))
         if not addresses or not all(_resolved_public(address) for address in addresses):
             raise OSError('webhook destination is not a public address')
-        connection = self._connection(parts.hostname, port, addresses=addresses, timeout=timeout)
+        connection = self._connection(
+            parts.hostname, port, addresses=addresses[:WEBHOOK_MAX_ADDRESSES], timeout=timeout,
+        )
         try:
             path = (parts.path or '/') + (f'?{parts.query}' if parts.query else '')
             connection.request(
                 request.get_method(), path, body=request.data, headers=dict(request.header_items()),
             )
             response = connection.getresponse()
-            body = response.read(64 * 1024)
             if not 200 <= response.status < 300:
                 raise OSError(f'webhook answered HTTP {response.status}')
-            return io.BytesIO(body)
+            # The status is the answer; reading the body would let a slow receiver hold the run.
+            return io.BytesIO(b'')
         finally:
             connection.close()
 

@@ -59,12 +59,11 @@ body.has-shell:has(.plans-page) .topbar-inner { max-width: 2200px; }
 .journal-footer .journal-export { flex-shrink: 0; margin: 0; }
 .journal-inline-editor { margin: 0 0 22px; }
 .journal-inline-editor > textarea { display: block; width: 100%; min-height: clamp(180px, 32dvh, 360px); box-sizing: border-box; padding: 22px; border: 1px dashed var(--border); border-radius: 12px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 14px; line-height: 1.8; resize: vertical; }
-.journal-review .journal-inline-editor { margin-bottom: 18px; }
-.journal-review .journal-inline-editor > textarea { min-height: clamp(150px, 24dvh, 280px); padding: 18px; background: white; }
 .journal-inline-editor > textarea::placeholder { color: var(--text-tertiary); }
 .journal-inline-editor > textarea:focus-visible { outline: 2px solid #59745c; outline-offset: 2px; }
 .journal-inline-state { display: flex; min-height: 32px; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; padding-top: 6px; color: var(--text-tertiary); font-size: 11px; }
 .journal-inline-state .btn { padding: 2px 8px; font-size: 18px; }
+.journal-inline-elsewhere { padding: 2px 8px; border-radius: 6px; background: #fbf1df; color: #7a4f12; font-weight: 600; }
 .journal-inline-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 6px; color: #84392b; font-size: 12px; }
 .journal-inline-error > span { flex: 1 1 240px; }
 .journal-export { margin-top: 18px; }
@@ -74,12 +73,12 @@ body.has-shell:has(.plans-page) .topbar-inner { max-width: 2200px; }
 .journal-review > h4 { margin: 14px 0 6px; font-size: 14px; }
 .journal-week-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 14px 0 6px; }
 .journal-week-head h4 { margin: 0; font-size: 14px; }
-.journal-week-review { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--hairline); border-left: 3px solid #59745c; border-radius: 10px; background: white; }
+.journal-week-review { min-width: 0; margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--hairline); border-left: 3px solid #59745c; border-radius: 10px; background: white; }
 .journal-week-review > button { padding: 0; border: 0; background: transparent; color: var(--text-tertiary); cursor: pointer; font: inherit; font-size: 12px; text-decoration: underline; text-underline-offset: 2px; }
 .journal-muted { margin: 0 0 10px; color: var(--text-tertiary); font-size: 12px; line-height: 1.6; }
 .journal-export-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 /* Record text is Markdown; single line breaks are kept, as plain-text records were written. */
-.journal-markdown { overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; }
+.journal-markdown { min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; }
 .journal-markdown > :first-child { margin-top: 0; }
 .journal-markdown > :last-child { margin-bottom: 0; }
 .journal-markdown p { margin: 8px 0; white-space: pre-wrap; }
@@ -88,8 +87,9 @@ body.has-shell:has(.plans-page) .topbar-inner { max-width: 2200px; }
 .journal-markdown li + li { margin-top: 2px; }
 .journal-markdown blockquote { margin: 8px 0; padding: 2px 10px; border-left: 3px solid var(--border); color: var(--text-secondary); }
 .journal-markdown code { padding: 1px 4px; border-radius: 4px; background: var(--bg-subtle); font-family: var(--font-mono, monospace); font-size: 12px; }
-.journal-markdown pre { margin: 8px 0; padding: 10px 12px; overflow-x: auto; border-radius: 8px; background: var(--bg-subtle); }
+.journal-markdown pre { max-width: 100%; margin: 8px 0; padding: 10px 12px; overflow-x: auto; border-radius: 8px; background: var(--bg-subtle); }
 .journal-markdown pre code { padding: 0; background: transparent; }
+.journal-markdown-table { max-width: 100%; margin: 8px 0; overflow-x: auto; }
 .journal-markdown table { border-collapse: collapse; font-size: 12px; }
 .journal-markdown :is(th, td) { padding: 4px 8px; border: 1px solid var(--hairline); }
 .journal-markdown a { color: #2f6148; text-decoration: underline; text-underline-offset: 2px; }
@@ -120,9 +120,11 @@ body.has-shell:has(.plans-page) .topbar-inner { max-width: 2200px; }
 .journal-message { padding: 10px 12px; border: 1px solid #c6d8c0; border-radius: 8px; background: #f1f8ef; font-size: 13px; }
 .journal-error { border-color: #e9c4bd; background: #fff3f0; color: #84392b; }
 .journal-timeline { display: grid; gap: 12px; margin: 0; padding: 0 0 0 16px; list-style: none; border-left: 2px solid #dfe7db; }
-.journal-timeline li { position: relative; }
-.journal-timeline li::before { position: absolute; top: 22px; left: -22px; width: 10px; height: 10px; border-radius: 50%; background: #6e8666; content: ''; }
-.journal-timeline article { padding: 15px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
+/* Only the timeline's own items get its dot; lists inside a record's Markdown keep theirs. Items and
+   cards may shrink, so wide record content scrolls inside the card instead of widening the page. */
+.journal-timeline > li { position: relative; min-width: 0; }
+.journal-timeline > li::before { position: absolute; top: 22px; left: -22px; width: 10px; height: 10px; border-radius: 50%; background: #6e8666; content: ''; }
+.journal-timeline article { min-width: 0; padding: 15px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-surface); }
 .journal-timeline header { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
 .journal-timeline time, .journal-timeline small { color: var(--text-tertiary); font-size: 12px; }
 .journal-kind { margin-left: 9px; padding: 3px 7px; border-radius: 6px; background: #e9eee5; color: #42603f; font-size: 11px; }

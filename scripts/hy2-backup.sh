@@ -9,6 +9,9 @@ XRAY_CONFIG="${HY2_XRAY_CONFIG:-/usr/local/etc/xray/config.json}"
 TUIC_CONFIG="${HY2_TUIC_CONFIG:-$HY_DIR/tuic.json}"
 BACKUP_DIR="${HY2_BACKUP_DIR:-$HY_DIR/backups}"
 BACKUP_KEEP="${HY2_BACKUP_KEEP:-14}"
+# Uploaded video assets are kept only while they stay small, since every one of the
+# BACKUP_KEEP archives holds its own copy.
+ASSETS_MAX_BYTES="${HY2_BACKUP_ASSETS_MAX_BYTES:-20971520}"
 DEPLOY_LOCK="${HY2_DEPLOY_LOCK:-/run/hy2-locks/deploy.lock}"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 LOCK_EXEC="${HY2_LOCK_EXEC_BIN:-$SCRIPT_DIR/hy2-lock-exec.py}"
@@ -22,6 +25,10 @@ TUIC_LOCK="${HY2_TUIC_LOCK:-$TUIC_CONFIG.lock}"
 umask 077
 install -d -m 700 "$BACKUP_DIR"
 
+if ! [[ "$ASSETS_MAX_BYTES" =~ ^[0-9]+$ ]]; then
+  printf 'HY2_BACKUP_ASSETS_MAX_BYTES must be a non-negative integer\n' >&2
+  exit 1
+fi
 if ! [[ "$BACKUP_KEEP" =~ ^[0-9]+$ ]]; then
   printf 'HY2_BACKUP_KEEP must be a non-negative integer\n' >&2
   exit 2
@@ -203,10 +210,30 @@ for p in \
   "$HY_DIR/state/journal/entries.json" \
   "$HY_DIR/state/plans/tasks.json" \
   "$HY_DIR/state/plans/schedule.json" \
+  "$HY_DIR/state/ai/services.json" \
+  "$HY_DIR/state/shop/source-merchant.json" \
+  "$HY_DIR/state/shop/prodseller.key" \
+  "$HY_DIR/state/video/settings.json" \
+  "$HY_DIR/state/video/workflows.json" \
+  "$HY_DIR/state/video/runs.json" \
+  "$HY_DIR/state/chat/settings.json" \
   "$TUIC_CONFIG" \
   "$XRAY_CONFIG"; do
   add_path "$p"
 done
+
+# The stores above write each file by atomic rename, so every file is read whole.
+# Supplier catalog caches (state/shop/source*.json) are re-fetched and left out.
+assets_dir="$HY_DIR/state/video/assets"
+if [[ -d "$assets_dir" ]]; then
+  assets_bytes="$(du -sb -- "$assets_dir" | cut -f1)"
+  if (( assets_bytes <= ASSETS_MAX_BYTES )); then
+    add_path "$assets_dir"
+  else
+    printf 'Video assets (%s bytes) exceed HY2_BACKUP_ASSETS_MAX_BYTES and are not in this backup\n' \
+      "$assets_bytes" >&2
+  fi
+fi
 
 if [[ -d "$HY_DIR/state" ]]; then
   while IFS= read -r p; do

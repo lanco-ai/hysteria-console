@@ -11,6 +11,9 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 
 DEFAULT_JOURNAL_PATH = Path('/root/hysteria/state/journal/entries.json')
+# Zone names Python loads but browsers cannot format times in (Intl.DateTimeFormat rejects
+# them), so a record written with one could not be shown or exported.
+NON_IANA_ZONES = frozenset({'localtime', 'posixrules', 'Factory'})
 JournalKind = Literal['life', 'ai_storage', 'paper', 'ielts', 'thought', 'daily_review', 'weekly_review']
 IeltsSkill = Literal['listening', 'speaking', 'reading', 'writing']
 TEXT_FIELDS = ('title', 'body', 'question', 'explanation', 'source', 'uncertainty', 'next_check',
@@ -25,6 +28,14 @@ CONTENT_FIELDS = {
     'daily_review': ('learning_state', 'explanation', 'evidence', 'takeaway', 'next_check'),
     'weekly_review': ('evidence', 'takeaway', 'next_check'),
 }
+
+
+def _loadable_zone(value):
+    try:
+        ZoneInfo(value)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ValueError('invalid timezone') from None
+    return value
 
 
 class JournalInput(BaseModel):
@@ -55,11 +66,9 @@ class JournalInput(BaseModel):
     @field_validator('timezone')
     @classmethod
     def valid_timezone(cls, value):
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError):
-            raise ValueError('invalid timezone') from None
-        return value
+        if value in NON_IANA_ZONES or value.startswith(('posix/', 'right/')):
+            raise ValueError('invalid timezone')
+        return _loadable_zone(value)
 
     @field_validator('occurred_at', 'ended_at')
     @classmethod
@@ -92,6 +101,12 @@ class JournalRecord(JournalInput):
     created_at: datetime
     updated_at: datetime
     revision: int = Field(ge=1)
+
+    @field_validator('timezone')
+    @classmethod
+    def valid_timezone(cls, value):
+        # Records already stored stay readable with any zone Python can load.
+        return _loadable_zone(value)
 
     @field_validator('created_at', 'updated_at')
     @classmethod

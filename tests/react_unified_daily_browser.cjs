@@ -181,6 +181,22 @@ const { expect } = require('@playwright/test');
     await expect(late.getByLabel('计划标题')).toHaveValue('Unsaved before midnight');
     await night.close();
 
+    // When the system time zone changes, the page's day follows it at the next check.
+    const travel = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await travel.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
+    const trip = await travel.newPage();
+    const zone = await travel.newCDPSession(trip);
+    await zone.send('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Shanghai' });
+    await trip.route('**/api/plans/reminders', route => route.fulfill({ json: { items: [] } }));
+    await trip.clock.install({ time: new Date('2026-10-11T02:00:00Z') });
+    await trip.goto(`${base}/admin/plans`);
+    await expect(trip.getByLabel('计划日期')).toHaveValue('2026-10-11');
+    await zone.send('Emulation.setTimezoneOverride', { timezoneId: 'America/Los_Angeles' });
+    await trip.clock.fastForward('00:31');
+    await expect(trip.getByLabel('计划日期')).toHaveValue('2026-10-10');
+    await expect(trip.getByRole('button', { name: '回到今天' })).toHaveCount(0);
+    await travel.close();
+
     // Without the plan service the page still offers the records for the chosen day.
     const planFailure = await browser.newContext({ viewport: { width: 768, height: 900 }, timezoneId: 'America/Los_Angeles' });
     await planFailure.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
@@ -194,6 +210,6 @@ const { expect } = require('@playwright/test');
     await expect(degraded.locator('.journal-week-nav strong')).toHaveText('2026-09-28 — 2026-10-04');
     await expect(degraded.getByLabel('记录内容')).toBeEnabled();
     await planFailure.close();
-    console.log('PASS: day board panes and journal week view across widths, sticky time axis, separate drafts, history, deep links, midnight rollover and degraded plans');
+    console.log('PASS: day board panes and journal week view across widths, sticky time axis, separate drafts, history, deep links, midnight rollover, time zone changes and degraded plans');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

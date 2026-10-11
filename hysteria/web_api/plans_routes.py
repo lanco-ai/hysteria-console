@@ -232,8 +232,16 @@ def register_plans_routes(app, services, dispatch, *, store=None, schedule_store
         except (ValidationError, ValueError):
             raise ChatUpstreamError(200, code='invalid_model_response') from None
         # A change to a block that is not on this day's time axis cannot be applied; drop it.
+        # Each block takes at most one change: a second one for the same target would
+        # add another replacement block, so only the first is kept.
         known = {item.id for item in values.existing_blocks}
-        changes = [item.model_dump() for item in validated.schedule_changes if item.action == 'add' or item.target_id in known]
+        changes, targeted = [], set()
+        for item in validated.schedule_changes:
+            if item.action != 'add':
+                if item.target_id not in known or item.target_id in targeted:
+                    continue
+                targeted.add(item.target_id)
+            changes.append(item.model_dump())
         if not suggestions and not changes:
             raise ChatUpstreamError(200, code='invalid_model_response')
         return {

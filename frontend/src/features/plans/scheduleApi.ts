@@ -11,16 +11,21 @@ export type ScheduleDay = { blocks: DayBlock[]; routine_status: Record<string, '
 export type ScheduleCarryOver = Pick<ScheduleDay, 'blocks' | 'routine_status'>;
 export type ScheduleView = { date: string; routine: ScheduleRoutine; routine_revision: string; day: ScheduleDay; day_revision: string; previous_day?: ScheduleCarryOver };
 
+/** A failed schedule request, keeping its HTTP status (409: changed on another device). */
+export class ScheduleRequestError extends Error {
+  constructor(message: string, readonly status: number) { super(message); }
+}
+
 async function scheduleRequest(url: string, init: RequestInit = {}): Promise<ScheduleView> {
   const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store', ...init });
   const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
   if (!response.ok) {
-    throw new Error(response.status === 401 ? '登录已失效，请重新登录。'
+    throw new ScheduleRequestError(response.status === 401 ? '登录已失效，请重新登录。'
       : response.status === 403 ? '当前账号没有管理行程的权限。'
         : response.status === 409 ? '行程已在其他设备更新，请重新读取后再修改。'
           : response.status === 413 ? '行程内容过多，请减少后重试。'
             : response.status === 422 ? '行程内容不符合要求，请检查时间与标题。'
-              : '行程暂时无法读取或保存，请稍后重试。');
+              : '行程暂时无法读取或保存，请稍后重试。', response.status);
   }
   return payload as ScheduleView;
 }

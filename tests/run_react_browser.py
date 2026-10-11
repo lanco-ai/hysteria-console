@@ -49,6 +49,7 @@ def main():
         'react_unified_daily_browser.cjs',
         'react_journal_browser.cjs',
         'react_journal_rework_browser.cjs',
+        'react_journal_markdown_browser.cjs',
         'react_github_trending_browser.cjs',
         'react_shell_navigation_browser.cjs',
         'react_landing_browser.cjs',

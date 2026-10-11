@@ -82,6 +82,8 @@ def test_updated_config_keeps_blank_secrets_and_preserves_unmanaged_keys():
         'https://127.0.0.1:8083/hook', 'https://[::1]/hook', 'https://10.0.0.1/hook', 'https://192.168.1.2/',
         'https://169.254.169.254/latest', 'https://100.64.0.1/', 'https://0.0.0.0/', 'https://[::ffff:127.0.0.1]/',
         'https://[fe80::1]/', 'https://localhost/hook', 'https://LocalHost./hook', 'https://hooks.localhost/',
+        # IPv6 forms that hand an IPv4 address to a translator: NAT64 and IPv4-compatible.
+        'https://[64:ff9b::7f00:1]/', 'https://[64:ff9b::a9fe:a9fe]/', 'https://[::127.0.0.1]/', 'https://[::8.8.8.8]/',
     )],
     ({'anomaly_z_threshold': '0.5'}, 'z_threshold_invalid'),
     ({'anomaly_min_gib': 'nan'}, 'min_gib_invalid'),
@@ -140,6 +142,7 @@ def webhook_request(url='https://hooks.example.test/in?key=k'):
 
 @pytest.mark.parametrize('addresses', [
     ('10.0.0.5',), ('127.0.0.1',), ('::1',), ('169.254.169.254',), ('::ffff:10.1.2.3',),
+    ('64:ff9b::7f00:1',), ('::127.0.0.1',),
     # A name with any private answer is refused, so the connection cannot be steered to it.
     ('93.184.216.34', '192.168.0.10'), (),
 ])
@@ -154,7 +157,7 @@ def test_webhook_transport_refuses_names_resolving_to_private_addresses(addresse
 def test_webhook_transport_pins_the_checked_address_and_never_follows_redirects():
     FakeConnection.instances = []
     transport = alerts._WebhookTransport(resolve=answers('93.184.216.34', '93.184.216.35'), connection=FakeConnection)
-    assert transport.urlopen(webhook_request(), timeout=5).read() == b'ok'
+    assert transport.urlopen(webhook_request(), timeout=5).read() == b''
     connection = FakeConnection.instances[0]
     assert (connection.host, connection.port, connection.addresses, connection.timeout) == ('hooks.example.test', 443, ['93.184.216.34', '93.184.216.35'], 5)
     method, path, body, headers = connection.requests[0]
@@ -189,6 +192,29 @@ def test_pinned_connection_dials_only_vetted_addresses_and_verifies_the_url_host
     # An unreachable address falls through to the next vetted one, never to a fresh lookup.
     assert dialed == [(('2001:db8::1', 8443), 5), (('93.184.216.34', 8443), 5)]
     assert wrapped == [(sentinel, 'hooks.example.test')] and connection.sock == 'tls'
+
+
+def test_webhook_tries_few_addresses_within_one_time_budget(monkeypatch):
+    # A name with many addresses cannot hold the limiter run: only the first few are handed on.
+    FakeConnection.instances = []
+    many = [f'93.184.216.{number}' for number in range(30, 46)]
+    transport = alerts._WebhookTransport(resolve=answers(*many), connection=FakeConnection)
+    transport.urlopen(webhook_request(), timeout=5)
+    assert FakeConnection.instances[0].addresses == many[:alerts.WEBHOOK_MAX_ADDRESSES]
+    # Each unreachable address uses up the shared budget; dialling stops once it is spent.
+    clock = iter(range(0, 1000, 4))
+    monkeypatch.setattr(alerts.time, 'monotonic', lambda: next(clock))
+    dialed = []
+
+    def unreachable(address, timeout):
+        dialed.append(timeout)
+        raise OSError('timed out')
+
+    monkeypatch.setattr(alerts.socket, 'create_connection', unreachable)
+    connection = alerts._PinnedHTTPSConnection('hooks.example.test', 443, addresses=many[:4], timeout=5)
+    with pytest.raises(OSError):
+        connection.connect()
+    assert sum(dialed) <= alerts.WEBHOOK_CONNECT_BUDGET_SECONDS and len(dialed) < 4
 
 
 @pytest.fixture
@@ -240,7 +266,7 @@ def tls_receiver(tmp_path):
 
 def test_webhook_transport_delivers_over_verified_tls_without_following_redirects(tls_receiver):
     transport, received = tls_receiver
-    assert transport.urlopen(webhook_request(), timeout=5).read() == b'ok'
+    assert transport.urlopen(webhook_request(), timeout=5).read() == b''
     path, host, signature, body = received[0]
     assert (path, host.split(':')[0], signature, body) == ('/in?key=k', 'hooks.example.test', 'sha256=x', b'{}')
     with pytest.raises(OSError):

@@ -176,3 +176,27 @@ def test_journal_optional_create_key_validates_after_auth_and_origin(tmp_path):
         assert client.post('/api/journal', headers={**keyed, 'Sec-Fetch-Site': 'cross-site'}, json=paper()).status_code == 403
         # Existing clients without a key still create distinct entries.
         assert client.post('/api/journal', headers=HEADERS, json=paper()).json()['item']['id'] != first['id']
+
+
+def test_journal_takes_only_zone_names_browsers_can_format(tmp_path):
+    import json
+
+    from web_api.journal_service import JournalStore
+
+    store = JournalStore(tmp_path / 'journal.json')
+    with TestClient(create_app(Sessions(), journal_store=store)) as client:
+        # Python loads these, but the page and the Markdown export could not show their times.
+        for zone in ('localtime', 'posixrules', 'Factory', 'posix/Asia/Shanghai', 'right/UTC'):
+            response = client.post('/api/journal', headers=HEADERS, json=paper(timezone=zone))
+            assert response.status_code == 422, zone
+        created = client.post('/api/journal', headers=HEADERS, json=paper(timezone='Asia/Shanghai'))
+        assert created.status_code == 201
+    # A record stored earlier with such a name is still read rather than failing the journal.
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    data = json.loads(store.path.read_text())
+    data['items'][0]['timezone'] = 'localtime'
+    data['items'][0]['local_date'] = datetime.fromisoformat(data['items'][0]['occurred_at']).astimezone(ZoneInfo('localtime')).date().isoformat()
+    store.path.write_text(json.dumps(data))
+    assert [item['timezone'] for item in store.read()['items']] == ['localtime']

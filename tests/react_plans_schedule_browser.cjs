@@ -258,7 +258,75 @@ const { expect } = require('@playwright/test');
     const lunchRoutine = stored.routine.blocks.find(item => item.id === assistantBlocks.lunch.id);
     assert.deepEqual([lunchRoutine.start, lunchRoutine.end], ['12:00', '12:45'], 'the routine template keeps its time');
     assert(stored.routine.blocks.some(item => item.id === assistantBlocks.dinner.id), 'the routine template keeps dinner');
-    console.log('PASS: day board: routine, quick picks, folded editor, done/skip from the time axis, checklist, note, view switching and AI time-axis changes for the day only');
+
+    const reply = scheduleChanges => ({ summary: '调整一下。', service_name: 'Test AI', model: 'test-model', structured_output: 'json_schema', suggestions: [], schedule_changes: scheduleChanges });
+    let nextReply = null;
+    await page.route('**/api/plans/assistant', async route => {
+      assistantRequest = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({ json: nextReply(assistantRequest) });
+    });
+    const dayWrites = [];
+    page.on('request', request => { if (request.method() === 'PUT' && request.url().endsWith('/api/plans/schedule/day')) dayWrites.push(request.url()); });
+    const generate = async goal => {
+      await page.getByRole('button', { name: 'AI 建议' }).click();
+      await assistant.getByLabel('告诉 AI 你的目标').fill(goal);
+      await assistant.getByRole('button', { name: '生成建议' }).click();
+      await expect(changes).toBeVisible();
+    };
+    const assistantError = assistant.locator('.plans-assistant-error');
+
+    // Suggestions belong to the day they were made for: on another day they are gone, not saved there.
+    nextReply = () => reply([{ action: 'add', target_id: '', title: '晚间阅读', category: 'study', start: '21:00', end: '21:30', reason: '' }]);
+    await generate('晚上读点书');
+    await page.keyboard.press('Escape');
+    await expect(assistant).toHaveCount(0);
+    await page.getByRole('button', { name: '后一天' }).click();
+    await page.getByRole('button', { name: 'AI 建议' }).click();
+    await expect(changes).toHaveCount(0);
+    await expect(assistant.getByRole('button', { name: '保存选中建议' })).toHaveCount(0);
+    await assistant.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.getByRole('button', { name: '回到今天' }).click();
+    assert.equal(dayWrites.length, 0);
+
+    // Two changes for one routine block add one replacement; the button waits while the day saves.
+    nextReply = request => {
+      const target = request.existing_blocks.find(item => item.kind === 'routine' && item.title === '复盘与思考');
+      const update = (start, end) => ({ action: 'update', target_id: target.id, title: '复盘与思考', category: 'think', start, end, reason: '' });
+      return reply([update('22:30', '22:50'), update('23:00', '23:20')]);
+    };
+    await generate('复盘晚一点');
+    let release;
+    await page.route('**/api/plans/schedule/day', async route => { await new Promise(resolve => { release = resolve; }); await route.continue(); });
+    const save = assistant.getByRole('button', { name: /^保存/ });
+    await save.click();
+    await expect(save).toHaveText('保存中…');
+    await expect(save).toBeDisabled();
+    await expect.poll(() => typeof release).toBe('function');
+    release();
+    await expect(assistant).toHaveCount(0);
+    await page.unroute('**/api/plans/schedule/day');
+    assert.equal(dayWrites.length, 1);
+    const afterRepeat = (await (await context.request.get(`${base}/api/plans/schedule?date=${assistantRequest.date}`)).json()).day;
+    assert.deepEqual(afterRepeat.blocks.filter(item => item.title === '复盘与思考').map(item => [item.start, item.end]), [['22:30', '22:50']]);
+
+    // Another device saved the day first: the day is read again and the suggestions must be made anew,
+    // rather than a retry sending the same outdated version.
+    nextReply = () => reply([{ action: 'add', target_id: '', title: '冲突之后', category: 'life', start: '16:00', end: '16:30', reason: '' }]);
+    await generate('下午加一件事');
+    let reads = 0;
+    page.on('request', request => { if (request.method() === 'GET' && request.url().includes('/api/plans/schedule?')) reads += 1; });
+    await page.route('**/api/plans/schedule/day', route => route.fulfill({ status: 409, json: { error: 'revision_conflict' } }));
+    await assistant.getByRole('button', { name: '保存选中建议' }).click();
+    await expect(assistantError).toContainText('其他设备');
+    await expect(assistantError).toContainText('重新生成');
+    await expect(changes).toHaveCount(0);
+    await expect.poll(() => reads).toBeGreaterThan(0);
+    await expect(assistant.getByRole('button', { name: '保存选中建议' })).toBeDisabled();
+    assert.equal(dayWrites.length, 2);
+    await page.unroute('**/api/plans/schedule/day');
+    await assistant.getByRole('button', { name: '关闭', exact: true }).click();
+    await page.unroute('**/api/plans/assistant');
+    console.log('PASS: day board: routine, quick picks, folded editor, done/skip from the time axis, checklist, note, view switching and AI time-axis changes for the day only, bound to their day and version');
     await context.close();
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
