@@ -191,7 +191,7 @@ div.shop-admin-empty p { margin: 0; }
 .shop-admin-settings { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
 .shop-admin-card { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 16px 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); }
 .shop-admin-card-title { margin: 0; color: var(--text-tertiary); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
-.shop-admin-source { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 2px 16px; margin: 0; font-size: 13px; line-height: 1.6; }
+.shop-admin-source { display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; gap: 2px 16px; margin: 0; font-size: 13px; line-height: 1.6; }
 .shop-admin-source + .shop-admin-source { padding-top: 12px; border-top: 1px solid var(--hairline); }
 .shop-admin-source-name { display: grid; grid-row: span 2; align-content: start; gap: 2px; min-width: 0; }
 .shop-admin-source-name strong { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }
@@ -201,6 +201,10 @@ div.shop-admin-empty p { margin: 0; }
 .shop-admin-source-state { min-width: 0; overflow-wrap: anywhere; }
 .shop-admin-source.is-warn .shop-admin-source-state { color: var(--warn); }
 .shop-admin-source-time { color: var(--text-tertiary); font-size: 12px; }
+/* Where the merchant buys stock; only the administrator's view carries these links. */
+.shop-admin-source-site { grid-column: 3; grid-row: 1 / span 2; align-self: center; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-primary); font-size: 12px; text-decoration: none; white-space: nowrap; }
+.shop-admin-source-site:hover { border-color: var(--text-tertiary); background: var(--bg-subtle); }
+.shop-admin-buy { color: #2f6148; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .shop-admin-contact .shop-telegram-field { gap: 8px; margin: 0; }
 .shop-admin-contact > small { color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .shop-admin-contact > small.is-warn { color: var(--warn); }
@@ -332,6 +336,7 @@ div.shop-admin-empty p { margin: 0; }
   .shop-admin-panel { gap: 12px; }
   .shop-admin-card { padding: 14px 16px; }
   .shop-admin-source { grid-template-columns: minmax(0, 1fr); }
+  .shop-admin-source-site { grid-column: auto; grid-row: auto; justify-self: start; }
   .shop-admin-source-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; grid-row: auto; }
   .shop-admin-source-name small { padding-left: 0; }
   .shop-admin-toolbar { align-items: stretch; flex-direction: column; }

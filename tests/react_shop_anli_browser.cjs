@@ -27,6 +27,19 @@ async function main() {
     const showBrand = name => manager.locator('.shop-admin-brands').getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
     await expect(brandTabs).toHaveText([/^GPT 7/, /^Claude 3/, /^Grok 2/]);
     await expect(manager.locator('.shop-admin-group:visible')).toHaveCount(1);
+    // Where to restock: each source's storefront and each product's own page, in new tabs.
+    const sites = manager.locator('.shop-admin-source-status .shop-admin-source-site');
+    await expect(sites).toHaveText(['qiangyunai.com ↗', 'faka.anligpt.com ↗']);
+    assert.deepEqual(await sites.evaluateAll(links => links.map(link => [link.getAttribute('href'), link.target, link.rel])), [
+      ['https://qiangyunai.com/', '_blank', 'noopener noreferrer'], ['https://faka.anligpt.com/', '_blank', 'noopener noreferrer'],
+    ]);
+    const gptBuy = manager.locator('.shop-admin-group:visible .shop-admin-buy');
+    await expect(gptBuy).toHaveCount(5);
+    assert.ok((await gptBuy.evaluateAll(links => links.map(link => link.getAttribute('href')))).every(href => href.startsWith('https://qiangyunai.com/products/')));
+    await showBrand('Claude');
+    await expect(manager.getByRole('link', { name: /^去来源购买 / }).first()).toHaveAttribute('href', /^https:\/\/faka\.anligpt\.com\/item\/\d+$/);
+    await showBrand('GPT');
+    evidence.assertions.push('admin sees each source storefront and per-product source pages');
     for (const id of [5, 7, 8, 11, 10]) {
       const key = `${1000000000000 + id}:1`;
       await expect(manager.getByLabel(`售价 ${key}`, { exact: true })).toHaveValue('');
@@ -53,7 +66,7 @@ async function main() {
     const catalogText = await catalogResponse.text();
     const catalog = JSON.parse(catalogText);
     assert.equal(catalog.products.length, 6);
-    assert.equal(/cost_cents|source_url|faka\.anligpt|supplier marketing|sources|order_sold/.test(catalogText), false);
+    assert.equal(/cost_cents|source_url|buy_url|faka\.anligpt|qiangyunai|supplier marketing|sources|order_sold/.test(catalogText), false);
     assert.ok(catalog.products.every(product => product.variants.every(variant => variant.quantity === null && variant.sales === null)));
     evidence.assertions.push('retail-only public projection; no upstream contacts, HTML, prices, URLs or sales');
     if (screenshots) fs.mkdirSync(screenshots, { recursive: true });

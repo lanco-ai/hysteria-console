@@ -703,3 +703,36 @@ def test_snapshot_labels_accept_plain_names_and_reject_contacts(label):
     validate_items([{**row, 'label': '250点数'}])
     with pytest.raises(ValueError):
         validate_items([{**row, 'label': label}])
+
+
+def test_admin_shows_where_to_buy_each_source_item_and_the_catalog_never_does(tmp_path):
+    async def run():
+        async def anli():
+            return anli_rows()
+
+        async def prodseller():
+            return prodseller_rows()
+
+        store = make_store(tmp_path, secondary_fetcher=anli, prodseller_fetcher=prodseller, clock=lambda: 1000)
+        admin = await store.refresh()
+        assert {provider: status['site'] for provider, status in admin['sources'].items()} == {
+            'gpt': 'https://qiangyunai.com/', 'anli': 'https://faka.anligpt.com/', 'prodseller': 'https://prodseller.com/',
+        }
+        links = {row['product_id']: row['buy_url'] for row in admin['items']}
+        # A storefront item opens its own page; the API-only reseller opens its storefront.
+        assert all(url.startswith('https://qiangyunai.com/products/') for product, url in links.items() if int(product) < 10**12)
+        assert {url for product, url in links.items() if 10**12 <= int(product) < 2 * 10**12} <= {
+            f'https://faka.anligpt.com/item/{int(product) - 10**12}' for product in links
+        }
+        assert links['2000000000001'] == 'https://prodseller.com/'
+        # The links are part of the administrator's view only, never of the stored source rows.
+        assert all('buy_url' not in row for row in json.loads(store.prodseller_path.read_text())['items'])
+        await store.update({
+            'revision': 0, 'telegram': 'my_shop',
+            'skus': {key: {'price_cents': 990, 'published': True} for key in (row['key'] for row in admin['items'])},
+        })
+        public = json.dumps(await store.public(), ensure_ascii=False)
+        for private in ('buy_url', 'source_url', 'qiangyunai', 'anligpt', 'prodseller', '"site"'):
+            assert private not in public
+
+    asyncio.run(run())

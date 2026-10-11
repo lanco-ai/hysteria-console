@@ -4,9 +4,10 @@ import { money, priceCents, shopRequest } from './catalog';
 import { isNoticeProduct } from './ShopNotice';
 
 type Setting = { price_cents: number | null; published: boolean };
-type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; cost_cents: number; available: boolean };
+// buy_url and site come only with the administrator's view: where to buy each item from its source.
+type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; cost_cents: number; available: boolean; buy_url?: string };
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
-type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; site?: string };
 type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini';
@@ -57,6 +58,9 @@ function marginOf(cost: number, price: string, published: boolean) {
   if (cents === null) return { tone: 'invalid', amount: '售价格式有误', rate: '' };
   const profit = cents - cost;
   return { tone: profit < 0 ? 'loss' : 'gain', amount: `${profit < 0 ? '-' : ''}${money(Math.abs(profit))}`, rate: `毛利率 ${(profit / cents * 100).toFixed(1)}%` };
+}
+function hostOf(url: string) {
+  try { return new URL(url).host; } catch { return url; }
 }
 function updatedAt(timestamp: number | null) {
   return timestamp ? new Date(timestamp * 1000).toLocaleString('zh-CN', { hour12: false, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '尚未更新';
@@ -193,6 +197,7 @@ export function ShopAdminPage() {
                 <span className="shop-admin-source-name"><strong>{SOURCE_NAMES[provider] ?? provider}</strong><small>{providerCount(provider)} 个规格</small></span>
                 <span className="shop-admin-source-state">{source.is_stale ? '商品信息待更新，此来源商品暂不能购买' : '商品信息已更新'}{source.error ? ' · 来源暂不可用，稍后自动重试' : ''}{wait > 0 ? ` · 刷新等待 ${wait} 秒` : ''}</span>
                 <small className="shop-admin-source-time">最近成功更新：{updatedAt(source.last_success)}</small>
+                {source.site ? <a className="shop-admin-source-site" href={source.site} target="_blank" rel="noopener noreferrer" aria-label={`打开 ${SOURCE_NAMES[provider] ?? provider} 的来源网站 ${hostOf(source.site)}`}>{hostOf(source.site)}<span aria-hidden="true"> ↗</span></a> : null}
               </p>;
             })}
           </div>
@@ -243,6 +248,7 @@ export function ShopAdminPage() {
                     <span>{group.length} 个规格</span>
                     <span className={`badge${published ? ' ok' : ''}`}>{published ? `已上架 ${published}/${group.length}` : '未上架'}</span>
                     {unpriced ? <span className="badge warn">待定价 {unpriced}</span> : null}
+                    {first?.buy_url ? <a className="shop-admin-buy" href={first.buy_url} target="_blank" rel="noopener noreferrer" aria-label={`去来源购买 ${first.title}`}>去来源购买<span aria-hidden="true"> ↗</span></a> : null}
                   </p>
                 </header>
                 <details className="shop-copy-editor">

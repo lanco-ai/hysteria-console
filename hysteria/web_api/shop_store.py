@@ -31,6 +31,16 @@ MANUAL_COOLDOWN = 60
 PRODSELLER_BY_NUMBER = {
     number: (supplier_id, title) for supplier_id, (number, title) in PRODSELLER_SELECTED.items()
 }
+# Each feed's own storefront, where the merchant buys stock. Administrator-only: the
+# public catalog never names a supplier.
+SOURCE_SITES = {'gpt': ORIGIN + '/', 'anli': ANLI_ORIGIN + '/', 'prodseller': PRODSELLER_ORIGIN + '/'}
+
+
+def buy_url(row):
+    """Where the merchant can buy a source item: its page, or the storefront for API-only feeds."""
+    provider = provider_of(row['product_id'])
+    # ProdSeller items come from its reseller API; their source_url is an API endpoint, not a page.
+    return SOURCE_SITES[provider] if provider == 'prodseller' else row['source_url']
 
 
 def provider_of(product_id):
@@ -285,7 +295,10 @@ class ShopStore:
             products.setdefault(product_id, dict(GEMINI_NOTICE))
         # Older saved copy may still carry supplier links; never project them.
         products = sanitize_product_copy(products)
-        statuses = {provider: self._feed_status(source) for provider, source in sources.items()}
+        statuses = {
+            provider: {**self._feed_status(source), 'site': SOURCE_SITES[provider]}
+            for provider, source in sources.items()
+        }
         successes = [
             source['last_success']
             for source in sources.values()
@@ -294,7 +307,7 @@ class ShopStore:
         return {
             **settings,
             'products': products,
-            'items': items,
+            'items': [{**row, 'buy_url': buy_url(row)} for row in items],
             'sources': statuses,
             'last_success': max(successes, default=None),
             'error': 'source_unavailable'
