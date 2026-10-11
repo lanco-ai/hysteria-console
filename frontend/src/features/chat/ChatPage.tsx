@@ -12,6 +12,7 @@ import { MemoryDialog } from './MemoryDialog';
 import { ToolsDialog } from './ToolsDialog';
 import { WorkspaceDialog } from './WorkspaceDialog';
 import { loadChatModels, loadChatSettings, type ChatModel, type ChatSettings as Settings, type ReasoningEffort } from './chatApi';
+import { defaultChatModel, groupChatModels } from './modelKinds';
 import { workspaceRequest as api, streamTurn, uploadPaper, saveDownload, WorkspaceApiError, type Conversation, type LearningProject, type Paper, type WorkspaceMessage, type WorkspacePreferences } from './workspaceApi';
 
 export type ChatPageProps = { publicHost: string; authenticated?: boolean; onUnauthenticated?: () => void; shell?: ComponentType<CodexShellProps> };
@@ -153,7 +154,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
       setReady(true);
     }).catch(e => { if (live) { report(e); setReady(true); } });
     void loadChatSettings().then(s => { if (live) setSettings(s); }).catch(report);
-    void loadChatModels().then(m => { if (live) { setModels(m); setModel(value => value || m[0]?.id || ''); } }).catch(report);
+    void loadChatModels().then(m => { if (live) { setModels(m); setModel(value => value || defaultChatModel(m)); } }).catch(report);
     void api<WorkspacePreferences>('/workspace/preferences').then(value => { if (live) setPreferences(value); }).catch(report);
     try { const data: unknown = JSON.parse(localStorage.getItem(LEGACY_KEY) || '[]'); if (Array.isArray(data)) setLegacy(data); } catch { setNotice('旧对话数据无法解析，浏览器原始记录仍保留。'); }
     // Layout preferences are read only once signed in, like the conversation state.
@@ -176,7 +177,7 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
   // An empty default model means the first available one, as the setting is labelled.
   const applyNewConversationDefaults = (values: WorkspacePreferences | null = preferences) => {
     if (!values) return;
-    setModel(current => values.default_model || models[0]?.id || current);
+    setModel(current => values.default_model || defaultChatModel(models) || current);
     setReasoning(values.default_reasoning);
   };
   // Keyed on the default values so saving other settings never resets a pick made for this draft.
@@ -371,11 +372,17 @@ export function ChatPage({ publicHost, authenticated: authProp, onUnauthenticate
     void uploadPaper(projectId, file).then(async () => { await refreshPapers(); setNotice('资料已保存，处理完成后可勾选提问。'); }).catch(report).finally(() => setUploading(false));
   };
   const locked = !authenticated || !ready || busy || uploading || projectSwitchPending;
+  const modelGroups = groupChatModels(models);
   const sendHint = sendKey === 'enter' ? 'Enter 发送 · Shift + Enter 换行' : 'Ctrl / ⌘ + Enter 发送 · Enter 换行';
   const paperTitle = (id: string) => papers.find(p => p.id === id)?.title || '资料';
 
   const toolbar = <div className="chat-topbar-controls">
-    <label><span className="sr-only">当前模型</span><input className="chat-toolbar-select chat-toolbar-model-input" aria-label="当前模型" list="workspace-models" value={model} onChange={e => setModel(e.target.value)} disabled={locked} placeholder="选择或输入模型" /><datalist id="workspace-models">{models.map(m => <option value={m.id} key={m.id}>{m.name}</option>)}</datalist></label>
+    <label><span className="sr-only">当前模型</span><select className="chat-toolbar-select chat-toolbar-model-select" aria-label="当前模型" value={model} onChange={e => setModel(e.target.value)} disabled={locked}>
+      {!model ? <option value="">选择模型</option> : null}
+      {model && !models.some(m => m.id === model) ? <option value={model}>{model}{models.length ? '（不在模型目录中）' : ''}</option> : null}
+      {modelGroups.chat.map(m => <option value={m.id} key={m.id}>{m.name}</option>)}
+      {modelGroups.other.length ? <optgroup label="其他模型（图像、语音等，可能不支持对话）">{modelGroups.other.map(m => <option value={m.id} key={m.id}>{m.name}</option>)}</optgroup> : null}
+    </select></label>
     <select aria-label="思考强度" className="chat-toolbar-select chat-toolbar-select-small" value={reasoning} onChange={e => setReasoning(e.target.value as ReasoningEffort)} disabled={locked}><option value="auto">自动</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
     <button ref={settingsButtonRef} className="btn btn-ghost btn-sm chat-settings-trigger" type="button" aria-label="AI 设置" title="AI 设置" onClick={() => { setSettingsOpen(true); void api<WorkspacePreferences>('/workspace/preferences').then(value => { if (authRef.current) setPreferences(value); }).catch(report); }} disabled={!authenticated}><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.6"/><path d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M4.9 4.9l1.4 1.4M13.7 13.7l1.4 1.4M4.9 15.1l1.4-1.4M13.7 6.3l1.4-1.4"/></svg><span>AI 设置</span></button>
   </div>;

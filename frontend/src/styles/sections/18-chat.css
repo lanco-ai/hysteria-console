@@ -39,10 +39,8 @@
   max-width: 112px;
 }
 
-.chat-toolbar-model-input {
-  width: 170px;
-  padding-right: 10px;
-  cursor: text;
+.chat-toolbar-model-select {
+  width: 190px;
 }
 
 /* Kept for compatibility with other workbench consumers; ChatPage renders
@@ -376,7 +374,7 @@
     max-width: 136px;
   }
 
-  .chat-toolbar-model-input {
+  .chat-toolbar-model-select {
     width: 136px;
   }
 
@@ -399,7 +397,7 @@
     font-size: var(--text-caption);
   }
 
-  .chat-toolbar-model-input {
+  .chat-toolbar-model-select {
     width: 96px;
   }
 

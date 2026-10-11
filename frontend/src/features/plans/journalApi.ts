@@ -1,3 +1,5 @@
+import { journalMarkdown } from './journalMarkdown';
+
 export type JournalKind = 'life' | 'ai_storage' | 'paper' | 'ielts' | 'thought' | 'daily_review' | 'weekly_review';
 export type JournalSkill = 'listening' | 'speaking' | 'reading' | 'writing';
 
@@ -74,16 +76,30 @@ export function loadJournalSummary(weekStart: string, signal?: AbortSignal): Pro
   return journalRequest(`/api/journal/summary?week_start=${encodeURIComponent(weekStart)}`, signal ? { signal } : {});
 }
 
-export async function downloadJournal(): Promise<void> {
-  const response = await fetch('/api/journal/export', { credentials: 'same-origin', cache: 'no-store' });
-  if (!response.ok) throw new Error('导出失败，请稍后重试。');
-  const blob = await response.blob();
+function saveFile(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'life-learning-journal.json';
+  anchor.download = filename;
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
+}
+
+async function readExport(): Promise<Response> {
+  const response = await fetch('/api/journal/export', { credentials: 'same-origin', cache: 'no-store' });
+  if (!response.ok) throw new Error('导出失败，请稍后重试。');
+  return response;
+}
+
+export async function downloadJournal(): Promise<void> {
+  saveFile(await (await readExport()).blob(), 'life-learning-journal.json');
+}
+
+/** The same export as a readable Markdown document, a section per day. */
+export async function downloadJournalMarkdown(): Promise<void> {
+  const data = await (await readExport()).json().catch(() => null) as { items?: unknown } | null;
+  if (!Array.isArray(data?.items)) throw new Error('导出失败，请稍后重试。');
+  saveFile(new Blob([journalMarkdown(data.items as JournalRecord[])], { type: 'text/markdown;charset=utf-8' }), 'life-learning-journal.md');
 }

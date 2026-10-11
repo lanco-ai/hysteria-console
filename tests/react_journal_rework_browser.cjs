@@ -21,7 +21,11 @@ const { expect } = require('@playwright/test');
     await page.getByLabel(box, { exact: true }).press('Control+Enter');
     await expect(page.locator(state)).toHaveText('已自动保存');
   }
-  const savedRecap = (page, text) => saved(page, text, '本周回顾内容', '#journal-review-autosave-state');
+  // A weekly review is written in the same box with the 每周回顾 category.
+  async function savedRecap(page, text) {
+    await page.getByLabel('筛选分类').selectOption('weekly_review');
+    await saved(page, text);
+  }
   async function records(context, q) { return (await (await context.request.get(`${base}/api/journal?q=${encodeURIComponent(q)}`)).json()).items; }
   try {
     await scenario('failed autosave protects text and navigation while closed', async page => {
@@ -186,10 +190,13 @@ const { expect } = require('@playwright/test');
       await page.goto(`${base}/admin/plans#daily-review`);
       await page.getByRole('button', { name: '上周' }).click();
       await savedRecap(page, 'Past selected week direct recap');
+      // 上周 moves the page date back seven days (2026-09-29 to 09-22), into the week of 09-21.
       const [record] = await records(context, 'Past selected week');
-      assert.equal(record.kind, 'weekly_review'); assert.equal(record.local_date, '2026-09-21');
+      assert.equal(record.kind, 'weekly_review'); assert.equal(record.local_date, '2026-09-22');
       await expect(page.locator('.journal-counts')).toContainText('每周回顾：1');
-      await page.getByRole('button', { name: '上周' }).click(); await expect(page.getByLabel('本周回顾内容', { exact: true })).toHaveValue('');
+      await expect(page.locator('.journal-week-review')).toContainText('Past selected week direct recap');
+      await page.getByRole('button', { name: '上周' }).click(); await expect(page.getByLabel('记录内容')).toHaveValue('');
+      await expect(page.locator('.journal-week-review')).toHaveCount(0);
     });
 
     await scenario('late old-date reads cannot replace a newer selection', async page => {

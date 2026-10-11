@@ -361,3 +361,75 @@ def test_plan_assistant_rejects_more_than_eight_suggestions(tmp_path, plan_model
         })
     assert response.status_code == 502
     assert response.json() == {'error': 'invalid_model_response'}
+
+
+BLOCKS = [
+    {'id': 'deep-work', 'kind': 'routine', 'title': '深度工作', 'category': 'work', 'start': '09:00', 'end': '12:00', 'status': 'planned'},
+    {'id': 'lunch-walk', 'kind': 'day', 'title': '午饭后散步', 'category': 'exercise', 'start': '12:45', 'end': '13:15', 'status': 'planned'},
+]
+
+
+def ask_with_blocks(tmp_path, plan_model, result):
+    plan_model.result = result
+    ai_store = make_ai_store(tmp_path)
+    configure_chat(ai_store)
+    plan_store = PlanStore(tmp_path / 'plans.json')
+    with TestClient(create_app(Sessions(), plans_store=plan_store, ai_services_store=ai_store)) as client:
+        response = client.post('/api/plans/assistant', headers=HEADERS, json={
+            'date': '2026-10-10', 'timezone': 'Asia/Shanghai', 'request': '下午要写周报，上午少安排一点',
+            'existing_tasks': [], 'existing_blocks': BLOCKS,
+        })
+    assert plan_store.read()['items'] == []
+    return response
+
+
+def test_plan_assistant_suggests_changes_to_the_days_time_axis(tmp_path, plan_model):
+    change = {'title': '', 'category': '', 'start': '', 'end': '', 'reason': ''}
+    response = ask_with_blocks(tmp_path, plan_model, {
+        'summary': '把周报放进下午，上午的深度工作缩短。',
+        'suggestions': [],
+        'schedule_changes': [
+            {**change, 'action': 'add', 'target_id': '', 'title': '写周报', 'category': 'work', 'start': '14:00', 'end': '15:30', 'reason': '下午精力足'},
+            {**change, 'action': 'update', 'target_id': 'deep-work', 'title': '深度工作', 'category': 'work', 'start': '09:30', 'end': '11:30'},
+            {**change, 'action': 'remove', 'target_id': 'lunch-walk'},
+            # A block the day does not have cannot be changed, so it is dropped rather than failing the rest.
+            {**change, 'action': 'remove', 'target_id': 'not-on-this-day'},
+        ],
+    })
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data['suggestions'] == []
+    assert [(item['action'], item['target_id']) for item in data['schedule_changes']] == [('add', ''), ('update', 'deep-work'), ('remove', 'lunch-walk')]
+    prompt = plan_model.calls[0]['prompt']
+    assert '"existing_blocks"' in prompt and '深度工作' in prompt and 'schedule_changes' in prompt
+    schema = plan_model.calls[0]['schema']
+    assert 'schedule_changes' in schema['required'] and schema['properties']['suggestions']['minItems'] == 0
+
+
+@pytest.mark.parametrize('changes', [
+    # An addition needs a real block: a known category, valid times and a duration.
+    [{'action': 'add', 'target_id': '', 'title': '写周报', 'category': 'nap', 'start': '14:00', 'end': '15:00', 'reason': ''}],
+    [{'action': 'add', 'target_id': '', 'title': '写周报', 'category': 'work', 'start': '14:00', 'end': '14:00', 'reason': ''}],
+    [{'action': 'update', 'target_id': 'deep-work', 'title': '深度工作', 'category': 'work', 'start': '25:00', 'end': '11:00', 'reason': ''}],
+    [{'action': 'add', 'target_id': 'deep-work', 'title': '写周报', 'category': 'work', 'start': '14:00', 'end': '15:00', 'reason': ''}],
+    [{'action': 'remove', 'target_id': '', 'title': '', 'category': '', 'start': '', 'end': '', 'reason': ''}],
+    # Nothing to apply at all, including when every change pointed elsewhere.
+    [],
+    [{'action': 'remove', 'target_id': 'not-on-this-day', 'title': '', 'category': '', 'start': '', 'end': '', 'reason': ''}],
+])
+def test_plan_assistant_rejects_unusable_schedule_changes(tmp_path, plan_model, changes):
+    response = ask_with_blocks(tmp_path, plan_model, {'summary': '调整行程', 'suggestions': [], 'schedule_changes': changes})
+    assert response.status_code == 502
+    assert response.json() == {'error': 'invalid_model_response'}
+
+
+def test_plan_assistant_validates_the_time_axis_it_is_given(tmp_path, plan_model):
+    ai_store = make_ai_store(tmp_path)
+    configure_chat(ai_store)
+    with TestClient(create_app(Sessions(), plans_store=PlanStore(tmp_path / 'plans.json'), ai_services_store=ai_store)) as client:
+        response = client.post('/api/plans/assistant', headers=HEADERS, json={
+            'date': '2026-10-10', 'timezone': 'UTC', 'request': '安排', 'existing_tasks': [],
+            'existing_blocks': [{**BLOCKS[0], 'category': 'nap'}],
+        })
+    assert response.status_code == 400
+    assert plan_model.calls == []

@@ -1,3 +1,5 @@
+import type { ScheduleCategory } from './scheduleApi';
+
 export type PlanQuadrant = 'important_urgent' | 'important' | 'urgent' | 'later';
 export type PlanStatus = 'todo' | 'in_progress' | 'done';
 
@@ -28,12 +30,33 @@ export type PlanAssistantSuggestion = {
   reminder_offset_minutes: number;
   reason: string;
 };
+/** A block on the day's time axis, sent so the assistant can suggest changes to it. */
+export type PlanAssistantBlock = {
+  id: string;
+  kind: 'routine' | 'day';
+  title: string;
+  category: ScheduleCategory;
+  start: string;
+  end: string;
+  status: 'planned' | 'done' | 'skipped';
+};
+/** A suggested change to the day's time axis; it applies to that day only, never to the routine. */
+export type PlanScheduleChange = {
+  action: 'add' | 'update' | 'remove';
+  target_id: string;
+  title: string;
+  category: ScheduleCategory | '';
+  start: string;
+  end: string;
+  reason: string;
+};
 export type PlanAssistantPreview = {
   summary: string;
   model: string;
   service_name: string;
   structured_output: 'json_schema' | 'json_text_fallback';
   suggestions: PlanAssistantSuggestion[];
+  schedule_changes?: PlanScheduleChange[];
 };
 
 async function requestPlanAt<T>(url: string, init: RequestInit = {}): Promise<T> {
@@ -81,6 +104,7 @@ export function requestPlanAssistant(input: {
   timezone: string;
   request: string;
   existing_tasks: PlanAssistantTaskContext[];
+  existing_blocks?: PlanAssistantBlock[];
 }): Promise<PlanAssistantPreview> {
   return requestPlanAt<PlanAssistantPreview>('/api/plans/assistant', {
     method: 'POST',

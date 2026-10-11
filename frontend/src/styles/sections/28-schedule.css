@@ -52,8 +52,15 @@
 .schedule-board-switch button[aria-pressed="true"] { background: #e7ece2; color: var(--text-primary); }
 .schedule-board-switch button:focus-visible { outline: 2px solid #59745c; outline-offset: 1px; }
 .schedule-board > .schedule-message { margin-top: 10px; }
+/* 时间分配 sits at the top of the board: the same day, summed up by category. */
+.schedule-board > .schedule-allocation { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: var(--bg-page); }
+.schedule-board > .schedule-allocation .schedule-card-label { margin-bottom: 6px; }
+.schedule-board > .schedule-allocation .schedule-allocation-bar { height: 10px; }
+.schedule-board > .schedule-allocation .schedule-legend { gap: 4px 12px; margin-top: 8px; }
+.schedule-board > .schedule-allocation .schedule-muted { margin: 4px 0 0; }
 .schedule-timeline-state { min-height: 200px; }
-.schedule-timeline { position: relative; flex: 1 1 0; min-height: 0; margin-top: 10px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+/* Padding keeps the 00:00 and 24:00 labels, which sit half above their lines, inside the scroll area. */
+.schedule-timeline { position: relative; flex: 1 1 0; min-height: 0; margin-top: 10px; padding: 10px 0 12px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .schedule-timeline-canvas { position: relative; cursor: copy; }
 .schedule-hour { position: absolute; right: 0; left: 0; height: 0; border-top: 1px solid var(--hairline); pointer-events: none; }
 .schedule-hour > span { position: absolute; top: -8px; left: 0; padding-right: 6px; background: var(--bg-surface); color: var(--text-tertiary); font-family: var(--font-num); font-size: 11px; font-variant-numeric: tabular-nums; }

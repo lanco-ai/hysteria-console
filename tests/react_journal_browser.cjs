@@ -17,7 +17,7 @@ const fs = require('node:fs');
     await page.goto(`${base}/admin/plans#daily-timeline`);
     const box = page.getByLabel('记录内容');
     await expect(page.locator('.journal-timeline-primary textarea[aria-label="记录内容"]')).toBeVisible();
-    await expect(box).toHaveAttribute('placeholder', '这一天暂无记录。可以先记下一件小事。');
+    await expect(box).toHaveAttribute('placeholder', '这一天暂无记录。可以先记下一件小事。支持 Markdown。');
     await expect(page.locator('.journal-editor, .journal-extra-fields, .journal-optional')).toHaveCount(0);
     // The journal has no structured form (the 行程 view beside it keeps its own time fields).
     for (const label of ['记录类型', '开始时间', '结束时间', '记录标题']) await expect(page.locator('.daily-split-journal').getByLabel(label, { exact: true })).toHaveCount(0);
@@ -98,11 +98,30 @@ const fs = require('node:fs');
     await expect(page.locator('.journal-review')).toBeVisible();
     await expect(page.locator('.journal-counts')).toContainText('论文阅读：1');
     await expect(page.locator('.journal-counts')).toContainText('雅思练习：1');
-    await expect(page.locator('.journal-review textarea')).toHaveCount(1);
-    await expect(page.getByLabel('本周回顾内容', { exact: true })).toBeVisible();
+    // One writing box: the week column only summarises.
+    await expect(page.locator('.journal-review textarea')).toHaveCount(0);
     const download = page.waitForEvent('download');
     await page.getByRole('button', { name: '导出 JSON' }).click();
     assert.equal((await download).suggestedFilename(), 'life-learning-journal.json');
+
+    // Records are written in Markdown: shown formatted, exported as a Markdown document.
+    await box.fill('今天的**重点**\n\n- 第一件\n- 第二件');
+    await page.clock.runFor(1300);
+    await expect(page.locator('#journal-autosave-state')).toHaveText('已自动保存');
+    await page.getByRole('button', { name: '另记一条' }).click();
+    const formatted = page.locator('.journal-timeline .journal-markdown').filter({ hasText: '第一件' });
+    await expect(formatted.locator('strong')).toHaveText('重点');
+    await expect(formatted.locator('li')).toHaveText(['第一件', '第二件']);
+    const markdownDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: '导出 Markdown' }).click();
+    const markdownFile = await markdownDownload;
+    assert.equal(markdownFile.suggestedFilename(), 'life-learning-journal.md');
+    const markdown = fs.readFileSync(await markdownFile.path(), 'utf8');
+    assert.match(markdown, /^# 生活与学习记录\n/);
+    assert.match(markdown, /## 2026年9月28日星期一/);
+    assert.match(markdown, /### \d{2}:\d{2} · 论文阅读/);
+    assert.match(markdown, /今天的\*\*重点\*\*\n\n- 第一件\n- 第二件/);
+    assert.match(markdown, /- \*\*纠错\*\*：Review plural endings/);
     assert.deepEqual(errors, []);
     await context.close();
     console.log('PASS: direct content box, removed form, autosave persistence, metadata, search/category, recap beside the timeline, export and 390/768/1440px layout');

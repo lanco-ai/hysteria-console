@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from 'react';
 import { CodexShell } from '../../shared/CodexShell';
-import { loadPlanSnapshot, requestPlanAssistant, savePlanSnapshot, type PlanAssistantSuggestion, type PlanItem, type PlanQuadrant, type PlanSnapshot, type PlanStatus } from './plansApi';
+import { loadPlanSnapshot, requestPlanAssistant, savePlanSnapshot, type PlanAssistantSuggestion, type PlanItem, type PlanQuadrant, type PlanScheduleChange, type PlanSnapshot, type PlanStatus } from './plansApi';
 import { JournalPage } from './JournalPage';
-import { SchedulePanel } from './SchedulePanel';
+import { SchedulePanel, type ScheduleController } from './SchedulePanel';
 import type { TaskMarker } from './scheduleModel';
 
 const groups: Array<{ id: PlanQuadrant; title: string; hint: string }> = [
@@ -82,6 +82,7 @@ function planSemanticTitle(value: string): string {
 }
 
 type PlanSuggestionDraft = PlanAssistantSuggestion & { draftId: string; taskId: string; selected: boolean; targetId: string; targetManuallySelected: boolean };
+type ScheduleChangeDraft = PlanScheduleChange & { draftId: string; selected: boolean; label: string };
 const UNRESOLVED_SUGGESTION_TARGET = '__unresolved__';
 
 function suggestedTarget(title: string, existing: PlanItem[]): string {
@@ -118,6 +119,8 @@ export function PlansPage(): ReactElement {
     try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; }
   }, []);
   const [selectedDate, setSelectedDate] = useState(() => localDate(timezone));
+  const [today, setToday] = useState(() => localDate(timezone));
+  const todayRef = useRef(today);
   // Two views, each two columns: 今日计划 beside 行程, and 时间线 beside 回顾. The older
   // #daily-schedule and #daily-review links open the view that holds them.
   const hash = window.location.hash;
@@ -147,11 +150,14 @@ export function PlansPage(): ReactElement {
   const [assistantModel, setAssistantModel] = useState('');
   const [assistantOutputMode, setAssistantOutputMode] = useState('');
   const [assistantSuggestions, setAssistantSuggestions] = useState<PlanSuggestionDraft[]>([]);
+  // Suggested changes to the day's time axis, applied with the task suggestions.
+  const [assistantChanges, setAssistantChanges] = useState<ScheduleChangeDraft[]>([]);
+  const scheduleController = useRef<ScheduleController | null>(null);
   const [assistantApplyPending, setAssistantApplyPending] = useState(false);
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const hasFormDraft = Boolean(title.trim() || reminderInput);
   const hasProtectedDraft = dirty || hasFormDraft || Boolean(conflictDraft) || Boolean(pendingDeleteId)
-    || (assistantApplyPending && assistantSuggestions.length > 0);
+    || (assistantApplyPending && (assistantSuggestions.length > 0 || assistantChanges.length > 0));
   const editingBlocked = loading || loadFailed || !revision;
   const selectedDateRef = useRef(selectedDate);
   const assistantRequestRef = useRef(assistantRequest);
@@ -159,6 +165,9 @@ export function PlansPage(): ReactElement {
   const formDraftVersion = useRef(0);
   const protectedDraftRef = useRef(false);
   protectedDraftRef.current = hasProtectedDraft;
+  // Suggestions in the open AI dialog belong to the day they were made for.
+  const assistantOpenRef = useRef(false);
+  assistantOpenRef.current = assistantOpen;
   const journalProtectedRef = useRef(false);
   const onJournalProtectionChange = useCallback((protectedDraft: boolean) => {
     journalProtectedRef.current = protectedDraft;
@@ -217,7 +226,7 @@ export function PlansPage(): ReactElement {
         generationVersion.current += 1;
         assistantBusyRef.current = false;
         setAssistantBusy(false); setAssistantApplyPending(false); setAssistantOpen(false);
-        setAssistantSuggestions([]); setAssistantSummary(''); setAssistantRequest('');
+        setAssistantSuggestions([]); setAssistantChanges([]); setAssistantSummary(''); setAssistantRequest('');
         assistantRequestRef.current = '';
       }
     } catch (value) {
@@ -240,6 +249,25 @@ export function PlansPage(): ReactElement {
     void reload(controller.signal);
     return () => controller.abort();
   }, [reload]);
+
+  // The page follows the clock past midnight: "today" moves on, and so does a page left on today,
+  // unless something on it is unsaved or the AI dialog is open (then it stays where the work is).
+  useEffect(() => {
+    const check = () => {
+      const next = localDate(timezone);
+      const previous = todayRef.current;
+      if (next === previous) return;
+      todayRef.current = next;
+      setToday(next);
+      if (selectedDateRef.current === previous && !protectedDraftRef.current && !journalProtectedRef.current && !scheduleProtectedRef.current && !assistantOpenRef.current) {
+        selectedDateRef.current = next;
+        setSelectedDate(next);
+      }
+    };
+    const timer = window.setInterval(check, 30_000);
+    document.addEventListener('visibilitychange', check);
+    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', check); };
+  }, [timezone]);
 
   // An older link to 行程 opens the plan view. On wide pages the time axis is already in view; when the
   // panes stack it is below the plan, so scroll to it once the plan has loaded and the layout settled.
@@ -358,7 +386,6 @@ export function PlansPage(): ReactElement {
     .filter(item => item.plan_date === selectedDate && item.start_time)
     .map(item => ({ id: item.id, title: item.title, start: item.start_time!.slice(0, 5), minutes: item.estimate_minutes, done: item.status === 'done' })), [items, selectedDate]);
   const completedCount = selectedItems.filter(item => item.status === 'done').length;
-  const today = localDate(timezone);
   const dayFromToday = dayOffset(today, selectedDate);
   const suggestionIssues = new Map<string, string>();
   const suggestionWarnings = new Map<string, string>();
@@ -439,13 +466,16 @@ export function PlansPage(): ReactElement {
     const submittedDate = selectedDate;
     const submittedRequest = assistantRequest.trim();
     assistantBusyRef.current = true;
-    setAssistantBusy(true); setAssistantApplyPending(false); setAssistantError(''); setAssistantSummary(''); setAssistantSuggestions([]);
+    setAssistantBusy(true); setAssistantApplyPending(false); setAssistantError(''); setAssistantSummary(''); setAssistantSuggestions([]); setAssistantChanges([]);
+    // The day's time axis, so the assistant can also suggest changes to it.
+    const controller = scheduleController.current?.date === submittedDate ? scheduleController.current : null;
     try {
       const result = await requestPlanAssistant({
         date: submittedDate,
         timezone,
         request: submittedRequest,
         existing_tasks: selectedItems.map(({ title, quadrant, status, estimate_minutes }) => ({ title, quadrant, status, estimate_minutes })),
+        existing_blocks: controller ? controller.blocks() : [],
       });
       if (generationVersion.current !== requestVersion) return;
       if (editVersion.current !== submittedEditVersion || selectedDateRef.current !== submittedDate || assistantRequestRef.current.trim() !== submittedRequest) {
@@ -457,6 +487,7 @@ export function PlansPage(): ReactElement {
       setAssistantOutputMode(result.structured_output);
       const existing = itemsRef.current.filter(item => item.plan_date === submittedDate);
       setAssistantSuggestions(result.suggestions.map(item => ({ ...item, draftId: newId(), taskId: newId(), selected: true, targetId: suggestedTarget(item.title, existing), targetManuallySelected: false })));
+      setAssistantChanges(controller ? (result.schedule_changes ?? []).map(change => ({ ...change, draftId: newId(), selected: true, label: controller.describe(change) })) : []);
     } catch (value) {
       if (generationVersion.current !== requestVersion) return;
       setAssistantError(value instanceof Error ? value.message : 'AI 建议暂时不可用。');
@@ -516,13 +547,19 @@ export function PlansPage(): ReactElement {
     return () => { document.removeEventListener('keydown', onAssistantKeyDown); document.body.style.overflow = previousOverflow; };
   }, [assistantOpen, closeAssistant]);
 
+  const finishAssistant = (message: string) => {
+    setAssistantOpen(false); setAssistantSuggestions([]); setAssistantChanges([]); setAssistantSummary(''); setAssistantRequest('');
+    assistantRequestRef.current = ''; setAssistantApplyPending(false);
+    setFeedback(message);
+  };
   const applySuggestions = async () => {
     const selected = assistantSuggestions.filter(item => item.selected);
-    if (!selected.length || suggestionIssues.size || saving || editingBlocked) return;
+    const selectedChanges = assistantChanges.filter(item => item.selected);
+    if ((!selected.length && !selectedChanges.length) || suggestionIssues.size || saving || editingBlocked) return;
     const duplicateAddCount = selected.filter(suggestion => !suggestion.targetId && suggestion.targetManuallySelected
       && selectedItems.some(item => planSemanticTitle(item.title) === planSemanticTitle(suggestion.title))).length;
     if (duplicateAddCount && !window.confirm(`${duplicateAddCount} 条建议与已有计划相似；仍然添加会产生重复计划。继续？`)) return;
-    if (dirty && !window.confirm('保存 AI 建议会同时保存当前其他未保存的修改。继续？')) return;
+    if (selected.length && dirty && !window.confirm('保存 AI 建议会同时保存当前其他未保存的修改。继续？')) return;
     const current = timestamp();
     const additions: PlanItem[] = [];
     const updates = new Map<string, PlanItem>();
@@ -545,22 +582,37 @@ export function PlansPage(): ReactElement {
         });
       }
     }
-    if (!additions.length && !updates.size) {
-      setAssistantOpen(false); setAssistantSuggestions([]); setAssistantSummary('');
-      setAssistantApplyPending(false); setAssistantRequest(''); assistantRequestRef.current = '';
-      setFeedback('所选建议与现有计划一致，无需保存。');
+    const planChanged = additions.length > 0 || updates.size > 0;
+    if (!planChanged && !selectedChanges.length) {
+      finishAssistant('所选建议与现有计划一致，无需保存。');
       return;
     }
     setAssistantApplyPending(true);
-    const nextItems = [
-      ...additions,
-      ...itemsRef.current.map(item => updates.get(item.id) || item),
-    ];
-    if (await persist(nextItems)) {
-      setAssistantOpen(false); setAssistantSuggestions([]); setAssistantSummary(''); setAssistantRequest('');
-      assistantRequestRef.current = ''; setAssistantApplyPending(false);
-      if (lastPersistWasClean.current) setFeedback(`已保存 ${additions.length} 条新计划、更新 ${updates.size} 条现有计划`);
+    if (planChanged) {
+      const nextItems = [
+        ...additions,
+        ...itemsRef.current.map(item => updates.get(item.id) || item),
+      ];
+      if (!(await persist(nextItems))) return;
+      // The tasks are saved: a retry after a failed time-axis change must not add them again.
+      setAssistantSuggestions([]);
     }
+    if (selectedChanges.length) {
+      const controller = scheduleController.current;
+      if (!controller || controller.date !== selectedDateRef.current) {
+        setAssistantError('行程已切换到其他日期，行程调整没有保存；请重新生成建议。');
+        return;
+      }
+      if (!(await controller.apply(selectedChanges))) {
+        setAssistantError(planChanged ? '计划已保存，但行程调整没有保存，可以重试。' : '行程调整没有保存，可以重试。');
+        return;
+      }
+    }
+    const parts = [
+      planChanged ? `${additions.length} 条新计划、更新 ${updates.size} 条现有计划` : '',
+      selectedChanges.length ? `调整 ${selectedChanges.length} 项行程` : '',
+    ].filter(Boolean);
+    finishAssistant(!planChanged || lastPersistWasClean.current ? `已保存：${parts.join('，')}` : '保存期间的新修改尚未同步，请再次保存');
   };
 
   const abandonLocalChanges = () => {
@@ -571,7 +623,7 @@ export function PlansPage(): ReactElement {
     }
     formDraftVersion.current += 1;
     setTitle(''); setReminderInput('');
-    setAssistantApplyPending(false); setAssistantOpen(false); setAssistantSuggestions([]); setAssistantSummary('');
+    setAssistantApplyPending(false); setAssistantOpen(false); setAssistantSuggestions([]); setAssistantChanges([]); setAssistantSummary('');
     setFeedback(''); setError('');
   };
 
@@ -623,9 +675,9 @@ export function PlansPage(): ReactElement {
       </header>
 
       <div className="daily-views">
-      <SchedulePanel visible={!journalView} ready={!loading} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange}>{schedule => <div className="day-board" hidden={journalView}>
+      <SchedulePanel visible={!journalView} ready={!loading} selectedDate={selectedDate} today={today} tasks={scheduleTasks} onProtectionChange={onScheduleProtectionChange} controllerRef={scheduleController}>{schedule => <div className="day-board" hidden={journalView}>
       {/* Today at a glance, then the plan, the day board and the side cards. */}
-      <div className="day-summary">{schedule.now}{taskSummary}{schedule.progress}{schedule.allocation}</div>
+      <div className="day-summary">{schedule.now}{taskSummary}{schedule.progress}</div>
       <div className="day-left">
       <section className="daily-plans-section" id="plans-workspace" aria-labelledby="daily-plans-title" tabIndex={-1}>
       <header className="daily-column-head plans-pane-head"><h3 id="daily-plans-title">今日计划</h3><small>按重要与紧急分组</small><div className="plans-header-actions"><button className="btn btn-secondary plans-ai-trigger" type="button" ref={assistantTriggerRef} onClick={() => { if (assistantOpen) closeAssistant(); else setAssistantOpen(true); }} disabled={editingBlocked}><PlansGlyph name="spark" />AI 建议</button><button className="btn btn-ghost plans-refresh" type="button" aria-label="刷新" title={hasProtectedDraft ? '请先保存或明确放弃未保存的修改' : '重新读取计划'} onClick={() => void reload()} disabled={loading || saving || hasProtectedDraft}><PlansGlyph name="refresh" /></button></div></header>
@@ -670,13 +722,13 @@ export function PlansPage(): ReactElement {
 
         {assistantOpen ? <><button className="plans-assistant-backdrop" type="button" tabIndex={-1} aria-label="关闭 AI 建议" onClick={closeAssistant} /><section className="plans-assistant" role="dialog" aria-modal="true" aria-labelledby="plans-assistant-title" tabIndex={-1}>
         <div className="plans-assistant-dialog">
-        <header><div><p className="plans-eyebrow">AI 助手</p><h3 id="plans-assistant-title">把目标整理成可选计划</h3><p>预览后可以将建议添加为新计划，或选择现有任务补充内容。</p></div><button className="btn btn-ghost btn-sm" type="button" ref={assistantCloseRef} onClick={closeAssistant}>关闭</button></header>
+        <header><div><p className="plans-eyebrow">AI 助手</p><h3 id="plans-assistant-title">把目标整理成可选计划</h3><p>预览后可以将建议添加为新计划、补充现有任务，也可以调整这一天的行程。</p></div><button className="btn btn-ghost btn-sm" type="button" ref={assistantCloseRef} onClick={closeAssistant}>关闭</button></header>
         {error ? renderPlanError('err plans-error plans-assistant-save-state') : conflictDraft ? renderConflictNotice('plans-conflict-draft plans-assistant-save-state') : null}
         <label htmlFor="plan-assistant-request">告诉 AI 你的目标<textarea id="plan-assistant-request" value={assistantRequest} onChange={event => changeAssistantRequest(event.target.value)} maxLength={4000} rows={3} placeholder="例如：今天先完成项目方案，下午运动，给重要任务留出专注时间。" disabled={editingBlocked} /></label>
         <div className="plans-assistant-actions"><button className="btn btn-primary" type="button" onClick={() => void generateSuggestions()} disabled={editingBlocked || assistantBusy || !assistantRequest.trim()}>{assistantBusy ? '正在整理建议…' : '生成建议'}</button><a href="/admin/services#assistant-models">选择服务和模型</a></div>
         {assistantError ? <p className="plans-assistant-error" role="alert">{assistantError}</p> : null}
         {assistantSummary ? <div className="plans-assistant-preview"><p>{assistantSummary}</p><small>{assistantModel} · 预览不会自动保存 · {assistantOutputMode === 'json_text_fallback' ? '结构化参数不支持，已降级为严格 JSON 文本并完成校验' : 'JSON Schema 输出已通过结构校验'}</small>
-          <ul>{assistantSuggestions.map(item => <li key={item.draftId}>
+          {assistantSuggestions.length ? <ul>{assistantSuggestions.map(item => <li key={item.draftId}>
             <label className="plans-assistant-select"><input type="checkbox" aria-label={`选择建议：${item.title || '未命名计划'}`} checked={item.selected} onChange={event => setAssistantSuggestions(current => current.map(draft => draft.draftId === item.draftId ? { ...draft, selected: event.target.checked } : draft))} /></label>
             <div className="plans-assistant-suggestion"><input aria-label="建议任务标题" maxLength={160} value={item.title} onChange={event => { const nextTitle = event.target.value; setAssistantSuggestions(current => current.map(draft => draft.draftId === item.draftId ? { ...draft, title: nextTitle, targetId: draft.targetManuallySelected ? draft.targetId : suggestedTarget(nextTitle, selectedItems) } : draft)); }} /><p>{item.reason}</p>
               <label className="plans-assistant-target">如何应用<select aria-label={`如何应用建议：${item.title || '未命名计划'}`} value={item.targetId} onChange={event => setAssistantSuggestions(current => current.map(draft => draft.draftId === item.draftId ? { ...draft, targetId: event.target.value, targetManuallySelected: true } : draft))}><option value={UNRESOLVED_SUGGESTION_TARGET}>请选择新增或更新</option><option value="">添加为新计划</option>{selectedItems.map(existing => <option key={existing.id} value={existing.id}>更新：{existing.title}</option>)}</select></label>
@@ -685,8 +737,15 @@ export function PlansPage(): ReactElement {
               {suggestionIssues.get(item.draftId) ? <small className="plans-assistant-issue" role="alert">{suggestionIssues.get(item.draftId)}</small> : null}
               {suggestionWarnings.get(item.draftId) ? <small className="plans-assistant-warning" role="status">{suggestionWarnings.get(item.draftId)}</small> : null}
             </div>
-          </li>)}</ul>
-          <button className="btn btn-primary" type="button" onClick={() => void applySuggestions()} disabled={saving || suggestionIssues.size > 0 || !assistantSuggestions.some(item => item.selected)}>{saving ? '保存中…' : '保存选中建议'}</button>
+          </li>)}</ul> : null}
+          {assistantChanges.length ? <section className="plans-assistant-schedule" aria-label="行程调整">
+            <h4>行程调整<small>只改这一天，不改作息模板</small></h4>
+            <ul>{assistantChanges.map(change => <li key={change.draftId}>
+              <label><input type="checkbox" aria-label={`选择行程调整：${change.label}`} checked={change.selected} onChange={event => setAssistantChanges(current => current.map(draft => draft.draftId === change.draftId ? { ...draft, selected: event.target.checked } : draft))} /><span className={`plans-assistant-change is-${change.action}`}>{change.label}</span></label>
+              {change.reason ? <small>{change.reason}</small> : null}
+            </li>)}</ul>
+          </section> : null}
+          <button className="btn btn-primary" type="button" onClick={() => void applySuggestions()} disabled={saving || suggestionIssues.size > 0 || !(assistantSuggestions.some(item => item.selected) || assistantChanges.some(item => item.selected))}>{saving ? '保存中…' : '保存选中建议'}</button>
         </div> : null}
         </div></section></> : null}
     </section>

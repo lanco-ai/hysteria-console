@@ -125,7 +125,7 @@ async function preferences(context) {
     assert.equal(conversation.reasoningEffort, 'high');
 
     // A manual choice applies to this conversation only; 新对话 starts from the defaults again.
-    await page.getByLabel('当前模型').fill('model-c');
+    await page.getByLabel('当前模型').selectOption('model-c');
     await page.locator('.chat-history-panel').getByRole('button', { name: '新对话', exact: true }).click();
     await expect(page.getByLabel('当前模型')).toHaveValue('model-b');
     await page.reload();
@@ -166,7 +166,7 @@ async function preferences(context) {
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     const sidebar = page.locator('.chat-history-panel');
-    await page.getByLabel('当前模型').fill('model-c');
+    await page.getByLabel('当前模型').selectOption('model-c');
     await page.getByLabel('思考强度').selectOption('low');
     await sidebar.getByRole('button', { name: '新对话', exact: true }).click();
     await expect(page.getByLabel('当前模型')).toHaveValue('model-a');
@@ -178,7 +178,7 @@ async function preferences(context) {
     // Opening it from the list links it in the address bar.
     await sidebar.locator('.chat-session-row.active .chat-session').click();
     await expect(page).toHaveURL(/[?&]conversation=/);
-    await page.getByLabel('当前模型').fill('model-c');
+    await page.getByLabel('当前模型').selectOption('model-c');
     await page.getByLabel('思考强度').selectOption('low');
     page.once('dialog', prompt => prompt.accept());
     await sidebar.locator('.chat-session-row.active').getByRole('button', { name: /^删除 / }).click();
@@ -209,7 +209,37 @@ async function preferences(context) {
 
     assert.deepEqual(errors, []);
     await context.close();
-    console.log('PASS: AI 设置 defaults, custom instructions, conflict-safe save, unsaved-edit prompt, send key and usage');
+
+    // The gateway also lists image models; the default skips them and the chooser lists every model.
+    async function mixedCatalog() {
+      const mixed = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      await mixed.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
+      await mixed.route('**/api/chat/settings', route => route.fulfill({ json: { temperature: 0.7, api_key_configured: true } }));
+      await mixed.route('**/api/chat/models', route => route.fulfill({ json: [
+        { id: 'gpt-image-2', name: 'gpt-image-2' }, { id: 'chat-first', name: 'chat-first' }, { id: 'chat-second', name: 'chat-second' },
+      ] }));
+      await mixed.route('**/api/chat/workspace/preferences', route => route.fulfill({ json: { instructions: '', default_model: '', default_reasoning: 'auto', revision: 3 } }));
+      return mixed;
+    }
+    // The conversation saved above keeps its model, marked as missing from this catalog.
+    const kept = await mixedCatalog();
+    const restored = await kept.newPage();
+    await restored.goto(`${base}/__react/admin/chat`);
+    await expect(restored.getByLabel('当前模型')).toHaveValue('model-b');
+    await expect(restored.getByLabel('当前模型').locator('option').first()).toHaveText('model-b（不在模型目录中）');
+    await kept.close();
+    const mixed = await mixedCatalog();
+    await mixed.route('**/api/chat/conversations', route => route.fulfill({ json: { items: [] } }));
+    const chooser = await mixed.newPage();
+    await chooser.goto(`${base}/__react/admin/chat`);
+    const current = chooser.getByLabel('当前模型');
+    await expect(current).toHaveValue('chat-first');
+    await expect(current.locator('option')).toHaveText(['chat-first', 'chat-second', 'gpt-image-2']);
+    await expect(current.locator('optgroup')).toHaveAttribute('label', /其他模型/);
+    await current.selectOption('chat-second');
+    await expect(current).toHaveValue('chat-second');
+    await mixed.close();
+    console.log('PASS: AI 设置 defaults, custom instructions, conflict-safe save, unsaved-edit prompt, send key, usage and the model chooser');
   } finally {
     await browser.close();
   }

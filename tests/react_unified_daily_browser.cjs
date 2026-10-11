@@ -27,7 +27,6 @@ const { expect } = require('@playwright/test');
     const timeline = page.locator('.daily-timeline-section');
     const review = page.locator('.daily-review-section');
     const entry = page.getByLabel('记录内容');
-    const recap = page.getByLabel('本周回顾内容', { exact: true });
     await expect(nav.getByRole('link')).toHaveText(['计划与行程', '时间线与回顾']);
     await expect(plansLink).toHaveAttribute('aria-current', 'page');
     await expect(page.locator('#daily-journal-drawer, .schedule-strip')).toHaveCount(0);
@@ -71,7 +70,8 @@ const { expect } = require('@playwright/test');
       await expect(plan).toBeHidden();
       await expect(page.getByRole('button', { name: 'AI 建议' })).toBeHidden();
       await expect(entry).toBeVisible();
-      await expect(recap).toBeVisible();
+      await expect(review).toBeVisible();
+      await expect(page.getByLabel('本周回顾内容')).toHaveCount(0);
       const [days, records, recapBox] = [await box(week), await box(timeline), await box(review)];
       assert(below(days, records), `the week bar leads the records at ${width}px`);
       assert(panes > 1 ? beside(records, recapBox) : below(records, recapBox), `day records and weekly review ${panes > 1 ? 'side by side' : 'stacked'} at ${width}px`);
@@ -87,31 +87,37 @@ const { expect } = require('@playwright/test');
     assert.equal(Math.round((await schedule.boundingBox()).height), 660, 'the time axis fills the window below the top bar');
     await page.evaluate(() => scrollTo(0, 0));
 
-    // Each column keeps its own draft, and a draft survives switching views.
+    // A draft survives switching views.
     await page.setViewportSize({ width: 1440, height: 900 });
     await journalLink.click();
     await entry.fill('Timeline draft');
-    await recap.fill('Week draft');
     await plansLink.click();
     await expect(entry).toBeHidden();
     await journalLink.click();
     await expect(entry).toHaveValue('Timeline draft');
-    await expect(recap).toHaveValue('Week draft');
     await expect(page.locator('#journal-autosave-state')).toHaveText('已自动保存');
-    await expect(page.locator('#journal-review-autosave-state')).toHaveText('已自动保存');
-    const saved = (await (await context.request.get(`${base}/api/journal?q=draft`)).json()).items;
-    assert.deepEqual(saved.map(item => [item.kind, item.body]).sort(), [['life', 'Timeline draft'], ['weekly_review', 'Week draft']]);
-    // The open records are shown in their writing boxes, not repeated in the list.
+    // The open record is shown in the writing box, not repeated in the list.
     await expect(page.locator('.journal-timeline')).toHaveCount(0);
     await page.getByRole('button', { name: '另记一条' }).click();
     await expect(page.locator('.journal-timeline')).toContainText('Timeline draft');
-    await expect(page.locator('.journal-timeline')).not.toContainText('Week draft');
     await expect(entry).toHaveValue('');
+    // A weekly review is a record with the 每周回顾 category; the week column shows it in full.
+    await review.getByRole('button', { name: '写本周回顾' }).click();
+    await expect(page.getByLabel('筛选分类')).toHaveValue('weekly_review');
+    await expect(entry).toBeFocused();
+    await entry.fill('Week draft with **progress**');
+    await entry.press('Control+Enter');
+    await expect(page.locator('#journal-autosave-state')).toHaveText('已自动保存');
+    const saved = (await (await context.request.get(`${base}/api/journal?q=draft`)).json()).items;
+    assert.deepEqual(saved.map(item => [item.kind, item.body]).sort(), [['life', 'Timeline draft'], ['weekly_review', 'Week draft with **progress**']]);
+    await expect(review.locator('.journal-week-review')).toContainText('Week draft with progress');
+    await expect(review.locator('.journal-week-review strong')).toHaveText('progress');
     await expect(page.locator('.journal-counts')).toContainText('每周回顾：1');
+    await page.getByLabel('筛选分类').selectOption('');
 
     // Back and forward switch views without losing either view's unsaved text.
     await plansLink.click();
-    // A past week, so the weekly writer starts a new record there whatever day this runs.
+    // A past day, so the writing box starts a new record there whatever day this runs.
     await page.getByLabel('计划日期').fill('2026-09-16');
     await page.getByLabel('计划标题').fill('Keep plan draft');
     await journalLink.click();
@@ -120,14 +126,14 @@ const { expect } = require('@playwright/test');
       if (route.request().method() === 'POST') await route.fulfill({ status: 503, json: { error: 'journal_unavailable' } });
       else await route.continue();
     });
-    await recap.fill('Keep review draft');
-    await recap.press('Control+Enter');
-    await expect(page.locator('#journal-review-autosave-state')).toHaveText('未保存，文字已保留');
+    await entry.fill('Keep record draft');
+    await entry.press('Control+Enter');
+    await expect(page.locator('#journal-autosave-state')).toHaveText('未保存，文字已保留');
     await page.goBack();
     await expect(page.getByLabel('计划标题')).toHaveValue('Keep plan draft');
-    await expect(recap).toBeHidden();
+    await expect(entry).toBeHidden();
     await page.goForward();
-    await expect(recap).toHaveValue('Keep review draft');
+    await expect(entry).toHaveValue('Keep record draft');
     await expect(page.getByLabel('计划标题')).toBeHidden();
     await expect(page).toHaveURL(/#daily-timeline$/);
     await context.close();
@@ -137,7 +143,7 @@ const { expect } = require('@playwright/test');
     await direct.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
     const deepLink = await direct.newPage();
     await deepLink.goto(`${base}/admin/plans#daily-review`);
-    await expect(deepLink.getByLabel('本周回顾内容', { exact: true })).toBeVisible();
+    await expect(deepLink.locator('.daily-review-section')).toContainText('这一周');
     await expect(deepLink.getByRole('navigation', { name: '今日页面内容' }).getByRole('link', { name: '时间线与回顾' })).toHaveAttribute('aria-current', 'page');
     await expect(deepLink.locator('.daily-review-section')).toBeInViewport();
     await expect.poll(() => deepLink.evaluate(() => scrollY)).toBeGreaterThan(0);
@@ -148,6 +154,32 @@ const { expect } = require('@playwright/test');
     await expect(scheduleLink.locator('.daily-schedule-section')).toBeInViewport();
     await expect.poll(() => scheduleLink.evaluate(() => scrollY)).toBeGreaterThan(0);
     await direct.close();
+
+    // Past midnight the page moves on to the new day, unless unsaved work keeps it where it was.
+    const night = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'Asia/Shanghai' });
+    await night.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
+    const late = await night.newPage();
+    await late.route('**/api/plans/reminders', route => route.fulfill({ json: { items: [] } }));
+    await late.clock.install({ time: new Date('2026-10-05T15:59:00Z') });
+    await late.goto(`${base}/admin/plans`);
+    const lateDate = late.getByLabel('计划日期');
+    await expect(lateDate).toHaveValue('2026-10-05');
+    await late.clock.fastForward('01:30');
+    await expect(lateDate).toHaveValue('2026-10-06');
+    await expect(late.getByRole('button', { name: '回到今天' })).toHaveCount(0);
+    // Suggestions in an open AI dialog were made for its day, so the page waits.
+    await late.getByRole('button', { name: 'AI 建议' }).click();
+    await late.clock.fastForward('24:00:00');
+    await late.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
+    await expect(lateDate).toHaveValue('2026-10-06');
+    await late.getByRole('button', { name: '回到今天' }).click();
+    await expect(lateDate).toHaveValue('2026-10-07');
+    await late.getByLabel('计划标题').fill('Unsaved before midnight');
+    await late.clock.fastForward('24:00:00');
+    await expect(late.getByRole('button', { name: '回到今天' })).toBeVisible();
+    await expect(lateDate).toHaveValue('2026-10-07');
+    await expect(late.getByLabel('计划标题')).toHaveValue('Unsaved before midnight');
+    await night.close();
 
     // Without the plan service the page still offers the records for the chosen day.
     const planFailure = await browser.newContext({ viewport: { width: 768, height: 900 }, timezoneId: 'America/Los_Angeles' });
@@ -162,6 +194,6 @@ const { expect } = require('@playwright/test');
     await expect(degraded.locator('.journal-week-nav strong')).toHaveText('2026-09-28 — 2026-10-04');
     await expect(degraded.getByLabel('记录内容')).toBeEnabled();
     await planFailure.close();
-    console.log('PASS: day board panes and journal week view across widths, sticky time axis, separate drafts, history, deep links and degraded plans');
+    console.log('PASS: day board panes and journal week view across widths, sticky time axis, separate drafts, history, deep links, midnight rollover and degraded plans');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

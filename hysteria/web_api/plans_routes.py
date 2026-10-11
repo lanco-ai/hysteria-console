@@ -11,14 +11,14 @@ import http_utils
 import state_store
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .ai.assistant_generation import generate_assistant_json
 from .ai.assistant_schemas import plan_assistant_schema
 from .ai.service_store import AIServiceError, AIServiceStore
 from .chat_service import ChatUpstreamError
 from .plans_service import PlanStore
-from .schedule_service import ScheduleStore
+from .schedule_service import CATEGORIES as SCHEDULE_CATEGORIES, ScheduleStore
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 
 
@@ -58,12 +58,33 @@ class AssistantTask(BaseModel):
     estimate_minutes: int = Field(default=30, ge=5, le=1440)
 
 
+def _valid_clock(value):
+    return len(value) == 5 and value[2] == ':' and value[:2].isdigit() and value[3:].isdigit() and int(value[:2]) <= 23 and int(value[3:]) <= 59
+
+
+ScheduleCategory = Literal['rest', 'meal', 'work', 'study', 'think', 'connect', 'exercise', 'life']
+
+
+class AssistantBlock(BaseModel):
+    """A block on the day's time axis, as context for the assistant."""
+
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    id: str = Field(pattern=r'^[A-Za-z0-9_-]{1,64}$')
+    kind: Literal['routine', 'day']
+    title: str = Field(min_length=1, max_length=80)
+    category: ScheduleCategory
+    start: str = Field(pattern=r'^\d{2}:\d{2}$')
+    end: str = Field(pattern=r'^\d{2}:\d{2}$')
+    status: Literal['planned', 'done', 'skipped'] = 'planned'
+
+
 class PlanAssistantRequest(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     date: str = Field(pattern=r'^\d{4}-\d{2}-\d{2}$')
     timezone: str = Field(min_length=1, max_length=128)
     request: str = Field(min_length=1, max_length=4000)
     existing_tasks: list[AssistantTask] = Field(default_factory=list, max_length=100)
+    existing_blocks: list[AssistantBlock] = Field(default_factory=list, max_length=150)
 
     @field_validator('date')
     @classmethod
@@ -102,10 +123,41 @@ class PlanSuggestion(BaseModel):
         return value
 
 
+class ScheduleChangeSuggestion(BaseModel):
+    """One change to the day's time axis. It applies to that day only, never to the routine."""
+
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    action: Literal['add', 'update', 'remove']
+    target_id: str = Field(default='', max_length=64)
+    title: str = Field(default='', max_length=80)
+    category: str = Field(default='', max_length=16)
+    start: str = Field(default='', max_length=5)
+    end: str = Field(default='', max_length=5)
+    reason: str = Field(default='', max_length=500)
+
+    @model_validator(mode='after')
+    def validate_change(self):
+        if (self.action == 'add') == bool(self.target_id):
+            raise ValueError('only add has no target')
+        if self.action != 'remove' and (
+            not self.title or self.category not in SCHEDULE_CATEGORIES
+            or not _valid_clock(self.start) or not _valid_clock(self.end) or self.start == self.end
+        ):
+            raise ValueError('invalid block')
+        return self
+
+
 class PlanAssistantResult(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     summary: str = Field(min_length=1, max_length=500)
-    suggestions: list[PlanSuggestion] = Field(min_length=1, max_length=8)
+    suggestions: list[PlanSuggestion] = Field(default_factory=list, max_length=8)
+    schedule_changes: list[ScheduleChangeSuggestion] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode='after')
+    def validate_something_to_apply(self):
+        if not self.suggestions and not self.schedule_changes:
+            raise ValueError('no suggestions')
+        return self
 
 
 def register_plans_routes(app, services, dispatch, *, store=None, schedule_store=None, ai_services_store=None):
@@ -148,16 +200,26 @@ def register_plans_routes(app, services, dispatch, *, store=None, schedule_store
         if model not in {item['id'] for item in profile['models']}:
             raise AIServiceError('model_not_available')
         task_context = [item.model_dump() for item in values.existing_tasks]
+        block_context = [item.model_dump() for item in values.existing_blocks]
         prompt = (
-            '你是私人每日计划助手。根据用户的目标和已有事项，提出 1 到 8 条可执行的计划建议。'
+            '你是私人每日计划助手。根据用户的目标、已有事项和这一天的行程，提出可执行的计划建议和行程调整。'
             '只给建议，不执行、不保存、不声称已设置提醒。保持现实、简洁；重要且紧急事项优先。不要重复已有事项；如果已有事项只是措辞不同，应优先建议更新它，而不是创建第二条。'
-            'quadrant 只能是 important_urgent、important、urgent、later。'
+            'suggestions 最多 8 条；quadrant 只能是 important_urgent、important、urgent、later。'
             'start_time 必须是当地 24 小时 HH:MM；没有把握时返回空字符串。'
             'reminder_offset_minutes 为 0 表示不建议提醒，否则是开始时间前的分钟数；若没有 start_time 必须为 0。'
+            'schedule_changes 是对这一天时间轴的调整，最多 12 条，只在用户的目标需要时给出，不需要就返回空数组：'
+            'action=add 新增一个仅这一天的时间块，target_id 为空字符串；'
+            'action=update 修改 existing_blocks 中一个时间块在这一天的标题、类别或时间；'
+            'action=remove 让 existing_blocks 中一个时间块这一天不再进行。'
+            'update 和 remove 的 target_id 必须取自 existing_blocks 的 id。'
+            'category 只能是 rest（作息）、meal（吃饭）、work（工作）、study（学习）、think（思考）、connect（联系）、exercise（运动）、life（生活）；'
+            'remove 时 title、category、start、end 可为空字符串。start 与 end 为 24 小时 HH:MM，end 早于 start 表示跨过午夜。'
+            '调整只作用于这一天，不会修改每天重复的作息模板。suggestions 与 schedule_changes 不能都为空。'
             '返回符合给定 JSON schema 的 JSON。\n\n'
             + json.dumps({
                 'date': values.date, 'timezone': values.timezone,
                 'user_request': values.request, 'existing_tasks': task_context,
+                'existing_blocks': block_context,
             }, ensure_ascii=False, separators=(',', ':'))
         )
         schema = plan_assistant_schema()
@@ -169,12 +231,18 @@ def register_plans_routes(app, services, dispatch, *, store=None, schedule_store
                 raise ValueError('reminder requires start time')
         except (ValidationError, ValueError):
             raise ChatUpstreamError(200, code='invalid_model_response') from None
+        # A change to a block that is not on this day's time axis cannot be applied; drop it.
+        known = {item.id for item in values.existing_blocks}
+        changes = [item.model_dump() for item in validated.schedule_changes if item.action == 'add' or item.target_id in known]
+        if not suggestions and not changes:
+            raise ChatUpstreamError(200, code='invalid_model_response')
         return {
             'summary': validated.summary,
             'model': model,
             'service_name': profile['name'],
             'structured_output': output_mode,
             'suggestions': suggestions,
+            'schedule_changes': changes,
         }
 
     @app.get('/api/plans')

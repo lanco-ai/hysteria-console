@@ -7,7 +7,7 @@ def plan_assistant_schema():
         'properties': {
             'summary': {'type': 'STRING'},
             'suggestions': {
-                'type': 'ARRAY', 'minItems': 1, 'maxItems': 8,
+                'type': 'ARRAY', 'minItems': 0, 'maxItems': 8,
                 'items': {
                     'type': 'OBJECT',
                     'properties': {
@@ -19,8 +19,21 @@ def plan_assistant_schema():
                     'required': ['title', 'notes', 'quadrant', 'start_time', 'estimate_minutes', 'reminder_offset_minutes', 'reason'],
                 },
             },
+            'schedule_changes': {
+                'type': 'ARRAY', 'minItems': 0, 'maxItems': 12,
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'action': {'type': 'STRING', 'enum': ['add', 'update', 'remove']},
+                        'target_id': {'type': 'STRING'}, 'title': {'type': 'STRING'},
+                        'category': {'type': 'STRING', 'enum': ['', 'rest', 'meal', 'work', 'study', 'think', 'connect', 'exercise', 'life']},
+                        'start': {'type': 'STRING'}, 'end': {'type': 'STRING'}, 'reason': {'type': 'STRING'},
+                    },
+                    'required': ['action', 'target_id', 'title', 'category', 'start', 'end', 'reason'],
+                },
+            },
         },
-        'required': ['summary', 'suggestions'],
+        'required': ['summary', 'suggestions', 'schedule_changes'],
     }
 
 
@@ -52,7 +65,7 @@ def video_assistant_schema():
 PLAN_ASSISTANT_TEST_PROMPT = (
     '这是服务能力检查。请仅返回符合要求的计划建议 JSON：summary 为“结构化输出检查”，'
     'suggestions 包含一条有效建议，quadrant 使用 important，estimate_minutes 使用 30，'
-    'start_time 和 reminder_offset_minutes 使用空时间和 0。不要包含真实用户计划。'
+    'start_time 和 reminder_offset_minutes 使用空时间和 0，schedule_changes 为空数组。不要包含真实用户计划。'
 )
 
 VIDEO_ASSISTANT_TEST_PROMPT = (

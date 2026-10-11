@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { WorkspaceDialog } from './WorkspaceDialog';
 import { saveChatSettings, type ChatModel, type ChatSettings, type ReasoningEffort } from './chatApi';
+import { groupChatModels } from './modelKinds';
 import { saveDownload, workspaceRequest as api, WorkspaceApiError, type WorkspacePreferences, type WorkspaceUsage } from './workspaceApi';
 
 export type SendKey = 'enter' | 'mod-enter';
@@ -117,9 +118,10 @@ export function AISettingsDialog({ settings, models, preferences, sendKey, legac
             <p className="workspace-muted">只影响新开的对话；已有对话保留各自选择的模型和思考强度。</p>
             <label className="field"><span className="label">默认模型</span>
               <select className="select" value={model} disabled={busy} onChange={event => setModel(event.target.value)}>
-                <option value="">第一个可用模型</option>
+                <option value="">第一个对话模型</option>
                 {model && !models.some(item => item.id === model) ? <option value={model}>{model}（当前不可用）</option> : null}
-                {models.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
+                {groupChatModels(models).chat.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}
+                {groupChatModels(models).other.length ? <optgroup label="其他模型（图像、语音等，可能不支持对话）">{groupChatModels(models).other.map(item => <option key={item.id} value={item.id}>{item.name || item.id}</option>)}</optgroup> : null}
               </select>
             </label>
             <label className="field"><span className="label">默认思考强度</span>

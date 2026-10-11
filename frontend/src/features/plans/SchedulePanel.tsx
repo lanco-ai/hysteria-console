@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type ReactElement, type ReactNode } from 'react';
-import { loadSchedule, saveScheduleDay, saveScheduleRoutine, type ScheduleCategory, type ScheduleDay, type ScheduleRoutine, type ScheduleView } from './scheduleApi';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent, type MutableRefObject, type ReactElement, type ReactNode } from 'react';
+import type { PlanAssistantBlock, PlanScheduleChange } from './plansApi';
+import { loadSchedule, saveScheduleDay, saveScheduleRoutine, type DayBlock, type ScheduleCategory, type ScheduleDay, type ScheduleRoutine, type ScheduleView } from './scheduleApi';
 import {
   allocation, categories, categoryLabel, containsMinute, dayEntries, formatDuration, formatHours, newBlockId, overlapsWith, placeSegments,
   presets, repeatLabel, repeatModeFor, repeatWeekdays, routineEntry, spanMinutes, suggestedRoutine, toClock, toMinutes, weekdayLabels, weekdayOf,
@@ -44,7 +45,6 @@ function hoursInput(minutes: number | undefined): string {
 export type ScheduleParts = {
   now: ReactNode;
   progress: ReactNode;
-  allocation: ReactNode;
   board: ReactNode;
   editor: ReactNode;
   note: ReactNode;
@@ -52,7 +52,15 @@ export type ScheduleParts = {
   routine: ReactNode;
 };
 
-export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onProtectionChange, children }: {
+/** What the page's AI assistant needs from the day's time axis: its blocks, and a way to apply changes. */
+export type ScheduleController = {
+  date: string;
+  blocks: () => PlanAssistantBlock[];
+  describe: (change: PlanScheduleChange) => string;
+  apply: (changes: PlanScheduleChange[]) => Promise<boolean>;
+};
+
+export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onProtectionChange, controllerRef, children }: {
   /** False while another view of the page is shown; the panel stays mounted so drafts survive switching. */
   visible: boolean;
   /** False while the page's own plan snapshot is loading; the schedule waits so page load needs no extra concurrent request. */
@@ -62,6 +70,7 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
   tasks: TaskMarker[];
   /** `protectedDraft`: unsaved work anywhere in the panel; `dayDraft`: work that changing the date would discard. */
   onProtectionChange: (protectedDraft: boolean, dayDraft: boolean) => void;
+  controllerRef?: MutableRefObject<ScheduleController | null>;
   children: (parts: ScheduleParts) => ReactNode;
 }): ReactElement {
   const [view, setView] = useState<ScheduleView | null>(null);
@@ -282,6 +291,51 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     }
   };
 
+  // AI suggestions change this day only: a routine block is skipped here, with this day's version added in its place.
+  const describeChange = (change: PlanScheduleChange): string => {
+    const target = change.target_id ? ownEntries.find(entry => entry.id === change.target_id) : undefined;
+    const category = change.category ? categoryLabel[change.category] : '';
+    if (change.action === 'add') return `新增 ${change.start}–${change.end} ${change.title}${category ? `（${category}）` : ''}`;
+    if (!target) return '（这一项已不在这一天的行程里）';
+    if (change.action === 'remove') return `${target.kind === 'routine' ? '这一天不做' : '删除'}「${target.title}」${entryTime(target)}`;
+    return `调整「${target.title}」→ ${change.start}–${change.end}${change.title && change.title !== target.title ? `，改为「${change.title}」` : ''}${target.kind === 'routine' ? '（只改这一天）' : ''}`;
+  };
+  const applyChanges = async (changes: PlanScheduleChange[]): Promise<boolean> => {
+    if (!current) return false;
+    let blocks = [...day.blocks];
+    const marks = { ...day.routine_status };
+    const newBlock = (change: PlanScheduleChange, notes = ''): DayBlock => ({
+      id: newBlockId(), title: change.title.trim().slice(0, 80), category: change.category as ScheduleCategory,
+      start: change.start, end: change.end, notes, status: 'planned',
+    });
+    for (const change of changes) {
+      const target = change.target_id ? ownEntries.find(entry => entry.id === change.target_id) : undefined;
+      if (change.action === 'add') blocks.push(newBlock(change));
+      else if (!target) continue;
+      else if (change.action === 'remove') {
+        if (target.kind === 'day') blocks = blocks.filter(item => item.id !== target.id); else marks[target.id] = 'skipped';
+      } else if (target.kind === 'day') {
+        blocks = blocks.map(item => item.id === target.id ? { ...item, title: change.title.trim().slice(0, 80) || item.title, category: (change.category || item.category) as ScheduleCategory, start: change.start, end: change.end } : item);
+      } else {
+        marks[target.id] = 'skipped';
+        blocks.push(newBlock({ ...change, title: change.title || target.title, category: change.category || target.category || 'life' }, `这一天代替作息模板「${target.title}」`));
+      }
+    }
+    return saveDay({ ...day, blocks, routine_status: marks }, `已按 AI 建议调整这一天的行程（${changes.length} 项）`);
+  };
+  useLayoutEffect(() => {
+    if (!controllerRef) return;
+    controllerRef.current = current ? {
+      date: current.date,
+      blocks: () => ownEntries.filter(entry => entry.category).map(entry => ({
+        id: entry.id, kind: entry.kind as 'routine' | 'day', title: entry.title, category: entry.category as ScheduleCategory,
+        start: entry.start, end: entry.end, status: entry.status,
+      })),
+      describe: describeChange,
+      apply: applyChanges,
+    } : null;
+  });
+
   const applySuggestedRoutine = () => {
     if (routine.blocks.length && !window.confirm('用推荐作息替换现有作息模板？每天的单独安排不受影响。')) return;
     void saveRoutine(suggestedRoutine(), '已套用推荐作息；可以逐条修改成你自己的节奏');
@@ -356,7 +410,8 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     {nextEntry ? <p className="schedule-next">下一项 <strong>{nextEntry.start} {nextEntry.title}</strong></p> : null}
   </article>;
 
-  const allocationCard = <article className="schedule-card schedule-allocation">
+  // How the day's time is shared out, shown above the time axis it summarises.
+  const allocationStrip = <div className="schedule-allocation">
     <p className="schedule-card-label">时间分配 · 已安排 {formatHours(plannedMinutes)} / 24h</p>
     <div className="schedule-allocation-bar" role="img" aria-label={visibleCategories.map(item => `${item.label} ${formatHours(totals[item.id])}`).join('，') || '尚未安排'}>
       {categories.map(item => totals[item.id] ? <span key={item.id} className={`schedule-cat-${item.id}`} style={{ flexGrow: totals[item.id] }} /> : null)}
@@ -367,7 +422,7 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
       const state = target ? (totals[item.id] >= target ? ' is-met' : ' is-short') : '';
       return <li key={item.id} className={`schedule-cat-${item.id}${state}`}><span className="schedule-dot" aria-hidden="true" />{item.label}<strong>{formatHours(totals[item.id])}</strong>{target ? <small>/ 目标 {formatHours(target)}</small> : null}</li>;
     })}</ul> : <p className="schedule-muted">安排之后，这里会显示每类时间的占比，并与理想的一天对比。</p>}
-  </article>;
+  </div>;
 
   const progress = <article className="schedule-card schedule-progress">
     <p className="schedule-card-label">行程完成度</p>
@@ -429,6 +484,7 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
       </div>
       <small>{boardView === 'timeline' ? '点击空白处从该时间新建；点击色块修改、完成或跳过' : dayList.length ? `${activeEntries.length} 项 · 完成 ${doneCount}` : ''}</small>
     </header>
+    {allocationStrip}
     {statusNotice}
     {boardView === 'timeline' ? timeline : agenda}
   </section>;
@@ -499,5 +555,5 @@ export function SchedulePanel({ visible, ready, selectedDate, today, tasks, onPr
     <button className="btn btn-ghost btn-sm" type="button" onClick={applySuggestedRoutine} disabled={busy || !current}>{routine.blocks.length ? '用推荐作息替换' : '套用推荐作息'}</button>
   </details>;
 
-  return <>{children({ now, progress, allocation: allocationCard, board, editor, note, targets, routine: routineCard })}</>;
+  return <>{children({ now, progress, board, editor, note, targets, routine: routineCard })}</>;
 }

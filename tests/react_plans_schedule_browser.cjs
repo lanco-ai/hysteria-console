@@ -45,7 +45,15 @@ const { expect } = require('@playwright/test');
     await page.getByRole('button', { name: '套用推荐作息' }).first().click();
     await expect(page.locator('.schedule-message')).toContainText('已套用推荐作息');
     await expect(page.locator('.schedule-block').filter({ hasText: '午餐' })).toBeVisible();
-    await expect(page.locator('.schedule-legend')).toContainText('吃饭');
+    // 时间分配 sits in the board's header, over the time axis it sums up.
+    await expect(board.locator('.schedule-allocation .schedule-legend')).toContainText('吃饭');
+    await expect(page.locator('.schedule-legend')).toHaveCount(1);
+    // The 00:00 hour label is inside the time axis, not cut off at its top edge.
+    await page.locator('.schedule-timeline').evaluate(element => { element.scrollTop = 0; });
+    const axis = await page.locator('.schedule-timeline').boundingBox();
+    const midnight = await page.locator('.schedule-hour span').first().boundingBox();
+    await expect(page.locator('.schedule-hour span').first()).toHaveText('00:00');
+    assert(midnight && midnight.y >= axis.y, `00:00 shows inside the time axis (${midnight?.y} vs ${axis.y})`);
     await showList();
     await expect(agenda).toContainText('早餐');
     await expect(agenda).toContainText('睡觉');
@@ -189,7 +197,68 @@ const { expect } = require('@playwright/test');
     await expect(page.locator('.plans-grid')).toBeVisible();
     await expect(agenda).toContainText('给妈妈打电话');
     await shot(page, 'plans-with-schedule.png');
-    console.log('PASS: day board: routine, quick picks, folded editor, done/skip from the time axis, checklist, note and view switching');
+
+    // AI 建议 also proposes changes to this day's time axis; they change this day only, never the routine.
+    let assistantRequest = null;
+    let assistantBlocks = {};
+    await page.route('**/api/plans/assistant', async route => {
+      assistantRequest = JSON.parse(route.request().postData() || '{}');
+      const find = (kind, title) => assistantRequest.existing_blocks.find(item => item.kind === kind && item.title === title);
+      assistantBlocks = { lunch: find('routine', '午餐'), dinner: find('routine', '晚餐'), call: find('day', '给妈妈打电话') };
+      const removal = (target, reason) => ({ action: 'remove', target_id: target.id, title: '', category: '', start: '', end: '', reason });
+      await route.fulfill({ json: {
+        summary: '午餐推迟半小时，晚饭后散步。', service_name: 'Test AI', model: 'test-model', structured_output: 'json_schema', suggestions: [],
+        schedule_changes: [
+          { action: 'add', target_id: '', title: '饭后散步', category: 'exercise', start: '19:15', end: '19:30', reason: '吃完走一走' },
+          { action: 'update', target_id: assistantBlocks.lunch.id, title: '午餐', category: 'meal', start: '12:30', end: '13:15', reason: '上午的会推迟了' },
+          removal(assistantBlocks.dinner, '晚上有聚餐'),
+          removal(assistantBlocks.call, '已经打过了'),
+        ],
+      } });
+    });
+    await page.getByRole('button', { name: 'AI 建议' }).click();
+    const assistant = page.getByRole('dialog', { name: '把目标整理成可选计划' });
+    await assistant.getByLabel('告诉 AI 你的目标').fill('午餐晚一点，晚上有聚餐');
+    await assistant.getByRole('button', { name: '生成建议' }).click();
+    const changes = assistant.getByRole('region', { name: '行程调整' });
+    await expect(changes.locator('li')).toHaveText([
+      /新增 19:15–19:30 饭后散步（运动）/, /调整「午餐」→ 12:30–13:15（只改这一天）/, /这一天不做「晚餐」18:30–19:15/, /删除「给妈妈打电话」20:00–20:30/,
+    ]);
+    assert(assistantRequest.existing_blocks.length > 10 && assistantRequest.existing_blocks.every(item => item.kind === 'routine' || item.kind === 'day'), 'the request carries the day\'s own blocks');
+    assert.equal(assistantBlocks.call.status, 'done');
+    await changes.getByLabel('选择行程调整：删除「给妈妈打电话」20:00–20:30').uncheck();
+    // A failed save keeps the dialog and its choices for a retry.
+    let failDay = true;
+    await page.route('**/api/plans/schedule/day', route => {
+      if (failDay) { failDay = false; return route.fulfill({ status: 503, json: { error: 'schedule_unavailable' } }); }
+      return route.continue();
+    });
+    await assistant.getByRole('button', { name: '保存选中建议' }).click();
+    await expect(assistant.getByRole('alert')).toHaveText('行程调整没有保存，可以重试。');
+    await expect(page.locator('.schedule-block').filter({ hasText: '饭后散步' })).toHaveCount(0);
+    await assistant.getByRole('button', { name: '保存选中建议' }).click();
+    await expect(assistant).toHaveCount(0);
+    await page.unroute('**/api/plans/schedule/day');
+    await page.unroute('**/api/plans/assistant');
+    await expect(page.locator('.plans-save-feedback')).toHaveText('已保存：调整 3 项行程');
+    await expect(page.locator('.schedule-message')).toContainText('已按 AI 建议调整这一天的行程（3 项）');
+    // The checklist was left open above: the routine dinner is skipped for this day only.
+    await expect(agenda.locator('li').filter({ has: page.locator('strong', { hasText: /^晚餐$/ }) })).toHaveClass(/is-skipped/);
+    await showTimeline();
+    await expect(page.getByRole('button', { name: '修改 饭后散步 19:15–19:30', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '修改 午餐 12:30–13:15', exact: true })).toBeVisible();
+    await expect(page.locator('.schedule-block').filter({ hasText: /^晚餐/ })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '修改 给妈妈打电话 20:00–20:30', exact: true })).toBeVisible();
+    const stored = await (await context.request.get(`${base}/api/plans/schedule?date=${assistantRequest.date}`)).json();
+    const lunchToday = stored.day.blocks.find(item => item.title === '午餐');
+    assert.deepEqual([lunchToday.start, lunchToday.end, lunchToday.category, lunchToday.notes], ['12:30', '13:15', 'meal', '这一天代替作息模板「午餐」']);
+    assert.deepEqual(stored.day.blocks.filter(item => item.title === '饭后散步').map(item => [item.start, item.end, item.category]), [['19:15', '19:30', 'exercise']]);
+    assert.equal(stored.day.routine_status[assistantBlocks.lunch.id], 'skipped');
+    assert.equal(stored.day.routine_status[assistantBlocks.dinner.id], 'skipped');
+    const lunchRoutine = stored.routine.blocks.find(item => item.id === assistantBlocks.lunch.id);
+    assert.deepEqual([lunchRoutine.start, lunchRoutine.end], ['12:00', '12:45'], 'the routine template keeps its time');
+    assert(stored.routine.blocks.some(item => item.id === assistantBlocks.dinner.id), 'the routine template keeps dinner');
+    console.log('PASS: day board: routine, quick picks, folded editor, done/skip from the time axis, checklist, note, view switching and AI time-axis changes for the day only');
     await context.close();
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
