@@ -9,27 +9,50 @@ type ProductCopy = Record<string, { description: string; after_sales: string }>;
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean }>;
-type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini';
+type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI';
 type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
 
-const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini'];
+const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI'];
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
-// Same split as the backend feeds: Anli ids start at 10^12, ProdSeller ids at 2*10^12.
-const ANLI_PRODUCT_BASE = 1_000_000_000_000;
-const PRODSELLER_PRODUCT_BASE = 2_000_000_000_000;
-const SOURCE_NAMES: Record<string, string> = { gpt: 'GPT', anli: 'Claude / Grok', prodseller: 'Gemini' };
+// Same split as the backend feeds: Anli ids start at 10^12, ProdSeller at 2*10^12,
+// Lorry at 3*10^12 and Fanai at 4*10^12.
+const PROVIDER_BASES: [string, number][] = [['fanai', 4_000_000_000_000], ['lorry', 3_000_000_000_000], ['prodseller', 2_000_000_000_000], ['anli', 1_000_000_000_000]];
+const SUPPLIERS: Record<string, string> = { gpt: '强云', anli: 'Anli', prodseller: 'ProdSeller', lorry: 'Lorry', fanai: 'Fanai' };
+const SOURCE_NAMES: Record<string, string> = { gpt: 'GPT · 强云', anli: 'Claude / Grok · Anli', prodseller: 'Gemini · ProdSeller', lorry: 'X / Muse AI · Lorry', fanai: 'GPT / Claude / Grok · Fanai' };
 const EMPTY_COPY = { description: '', after_sales: '' };
 const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
 
 function providerOf(productId: string) {
   const id = Number(productId);
-  return id >= PRODSELLER_PRODUCT_BASE ? 'prodseller' : id >= ANLI_PRODUCT_BASE ? 'anli' : 'gpt';
+  return PROVIDER_BASES.find(([, base]) => id >= base)?.[0] ?? 'gpt';
 }
 function brandOf(item: SourceItem): Brand {
   const provider = providerOf(item.product_id);
+  const title = item.public_title ?? item.title;
   if (provider === 'gpt') return 'GPT';
   if (provider === 'prodseller') return 'Gemini';
-  return /^claude/i.test(item.public_title ?? item.title) ? 'Claude' : 'Grok';
+  if (provider === 'lorry') return /^X /.test(title) ? 'X' : 'Muse AI';
+  if (/^chatgpt/i.test(title)) return 'GPT';
+  return /^claude/i.test(title) ? 'Claude' : 'Grok';
+}
+type Offer = { provider: string; productId: string; cheapest: SourceItem | undefined; variants: number; published: boolean };
+/** One plan per public title, with each supplier's cheapest purchasable variant. */
+function comparePlans(items: SourceItem[], saved: Record<string, Setting>) {
+  const plans = new Map<string, Map<string, Offer>>();
+  for (const item of items) {
+    const title = item.public_title ?? item.title;
+    const offers = plans.get(title) ?? new Map<string, Offer>();
+    const offer = offers.get(item.product_id) ?? { provider: providerOf(item.product_id), productId: item.product_id, cheapest: undefined, variants: 0, published: false };
+    offer.variants += 1;
+    offer.published ||= saved[item.key]?.published === true;
+    if (item.available && (!offer.cheapest || item.cost_cents < offer.cheapest.cost_cents)) offer.cheapest = item;
+    offers.set(item.product_id, offer);
+    plans.set(title, offers);
+  }
+  return [...plans].map(([title, offers]) => {
+    const list = [...offers.values()].sort((a, b) => (a.cheapest?.cost_cents ?? Infinity) - (b.cheapest?.cost_cents ?? Infinity));
+    return { title, offers: list, best: list[0]?.cheapest ? list[0].productId : null, publishedSources: new Set(list.filter(offer => offer.published).map(offer => offer.provider)).size };
+  });
 }
 function storedBrand(): Brand | null {
   try { return BRANDS.find(brand => brand === localStorage.getItem(BRAND_KEY)) ?? null; } catch { return null; }
@@ -223,11 +246,29 @@ export function ShopAdminPage() {
         <div className="shop-admin-products">{BRANDS.filter(brand => groups.has(brand)).map(brand => {
           const products = [...(groups.get(brand) ?? [])];
           const brandItems = products.flatMap(([, group]) => group);
-          return <section key={brand} className="shop-admin-group" aria-labelledby={`shop-admin-group-${brand}`} hidden={!brandItems.some(visible)}>
+          const brandId = brand.replace(/\s+/g, '-');
+          const plans = comparePlans(brandItems, saved);
+          // Comparing only helps once a plan is offered by more than one supplier.
+          const compared = plans.filter(plan => plan.offers.length > 1 && new Set(plan.offers.map(offer => offer.provider)).size > 1);
+          return <section key={brand} className="shop-admin-group" aria-labelledby={`shop-admin-group-${brandId}`} hidden={!brandItems.some(visible)}>
             <header className="shop-admin-group-header">
-              <h2 id={`shop-admin-group-${brand}`}>{brand}</h2>
+              <h2 id={`shop-admin-group-${brandId}`}>{brand}</h2>
               <span>{products.length} 个商品 · {brandItems.length} 个规格 · 已上架 {brandItems.filter(item => saved[item.key]?.published).length}</span>
             </header>
+            {compared.length ? <div className="shop-admin-compare" role="region" aria-label={`${brand} 同款比价`}>
+              <h3>同款比价<small>按来源的最低可购成本排序，选便宜的那个上架</small></h3>
+              {compared.map(plan => <div key={plan.title} className="shop-admin-compare-plan">
+                <strong>{plan.title}</strong>
+                <ol>{plan.offers.map(offer => <li key={offer.productId} className={offer.productId === plan.best ? 'is-best' : offer.cheapest ? undefined : 'is-soldout'}>
+                  <a href={`#shop-admin-product-${offer.productId}`}>{SUPPLIERS[offer.provider] ?? offer.provider}</a>
+                  <span className="shop-admin-compare-cost">{offer.cheapest ? money(offer.cheapest.cost_cents) : '售罄'}</span>
+                  {offer.cheapest ? <small>{offer.cheapest.label}{offer.variants > 1 ? ` · 共 ${offer.variants} 个规格` : ''}</small> : null}
+                  {offer.productId === plan.best ? <span className="badge ok">最低</span> : null}
+                  {offer.published ? <span className="badge">已上架</span> : null}
+                </li>)}</ol>
+                {plan.publishedSources > 1 ? <p className="shop-admin-compare-warn">多个来源同时上架了 {plan.title}，前台会出现重复商品，建议只保留一个。</p> : null}
+              </div>)}
+            </div> : null}
             <div className="shop-admin-columns" aria-hidden="true"><span>规格</span><span>成本</span><span>售价（元）</span><span>毛利</span><span>上架</span></div>
             {products.map(([productId, group]) => {
               const first = group[0];
@@ -239,6 +280,7 @@ export function ShopAdminPage() {
                 <header className="shop-admin-product-header">
                   <h3 id={`shop-admin-product-${productId}`}>{first?.title}</h3>
                   <p className="shop-admin-product-meta">
+                    <span className="shop-admin-supplier">来源：{SUPPLIERS[providerOf(productId)] ?? providerOf(productId)}</span>
                     {first?.public_title ? <span>前台名称：{first.public_title}</span> : null}
                     <span>{group.length} 个规格</span>
                     <span className={`badge${published ? ' ok' : ''}`}>{published ? `已上架 ${published}/${group.length}` : '未上架'}</span>

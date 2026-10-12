@@ -428,3 +428,26 @@ div.shop-admin-empty p { margin: 0; }
 .shop-category-group + .shop-category-group { margin-top: 26px; }
 .shop-product-thumbnail img.shop-brand-square { width: 76px; height: 76px; object-fit: cover; }
 .shop-detail-image img.shop-brand-square { width: min(100%, 400px); height: auto; }
+/* Same plan from several suppliers: cheapest purchasable cost first. */
+.shop-admin-compare { display: grid; gap: 10px; margin: 0 20px 12px; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-overlay); }
+.shop-admin-compare h3 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 0; font-size: 13px; font-weight: 600; }
+.shop-admin-compare h3 small { color: var(--text-tertiary); font-size: 12px; font-weight: 400; }
+.shop-admin-compare-plan { display: grid; grid-template-columns: minmax(120px, 160px) minmax(0, 1fr); gap: 6px 16px; align-items: start; padding-top: 10px; border-top: 1px dashed var(--hairline); font-size: 13px; }
+.shop-admin-compare-plan > strong { padding-top: 3px; font-weight: 600; }
+.shop-admin-compare-plan ol { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.shop-admin-compare-plan li { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-surface); }
+.shop-admin-compare-plan li.is-best { border-color: var(--ok); background: var(--ok-soft); }
+.shop-admin-compare-plan li.is-soldout { color: var(--text-tertiary); }
+.shop-admin-compare-plan li a { color: var(--text-primary); font-weight: 600; text-decoration: none; }
+.shop-admin-compare-plan li a:hover { text-decoration: underline; }
+.shop-admin-compare-cost { font-variant-numeric: tabular-nums; }
+.shop-admin-compare-plan li small { color: var(--text-tertiary); font-size: 11px; }
+.shop-admin-compare-plan li .badge { height: 18px; padding: 0 6px; font-size: 11px; }
+.shop-admin-compare-warn { grid-column: 2; margin: 0; color: var(--warn); font-size: 12px; }
+.shop-admin-supplier { padding: 0 7px; border-radius: var(--radius-pill); background: var(--data-soft); color: var(--data); font-weight: 600; }
+.shop-admin-product { scroll-margin-top: 82px; }
+@media (max-width: 640px) {
+  .shop-admin-compare { margin-inline: 16px; }
+  .shop-admin-compare-plan { grid-template-columns: minmax(0, 1fr); }
+  .shop-admin-compare-warn { grid-column: auto; }
+}

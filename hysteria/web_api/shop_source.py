@@ -122,16 +122,16 @@ def normalize_products(products):
     return rows
 
 
-async def _json(client, path, params=None):
+async def _json(client, path, params=None, origin=ORIGIN):
     async with client.stream(
         'GET',
-        ORIGIN + path,
+        origin + path,
         params=params,
         follow_redirects=False,
         timeout=httpx.Timeout(8, connect=4),
         headers={
             'User-Agent': 'Mozilla/5.0',
-            'Referer': ORIGIN + '/',
+            'Referer': origin + '/',
             'Accept': 'application/json',
         },
     ) as response:
@@ -157,19 +157,17 @@ async def _json(client, path, params=None):
     return value
 
 
-async def fetch_catalog(*, client=None):
-    if client is None:
-        async with httpx.AsyncClient(trust_env=False) as owned:
-            return await fetch_catalog(client=owned)
+async def fetch_public_products(client, origin):
+    """Every product row of a dujiao-next storefront's anonymous public catalog."""
     try:
         async with asyncio.timeout(25):
-            config = await _json(client, '/api/v1/public/config')
+            config = await _json(client, '/api/v1/public/config', origin=origin)
             if not isinstance(config.get('data'), dict) or config['data'].get('currency') != 'CNY':
                 raise SourceError('unsupported currency')
             products, total_pages, total = [], 1, None
             for page in range(1, 6):
                 response = await _json(
-                    client, '/api/v1/public/products', {'page': page, 'page_size': 100}
+                    client, '/api/v1/public/products', {'page': page, 'page_size': 100}, origin
                 )
                 pagination = response.get('pagination')
                 if not isinstance(pagination, dict) or not isinstance(response.get('data'), list):
@@ -194,6 +192,13 @@ async def fetch_catalog(*, client=None):
                     break
             if len(products) != total:
                 raise SourceError('incomplete pagination')
-            return normalize_products(products)
+            return products
     except (httpx.HTTPError, TimeoutError) as exc:
         raise SourceError('upstream unavailable') from exc
+
+
+async def fetch_catalog(*, client=None):
+    if client is None:
+        async with httpx.AsyncClient(trust_env=False) as owned:
+            return await fetch_catalog(client=owned)
+    return normalize_products(await fetch_public_products(client, ORIGIN))

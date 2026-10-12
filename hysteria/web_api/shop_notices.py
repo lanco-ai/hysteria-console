@@ -119,6 +119,16 @@ GEMINI_NOTICE = {
     "after_sales": """交付后 24 小时内如链接无法激活，请联系本店处理；激活成功后不再提供售后。""",
 }
 
+# Plain text: X Premium is delivered as an official gift to the buyer's handle.
+X_PREMIUM_NOTICE = {
+    "description": """X（推特）Premium 会员，通过官方礼物赠送到你的账号，付款后自动到账。
+
+· 购买时请提供你的 X 用户名（@ 后面的部分），例如 @elonmusk 填写 elonmusk
+· 无需提供密码，也不需要登录你的账号
+· 请确认用户名准确无误，赠送成功后无法更换账号""",
+    "after_sales": """因用户名填写错误导致赠送到其他账号的，不予退换；若长时间未到账，请联系本店处理。""",
+}
+
 # Supplier storefronts and contact handles. Customer-facing copy must never send
 # buyers to the supplier, so any line naming one of these is dropped from saved
 # and projected product copy. Redemption portals (aiflbchengzi.com, sub2buy.com)
@@ -130,6 +140,8 @@ SUPPLIER_MARKERS = (
     "t.me/buy_gptplus",
     "t.me/buygpt_plus",
     "prodseller",
+    "lorry.site",
+    "fanai.us.ci",
 )
 
 
