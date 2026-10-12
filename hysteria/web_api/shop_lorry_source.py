@@ -30,9 +30,11 @@ MAX_PAGES = 5
 # renumbered upstream catalog cannot attach a different product to a saved SKU.
 X_PREMIUM = re.compile(r'X\s*Premium\D{0,12}?(\d{1,2})\s*(?:个月|月|months?)', re.I)
 X_MONTHS = {3: 'X Premium 3 个月', 6: 'X Premium 6 个月'}
-MUSE = re.compile(r'muse\s*ai', re.I)
+# Lorry sells Muse as a ready-made account ("Muse 成品号"); any other Muse product keeps the brand name.
+MUSE = re.compile(r'(?<![a-z])muse(?![a-z])', re.I)
+MUSE_ACCOUNT = 'Muse AI 成品号'
 MUSE_TITLE = 'Muse AI'
-PUBLIC_TITLES = frozenset({*X_MONTHS.values(), MUSE_TITLE})
+PUBLIC_TITLES = frozenset({*X_MONTHS.values(), MUSE_ACCOUNT, MUSE_TITLE})
 
 
 def configured(path=CREDENTIALS_PATH):
@@ -62,7 +64,9 @@ def public_title(title):
     match = X_PREMIUM.search(title)
     if match:
         return X_MONTHS.get(int(match[1]))
-    return MUSE_TITLE if MUSE.search(title) else None
+    if MUSE.search(title):
+        return MUSE_ACCOUNT if '成品号' in title else MUSE_TITLE
+    return None
 
 
 def _identity(value):
@@ -86,7 +90,8 @@ def normalize_products(products):
         retail_title = public_title(title)
         if retail_title is None:
             continue
-        if product.get('currency') != 'CNY':
+        # The upstream list carries no currency (the store sells in CNY); a stated other one is refused.
+        if product.get('currency', 'CNY') != 'CNY':
             raise SourceError('unsupported currency')
         slug = product.get('slug')
         skus = product.get('skus')

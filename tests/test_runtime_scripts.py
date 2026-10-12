@@ -121,6 +121,7 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
         'ai/migration-backup/old.json': '{}',
         'shop/source-merchant.json': '{"revision":1}',
         'shop/prodseller.key': 'key',
+        'shop/lorry.json': '{"api_key":"k","api_secret":"s"}',
         'shop/source.json': '{"items":[]}',
         'video/settings.json': '{}',
         'video/workflows.json': '{"workflows":[]}',
@@ -144,7 +145,7 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
 
     names, _ = backed_up()
     # Settings, the merchant's prices and copy, the reseller key and the user's video work are kept.
-    for name in ('ai/services.json', 'shop/source-merchant.json', 'shop/prodseller.key', 'video/settings.json',
+    for name in ('ai/services.json', 'shop/source-merchant.json', 'shop/prodseller.key', 'shop/lorry.json', 'video/settings.json',
                  'video/workflows.json', 'video/runs.json', 'video/assets/upload-1.png', 'chat/settings.json'):
         assert name in names, name
     # Supplier caches are re-fetched, and migration leftovers and locks are not state.

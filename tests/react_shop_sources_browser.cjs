@@ -4,22 +4,23 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const { expect } = require('@playwright/test');
 
-const status = { last_success: 1000, error: null, is_stale: false, cooldown_seconds: 0, retry_after_seconds: 0 };
-const row = (key, publicTitle, title, label, cost, available = true) => ({ key, product_id: key.split(':')[0], title, public_title: publicTitle, label, cost_cents: cost, available });
+// The administrator's view names each feed and files each item under its storefront category.
+const status = (supplier, covers) => ({ last_success: 1000, error: null, is_stale: false, cooldown_seconds: 0, retry_after_seconds: 0, site: 'https://supplier.example/', supplier, covers });
+const row = (provider, category, key, publicTitle, title, label, cost, available = true) => ({ provider, category, key, product_id: key.split(':')[0], title, public_title: publicTitle, label, cost_cents: cost, available, buy_url: 'https://supplier.example/item' });
 const items = [
-  row('1:1', 'ChatGPT Plus', 'ChatGPT Plus 官方', '月卡', 9800),
-  row('4000000000001:11', 'ChatGPT Plus', 'ChatGPT Plus 成品号', '月卡', 8800),
-  row('4000000000001:12', 'ChatGPT Plus', 'ChatGPT Plus 成品号', '周卡', 3000, false),
-  row('1000000000005:1', 'Claude Pro', 'Claude Pro 代充', '标准规格', 12000),
-  row('4000000000003:31', 'Claude Pro', 'Claude Pro', '标准规格', 13550),
-  row('3000000000017:18', 'X Premium 3 个月', 'X Premium 3个月（官方礼物赠送·自动到账） · 商品 17', '标准规格', 9900),
-  row('3000000000018:19', 'X Premium 6 个月', 'X Premium 6个月（官方礼物赠送·自动到账） · 商品 18', '标准规格', 16850),
-  row('3000000000030:40', 'Muse AI', 'Muse AI 会员 · 商品 30', '月卡', 3550),
+  row('gpt', 'GPT', '1:1', 'ChatGPT Plus', 'ChatGPT Plus 官方', '月卡', 9800),
+  row('fanai', 'GPT', '4000000000006:1', 'ChatGPT Plus', 'ChatGPT Plus 菲区卡密', '标准规格', 8800),
+  row('fanai', 'GPT', '4000000000007:1', 'ChatGPT Plus', 'ChatGPT Plus 周卡', '标准规格', 3000, false),
+  row('anli', 'Claude', '1000000000005:1', 'Claude Pro', 'Claude Pro 代充', '标准规格', 12000),
+  row('fanai', 'Claude', '4000000000022:1', 'Claude Pro', 'Claude Pro （ios）', '标准规格', 13550),
+  row('lorry', 'X', '3000000000017:18', 'X Premium 3 个月', 'X Premium 3个月（官方礼物赠送·自动到账） · 商品 17', '标准规格', 2000),
+  row('lorry', 'X', '3000000000018:19', 'X Premium 6 个月', 'X Premium 6个月（官方礼物赠送·自动到账） · 商品 18', '标准规格', 3900),
+  row('lorry', 'Muse AI', '3000000000022:23', 'Muse AI 成品号', 'Muse 成品号（微软邮箱·验证码登录） · 商品 22', '标准规格', 600),
 ];
 const merchant = {
   revision: 3, telegram: 'my_shop', products: {}, items,
-  skus: { '1:1': { price_cents: 12900, published: true }, '1000000000005:1': { price_cents: 15900, published: true }, '4000000000003:31': { price_cents: 16900, published: true } },
-  sources: { gpt: status, anli: status, lorry: status, fanai: status },
+  skus: { '1:1': { price_cents: 12900, published: true }, '1000000000005:1': { price_cents: 15900, published: true }, '4000000000022:1': { price_cents: 16900, published: true } },
+  sources: { gpt: status('强云', 'GPT'), anli: status('Anli', 'Claude / Grok'), lorry: status('Lorry', 'X / Muse AI'), fanai: status('Fanai', 'GPT / Claude / Grok') },
   last_success: 1000, error: null, is_stale: false, cooldown_seconds: 0, retry_after_seconds: 0,
 };
 
@@ -41,7 +42,9 @@ const merchant = {
 
     const gptCompare = page.getByRole('region', { name: 'GPT 同款比价' });
     const offers = gptCompare.locator('li');
-    await expect(offers).toHaveCount(2);
+    // One offer per supplier product, cheapest purchasable first; a sold-out one comes last.
+    await expect(offers).toHaveCount(3);
+    await expect(offers.nth(2)).toContainText('售罄');
     await expect(offers.first()).toContainText('Fanai');
     await expect(offers.first()).toContainText('¥88.00');
     await expect(offers.first()).toContainText('最低');
@@ -59,7 +62,7 @@ const merchant = {
     await expect(page.getByRole('heading', { name: /X Premium 3个月/ })).toBeVisible();
     await expect(page.getByRole('region', { name: 'X 同款比价' })).toHaveCount(0);
     await brands.getByRole('button', { name: /^Muse AI / }).click();
-    await expect(page.getByRole('heading', { name: /Muse AI 会员/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Muse 成品号/ })).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 840 });
     await brands.getByRole('button', { name: /^GPT / }).click();

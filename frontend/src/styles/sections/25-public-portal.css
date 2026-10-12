@@ -191,7 +191,7 @@ div.shop-admin-empty p { margin: 0; }
 .shop-admin-settings { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; }
 .shop-admin-card { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 16px 20px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); }
 .shop-admin-card-title { margin: 0; color: var(--text-tertiary); font-size: 12px; font-weight: 600; letter-spacing: .04em; }
-.shop-admin-source { display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; gap: 2px 16px; margin: 0; font-size: 13px; line-height: 1.6; }
+.shop-admin-source { display: grid; grid-template-columns: 184px minmax(0, 1fr) auto; gap: 2px 16px; margin: 0; font-size: 13px; line-height: 1.6; }
 .shop-admin-source + .shop-admin-source { padding-top: 12px; border-top: 1px solid var(--hairline); }
 .shop-admin-source-name { display: grid; grid-row: span 2; align-content: start; gap: 2px; min-width: 0; }
 .shop-admin-source-name strong { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; }

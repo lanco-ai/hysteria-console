@@ -13,7 +13,7 @@ from .shop_anli_source import ORIGIN as ANLI_ORIGIN
 from .shop_anli_source import PRODUCT_BASE, SELECTED
 from .shop_fanai_source import ORIGIN as FANAI_ORIGIN
 from .shop_fanai_source import PRODUCT_BASE as FANAI_BASE
-from .shop_fanai_source import PUBLIC_TITLES as FANAI_TITLES
+from .shop_fanai_source import valid_public_title as fanai_title
 from .shop_lorry_source import ORIGIN as LORRY_ORIGIN
 from .shop_lorry_source import PRODUCT_BASE as LORRY_BASE
 from .shop_lorry_source import PUBLIC_TITLES as LORRY_TITLES
@@ -40,7 +40,22 @@ PRODSELLER_BY_NUMBER = {
 }
 # Each feed's own storefront, where the merchant buys stock. Administrator-only: the
 # public catalog never names a supplier.
-SOURCE_SITES = {'gpt': ORIGIN + '/', 'anli': ANLI_ORIGIN + '/', 'prodseller': PRODSELLER_ORIGIN + '/'}
+SOURCE_SITES = {
+    'gpt': ORIGIN + '/',
+    'anli': ANLI_ORIGIN + '/',
+    'prodseller': PRODSELLER_ORIGIN + '/',
+    'lorry': LORRY_ORIGIN + '/',
+    'fanai': FANAI_ORIGIN + '/',
+}
+# Who each feed is, and what it supplies, for the administrator's view. Kept here rather than in
+# the frontend, whose code anyone can download: the public side never names a supplier.
+SOURCE_LABELS = {
+    'gpt': ('强云', 'GPT'),
+    'anli': ('Anli', 'Claude / Grok'),
+    'prodseller': ('ProdSeller', 'Gemini'),
+    'lorry': ('Lorry', 'X / Muse AI'),
+    'fanai': ('Fanai', 'GPT / Claude / Grok'),
+}
 
 
 def buy_url(row):
@@ -169,11 +184,13 @@ def validate_items(items, provider='gpt'):
             ):
                 raise ValueError('invalid secondary source identity')
         elif provider == 'fanai':
+            external = product_number - FANAI_BASE
             if (
-                not FANAI_BASE < product_number < FANAI_BASE + 10**12
-                or row['public_title'] not in FANAI_TITLES
-                or not isinstance(row['source_url'], str)
-                or not row['source_url'].startswith(FANAI_ORIGIN + '/products/')
+                not 0 < external < 10**12
+                or key != f'{product_number}:1'
+                or row['source_url'] != f'{FANAI_ORIGIN}/item/{external}'
+                or not fanai_title(row['public_title'])
+                or row['label'] != '标准规格'
             ):
                 raise ValueError('invalid secondary source identity')
         elif provider == 'lorry':
@@ -351,7 +368,12 @@ class ShopStore:
         # Older saved copy may still carry supplier links; never project them.
         products = sanitize_product_copy(products)
         statuses = {
-            provider: {**self._feed_status(source), 'site': SOURCE_SITES[provider]}
+            provider: {
+                **self._feed_status(source),
+                'site': SOURCE_SITES[provider],
+                'supplier': SOURCE_LABELS[provider][0],
+                'covers': SOURCE_LABELS[provider][1],
+            }
             for provider, source in sources.items()
         }
         successes = [
@@ -362,7 +384,16 @@ class ShopStore:
         return {
             **settings,
             'products': products,
-            'items': [{**row, 'buy_url': buy_url(row)} for row in items],
+            # The feed and storefront category of each item, so the admin page needs no list of feeds.
+            'items': [
+                {
+                    **row,
+                    'buy_url': buy_url(row),
+                    'provider': provider_of(row['product_id']),
+                    'category': category_of(provider_of(row['product_id']), row['public_title']),
+                }
+                for row in items
+            ],
             'sources': statuses,
             'last_success': max(successes, default=None),
             'error': 'source_unavailable'

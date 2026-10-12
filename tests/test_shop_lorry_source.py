@@ -11,30 +11,37 @@ KEY = 'a' * 64
 SECRET = 'b' * 128
 
 
+# Shaped like Lorry's upstream list (2026-10-12): no currency field, localized titles,
+# one DEFAULT sku per product.
 def product(**changes):
     value = {
         'id': 17,
         'slug': 'x-premium-3m',
-        'title': {'zh-CN': 'X Premium 3个月（官方礼物赠送·自动到账）'},
-        'currency': 'CNY',
+        'title': {'en-US': '', 'zh-CN': 'X Premium 3个月（官方礼物赠送·自动到账）', 'zh-TW': ''},
         'is_active': True,
-        'price_amount': '99.00',
-        'skus': [{'id': 18, 'spec_values': {}, 'price_amount': '99.00', 'stock_quantity': -1, 'is_active': True, 'stock_status': 'in_stock'}],
+        'price_amount': '20.00',
+        'fulfillment_type': 'auto',
+        'skus': [{'id': 18, 'spec_values': {}, 'price_amount': '20.00', 'stock_quantity': 12, 'is_active': True,
+                  'sku_code': 'DEFAULT', 'stock_status': 'in_stock'}],
     }
     value.update(changes)
     return value
 
 
+def sku(identity, price, stock=5, **changes):
+    return {'id': identity, 'spec_values': {}, 'price_amount': price, 'stock_quantity': stock, 'is_active': True,
+            'sku_code': 'DEFAULT', **changes}
+
+
 CATALOG = [
     product(),
-    product(id=18, slug='x-premium-6m', title={'zh-CN': 'X Premium 6个月（官方礼物赠送·自动到账）'},
-            skus=[{'id': 19, 'spec_values': {}, 'price_amount': '168.50', 'stock_quantity': 0, 'is_active': True}]),
-    product(id=30, slug='muse', title={'zh-CN': 'Muse AI 会员'},
-            skus=[{'id': 41, 'spec_values': {'zh-CN': '年卡'}, 'price_amount': '300', 'stock_quantity': 5, 'is_active': True},
-                  {'id': 40, 'spec_values': {'zh-CN': '月卡'}, 'price_amount': '35.5', 'stock_quantity': 5, 'is_active': True},
-                  {'id': 42, 'spec_values': {'zh-CN': '旧规格'}, 'price_amount': '1', 'stock_quantity': 5, 'is_active': False}]),
+    product(id=18, slug='x-premium-6m', title={'zh-CN': 'X Premium 6个月（官方礼物赠送·自动到账）'}, skus=[sku(19, '39.00', stock=0)]),
+    product(id=22, slug='muse-account', title={'zh-CN': 'Muse 成品号（微软邮箱·验证码登录）'},
+            skus=[sku(23, '6.00', stock=257), sku(24, '1', is_active=False)]),
+    # Lorry's other products are not imported.
+    product(id=14, slug='ChatGPT-Plus', title={'zh-CN': 'ChatGPT-Plus官方充值-自助卡密充值-菲区'}, skus=[sku(15, '111.00', stock=0)]),
     product(id=50, slug='x-premium-12m', title={'zh-CN': 'X Premium 12个月'}),
-    product(id=51, slug='netflix', title={'zh-CN': 'Netflix 会员'}, currency='USD'),
+    product(id=43, slug='snpay1008-test', title={'zh-CN': '支付测试卡（¥0.1，勿买）'}, skus=[sku(46, '0.10')]),
 ]
 
 
@@ -49,13 +56,20 @@ def test_only_x_premium_and_muse_enter_with_private_upstream_identity():
 
     rows = normalize_products(copy.deepcopy(CATALOG))
     assert [(row['key'], row['public_title'], row['label'], row['cost_cents'], row['available']) for row in rows] == [
-        ('3000000000017:18', 'X Premium 3 个月', '标准规格', 9900, True),
-        ('3000000000018:19', 'X Premium 6 个月', '标准规格', 16850, False),
-        ('3000000000030:40', 'Muse AI', '月卡', 3550, True),
-        ('3000000000030:41', 'Muse AI', '年卡', 30000, True),
+        ('3000000000017:18', 'X Premium 3 个月', '标准规格', 2000, True),
+        ('3000000000018:19', 'X Premium 6 个月', '标准规格', 3900, False),
+        ('3000000000022:23', 'Muse AI 成品号', '标准规格', 600, True),
     ]
     assert rows[0]['title'] == 'X Premium 3个月（官方礼物赠送·自动到账） · 商品 17'
     assert rows[0]['source_url'] == 'https://shop.lorry.site/products/x-premium-3m'
+
+
+def test_muse_is_found_however_lorry_writes_it():
+    from web_api.shop_lorry_source import public_title
+
+    assert public_title('Muse成品号') == 'Muse AI 成品号'
+    assert public_title('Muse AI 会员') == 'Muse AI'
+    assert public_title('Museum ticket') is None and public_title('AMUSE') is None
 
 
 @pytest.mark.parametrize('change', [
@@ -106,7 +120,7 @@ def test_fetch_signs_every_page_without_query_and_never_writes(tmp_path):
             return await fetch_catalog(client=client, credentials_path=credentials(tmp_path))
 
     rows = asyncio.run(run())
-    assert len(rows) == 4 and len(seen) == 2
+    assert len(rows) == 3 and len(seen) == 2
 
 
 @pytest.mark.parametrize('response', [
@@ -150,8 +164,11 @@ def test_store_accepts_lorry_rows_and_projects_x_and_muse_categories(tmp_path):
 
     store = ShopStore(tmp_path / 'source.json', fetcher=no_gpt, lorry_fetcher=lorry)
     state = asyncio.run(store.refresh(manual=True))
-    assert len(state['items']) == 4
+    assert len(state['items']) == 3
     assert 'X 用户名' in state['products']['3000000000017']['description']
+    assert (state['sources']['lorry']['site'], state['sources']['lorry']['supplier']) == ('https://shop.lorry.site/', 'Lorry')
+    assert {row['buy_url'] for row in state['items'] if row['key'] == '3000000000017:18'} == {'https://shop.lorry.site/products/x-premium-3m'}
+    assert {row['category'] for row in state['items']} == {'X', 'Muse AI'}
     skus = {row['key']: {'price_cents': 12900, 'published': True} for row in rows}
     asyncio.run(store.update({'revision': 0, 'telegram': 'my_shop', 'skus': skus}))
     catalog = asyncio.run(store.public())

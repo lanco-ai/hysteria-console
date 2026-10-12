@@ -4,10 +4,12 @@ import { money, priceCents, shopRequest } from './catalog';
 import { isNoticeProduct } from './ShopNotice';
 
 type Setting = { price_cents: number | null; published: boolean };
-// buy_url and site come only with the administrator's view: where to buy each item from its source.
-type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; cost_cents: number; available: boolean; buy_url?: string };
+// buy_url, provider and category come only with the administrator's view: where each item is bought,
+// from which feed, and the storefront category it belongs to.
+type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; cost_cents: number; available: boolean; buy_url?: string; provider?: string; category?: string };
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
-type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; site?: string };
+// site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
+type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; site?: string; supplier?: string; covers?: string };
 type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; revision: number; telegram: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI';
@@ -15,27 +17,12 @@ type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
 
 const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI'];
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
-// Same split as the backend feeds: Anli ids start at 10^12, ProdSeller at 2*10^12,
-// Lorry at 3*10^12 and Fanai at 4*10^12.
-const PROVIDER_BASES: [string, number][] = [['fanai', 4_000_000_000_000], ['lorry', 3_000_000_000_000], ['prodseller', 2_000_000_000_000], ['anli', 1_000_000_000_000]];
-const SUPPLIERS: Record<string, string> = { gpt: '强云', anli: 'Anli', prodseller: 'ProdSeller', lorry: 'Lorry', fanai: 'Fanai' };
-const SOURCE_NAMES: Record<string, string> = { gpt: 'GPT · 强云', anli: 'Claude / Grok · Anli', prodseller: 'Gemini · ProdSeller', lorry: 'X / Muse AI · Lorry', fanai: 'GPT / Claude / Grok · Fanai' };
 const EMPTY_COPY = { description: '', after_sales: '' };
 const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
 
-function providerOf(productId: string) {
-  const id = Number(productId);
-  return PROVIDER_BASES.find(([, base]) => id >= base)?.[0] ?? 'gpt';
-}
-function brandOf(item: SourceItem): Brand {
-  const provider = providerOf(item.product_id);
-  const title = item.public_title ?? item.title;
-  if (provider === 'gpt') return 'GPT';
-  if (provider === 'prodseller') return 'Gemini';
-  if (provider === 'lorry') return /^X /.test(title) ? 'X' : 'Muse AI';
-  if (/^chatgpt/i.test(title)) return 'GPT';
-  return /^claude/i.test(title) ? 'Claude' : 'Grok';
-}
+// The feed and category come from the server, which knows its feeds; this page does not.
+function providerOf(item: SourceItem | undefined) { return item?.provider ?? 'gpt'; }
+function brandOf(item: SourceItem): Brand { return BRANDS.find(brand => brand === item.category) ?? 'GPT'; }
 type Offer = { provider: string; productId: string; cheapest: SourceItem | undefined; variants: number; published: boolean };
 /** One plan per public title, with each supplier's cheapest purchasable variant. */
 function comparePlans(items: SourceItem[], saved: Record<string, Setting>) {
@@ -43,7 +30,7 @@ function comparePlans(items: SourceItem[], saved: Record<string, Setting>) {
   for (const item of items) {
     const title = item.public_title ?? item.title;
     const offers = plans.get(title) ?? new Map<string, Offer>();
-    const offer = offers.get(item.product_id) ?? { provider: providerOf(item.product_id), productId: item.product_id, cheapest: undefined, variants: 0, published: false };
+    const offer = offers.get(item.product_id) ?? { provider: providerOf(item), productId: item.product_id, cheapest: undefined, variants: 0, published: false };
     offer.variants += 1;
     offer.published ||= saved[item.key]?.published === true;
     if (item.available && (!offer.cheapest || item.cost_cents < offer.cheapest.cost_cents)) offer.cheapest = item;
@@ -202,7 +189,9 @@ export function ShopAdminPage() {
   if (state && telegram !== state.telegram) pending.push('Telegram 用户名');
   const shownCount = items.filter(visible).length;
   const brandDirty = (name: Brand) => items.some(item => brandOf(item) === name && (changed(item.key) || copyChanged(item.product_id)));
-  const providerCount = (provider: string) => items.filter(item => providerOf(item.product_id) === provider).length;
+  const providerCount = (provider: string) => items.filter(item => providerOf(item) === provider).length;
+  const supplierOf = (provider: string) => state?.sources?.[provider]?.supplier ?? provider;
+  const sourceName = (provider: string, source: SourceStatus) => [source.covers, source.supplier].filter(Boolean).join(' · ') || provider;
   const feedback = <>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
     <p role="status" className="shop-admin-feedback">{notice}</p>
@@ -217,10 +206,10 @@ export function ShopAdminPage() {
             {Object.entries(state.sources ?? { gpt: state }).map(([provider, source]) => {
               const wait = Math.max(source.retry_after_seconds, source.cooldown_seconds);
               return <p key={provider} className={`shop-admin-source${source.is_stale || source.error ? ' is-warn' : ''}`}>
-                <span className="shop-admin-source-name"><strong>{SOURCE_NAMES[provider] ?? provider}</strong><small>{providerCount(provider)} 个规格</small></span>
+                <span className="shop-admin-source-name"><strong>{sourceName(provider, source)}</strong><small>{providerCount(provider)} 个规格</small></span>
                 <span className="shop-admin-source-state">{source.is_stale ? '商品信息待更新，此来源商品暂不能购买' : '商品信息已更新'}{source.error ? ' · 来源暂不可用，稍后自动重试' : ''}{wait > 0 ? ` · 刷新等待 ${wait} 秒` : ''}</span>
                 <small className="shop-admin-source-time">最近成功更新：{updatedAt(source.last_success)}</small>
-                {source.site ? <a className="shop-admin-source-site" href={source.site} target="_blank" rel="noopener noreferrer" aria-label={`打开 ${SOURCE_NAMES[provider] ?? provider} 的来源网站 ${hostOf(source.site)}`}>{hostOf(source.site)}<span aria-hidden="true"> ↗</span></a> : null}
+                {source.site ? <a className="shop-admin-source-site" href={source.site} target="_blank" rel="noopener noreferrer" aria-label={`打开 ${sourceName(provider, source)} 的来源网站 ${hostOf(source.site)}`}>{hostOf(source.site)}<span aria-hidden="true"> ↗</span></a> : null}
               </p>;
             })}
           </div>
@@ -265,7 +254,7 @@ export function ShopAdminPage() {
               {compared.map(plan => <div key={plan.title} className="shop-admin-compare-plan">
                 <strong>{plan.title}</strong>
                 <ol>{plan.offers.map(offer => <li key={offer.productId} className={offer.productId === plan.best ? 'is-best' : offer.cheapest ? undefined : 'is-soldout'}>
-                  <a href={`#shop-admin-product-${offer.productId}`}>{SUPPLIERS[offer.provider] ?? offer.provider}</a>
+                  <a href={`#shop-admin-product-${offer.productId}`} title={offer.cheapest?.title ?? undefined}>{supplierOf(offer.provider)}</a>
                   <span className="shop-admin-compare-cost">{offer.cheapest ? money(offer.cheapest.cost_cents) : '售罄'}</span>
                   {offer.cheapest ? <small>{offer.cheapest.label}{offer.variants > 1 ? ` · 共 ${offer.variants} 个规格` : ''}</small> : null}
                   {offer.productId === plan.best ? <span className="badge ok">最低</span> : null}
@@ -285,7 +274,7 @@ export function ShopAdminPage() {
                 <header className="shop-admin-product-header">
                   <h3 id={`shop-admin-product-${productId}`}>{first?.title}</h3>
                   <p className="shop-admin-product-meta">
-                    <span className="shop-admin-supplier">来源：{SUPPLIERS[providerOf(productId)] ?? providerOf(productId)}</span>
+                    <span className="shop-admin-supplier">来源：{supplierOf(providerOf(first))}</span>
                     {first?.public_title ? <span>前台名称：{first.public_title}</span> : null}
                     <span>{group.length} 个规格</span>
                     <span className={`badge${published ? ' ok' : ''}`}>{published ? `已上架 ${published}/${group.length}` : '未上架'}</span>
