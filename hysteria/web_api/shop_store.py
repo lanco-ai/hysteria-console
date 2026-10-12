@@ -11,6 +11,12 @@ import state_store
 
 from .shop_anli_source import ORIGIN as ANLI_ORIGIN
 from .shop_anli_source import PRODUCT_BASE, SELECTED
+from .shop_fanai_source import ORIGIN as FANAI_ORIGIN
+from .shop_fanai_source import PRODUCT_BASE as FANAI_BASE
+from .shop_fanai_source import PUBLIC_TITLES as FANAI_TITLES
+from .shop_lorry_source import ORIGIN as LORRY_ORIGIN
+from .shop_lorry_source import PRODUCT_BASE as LORRY_BASE
+from .shop_lorry_source import PUBLIC_TITLES as LORRY_TITLES
 from .shop_notices import (
     CLAUDE_NOTICE,
     CLAUDE_PRODUCT_IDS,
@@ -18,6 +24,7 @@ from .shop_notices import (
     GEMINI_PRODUCT_IDS,
     GROK_NOTICE,
     GROK_PRODUCT_IDS,
+    X_PREMIUM_NOTICE,
     sanitize_product_copy,
 )
 from .shop_prodseller_source import ORIGIN as PRODSELLER_ORIGIN
@@ -45,9 +52,25 @@ def buy_url(row):
 
 def provider_of(product_id):
     number = int(product_id)
+    if number >= FANAI_BASE:
+        return 'fanai'
+    if number >= LORRY_BASE:
+        return 'lorry'
     return (
         'prodseller' if number >= PRODSELLER_BASE else 'anli' if number >= PRODUCT_BASE else 'gpt'
     )
+
+
+def category_of(provider, public_title):
+    if provider == 'fanai':
+        return 'GPT' if public_title.startswith('ChatGPT ') else public_title.split(' ', 1)[0]
+    if provider == 'lorry':
+        return 'X' if public_title.startswith('X ') else 'Muse AI'
+    if provider == 'prodseller':
+        return 'Gemini'
+    if provider == 'anli':
+        return 'Claude' if public_title.startswith('Claude ') else 'Grok'
+    return 'GPT'
 
 
 class Conflict(ValueError):
@@ -145,6 +168,22 @@ def validate_items(items, provider='gpt'):
                 or row['label'] != '标准规格'
             ):
                 raise ValueError('invalid secondary source identity')
+        elif provider == 'fanai':
+            if (
+                not FANAI_BASE < product_number < FANAI_BASE + 10**12
+                or row['public_title'] not in FANAI_TITLES
+                or not isinstance(row['source_url'], str)
+                or not row['source_url'].startswith(FANAI_ORIGIN + '/products/')
+            ):
+                raise ValueError('invalid secondary source identity')
+        elif provider == 'lorry':
+            if (
+                not LORRY_BASE < product_number < LORRY_BASE + 10**12
+                or row['public_title'] not in LORRY_TITLES
+                or not isinstance(row['source_url'], str)
+                or not row['source_url'].startswith(LORRY_ORIGIN + '/products/')
+            ):
+                raise ValueError('invalid secondary source identity')
         elif provider == 'prodseller':
             selected = PRODSELLER_BY_NUMBER.get(product_number - PRODSELLER_BASE)
             if (
@@ -185,6 +224,8 @@ class ShopStore:
         fetcher=fetch_catalog,
         secondary_fetcher=None,
         prodseller_fetcher=None,
+        lorry_fetcher=None,
+        fanai_fetcher=None,
         clock=time.time,
     ):
         self.path = Path(path)
@@ -194,10 +235,16 @@ class ShopStore:
         self.secondary_path = self.path.with_name(self.path.stem + '-anli.json')
         self.prodseller_fetcher = prodseller_fetcher
         self.prodseller_path = self.path.with_name(self.path.stem + '-prodseller.json')
+        self.lorry_fetcher = lorry_fetcher
+        self.lorry_path = self.path.with_name(self.path.stem + '-lorry.json')
+        self.fanai_fetcher = fanai_fetcher
+        self.fanai_path = self.path.with_name(self.path.stem + '-fanai.json')
 
     def _feed_ids(self):
         return tuple(
-            provider for provider in ('gpt', 'anli', 'prodseller') if self._fetcher(provider)
+            provider
+            for provider in ('gpt', 'anli', 'prodseller', 'lorry', 'fanai')
+            if self._fetcher(provider)
         )
 
     def _fetcher(self, provider):
@@ -205,12 +252,18 @@ class ShopStore:
             'gpt': self.fetcher,
             'anli': self.secondary_fetcher,
             'prodseller': self.prodseller_fetcher,
+            'lorry': self.lorry_fetcher,
+            'fanai': self.fanai_fetcher,
         }[provider]
 
     def _path(self, provider):
-        return {'gpt': self.path, 'anli': self.secondary_path, 'prodseller': self.prodseller_path}[
-            provider
-        ]
+        return {
+            'gpt': self.path,
+            'anli': self.secondary_path,
+            'prodseller': self.prodseller_path,
+            'lorry': self.lorry_path,
+            'fanai': self.fanai_path,
+        }[provider]
 
     @staticmethod
     def _empty_source():
@@ -293,6 +346,8 @@ class ShopStore:
             products.setdefault(product_id, dict(GROK_NOTICE))
         for product_id in {row['product_id'] for row in items} & GEMINI_PRODUCT_IDS:
             products.setdefault(product_id, dict(GEMINI_NOTICE))
+        for product_id in {row['product_id'] for row in items if row['public_title'].startswith('X Premium ')}:
+            products.setdefault(product_id, dict(X_PREMIUM_NOTICE))
         # Older saved copy may still carry supplier links; never project them.
         products = sanitize_product_copy(products)
         statuses = {
@@ -339,11 +394,7 @@ class ShopStore:
                 {
                     'id': row['product_id'],
                     'title': row['public_title'],
-                    'category': 'Gemini'
-                    if provider == 'prodseller'
-                    else ('Claude' if row['public_title'].startswith('Claude ') else 'Grok')
-                    if provider == 'anli'
-                    else 'GPT',
+                    'category': category_of(provider, row['public_title']),
                     'description': state['products']
                     .get(row['product_id'], {})
                     .get('description', ''),

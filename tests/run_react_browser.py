@@ -46,6 +46,7 @@ def main():
         'react_plans_assistant_browser.cjs',
         'react_plans_layout_browser.cjs',
         'react_plans_schedule_browser.cjs',
+        'react_shop_sources_browser.cjs',
         'react_unified_daily_browser.cjs',
         'react_journal_browser.cjs',
         'react_journal_rework_browser.cjs',

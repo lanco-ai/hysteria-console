@@ -12,16 +12,22 @@ from fastapi.responses import JSONResponse
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .shop_anli_source import fetch_catalog as fetch_anli_catalog
+from .shop_fanai_source import fetch_catalog as fetch_fanai_catalog
+from .shop_lorry_source import configured as lorry_configured
+from .shop_lorry_source import fetch_catalog as fetch_lorry_catalog
 from .shop_prodseller_source import configured as prodseller_configured
 from .shop_prodseller_source import fetch_catalog as fetch_prodseller_catalog
 from .shop_store import Conflict, ShopStore
 
 
 def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabled=False):
-    # The Gemini feed needs a reseller API key; without one it is simply absent.
+    # The Gemini and X / Muse AI feeds need reseller API credentials; without
+    # them each feed is simply absent.
     store = store or ShopStore(
         secondary_fetcher=fetch_anli_catalog,
         prodseller_fetcher=fetch_prodseller_catalog if prodseller_configured() else None,
+        lorry_fetcher=fetch_lorry_catalog if lorry_configured() else None,
+        fanai_fetcher=fetch_fanai_catalog,
     )
 
     async def scheduler():
