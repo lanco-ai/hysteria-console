@@ -40,6 +40,9 @@ async function main() {
     await manager.getByRole('button', { name: '重新读取' }).click();
     await expect(manager.locator('.shop-admin-product')).toHaveCount(5);
     await manager.getByLabel('售价 2:7').focus();
+    // 售价, then the optional 原价, then 上架.
+    await manager.keyboard.press('Tab');
+    await expect(manager.getByLabel('原价 2:7')).toBeFocused();
     await manager.keyboard.press('Tab');
     await expect(manager.getByLabel('上架 2:7')).toBeFocused();
     await manager.getByLabel('商家 Telegram 用户名').fill('shop_owner');

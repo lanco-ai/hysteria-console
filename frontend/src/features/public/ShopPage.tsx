@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { PortalShell, ShopIcon } from './PortalShell';
-import { money, shopRequest, type Catalog, type Product } from '../shop/catalog';
+import { countText, money, reportVisit, saving, shopRequest, type Catalog, type Product } from '../shop/catalog';
+import { ProductStats, PromoBadge, WechatContact } from '../shop/ShopMerch';
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
 import { PurchaseDialog } from './ShopPurchase';
 import { ProductDetail, CartView } from './ShopProductDetail';
@@ -11,12 +12,14 @@ const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI'];
 function ProductRow({ product, catalogReady, onAdd }: { product: Product; catalogReady: boolean; onAdd: (item: CartItem) => void }) {
   const prices = product.variants.map(item => item.price_cents);
   const minimum = Math.min(...prices), maximum = Math.max(...prices);
+  // The cheapest variant leads the row, with its 原价 when the merchant set one.
+  const offer = saving(product.variants.find(item => item.price_cents === minimum));
   const available = catalogReady && product.variants.some(item => item.available);
   const single = product.variants.length === 1 ? product.variants[0] : null;
   const cartIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 3h2l2.5 12h11l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>;
   return <article className="shop-product-row">
-    <div className="shop-product-name"><span className="shop-product-thumbnail"><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title"><span className="shop-product-category">{product.category}</span><h3><a href={`/?product=${product.id}`}>{product.title}</a></h3></div><div className="shop-product-tags"><span>人工交付</span>{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span></div></div></div>
-    <div className="shop-product-price"><strong>{money(minimum).slice(1)}{maximum !== minimum ? `–${money(maximum).slice(1)}` : ''} <span>CNY</span></strong></div>
+    <div className="shop-product-name"><span className="shop-product-thumbnail"><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title"><PromoBadge text={product.badge}/><span className="shop-product-category">{product.category}</span><h3><a href={`/?product=${product.id}`}>{product.title}</a></h3></div><div className="shop-product-tags"><span>人工交付</span>{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span><ProductStats product={product}/></div></div></div>
+    <div className="shop-product-price"><strong>{money(minimum).slice(1)}{maximum !== minimum ? `–${money(maximum).slice(1)}` : ''} <span>CNY</span></strong>{offer ? <small className="shop-list-price"><s>原价 {money(offer.listed)}</s><em>省 {money(offer.saved)}</em></small> : null}</div>
     <div className="shop-product-action">{available && !single ? <a className="shop-product-cart" href={`/?product=${product.id}`} aria-label={`选择 ${product.title} 规格`}>{cartIcon}</a> : <button className="shop-product-cart" type="button" disabled={!available} aria-label={available ? `将 ${product.title} 加入购物车` : `${product.title} 暂不可购买`} onClick={() => { if (catalogReady && single?.available) onAdd({ id: single.id, quantity: 1 }); }}>{cartIcon}</button>}<a className="shop-product-detail-link" href={`/?product=${product.id}`} aria-label={`${product.title} 商品详情`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a></div>
   </article>;
 }
@@ -49,6 +52,8 @@ export function ShopPage() {
     const timer = window.setInterval(() => void load(), 60_000);
     return () => { clearInterval(timer); requestId.current += 1; };
   }, [load]);
+  // One page view for the shop, and for the product when one is open.
+  useEffect(() => { reportVisit(productId); }, [productId]);
   function updateCart(next: CartItem[], success = '购物车已更新。') {
     setCart(next); setSelected(null);
     try { localStorage.setItem(CART_KEY, JSON.stringify(next)); setNotice(success); }
@@ -63,7 +68,7 @@ export function ShopPage() {
   const categories = [...new Set(allProducts.map(product => product.category))].sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
   const products = allProducts.filter(product => (category === '全部商品' || product.category === category) && `${product.title} ${product.variants.map(item => item.label).join(' ')}`.toLowerCase().includes(search.trim().toLowerCase()));
   return <PortalShell active="shop" pageTitle="购物">
-    <div className="shop-toolbar"><a href="/">商品目录</a><a className="btn btn-secondary" href="/?view=cart">购物车（{cart.reduce((sum, item) => sum + item.quantity, 0)}）</a></div>
+    <div className="shop-toolbar"><a href="/">商品目录</a><div className="shop-toolbar-end"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cart.reduce((sum, item) => sum + item.quantity, 0)}）</a></div></div>
     <p className="shop-feedback" role="status">{notice}</p>
     {isCart ? <CartView cart={cart} catalog={catalog} error={error} onChange={updateCart} onBuy={() => setSelected(cart)} onRetry={() => void load()}/> : productId ? <ProductDetail key={productId} productId={productId} catalog={catalog} error={error} onAdd={add} onBuy={item => setSelected([item])} onRetry={() => void load()}/> : <div className="shop-layout">
       <aside className="shop-categories portal-card" aria-labelledby="shop-categories-title">
@@ -71,7 +76,7 @@ export function ShopPage() {
         <div className="shop-category-list">{['全部商品', ...categories].map(name => <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(name)}><span className="shop-category-icon"><ShopIcon/></span><span>{name}</span><span className="shop-count">{name === '全部商品' ? allProducts.length : allProducts.filter(product => product.category === name).length}</span></button>)}</div>
       </aside>
       <section className="shop-catalog" aria-labelledby="shop-catalog-title">
-        <header className="shop-catalog-heading"><div><p className="portal-eyebrow">CATALOG</p><h1 id="shop-catalog-title">商品目录</h1></div>
+        <header className="shop-catalog-heading"><div><p className="portal-eyebrow">CATALOG</p><h1 id="shop-catalog-title">商品目录</h1>{catalog?.stats && (catalog.stats.views || catalog.stats.sold) ? <p className="shop-store-stats">{[catalog.stats.views ? `累计浏览 ${countText(catalog.stats.views)} 人次` : '', catalog.stats.sold ? `累计售出 ${countText(catalog.stats.sold)} 件` : ''].filter(Boolean).join(' · ')}</p> : null}</div>
           <form className="shop-search" role="search" onSubmit={event => event.preventDefault()}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></svg>
             <input type="search" aria-label="搜索商品" placeholder="搜索商品关键词" value={search} onChange={event => setSearch(event.target.value)}/><button type="submit">搜索</button>

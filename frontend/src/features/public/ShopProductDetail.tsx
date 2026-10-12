@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { isNoticeProduct, ShopCopyText, ShopNotice } from '../shop/ShopNotice';
-import { money, type Catalog } from '../shop/catalog';
+import { hasContact, money, saving, type Catalog } from '../shop/catalog';
+import { ProductStats, PromoBadge } from '../shop/ShopMerch';
 import { findSku, type CartItem } from '../shop/cart';
 
 function CatalogNotice({ catalog, error, onRetry }: { catalog: Catalog | null; error: boolean; onRetry: () => void }) {
@@ -21,20 +22,22 @@ export function ProductDetail({ productId, catalog, error, onAdd, onBuy, onRetry
   const count = /^\d{1,2}$/.test(quantity) ? Number(quantity) : 0;
   const validCount = count >= 1 && count <= 99;
   const valid = catalog?.status === 'ready' && !!variant?.available && validCount;
+  const offer = saving(variant);
   useEffect(() => { if (product) title.current?.focus(); }, [product?.id]);
   return <>
     <nav className="shop-breadcrumb" aria-label="面包屑"><a href="/">首页</a><span>/</span><a href="/">商品目录</a><span>/</span><span>{product?.title ?? '商品详情'}</span></nav>
     <CatalogNotice catalog={catalog} error={error} onRetry={onRetry}/>
     {product ? <><section className="shop-detail portal-card">
       <div className="shop-detail-image"><ShopBrandImage category={product.category}/></div>
-      <div className="shop-detail-info"><p className="portal-eyebrow">{product.category} · 人工交付</p><h1 ref={title} tabIndex={-1}>{product.title}</h1>
-        <p className="shop-detail-price"><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>
+      <div className="shop-detail-info"><p className="portal-eyebrow">{product.category} · 人工交付</p><h1 ref={title} tabIndex={-1}><PromoBadge text={product.badge}/>{product.title}</h1>
+        <ProductStats product={product}/>
+        <p className="shop-detail-price"><span>{product.badge || '售价'}</span><strong>{variant ? money(variant.price_cents) : '—'}</strong>{offer ? <span className="shop-list-price"><s>原价 {money(offer.listed)}</s><em>省 {money(offer.saved)}</em></span> : null}<small>CNY / 件</small></p>
         <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <button key={item.id} type="button" aria-pressed={variantId === item.id} onClick={() => setSelection(item.id)}>{item.label}{!item.available ? ' · 暂不可购买' : ''}</button>)}</fieldset>
         <div className="shop-detail-quantity"><span>购买数量</span><Quantity value={quantity} onChange={setQuantity}/><small>每次 1–99 件</small></div>
         {!validCount ? <p role="alert">请输入 1–99 的整数数量。</p> : null}
         <p className="shop-total">合计 <strong data-testid="purchase-total">{variant && validCount ? money(variant.price_cents * count) : '—'}</strong></p>
-        <div className="shop-detail-actions"><button type="button" className="btn btn-secondary" disabled={!valid} onClick={() => variant && onAdd({ id: variant.id, quantity: count })}>加入购物车</button><button type="button" className="btn btn-primary" disabled={!valid || !catalog?.telegram} onClick={() => variant && onBuy({ id: variant.id, quantity: count })}>立即购买</button></div>
-        {!catalog?.telegram ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}
+        <div className="shop-detail-actions"><button type="button" className="btn btn-secondary" disabled={!valid} onClick={() => variant && onAdd({ id: variant.id, quantity: count })}>加入购物车</button><button type="button" className="btn btn-primary" disabled={!valid || !hasContact(catalog)} onClick={() => variant && onBuy({ id: variant.id, quantity: count })}>立即购买</button></div>
+        {!hasContact(catalog) ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}
         <p className="shop-note">购买信息需由商家人工确认。请在付款前确认账号条件、价格和交付方式。</p>
       </div>
     </section><section className="shop-detail-copy portal-card"><h2>商品说明</h2>{product.description && isNoticeProduct(product.id) ? <ShopNotice text={product.description} /> : (product.description ? <ShopCopyText text={product.description} /> : <p>商家暂未填写商品说明，请联系商家了解详情。</p>)}<h2>售后条款</h2>{product.after_sales && isNoticeProduct(product.id) ? <ShopNotice text={product.after_sales} /> : (product.after_sales ? <ShopCopyText text={product.after_sales} /> : <p>商家暂未填写售后条款，请在购买前与商家确认。</p>)}</section></> : catalog ? <section className="shop-empty portal-card"><h1>商品不存在或已下架</h1><p>可以返回商品目录查看其他商品。</p><a className="btn btn-primary" href="/">返回商品目录</a></section> : null}
@@ -44,7 +47,7 @@ export function CartView({ cart, catalog, error, onChange, onBuy, onRetry }: { c
   const title = useRef<HTMLHeadingElement>(null);
   useEffect(() => { title.current?.focus(); }, []);
   const rows = cart.map(item => ({ item, row: findSku(catalog, item.id) }));
-  const valid = catalog?.status === 'ready' && !!catalog.telegram && rows.length > 0 && rows.every(({ row }) => row?.variant.available);
+  const valid = catalog?.status === 'ready' && hasContact(catalog) && rows.length > 0 && rows.every(({ row }) => row?.variant.available);
   const total = rows.reduce((sum, { item, row }) => sum + (row?.variant.price_cents ?? 0) * item.quantity, 0);
   return <section className="shop-cart portal-card"><header><div><p className="portal-eyebrow">SHOPPING CART</p><h1 ref={title} tabIndex={-1}>购物车</h1></div>{cart.length ? <button type="button" className="btn btn-secondary" onClick={() => onChange([])}>清空购物车</button> : null}</header>
     <CatalogNotice catalog={catalog} error={error} onRetry={onRetry}/>
@@ -52,7 +55,7 @@ export function CartView({ cart, catalog, error, onChange, onBuy, onRetry }: { c
       <div className="shop-cart-items">{rows.map(({ item, row }) => <article key={item.id} className="shop-cart-row"><ShopBrandImage category={row?.product.category ?? 'GPT'}/><div><h2>{row ? <a href={`/?product=${row.product.id}`}>{row.product.title}</a> : '商品已下架或暂不可用'}</h2><p>{row?.variant.label ?? `规格 ${item.id}`}</p><p>{row ? money(row.variant.price_cents) : '—'}{row && !row.variant.available ? ' · 暂不可购买' : ''}</p></div><Quantity label={`数量 ${item.id}`} value={String(item.quantity)} onChange={value => { if (/^\d{1,2}$/.test(value) && Number(value) >= 1) onChange(cart.map(current => current.id === item.id ? { ...current, quantity: Number(value) } : current)); }}/><strong>{row ? money(row.variant.price_cents * item.quantity) : '—'}</strong><button type="button" className="btn btn-secondary" aria-label={`移除 ${item.id}`} onClick={() => onChange(cart.filter(current => current.id !== item.id))}>移除</button></article>)}</div>
       <footer className="shop-cart-footer"><p>合计 <strong data-testid="cart-total">{catalog && rows.every(({ row }) => row) ? money(total) : '—'}</strong></p><button type="button" className="btn btn-primary" disabled={!valid} onClick={onBuy}>确认购买信息</button></footer>
       <p className="shop-note">结算前会重新核对售价和库存，最终价格及交付由商家人工确认。</p>
-      {catalog && !catalog.telegram ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}
+      {catalog && !hasContact(catalog) ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}
     </>}
   </section>;
 }

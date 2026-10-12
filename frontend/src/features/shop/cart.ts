@@ -25,7 +25,7 @@ export function findSku(catalog: Catalog | null, id: string) {
 }
 export function purchaseSummary(catalog: Catalog, items: CartItem[]): string {
   if (catalog.status !== 'ready') throw new Error('商品信息正在等待更新，暂时无法购买。');
-  if (!catalog.telegram) throw new Error('商家尚未配置联系方式，暂时无法联系购买。');
+  if (!catalog.telegram && !catalog.wechat) throw new Error('商家尚未配置联系方式，暂时无法联系购买。');
   if (!items.length || items.length > MAX_CART_ITEMS) throw new Error('购物车为空，请先选择商品。');
   let total = 0;
   const lines = items.map(item => {

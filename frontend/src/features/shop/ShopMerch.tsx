@@ -1,0 +1,20 @@
+import { useState } from 'react';
+import { countText, type Product } from './catalog';
+
+/** A promotion label such as 学生价, shown before the title. */
+export function PromoBadge({ text }: { text?: string | undefined }) {
+  return text ? <span className="shop-promo-badge">{text}</span> : null;
+}
+
+/** "128 人看过 · 已售 36 件", leaving out what is still zero. */
+export function ProductStats({ product }: { product: Product }) {
+  const parts = [product.views ? `${countText(product.views)} 人看过` : '', product.sold ? `已售 ${countText(product.sold)} 件` : ''].filter(Boolean);
+  return parts.length ? <span className="shop-product-stats">{parts.join(' · ')}</span> : null;
+}
+
+/** The merchant's WeChat ID with a copy button. */
+export function WechatContact({ wechat }: { wechat?: string | undefined }) {
+  const [copied, setCopied] = useState(false);
+  if (!wechat) return null;
+  return <span className="shop-contact"><span>商家微信</span><strong>{wechat}</strong><button type="button" className="btn btn-secondary btn-sm" onClick={() => void navigator.clipboard?.writeText(wechat).then(() => setCopied(true), () => setCopied(false))}>{copied ? '已复制' : '复制'}</button></span>;
+}

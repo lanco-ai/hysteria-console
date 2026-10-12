@@ -2,6 +2,7 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from web_api import create_app
 from web_api.services import LoginRequired
@@ -242,3 +243,110 @@ def test_two_sources_keep_admin_private_and_public_variant_freshness(tmp_path):
             'supplier marketing',
         ]:
             assert private not in response.text
+
+
+def shop_app(tmp_path, clock=None):
+    async def fetch():
+        return normalize_products(
+            json.loads((Path(__file__).parent / 'fixtures/shop/products.json').read_text())['data']
+        )
+
+    store = ShopStore(tmp_path / 'source.json', fetcher=fetch, **({'clock': clock} if clock else {}))
+    asyncio.run(store.refresh())
+    app = create_app(
+        Sessions(),
+        shop_store=store,
+        video_settings_store=VideoSettingsStore(tmp_path / 'video/settings.json'),
+        video_workflow_store=WorkflowStore(tmp_path / 'video/workflows.json'),
+        video_asset_store=AssetStore(tmp_path / 'video/assets'),
+    )
+    return store, app
+
+
+def test_promotion_labels_original_prices_sold_counts_and_wechat_reach_the_storefront(tmp_path):
+    store, app = shop_app(tmp_path)
+    payload = {
+        'revision': 0, 'telegram': '', 'wechat': 'upc-bh',
+        'skus': {
+            '2:7': {'price_cents': 13300, 'published': True, 'list_price_cents': 15300},
+            '2:2': {'price_cents': 14000, 'published': True},
+        },
+        'display': {'2': {'badge': '学生价', 'sold': 128}},
+    }
+    with TestClient(app) as client:
+        saved = client.put('/api/v1/shop/admin', headers=HEADERS, json=payload)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()['wechat'] == 'upc-bh' and saved.json()['display'] == payload['display']
+        catalog = client.get('/api/v1/shop/catalog').json()
+    assert catalog['wechat'] == 'upc-bh'
+    product = catalog['products'][0]
+    assert (product['badge'], product['sold'], product['views']) == ('学生价', 128, 0)
+    assert {variant['id']: variant['list_price_cents'] for variant in product['variants']} == {'2:7': 15300, '2:2': None}
+    assert catalog['stats'] == {'views': 0, 'sold': 128}
+
+
+
+@pytest.mark.parametrize('change', [
+    {'wechat': 'a1'},
+    {'wechat': '1abcdef'},
+    {'wechat': 'upc bh!'},
+    # 原价 must be above the selling price, and needs one.
+    {'skus': {'2:7': {'price_cents': 13300, 'published': True, 'list_price_cents': 13300}}},
+    {'skus': {'2:7': {'price_cents': None, 'published': False, 'list_price_cents': 15300}}},
+    {'skus': {'2:7': {'price_cents': 13300, 'published': True, 'list_price': 15300}}},
+    # A label is a few plain words, never a link or a contact.
+    {'display': {'2': {'badge': '学生价学生价学生价', 'sold': 1}}},
+    {'display': {'2': {'badge': 't.me/shop', 'sold': 1}}},
+    {'display': {'2': {'badge': '加微信 upc', 'sold': 1}}},
+    {'display': {'2': {'badge': '学生价', 'sold': -1}}},
+    {'display': {'2': {'badge': '学生价', 'sold': True}}},
+    {'display': {'2': {'badge': '学生价'}}},
+    {'display': {'999': {'badge': '学生价', 'sold': 1}}},
+])
+def test_invalid_merchandising_is_refused(tmp_path, change):
+    store, app = shop_app(tmp_path)
+    payload = {'revision': 0, 'telegram': '', 'skus': {'2:7': {'price_cents': 13300, 'published': True}}, **change}
+    with TestClient(app) as client:
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json=payload).status_code == 422
+
+
+def test_visits_count_each_visitor_once_a_day_for_the_shop_and_each_product_on_sale(tmp_path):
+    now = [1_760_000_000.0]
+    store, app = shop_app(tmp_path, clock=lambda: now[0])
+    with TestClient(app) as client:
+        client.put('/api/v1/shop/admin', headers=HEADERS, json={
+            'revision': 0, 'telegram': 'my_shop', 'skus': {'2:7': {'price_cents': 13300, 'published': True}},
+        })
+        visit = lambda body, headers=None: client.post('/api/v1/shop/visit', headers=headers or {'Sec-Fetch-Site': 'same-origin'}, json=body)
+        assert visit({}).status_code == 204
+        assert visit({'product': '2'}).status_code == 204
+        assert visit({'product': '2'}).status_code == 204
+        # Products not on sale are not counted, and only same-site pages may report.
+        assert visit({'product': '3'}).status_code == 204
+        assert visit({'product': '2'}, {'Sec-Fetch-Site': 'cross-site'}).status_code == 403
+        assert visit({'product': 2}).status_code == 422
+        assert visit({'product': '2', 'extra': 1}).status_code == 422
+        catalog = client.get('/api/v1/shop/catalog').json()
+        assert catalog['stats']['views'] == 1 and catalog['products'][0]['views'] == 1
+        # The next day the same visitor counts again; the marks of the day before are gone.
+        now[0] += 86400
+        assert visit({'product': '2'}).status_code == 204
+        catalog = client.get('/api/v1/shop/catalog').json()
+        assert catalog['stats']['views'] == 2 and catalog['products'][0]['views'] == 2
+    stats = json.loads((tmp_path / 'stats.json').read_text())
+    assert len(stats['seen']) == 2 and 'testclient' not in json.dumps(stats)
+    assert set(stats['products']) == {'2'}
+
+
+def test_unreadable_statistics_never_break_the_catalog(tmp_path):
+    store, app = shop_app(tmp_path)
+    (tmp_path / 'stats.json').write_text('{"broken":')
+    with TestClient(app) as client:
+        client.put('/api/v1/shop/admin', headers=HEADERS, json={
+            'revision': 0, 'telegram': 'my_shop', 'skus': {'2:7': {'price_cents': 13300, 'published': True}},
+        })
+        assert client.post('/api/v1/shop/visit', headers={'Sec-Fetch-Site': 'same-origin'}, json={'product': '2'}).status_code == 204
+        catalog = client.get('/api/v1/shop/catalog')
+        assert catalog.status_code == 200 and catalog.json()['stats']['views'] == 0
+    # The damaged file is left for inspection rather than overwritten.
+    assert (tmp_path / 'stats.json').read_text() == '{"broken":'

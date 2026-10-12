@@ -1,11 +1,15 @@
 """Private source snapshot and separately revisioned merchant settings."""
 
 import asyncio
+import hashlib
 import json
 import math
 import re
+import secrets
 import time
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import state_store
 
@@ -96,16 +100,29 @@ def _integer(value, minimum, maximum):
     return type(value) is int and minimum <= value <= maximum
 
 
+# A WeChat ID: 6–20 characters, starting with a letter.
+WECHAT_ID = re.compile(r'[A-Za-z][-_A-Za-z0-9]{5,19}')
+MAX_BADGE = 8
+MAX_SOLD = 10_000_000
+
+
+def valid_badge(text):
+    """A short promotion label shown before a product title, e.g. 学生价; never a link or contact."""
+    return isinstance(text, str) and (text == '' or (len(text) <= MAX_BADGE and safe_label(text)))
+
+
 def validate_settings(value):
     if (
         not isinstance(value, dict)
         or not {'revision', 'telegram', 'skus'} <= set(value)
-        or set(value) - {'revision', 'telegram', 'skus', 'products'}
+        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display'}
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
         or (
             value['telegram'] and not re.fullmatch(r'[A-Za-z][A-Za-z0-9_]{4,31}', value['telegram'])
         )
+        or not isinstance(value.get('wechat', ''), str)
+        or (value.get('wechat') and not WECHAT_ID.fullmatch(value['wechat']))
         or not isinstance(value['skus'], dict)
         or len(value['skus']) > MAX_ROWS
     ):
@@ -115,12 +132,32 @@ def validate_settings(value):
             not isinstance(key, str)
             or not re.fullmatch(r'[1-9]\d{0,15}:[1-9]\d{0,15}', key)
             or not isinstance(item, dict)
-            or set(item) != {'price_cents', 'published'}
+            or not {'price_cents', 'published'} <= set(item)
+            or set(item) - {'price_cents', 'published', 'list_price_cents'}
             or type(item['published']) is not bool
             or (item['price_cents'] is not None and not _integer(item['price_cents'], 1, MAX_CENTS))
             or (item['published'] and item['price_cents'] is None)
         ):
             raise ValueError('invalid SKU settings')
+        # 原价: the struck-through price beside the selling price; it must be higher to mean anything.
+        listed = item.get('list_price_cents')
+        if listed is not None and (
+            item['price_cents'] is None or not _integer(listed, item['price_cents'] + 1, MAX_CENTS)
+        ):
+            raise ValueError('invalid SKU settings')
+    display = value.get('display', {})
+    if not isinstance(display, dict) or len(display) > MAX_ROWS:
+        raise ValueError('invalid product display')
+    for key, item in display.items():
+        if (
+            not isinstance(key, str)
+            or not re.fullmatch(r'[1-9]\d{0,15}', key)
+            or not isinstance(item, dict)
+            or set(item) != {'badge', 'sold'}
+            or not valid_badge(item['badge'])
+            or not _integer(item['sold'], 0, MAX_SOLD)
+        ):
+            raise ValueError('invalid product display')
     metadata = value.get('products', {})
     if not isinstance(metadata, dict) or len(metadata) > MAX_ROWS:
         raise ValueError('invalid product copy')
@@ -233,6 +270,78 @@ def validate_items(items, provider='gpt'):
     return items
 
 
+SHOP_DAY = ZoneInfo('Asia/Shanghai')
+MAX_DAILY_MARKS = 20_000
+
+
+class ShopStats:
+    """How many people looked at the shop and at each product.
+
+    A visitor counts once a day for the shop and once a day for each product they open.
+    Visitors are told apart by a hash of their address with a salt that is replaced every
+    day; neither the address nor an earlier salt is kept, so old marks lead back to no one.
+    """
+
+    def __init__(self, path, clock=time.time):
+        self.path, self.clock = Path(path), clock
+
+    @staticmethod
+    def _empty():
+        return {'schema_version': 1, 'site': 0, 'products': {}, 'day': '', 'salt': '', 'seen': []}
+
+    def _load(self):
+        value = state_store.load_json_strict(self.path, self._empty())
+        if (
+            not isinstance(value, dict)
+            or set(value) != set(self._empty())
+            or value['schema_version'] != 1
+            or not _integer(value['site'], 0, 2**53 - 1)
+            or not isinstance(value['products'], dict)
+            or len(value['products']) > MAX_ROWS * 4
+            or not all(
+                isinstance(key, str) and re.fullmatch(r'[1-9]\d{0,15}', key) and _integer(count, 0, 2**53 - 1)
+                for key, count in value['products'].items()
+            )
+            or not (value['day'] == '' or re.fullmatch(r'\d{4}-\d{2}-\d{2}', str(value['day'])))
+            or not re.fullmatch(r'(?:[0-9a-f]{32})?', str(value['salt']))
+            or not isinstance(value['seen'], list)
+            or len(value['seen']) > MAX_DAILY_MARKS
+            or not all(isinstance(mark, str) and re.fullmatch(r'[0-9a-f]{16}', mark) for mark in value['seen'])
+        ):
+            raise state_store.InvalidJsonState('invalid shop statistics')
+        return value
+
+    def read(self):
+        """Counts for the storefront; none when the file cannot be read, rather than failing it."""
+        try:
+            value = self._load()
+        except (state_store.StateStoreError, OSError, ValueError):
+            return {'site': 0, 'products': {}}
+        return {'site': value['site'], 'products': value['products']}
+
+    def record(self, address, product_id=None):
+        today = datetime.fromtimestamp(self.clock(), SHOP_DAY).date().isoformat()
+        with state_store.file_lock(str(self.path) + '.lock', timeout=2):
+            value = self._load()
+            if value['day'] != today:
+                value.update(day=today, salt=secrets.token_hex(16), seen=[])
+            seen = set(value['seen'])
+            counted = False
+            for scope in ('site', product_id) if product_id else ('site',):
+                mark = hashlib.sha256(f"{value['salt']}|{address}|{scope}".encode()).hexdigest()[:16]
+                if mark in seen or len(seen) >= MAX_DAILY_MARKS:
+                    continue
+                seen.add(mark)
+                value['seen'].append(mark)
+                counted = True
+                if scope == 'site':
+                    value['site'] += 1
+                else:
+                    value['products'][scope] = value['products'].get(scope, 0) + 1
+            if counted:
+                state_store.save_json(self.path, value)
+
+
 class ShopStore:
     def __init__(
         self,
@@ -256,6 +365,7 @@ class ShopStore:
         self.lorry_path = self.path.with_name(self.path.stem + '-lorry.json')
         self.fanai_fetcher = fanai_fetcher
         self.fanai_path = self.path.with_name(self.path.stem + '-fanai.json')
+        self.stats = ShopStats(self.path.with_name('stats.json'), clock)
 
     def _feed_ids(self):
         return tuple(
@@ -383,6 +493,8 @@ class ShopStore:
         ]
         return {
             **settings,
+            # Visit counts, for the merchant as for the storefront.
+            'stats': self.stats.read(),
             'products': products,
             # The feed and storefront category of each item, so the admin page needs no list of feeds.
             'items': [
@@ -413,6 +525,8 @@ class ShopStore:
 
     async def public(self):
         state = await self.admin()
+        stats = state['stats']
+        display = state.get('display', {})
         groups, applicable = {}, set()
         for row in state['items']:
             merchant = state['skus'].get(row['key'], {})
@@ -432,6 +546,10 @@ class ShopStore:
                     'after_sales': state['products']
                     .get(row['product_id'], {})
                     .get('after_sales', ''),
+                    # Merchandising set by the merchant: a label before the title and units sold.
+                    'badge': display.get(row['product_id'], {}).get('badge', ''),
+                    'sold': display.get(row['product_id'], {}).get('sold', 0),
+                    'views': stats['products'].get(row['product_id'], 0),
                     'variants': [],
                 },
             )
@@ -440,6 +558,7 @@ class ShopStore:
                     'id': row['key'],
                     'label': row['label'],
                     'price_cents': merchant['price_cents'],
+                    'list_price_cents': merchant.get('list_price_cents'),
                     'available': row['available'] and not state['sources'][provider]['is_stale'],
                     'quantity': None,
                     'sales': None,
@@ -452,10 +571,13 @@ class ShopStore:
         successes = [
             status['last_success'] for status in relevant if status['last_success'] is not None
         ]
+        products = list(groups.values())
         return {
             'currency': 'CNY',
             'telegram': state['telegram'],
-            'products': list(groups.values()),
+            'wechat': state.get('wechat', ''),
+            'stats': {'views': stats['site'], 'sold': sum(product['sold'] for product in products)},
+            'products': products,
             'status': 'ready' if ready else ('stale' if successes else 'unavailable'),
             'updated_at': max(successes, default=None),
         }
@@ -473,12 +595,22 @@ class ShopStore:
                 raise ValueError('unknown SKU')
             products = sanitize_product_copy(payload.get('products', current.get('products', {})))
             known_products = {key.split(':')[0] for key in known} | set(current.get('products', {}))
+            if set(payload.get('display', {})) - known_products - set(current.get('display', {})):
+                raise ValueError('unknown product')
             if set(products) - known_products:
                 raise ValueError('unknown product')
             saved = {**payload, 'products': products, 'revision': current['revision'] + 1}
             validate_settings(saved)
             state_store.save_json(self.settings_path, saved)
         return self._admin()
+
+    async def visit(self, address, product_id=None):
+        """Count a storefront visit, and a view of ``product_id`` when it is a product on sale."""
+        if product_id is not None and product_id not in {
+            product['id'] for product in (await self.public())['products']
+        }:
+            product_id = None
+        await self._finish_thread(self.stats.record, address, product_id)
 
     async def update(self, payload):
         return await self._finish_thread(self._update, payload)

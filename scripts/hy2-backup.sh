@@ -214,6 +214,7 @@ for p in \
   "$HY_DIR/state/shop/source-merchant.json" \
   "$HY_DIR/state/shop/prodseller.key" \
   "$HY_DIR/state/shop/lorry.json" \
+  "$HY_DIR/state/shop/stats.json" \
   "$HY_DIR/state/video/settings.json" \
   "$HY_DIR/state/video/workflows.json" \
   "$HY_DIR/state/video/runs.json" \

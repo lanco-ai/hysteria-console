@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+import re
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 
 import http_utils
 import state_store
 from fastapi import Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
 from .shop_anli_source import fetch_catalog as fetch_anli_catalog
@@ -97,6 +98,27 @@ def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabl
     @app.get('/api/v1/shop/catalog')
     async def catalog():
         return await reply(store.public)
+
+    @app.post('/api/v1/shop/visit')
+    async def visit(request: Request):
+        # Anonymous, like the catalog: the storefront reports a page view; counting is best effort.
+        payload = await body(request)
+        if isinstance(payload, JSONResponse):
+            return payload
+        product = payload.get('product') if isinstance(payload, dict) else None
+        if (
+            not isinstance(payload, dict)
+            or set(payload) - {'product'}
+            or (product is not None and not (isinstance(product, str) and re.fullmatch(r'[1-9]\d{0,15}', product)))
+        ):
+            return JSONResponse({'error': 'invalid_request'}, status_code=422)
+        peer = request.client.host if request.client else ''
+        address = http_utils.request_client_ip(SimpleNamespace(client_address=(peer, 0), headers=request.headers))
+        try:
+            await store.visit(address, product)
+        except (OSError, state_store.StateStoreError, ValueError):
+            pass
+        return Response(status_code=204, headers={'Cache-Control': 'no-store'})
 
     @app.get('/api/v1/shop/admin')
     async def admin(request: Request):
