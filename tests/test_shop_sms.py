@@ -98,6 +98,75 @@ def gateway(handler):
 HEADERS = {'Sec-Fetch-Site': 'same-origin'}
 
 
+def test_specific_phone_is_optional_and_only_forwarded_on_acquire():
+    seen = []
+
+    def handle(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={'ok': True, 'phone': '12025550123', 'order_id': 124})
+
+    with gateway(handle) as client:
+        url = '/api/v1/shop/sms/acquire'
+        assert client.post(url, headers=HEADERS, json={'activation_code': CODE}).status_code == 200
+        result = client.post(url, headers=HEADERS, json={'activation_code': CODE, 'specific_phone': '2025550123'})
+        assert result.status_code == 200
+        assert seen == [{'activation_code': CODE},
+                        {'activation_code': CODE, 'specific_phone': '2025550123', 'use_specific_phone': True}]
+        assert result.json()['order_id'] == 124 and 'specific_phone' not in result.json()
+
+
+@pytest.mark.parametrize('number', ['', None, True, 2025550123, '202555012', '20255501234',
+                                    '+12025550123', '12025550123', '202 5550123', '２０２５５５０１２３', '202555012x'])
+def test_invalid_specific_phone_never_reaches_provider(number):
+    with gateway(lambda _: pytest.fail('invalid phone reached provider')) as client:
+        result = client.post('/api/v1/shop/sms/acquire', headers=HEADERS,
+                             json={'activation_code': CODE, 'specific_phone': number})
+        assert result.status_code == 422
+
+
+@pytest.mark.parametrize('action', ['verify', 'check', 'cancel'])
+def test_specific_phone_cannot_be_used_on_other_actions(action):
+    with gateway(lambda _: pytest.fail('unexpected provider call')) as client:
+        payload = {'activation_code': CODE, 'specific_phone': '2025550123'}
+        if action != 'verify':
+            payload['order_id'] = 123
+        assert client.post('/api/v1/shop/sms/' + action, headers=HEADERS, json=payload).status_code == 422
+
+
+@pytest.mark.parametrize('flag', ['specific_phone_invalid', 'specific_phone_unavailable', 'specific_phone_unsupported'])
+@pytest.mark.parametrize('status', [200, 400])
+def test_specific_phone_rejection_has_safe_reason_and_never_falls_back(flag, status):
+    seen = []
+
+    def handle(request):
+        seen.append(json.loads(request.content))
+        return httpx.Response(status, json={'ok': False, flag: True, 'error': CODE, 'price': 1.2})
+
+    with gateway(handle) as client:
+        result = client.post('/api/v1/shop/sms/acquire', headers=HEADERS,
+                             json={'activation_code': CODE, 'specific_phone': '2025550123'})
+        assert result.status_code == 400 and result.json()['error'] == flag
+        assert CODE not in result.text and 'price' not in result.text
+        assert len(seen) == 1 and seen[0]['specific_phone'] == '2025550123'
+
+
+def test_client_cannot_choose_provider_flags_or_another_destination():
+    with gateway(lambda _: pytest.fail('invalid fields reached provider')) as client:
+        for field, value in [('use_specific_phone', False), ('product', 'other'), ('url', 'http://localhost')]:
+            result = client.post('/api/v1/shop/sms/acquire', headers=HEADERS,
+                                 json={'activation_code': CODE, 'specific_phone': '2025550123', field: value})
+            assert result.status_code == 422
+
+
+@pytest.mark.parametrize('status', [400, 403, 409])
+def test_non_json_rejection_preserves_status_without_echoing_body(status):
+    with gateway(lambda _: httpx.Response(status, text=CODE)) as client:
+        result = client.post('/api/v1/shop/sms/verify', headers=HEADERS, json={'activation_code': CODE})
+        assert result.status_code == (409 if status == 409 else 400)
+        assert result.json()['error'] == 'request_rejected'
+        assert CODE not in result.text
+
+
 def test_gateway_requires_same_origin_and_keeps_secrets_out_of_local_urls():
     seen = []
 

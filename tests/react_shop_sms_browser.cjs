@@ -35,8 +35,15 @@ const path = require('node:path');
       await page.setViewportSize({ width, height: 950 });
       await page.goto(`${base}/?view=sms`);
       await expect(page.getByRole('heading', { name: '一个号码，接收你的验证码。' })).toBeVisible();
+      await expect(page.getByRole('switch', { name: '指定手机号' })).not.toBeChecked();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `overflow at ${width}`);
       await screenshot(`sms-entry-${width}.png`);
+      await page.getByRole('switch', { name: '指定手机号' }).check();
+      await page.getByLabel('美国手机号', { exact: true }).fill('+1 (202) 555-0123');
+      await page.getByLabel('美国手机号', { exact: true }).press('Tab');
+      await expect(page.getByLabel('美国手机号', { exact: true })).toHaveValue('2025550123');
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `specific-phone overflow at ${width}`);
+      await screenshot(`sms-specific-${width}.png`);
     }
     await page.setViewportSize({ width: 1440, height: 1000 });
     await open('NORMAL-TEST-FAKE-CDK');
@@ -54,6 +61,84 @@ const path = require('node:path');
     const stored = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
     assert.ok(!stored.includes('NORMAL-TEST') && !page.url().includes('NORMAL-TEST'));
     assert.ok(requests.every(r => r.method === 'POST' && !r.url.includes('CDK')));
+
+    // Reusing a phone starts a new verified order, clears the previous SMS, and never auto-acquires.
+    await page.getByRole('button', { name: '再次使用此号码' }).click();
+    await expect(page.getByRole('switch', { name: '指定手机号' })).toBeChecked();
+    await expect(page.getByLabel('美国手机号', { exact: true })).toHaveValue('2025550123');
+    await expect(page.getByLabel('激活码', { exact: true })).toHaveValue('NORMAL-TEST-FAKE-CDK');
+    await expect(page.getByText('246810', { exact: true })).toHaveCount(0);
+    assert.equal(requests.length, terminalCount, 'reuse button must not allocate a number');
+    await page.getByLabel('激活码', { exact: true }).fill('REUSE-TEST-FAKE-CDK');
+    await page.getByLabel('美国手机号', { exact: true }).fill('');
+    await page.getByLabel('美国手机号', { exact: true }).pressSequentially('112025550123');
+    await expect(page.getByLabel('美国手机号', { exact: true })).toHaveValue('112025550123');
+    await expect(page.getByRole('button', { name: '验证激活码' })).toBeDisabled();
+    const paddedInvalidPhone = `2025550123${' '.repeat(24)}4`;
+    await page.getByLabel('美国手机号', { exact: true }).fill(paddedInvalidPhone);
+    await page.getByLabel('美国手机号', { exact: true }).press('Tab');
+    await expect(page.getByLabel('美国手机号', { exact: true })).toHaveValue(paddedInvalidPhone);
+    await expect(page.getByRole('button', { name: '验证激活码' })).toBeDisabled();
+    await page.getByLabel('美国手机号', { exact: true }).fill('20255501234');
+    await expect(page.getByRole('button', { name: '验证激活码' })).toBeDisabled();
+    await page.getByLabel('美国手机号', { exact: true }).fill('+1 (202) 555-0123');
+    const reuseStart = requests.length;
+    for (const sms of ['112233', '223344', '334455']) {
+      await page.getByRole('button', { name: '验证激活码' }).click();
+      await expect(page.getByLabel('美国手机号', { exact: true })).toBeDisabled();
+      await page.getByRole('button', { name: '获取接收号码' }).click();
+      await expect(page.getByText('+12025550123', { exact: true })).toBeVisible();
+      await page.clock.runFor(10_500);
+      await expect(page.getByText(sms, { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: '再次使用此号码' }).click();
+      await expect(page.getByText(sms, { exact: true })).toHaveCount(0);
+    }
+    const reuseRequests = requests.slice(reuseStart);
+    assert.deepEqual(reuseRequests.filter(r => r.url.endsWith('/acquire')).map(r => JSON.parse(r.body)),
+      Array.from({ length: 3 }, () => ({ activation_code: 'REUSE-TEST-FAKE-CDK', specific_phone: '2025550123' })));
+    assert.deepEqual(reuseRequests.filter(r => r.url.endsWith('/check')).map(r => JSON.parse(r.body).order_id), [124, 125, 126]);
+    await page.getByRole('button', { name: '验证激活码' }).click();
+    await expect(page.getByText('剩余 0 次', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '获取接收号码' })).toBeDisabled();
+    await page.getByRole('button', { name: '使用其他激活码' }).click();
+    await expect(page.getByLabel('激活码', { exact: true })).toHaveValue('');
+    await expect(page.getByLabel('美国手机号', { exact: true })).toHaveValue('2025550123');
+
+    // An unavailable specified phone stays selected and never falls back to random acquisition.
+    await page.getByLabel('激活码', { exact: true }).fill('UNAVAILABLE-TEST-CDK');
+    await page.getByLabel('美国手机号', { exact: true }).fill('2025550199');
+    await page.getByRole('button', { name: '验证激活码' }).click();
+    const unavailableStart = requests.length;
+    await page.getByRole('button', { name: '获取接收号码' }).click();
+    await expect(page.getByRole('alert')).toContainText('指定号码暂不可用');
+    await expect(page.getByRole('switch', { name: '指定手机号' })).toBeChecked();
+    await expect(page.getByLabel('美国手机号', { exact: true })).toHaveValue('2025550199');
+    await page.clock.runFor(60_000);
+    assert.equal(requests.length, unavailableStart + 1);
+
+    // An existing pending order is recovered without trying to replace its phone.
+    await page.getByRole('button', { name: '使用其他激活码' }).click();
+    await page.getByLabel('激活码', { exact: true }).fill('PENDING-TEST-FAKE-CDK');
+    await page.getByRole('button', { name: '验证激活码' }).click();
+    await expect(page.getByText('此激活码有未结束的接码，将恢复原订单，不重新申请指定号码。')).toBeVisible();
+    await page.getByRole('button', { name: '恢复当前号码' }).click();
+    await expect(page.getByText('+12025550123', { exact: true })).toBeVisible();
+    assert.deepEqual(JSON.parse(requests.filter(r => r.url.endsWith('/acquire')).at(-1).body), { activation_code: 'PENDING-TEST-FAKE-CDK' });
+
+    // Another device can acquire between verify and acquire. Keep the returned order visible.
+    await page.goto(`${base}/?view=sms`);
+    await page.getByLabel('激活码', { exact: true }).fill('RACE-TEST-FAKE-CDK');
+    await page.getByRole('switch', { name: '指定手机号' }).check();
+    await page.getByLabel('美国手机号', { exact: true }).fill('2025550198');
+    await page.getByRole('button', { name: '验证激活码' }).click();
+    await page.getByRole('button', { name: '获取接收号码' }).click();
+    await expect(page.getByText('+12025550123', { exact: true })).toBeVisible();
+    await expect(page.getByText('返回的号码与指定号码不同，已保留本次订单。请先核对处理，不要重复取号。')).toBeVisible();
+    const mismatchAcquires = requests.filter(r => r.url.endsWith('/acquire')).length;
+    await page.clock.runFor(10_500);
+    await expect(page.getByText('246810', { exact: true })).toBeVisible();
+    await expect(page.getByText('返回的号码与指定号码不同，已保留本次订单。请先核对处理，不要重复取号。')).toBeVisible();
+    assert.equal(requests.filter(r => r.url.endsWith('/acquire')).length, mismatchAcquires);
 
     // Cancellation stays bound to the current order and continues querying until confirmed.
     await open('CANCEL-TEST-FAKE-CDK');
@@ -146,6 +231,6 @@ const path = require('node:path');
     assert.ok(!catalog.includes('zephyr') && !catalog.includes('cost_cents'));
     assert.deepEqual(errors, []);
     assert.deepEqual(external, []);
-    console.log('PASS: SMS draft/private cost, merchant category, redemption, 10s polling, terminal stop, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');
+    console.log('PASS: SMS draft/private cost, specified phone, three separate reuse orders, remaining credit, unavailable/no fallback, pending recovery, mismatch race, 10s polling, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -22,6 +22,26 @@
 .sms-field input:focus { border-color: #719582; outline: 3px solid rgb(75 128 99 / 10%); }
 .sms-field input:disabled { background: #f7f8f5; color: var(--text-secondary); }
 .sms-field-hint { margin: 10px 0 24px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+.sms-specific { margin-bottom: 24px; padding: 16px; border: 1px solid var(--hairline); border-radius: 12px; background: #fafbf9; }
+.sms-specific.is-enabled { border-color: #cbded1; background: #f5f9f5; }
+.sms-specific-toggle { position: relative; display: flex; min-height: 44px; align-items: center; gap: 12px; cursor: pointer; }
+.sms-specific-toggle input { position: absolute; z-index: 1; left: 0; width: 36px; height: 44px; margin: 0; opacity: 0; cursor: pointer; }
+.sms-toggle-track { width: 36px; height: 22px; flex: 0 0 auto; padding: 3px; border-radius: 14px; background: #c5cdc5; transition: background .15s; }
+.sms-toggle-track::after { display: block; width: 16px; height: 16px; border-radius: 50%; background: white; content: ''; transition: transform .15s; }
+.sms-specific-toggle input:checked + .sms-toggle-track { background: #397758; }
+.sms-specific-toggle input:checked + .sms-toggle-track::after { transform: translateX(14px); }
+.sms-specific-toggle input:focus-visible + .sms-toggle-track { outline: 3px solid #a7c8b4; outline-offset: 3px; }
+.sms-specific-toggle input:disabled + .sms-toggle-track { opacity: .6; }
+.sms-specific-toggle strong, .sms-specific-toggle small { display: block; }
+.sms-specific-toggle strong { font-size: 13px; font-weight: 600; }
+.sms-specific-toggle small { margin-top: 4px; color: var(--text-secondary); font-size: 11px; }
+.sms-phone-field { display: flex; min-width: 0; align-items: center; gap: 10px; margin-top: 12px; padding: 0 12px; border: 1px solid #cedcd1; border-radius: 9px; background: var(--bg-surface); }
+.sms-phone-field:focus-within { border-color: #719582; outline: 3px solid rgb(75 128 99 / 10%); }
+.sms-phone-field > span { color: #506859; font-size: 14px; }
+.sms-phone-field input { width: 100%; min-width: 0; height: 46px; padding: 0; border: 0; background: transparent; color: var(--text-primary); font-size: 16px; font-variant-numeric: tabular-nums; outline: 0; }
+.sms-phone-field input:focus { border: 0; box-shadow: none; outline: 0; }
+.sms-phone-field input:disabled { color: var(--text-secondary); }
+.sms-specific > p { margin: 10px 0 0; color: var(--text-secondary); font-size: 11px; line-height: 1.8; }
 .sms-primary { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: space-between; padding-inline: 18px; border-radius: 10px; }
 .sms-verified > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .sms-verified > div > span:last-child { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
@@ -48,6 +68,7 @@
 .sms-cancel-confirm p { margin: 0 0 16px; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
 .sms-cancel-confirm > div { display: flex; align-items: center; gap: 18px; }
 .sms-finish { margin-top: 24px; }
+.sms-finish-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .sms-feedback { padding: 0 32px; }
 .sms-feedback p:empty { display: none; }
 .sms-feedback p { margin: 0 0 24px; color: #47765b; font-size: 13px; line-height: 1.7; }

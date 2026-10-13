@@ -1,6 +1,7 @@
 """SMS UI with a fictional quote and a fully mocked provider; no real CDK calls."""
 
 import json
+import itertools
 import os
 import subprocess
 
@@ -28,13 +29,22 @@ class SmsStore(ShopStore):
 class MockGateway(sms_gateway.SmsGateway):
     def __init__(self):
         polls = {}
+        acquisitions = {}
 
         def reply(request):
             payload = dict(request.url.params) if request.method == 'GET' else json.loads(request.content)
             code = payload['activation_code']
             if request.url.path == '/api/verify-code':
-                return httpx.Response(200, json={'ok': True, 'remaining': 1, 'max_uses': 1})
+                maximum = 3 if code.startswith('REUSE') else 1
+                return httpx.Response(200, json={'ok': True, 'remaining': 0 if code.startswith('PENDING') else maximum - acquisitions.get(code, 0),
+                                               'max_uses': maximum, 'has_pending_order': code.startswith('PENDING')})
             if request.url.path == '/api/get-phone':
+                if payload.get('specific_phone') == '2025550199':
+                    return httpx.Response(400, json={'ok': False, 'specific_phone_unavailable': True})
+                if code.startswith('REUSE'):
+                    acquisitions[code] = acquisitions.get(code, 0) + 1
+                    return httpx.Response(200, json={'ok': True, 'phone': '1' + payload.get('specific_phone', '2025550123'),
+                                                   'order_id': 123 + acquisitions[code], 'price': 0.13})
                 return httpx.Response(200, json={'ok': True, 'phone': '12025550123', 'order_id': 123, 'price': 0.13})
             if request.url.path == '/api/cancel':
                 return httpx.Response(200, json={'ok': True, 'status': 'CANCEL_PENDING', 'cancel_pending': True})
@@ -44,9 +54,14 @@ class MockGateway(sms_gateway.SmsGateway):
                 return httpx.Response(200, json={'ok': True, 'status': 'CANCELED', 'wait_seconds': 70})
             if code.startswith('WAIT'):
                 return httpx.Response(200, json={'ok': True, 'status': 'PENDING', 'wait_seconds': 70})
+            if code.startswith('REUSE'):
+                value = {124: '112233', 125: '223344', 126: '334455'}[int(payload['order_id'])]
+                return httpx.Response(200, json={'ok': True, 'status': 'RECEIVED', 'sms_code': value})
             return httpx.Response(200, json={'ok': True, 'status': 'RECEIVED', 'sms_code': '246810', 'wait_seconds': 70})
 
-        super().__init__(transport=httpx.MockTransport(reply))
+        # Browser time is accelerated; let independent scenarios advance the
+        # gateway clock too. Real rate-limit behavior has separate backend tests.
+        super().__init__(transport=httpx.MockTransport(reply), clock=itertools.count(step=5).__next__)
 
 
 def main():

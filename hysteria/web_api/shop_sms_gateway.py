@@ -40,11 +40,16 @@ def integer(value, maximum=2**53 - 1):
 
 def validate_payload(action, value):
     fields = {'activation_code', 'order_id'} if action in {'check', 'cancel'} else {'activation_code'}
-    if (not isinstance(value, dict) or set(value) != fields
+    optional = {'specific_phone'} if action == 'acquire' else set()
+    if (not isinstance(value, dict) or not fields <= set(value) or not set(value) <= fields | optional
             or not isinstance(value.get('activation_code'), str)
             or not re.fullmatch(r'[A-Za-z0-9_-]{8,128}', value['activation_code'])
             or ('order_id' in fields and (not integer(value['order_id']) or not value['order_id']))):
         raise SmsError(422, 'invalid_request')
+    if 'specific_phone' in value:
+        if not isinstance(value['specific_phone'], str) or not re.fullmatch(r'[0-9]{10}', value['specific_phone']):
+            raise SmsError(422, 'invalid_request')
+        return {**value, 'use_specific_phone': True}
     return value
 
 
@@ -55,9 +60,17 @@ def retry_seconds(value):
         return 10
 
 
+def rejection_reason(action, data):
+    if action == 'acquire' and isinstance(data, dict):
+        for flag in ('specific_phone_invalid', 'specific_phone_unavailable', 'specific_phone_unsupported'):
+            if data.get(flag) is True:
+                return flag
+    return 'request_rejected'
+
+
 def project(action, data):
     if not isinstance(data, dict) or data.get('ok') is not True:
-        raise SmsError(400, 'request_rejected')
+        raise SmsError(400, rejection_reason(action, data))
     if action == 'verify':
         remaining, maximum = data.get('remaining'), data.get('max_uses')
         if not integer(remaining) or not integer(maximum) or remaining > maximum:
@@ -117,9 +130,8 @@ class SmsGateway:
                     async with client.stream('GET' if action == 'check' else 'POST', ORIGIN + PATHS[action],
                                              follow_redirects=False, headers={'User-Agent': 'Mozilla/5.0',
                                                                              'Accept': 'application/json'}, **arguments) as response:
-                        if 400 <= response.status_code < 500 and response.status_code != 429:
-                            raise SmsError(409 if response.status_code == 409 else 400, 'request_rejected')
-                        if response.status_code not in (200, 429):
+                        rejected = 400 <= response.status_code < 500 and response.status_code != 429
+                        if response.status_code != 200 and not (rejected or response.status_code == 429):
                             raise SmsError()
                         body = bytearray()
                         async for chunk in response.aiter_bytes():
@@ -133,6 +145,12 @@ class SmsGateway:
                                 value = {}
                             delay = response.headers.get('Retry-After') or (value.get('retry_after') if isinstance(value, dict) else None)
                             raise SmsError(429, 'rate_limited', retry_seconds(delay))
+                        if rejected:
+                            try:
+                                data = json.loads(body)
+                            except ValueError:
+                                data = None
+                            raise SmsError(409 if response.status_code == 409 else 400, rejection_reason(action, data))
                         return project(action, json.loads(body))
         except (httpx.HTTPError, TimeoutError, ValueError, TypeError):
             raise SmsError() from None
