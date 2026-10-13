@@ -349,25 +349,27 @@ export function ShopAdminPage() {
                   const settingsChanged = displayChanged(productId) || copyChanged(productId);
                   return <section key={productId} className={`shop-admin-product${open ? ' is-open' : ''}`} aria-labelledby={`shop-admin-product-${productId}`} hidden={!product.rows.some(visible)}>
                     <header className="shop-admin-product-header">
-                      <div className="shop-admin-source-heading">
-                        <span className={`shop-admin-supplier${product.stale ? ' is-stale' : ''}`}>{supplierOf(product.provider)}</span>
-                        {comparable && plan.best?.productId === productId ? <span className="badge ok">最低</span> : null}
-                        {product.stale ? <span className="badge warn">价格待更新</span> : null}
+                      <div className="shop-admin-source-info">
+                        <div className="shop-admin-source-heading">
+                          <span className={`shop-admin-supplier${product.stale ? ' is-stale' : ''}`}>{supplierOf(product.provider)}</span>
+                          {comparable && plan.best?.productId === productId ? <span className="badge ok">最低</span> : null}
+                          {product.stale ? <span className="badge warn">价格待更新</span> : null}
+                          <span className="shop-admin-product-flags">
+                            {shown.badge.trim() ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
+                            {Number(shown.sold) ? <span>已售 {Number(shown.sold).toLocaleString('zh-CN')}</span> : null}
+                            {views ? <span>浏览 {views.toLocaleString('zh-CN')}</span> : null}
+                            {published && !filled ? <span className="is-warn">缺说明</span> : null}
+                          </span>
+                        </div>
+                        <h4 id={`shop-admin-product-${productId}`} tabIndex={-1} title={product.title}>{product.title}</h4>
                       </div>
-                      <h4 id={`shop-admin-product-${productId}`} tabIndex={-1} title={product.title}>{product.title}</h4>
-                      <span className="shop-admin-product-flags">
-                        {shown.badge.trim() ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
-                        {Number(shown.sold) ? <span>已售 {Number(shown.sold).toLocaleString('zh-CN')}</span> : null}
-                        {views ? <span>浏览 {views.toLocaleString('zh-CN')}</span> : null}
-                        {published && !filled ? <span className="is-warn">缺说明</span> : null}
-                      </span>
                       <div className="shop-admin-product-actions">
-                        <button type="button" className={`shop-admin-product-toggle${settingsChanged ? ' is-changed' : ''}`} aria-expanded={open} aria-controls={`shop-admin-settings-${productId}`} aria-label={`商品设置 ${productId}`} onClick={() => toggleProduct(productId)}>设置{settingsChanged ? ' · 已修改' : ''}<span aria-hidden="true">{open ? ' −' : ' +'}</span></button>
+                        <button type="button" className={`shop-admin-product-toggle${settingsChanged ? ' is-changed' : ''}`} aria-expanded={open} aria-controls={`shop-admin-settings-${productId}`} aria-label={`商品设置 ${productId}`} onClick={() => toggleProduct(productId)}>设置{settingsChanged ? ' · 已修改' : ''}<svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg></button>
                         {first?.buy_url ? <a className="shop-admin-buy" href={first.buy_url} target="_blank" rel="noopener noreferrer" aria-label={`去来源购买 ${product.title}`}>去进货<span aria-hidden="true"> ↗</span></a> : null}
                       </div>
                     </header>
                     <div className="shop-admin-variants">
-                      <div className="shop-admin-columns" aria-hidden="true"><span>规格</span><span>成本</span><span>售价（元）</span><span>{shown.badge.trim() || '优惠价'}（元）</span><span>毛利 / 毛利率</span><span>上架</span></div>
+                      <div className="shop-admin-columns" aria-hidden="true"><span/><span>成本</span><span>售价（元）</span><span>{shown.badge.trim() || '优惠价'}（元）</span><span>毛利 / 毛利率</span><span>上架</span></div>
                       {[...product.rows].sort((a, b) => a.cost_cents - b.cost_cents).map(item => {
                         const value = draft[item.key] ?? EMPTY_DRAFT;
                         const margin = marginOf(item.cost_cents, value.price, value.published);

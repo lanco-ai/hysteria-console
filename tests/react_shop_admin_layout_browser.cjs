@@ -69,7 +69,7 @@ async function box(locator) {
     assert(second.y - first.y - first.height >= 12, 'storefront plans need a visible gap');
     const identity = await box(sourceProduct.locator('.shop-admin-product-header'));
     const spec = await box(sourceProduct.locator('.shop-admin-spec').first());
-    assert(identity.x + identity.width <= spec.x, 'wide screens separate source identity from variant editing');
+    assert(identity.y + identity.height <= spec.y, 'source identity stays above the full-width pricing grid');
 
     // Every price has a nearby heading; rows stay aligned, with no crowded or clipped controls.
     for (const width of [1920, 1440, 1280, 1024, 768, 390, 320]) {

@@ -54,57 +54,60 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-filters .chip.active .shop-admin-chip-count { background: var(--accent); color: var(--bg-surface); }
 .shop-admin-search.user-filter-input { width: min(240px, 100%); border-radius: var(--radius-sm); }
 
-/* One card per storefront plan, with a separate source identity beside each variant table. */
-.shop-admin-products { display: grid; gap: 14px; min-width: 0; }
-.shop-admin-group { --shop-admin-columns: minmax(120px, 1fr) 80px minmax(90px, 112px) minmax(90px, 112px) 118px 40px; container: shop-admin-group / inline-size; display: grid; gap: 16px; min-width: 0; }
+/* A quiet product card: source identity above a consistent, directly editable price grid. */
+.shop-admin-products { display: grid; gap: 16px; min-width: 0; }
+.shop-admin-group { --shop-admin-columns: minmax(120px, 1fr) 80px minmax(100px, 126px) minmax(100px, 126px) 118px 40px; container: shop-admin-group / inline-size; display: grid; gap: 20px; min-width: 0; }
 .shop-admin-group-header { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 16px; padding: 2px 4px; }
 .shop-admin-group-header h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .shop-admin-group-header > span { color: var(--text-tertiary); font-size: 12px; }
 .shop-admin-columns,
-.shop-admin-row { display: grid; grid-template-columns: var(--shop-admin-columns); align-items: center; gap: 12px; }
-.shop-admin-columns { padding: 10px 18px; border-bottom: 1px solid var(--hairline); color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
-.shop-plan { min-width: 0; padding: 0 12px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-surface); }
-.shop-plan-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 16px 6px; }
-.shop-plan-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
-.shop-plan-head h3 { margin: 0; color: var(--text-primary); font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
-.shop-plan-head .badge { height: 22px; padding: 0 8px; font-size: 12px; font-variant-numeric: tabular-nums; }
-.shop-plan-best { min-width: 0; padding: 5px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--ok); font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
-.shop-plan-best:hover { text-decoration: underline; }
+.shop-admin-row { display: grid; grid-template-columns: var(--shop-admin-columns); align-items: center; gap: 16px; }
+.shop-admin-columns { padding: 6px 24px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+.shop-plan { min-width: 0; padding: 0; border: 1px solid var(--hairline); border-radius: 18px; background: var(--bg-surface); box-shadow: 0 3px 12px rgb(24 38 29 / 3%); }
+.shop-plan-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 20px 24px; border-bottom: 1px solid var(--hairline); }
+.shop-plan-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; min-width: 0; }
+.shop-plan-head h3 { margin: 0; color: var(--text-primary); font-size: 18px; font-weight: 600; letter-spacing: -.3px; overflow-wrap: anywhere; }
+.shop-plan-head .badge { height: auto; padding: 2px 0; border: 0; border-radius: 0; background: transparent; color: var(--text-secondary); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.shop-plan-best { min-width: 0; padding: 6px 10px; border: 1px solid transparent; border-radius: 7px; background: #f1f6f2; color: #42674e; font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.shop-plan-best:hover { border-color: #cbdace; background: #eaf2ec; }
 .shop-plan-note { color: var(--text-tertiary); font-size: 12px; }
 .shop-plan-warn { flex-basis: 100%; color: var(--warn); font-size: 12px; }
 
-/* Supplier names and actions stay out of the price grid; settings span the whole source. */
-.shop-admin-product { position: relative; display: grid; grid-template-columns: minmax(190px, 21%) minmax(0, 1fr); min-width: 0; border: 1px solid var(--border); border-radius: 12px; scroll-margin-top: 190px; }
-.shop-admin-product + .shop-admin-product { margin-top: 10px; }
-.shop-admin-product-header { display: grid; align-content: start; gap: 10px; min-width: 0; padding: 16px; border-right: 1px solid var(--hairline); border-radius: 12px 0 0 12px; background: var(--bg-page); color: var(--text-tertiary); font-size: 12px; }
+/* Source metadata is a compact heading, leaving the full width for pricing. */
+.shop-admin-product { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; padding-bottom: 10px; scroll-margin-top: 190px; }
+.shop-admin-product + .shop-admin-product { border-top: 1px solid var(--hairline); }
+.shop-admin-product-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; padding: 18px 24px 12px; color: var(--text-tertiary); font-size: 12px; }
+.shop-admin-source-info { display: grid; gap: 5px; min-width: 0; }
 .shop-admin-source-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
-.shop-admin-product-header h4 { min-width: 0; margin: 0; color: var(--text-secondary); font-size: 13px; font-weight: 400; line-height: 1.6; overflow-wrap: anywhere; scroll-margin-block: 190px 110px; }
+.shop-admin-product-header h4 { min-width: 0; margin: 0; color: var(--text-secondary); font-size: 12px; font-weight: 400; line-height: 1.6; overflow-wrap: anywhere; scroll-margin-block: 190px 110px; }
 .shop-admin-product-header h4:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.shop-admin-product-header .badge { height: 20px; padding: 0 7px; font-size: 11px; }
+.shop-admin-product-header .badge { height: 20px; padding: 0 6px; border-color: transparent; font-size: 10px; }
 .shop-admin-supplier { min-width: 0; color: var(--text-primary); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .shop-admin-supplier.is-stale { color: var(--warn); }
 .shop-admin-product-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; line-height: 1.5; }
 .shop-admin-product-flags:empty { display: none; }
 .shop-admin-product-flags .is-warn { color: var(--warn); }
-.shop-admin-product-flags .shop-promo-badge { min-height: 20px; height: auto; padding: 1px 6px; font-size: 11px; white-space: normal; overflow-wrap: anywhere; }
-.shop-admin-product-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
-.shop-admin-product-toggle { flex: 0 0 auto; min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.shop-admin-product-flags .shop-promo-badge { min-height: 20px; height: auto; padding: 1px 6px; border: 0; border-radius: 5px; background: #f7efe5; color: #8b603c; font-size: 10px; font-weight: 500; white-space: normal; overflow-wrap: anywhere; }
+.shop-admin-product-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.shop-admin-product-toggle { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; min-height: 32px; padding: 4px 9px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.shop-admin-product-toggle svg { flex-shrink: 0; }
 .shop-admin-product-toggle:hover,
 .shop-admin-product-toggle[aria-expanded="true"] { border-color: var(--border-strong); color: var(--text-primary); }
+.shop-admin-product-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .shop-admin-product-toggle.is-changed { border-color: var(--warn); color: var(--warn); }
-.shop-admin-buy { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 32px; color: var(--text-secondary); font-weight: 500; text-decoration: none; }
+.shop-admin-buy { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 32px; color: var(--text-secondary); font-weight: 400; text-decoration: none; }
 .shop-admin-buy:hover { color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; }
 .shop-admin-variants { min-width: 0; align-self: start; }
-.shop-admin-row { position: relative; min-width: 0; padding: 14px 18px; }
-.shop-admin-row + .shop-admin-row { border-top: 1px solid var(--hairline); }
-.shop-admin-row:last-child { border-bottom-right-radius: 12px; }
+.shop-admin-row { position: relative; min-width: 0; padding: 12px 24px; }
+.shop-admin-row + .shop-admin-row { border-top: 1px solid #f0f0ec; }
+.shop-admin-row:hover { background: #fafbf9; }
 .shop-admin-row.is-changed { background: var(--warn-soft); }
 .shop-admin-row.is-changed::before { content: ""; position: absolute; top: 4px; bottom: 4px; left: 0; width: 3px; border-radius: 0 3px 3px 0; background: var(--warn); }
-.shop-admin-spec { display: grid; gap: 6px; min-width: 0; }
-.shop-admin-spec strong { font-size: 13px; font-weight: 500; line-height: 1.6; overflow-wrap: anywhere; }
+.shop-admin-spec { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.shop-admin-spec strong { min-width: 0; max-width: 100%; font-size: 13px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
 .shop-admin-row.is-soldout .shop-admin-spec strong { color: var(--text-secondary); }
 .shop-admin-spec small { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
-.shop-admin-spec .badge { height: 20px; padding: 0 7px; border-color: var(--border); background: var(--bg-subtle); color: var(--text-secondary); font-size: 11px; }
+.shop-admin-spec .badge { height: 20px; padding: 0 6px; border-color: transparent; border-radius: 5px; background: #f0f1ee; color: var(--text-secondary); font-size: 10px; }
 .shop-admin-spec .shop-admin-changed { border-color: transparent; background: var(--warn-soft); color: var(--warn); }
 .shop-admin-cost,
 .shop-admin-margin { display: grid; gap: 4px; min-width: 0; font-variant-numeric: tabular-nums; }
@@ -122,14 +125,19 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-margin.is-empty strong { color: var(--text-disabled); font-weight: 400; }
 .shop-admin-price,
 .shop-admin-promo { display: block; min-width: 0; }
-.shop-admin-promo .shop-admin-affix { border-style: dashed; }
-.shop-admin-promo .shop-admin-affix:has(input:not(:placeholder-shown)) { border-style: solid; border-color: #f2b8b0; background: #fff6f4; color: #e0402a; }
+
 .shop-admin-row input { scroll-margin-top: 190px; scroll-margin-bottom: 110px; }
 .shop-admin-affix { display: flex; align-items: center; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-page); color: var(--text-tertiary); transition: border-color var(--transition), box-shadow var(--transition); }
 .shop-admin-affix > span { flex: 0 0 auto; padding-left: 12px; font-size: 13px; }
 .shop-admin-affix input { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 36px; padding: 6px 12px 6px 6px; border: 0; border-radius: 10px; outline: none; background: transparent; color: var(--text-primary); font: inherit; font-variant-numeric: tabular-nums; }
+.shop-admin-row .shop-admin-affix { border-color: #e1e5df; border-radius: 8px; background: #fff; color: var(--text-tertiary); }
+.shop-admin-row .shop-admin-affix input { min-height: 38px; border-radius: 8px; font-size: 15px; font-weight: 600; }
+.shop-admin-row .shop-admin-affix input::placeholder { color: var(--text-tertiary); font-size: 12px; font-weight: 400; }
+.shop-admin-row .shop-admin-promo .shop-admin-affix:has(input:not(:placeholder-shown)) { border-color: #eadfd1; background: #fcf9f5; color: #90633d; }
+.shop-admin-row .shop-admin-promo input:not(:placeholder-shown) { color: #90633d; }
+.shop-admin-row .shop-admin-affix:focus-within,
 .shop-admin-affix:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.shop-admin-affix:has(input[aria-invalid="true"]) { border-color: var(--danger); background: var(--danger-soft); }
+.shop-admin-row .shop-admin-affix:has(input[aria-invalid="true"]) { border-color: var(--danger); background: var(--danger-soft); }
 .shop-admin-affix:has(input:disabled) { opacity: .6; }
 .shop-admin-row .shop-publish { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .shop-admin-row .shop-publish > span,
@@ -140,7 +148,7 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-switch:disabled { cursor: not-allowed; opacity: .5; }
 
 /* A supplier product's settings: its 优惠价 label, sold count, description and after-sales terms. */
-.shop-admin-product-settings { display: grid; grid-column: 1 / -1; gap: 12px; margin: 0; padding: 16px; border-top: 1px solid var(--border); border-radius: 0 0 12px 12px; background: var(--bg-overlay); }
+.shop-admin-product-settings { display: grid; grid-column: 1 / -1; gap: 12px; margin: 8px 24px 4px; padding: 18px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-overlay); }
 .shop-admin-display { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--text-secondary); font-size: 12px; }
 .shop-admin-display label { display: inline-flex; align-items: center; gap: 6px; }
 .shop-admin-display select,
@@ -165,25 +173,15 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-savebar .shop-note { min-width: 0; }
 .shop-admin-savebar .btn { flex: 0 0 auto; }
 
-/* When a source and a table no longer fit side by side, identity moves above its variants. */
-@container shop-admin-group (max-width: 1080px) {
-  .shop-admin-product { grid-template-columns: minmax(0, 1fr); }
-  .shop-admin-product-header { grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; padding: 14px 16px; border-right: 0; border-bottom: 1px solid var(--hairline); border-radius: 12px 12px 0 0; }
-  .shop-admin-source-heading,
-  .shop-admin-product-header h4,
-  .shop-admin-product-flags { grid-column: 1; }
-  .shop-admin-product-actions { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
-}
-
 /* Phones and narrow windows: labelled fields on each variant, with room for long names. */
 @container shop-admin-group (max-width: 700px) {
-  .shop-plan { padding: 0 8px 8px; }
-  .shop-plan-head { padding: 14px 4px; }
+  .shop-plan { border-radius: 14px; }
+  .shop-plan-head { padding: 16px; }
   .shop-plan-head h3 { font-size: 16px; }
   .shop-admin-columns { display: none; }
-  .shop-admin-product-header { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 12px; }
-  .shop-admin-product-actions { grid-column: 1; grid-row: auto; }
-  .shop-admin-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 14px 12px; }
+  .shop-admin-product-header { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 16px 16px 10px; }
+  .shop-admin-product-actions { grid-column: 1; }
+  .shop-admin-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; padding: 14px 16px; }
   .shop-admin-spec { grid-area: 1 / 1; }
   .shop-admin-cost { grid-area: 1 / 2; }
   .shop-admin-price { grid-area: 2 / 1; }
@@ -195,8 +193,8 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
   .shop-admin-mobile-label { display: inline; color: var(--text-tertiary); font-size: 12px; }
   .shop-admin-price .shop-admin-mobile-label,
   .shop-admin-promo .shop-admin-mobile-label { display: block; margin-bottom: 4px; }
-  .shop-admin-affix input { min-height: 40px; }
-  .shop-admin-product-settings { padding: 14px 12px; }
+  .shop-admin-row .shop-admin-affix input { min-height: 40px; }
+  .shop-admin-product-settings { margin-inline: 12px; padding: 14px 12px; }
   .shop-copy-fields { grid-template-columns: minmax(0, 1fr); }
 }
 
