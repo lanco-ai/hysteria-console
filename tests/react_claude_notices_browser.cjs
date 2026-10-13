@@ -32,8 +32,7 @@ async function main() {
     await expect(manager.locator('.shop-admin-row')).toHaveCount(12);
     await manager.locator('.shop-admin-brands').getByRole('button', { name: /^Claude\b/ }).click();
     for (const id of ids) {
-      const section = manager.locator('.shop-admin-product').filter({ has: manager.getByLabel(`商品说明 ${id}`, { exact: true }) });
-      await section.locator('summary').click();
+      await manager.getByRole('button', { name: `商品设置 ${id}`, exact: true }).click();
       await expect(manager.getByLabel(`商品说明 ${id}`, { exact: true })).toHaveValue(initial.products[id].description);
       await expect(manager.getByLabel(`售后条款 ${id}`, { exact: true })).toHaveValue(initial.products[id].after_sales);
       await expect(manager.getByLabel(`商品说明 ${id}`, { exact: true })).toHaveAttribute('maxlength', '4000');

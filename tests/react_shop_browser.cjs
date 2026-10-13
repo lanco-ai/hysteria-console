@@ -20,9 +20,11 @@ async function main() {
     await manager.goto(`${base}/admin/shop`);
     await expect(manager.getByRole('heading', { name: /^商品管理/ })).toBeVisible();
     await expect(manager.locator('.shop-admin-product')).toHaveCount(5);
-    await expect(manager.locator('.shop-admin-product h3')).toHaveCount(5);
+    await expect(manager.locator('.shop-admin-product h4')).toHaveCount(5);
+    // One storefront plan per title, in title order.
+    await expect(manager.locator('.shop-plan h3')).toHaveText(['ChatGPT Go', 'ChatGPT Plus', 'ChatGPT Pro 100', 'ChatGPT Pro 200', 'ChatGPT Pro 500']);
     await expect(manager.locator('.shop-admin-row')).toHaveCount(7);
-    await expect(manager.locator('.shop-admin-product').first().locator('.shop-admin-row')).toHaveCount(2);
+    await expect(manager.locator('.shop-admin-product').filter({ has: manager.getByLabel('售价 2:7') }).locator('.shop-admin-row')).toHaveCount(2);
     await expect(manager.locator('.topbar-right').getByRole('button', { name: '刷新来源' })).toBeVisible();
     await expect(manager.locator('.topbar-right').getByRole('button', { name: '重新读取' })).toBeVisible();
     await expect(manager.locator('.shop-admin-savebar').getByRole('button', { name: '保存商品设置' })).toBeVisible();
@@ -40,9 +42,9 @@ async function main() {
     await manager.getByRole('button', { name: '重新读取' }).click();
     await expect(manager.locator('.shop-admin-product')).toHaveCount(5);
     await manager.getByLabel('售价 2:7').focus();
-    // 售价, then the optional 原价, then 上架.
+    // 售价, then the optional 优惠价, then 上架.
     await manager.keyboard.press('Tab');
-    await expect(manager.getByLabel('原价 2:7')).toBeFocused();
+    await expect(manager.getByLabel('优惠价 2:7')).toBeFocused();
     await manager.keyboard.press('Tab');
     await expect(manager.getByLabel('上架 2:7')).toBeFocused();
     await manager.getByLabel('商家 Telegram 用户名').fill('shop_owner');
@@ -62,7 +64,9 @@ async function main() {
     assert.equal(response.status(), 200);
     const publicText = await response.text();
     assert.equal(/cost_cents|qiangyunai|source_url|cnadsiuvhga/.test(publicText), false);
-    await manager.locator('.shop-copy-editor summary').first().click();
+    // Copy lives in the product's settings, closed until asked for.
+    await expect(manager.getByLabel('商品说明 2')).toHaveCount(0);
+    await manager.getByRole('button', { name: '商品设置 2', exact: true }).click();
     await manager.getByLabel('商品说明 2').fill('<img src=x onerror=alert(1)>\n商家自填说明\n兑换地址：https://aiflbchengzi.com/\n其他：https://external.invalid/x');
     await manager.getByLabel('售后条款 2').fill('本店售后请联系商家确认。');
     await manager.getByRole('button', { name: '保存商品设置' }).click();
@@ -209,7 +213,7 @@ async function main() {
     await expect(manager.getByRole('status')).toContainText('售价和未保存输入已保留');
     await expect(manager.getByLabel('售价 2:7')).toHaveValue('999.99');
     await expect(manager.getByLabel('商品说明 2')).toHaveValue('未保存的商家说明');
-    await expect(manager.locator('.shop-admin-product').first()).toContainText('¥1002.00');
+    await expect(manager.locator('.shop-admin-product').filter({ has: manager.getByLabel('售价 2:7') })).toContainText('¥1002.00');
     await manager.unroute('**/api/v1/shop/refresh');
     await manager.route('**/api/v1/shop/admin', route => route.request().method() === 'PUT' ? route.fulfill({ status: 409, json: { error: 'revision_conflict' } }) : route.continue());
     await manager.getByRole('button', { name: '保存商品设置' }).click();

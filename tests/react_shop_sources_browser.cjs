@@ -38,29 +38,41 @@ const merchant = {
 
     const brands = page.getByRole('group', { name: '品牌' });
     for (const name of ['GPT', 'Claude', 'X', 'Muse AI']) await expect(brands.getByRole('button', { name: new RegExp(`^${name} `) })).toBeVisible();
-    await expect(page.locator('.shop-admin-source-name strong')).toHaveText(['GPT · 强云', 'Claude / Grok · Anli', 'X / Muse AI · Lorry', 'GPT / Claude / Grok · Fanai']);
+    // Each feed is a chip that opens its site for the administrator.
+    const chips = page.getByRole('group', { name: '来源状态' }).locator('.shop-source-chip');
+    await expect(chips).toHaveText([/^GPT · 强云1$/, /^Claude \/ Grok · Anli1$/, /^X \/ Muse AI · Lorry3$/, /^GPT \/ Claude \/ Grok · Fanai3$/]);
+    await expect(chips.first()).toHaveAttribute('href', 'https://supplier.example/');
 
-    const gptCompare = page.getByRole('region', { name: 'GPT 同款比价' });
-    const offers = gptCompare.locator('li');
-    // One offer per supplier product, cheapest purchasable first; a sold-out one comes last.
-    await expect(offers).toHaveCount(3);
-    await expect(offers.nth(2)).toContainText('售罄');
-    await expect(offers.first()).toContainText('Fanai');
-    await expect(offers.first()).toContainText('¥88.00');
-    await expect(offers.first()).toContainText('最低');
-    await expect(offers.nth(1)).toContainText('强云');
-    await expect(offers.nth(1)).toContainText('已上架');
-    await expect(page.locator('.shop-admin-supplier').first()).toBeVisible();
+    // One storefront plan holds every supplier product that sells it, cheapest purchasable first.
+    const plus = page.getByRole('article', { name: 'ChatGPT Plus', exact: true });
+    await expect(plus.locator('.shop-admin-product .shop-admin-supplier')).toHaveText(['Fanai', '强云', 'Fanai']);
+    await expect(plus.locator('.shop-admin-product').first().locator('.badge.ok')).toHaveText('最低');
+    await expect(plus.locator('.shop-admin-product').last()).toContainText('来源售罄');
+    await expect(plus.locator('.shop-plan-best')).toHaveText('最低成本 ¥88.00 · Fanai');
+    await expect(plus.locator('.shop-plan-head .badge.ok')).toHaveText('前台 ¥129.00');
+    await expect(plus.locator('.shop-plan-warn')).toHaveCount(0);
     if (screenshotDir) { fs.mkdirSync(screenshotDir, { recursive: true }); await page.screenshot({ path: path.join(screenshotDir, 'shop-admin-compare.png'), fullPage: true }); }
 
-    await brands.getByRole('button', { name: /^Claude / }).click();
-    const claudeCompare = page.getByRole('region', { name: 'Claude 同款比价' });
-    await expect(claudeCompare.locator('li').first()).toContainText('Anli');
-    await expect(claudeCompare).toContainText('多个来源同时上架了 Claude Pro');
+    // Choosing the cheapest one when the filter hides it lifts the filter and goes to that product.
+    const filters = page.getByRole('group', { name: '规格筛选' });
+    await filters.getByRole('button', { name: /^已上架/ }).click();
+    const target = page.locator('#shop-admin-product-4000000000006');
+    await expect(target).toBeHidden();
+    await plus.locator('.shop-plan-best').click();
+    await expect(target).toBeVisible();
+    await expect(target).toBeFocused();
+    await expect(target).toBeInViewport();
+    await expect(filters.getByRole('button', { name: /^全部/ })).toHaveAttribute('aria-pressed', 'true');
 
+    await brands.getByRole('button', { name: /^Claude / }).click();
+    const claude = page.getByRole('article', { name: 'Claude Pro', exact: true });
+    await expect(claude.locator('.shop-admin-product .shop-admin-supplier')).toHaveText(['Anli', 'Fanai']);
+    await expect(claude.locator('.shop-plan-warn')).toHaveText('2 个来源同时上架，前台会出现重复商品');
+
+    // A plan that only one supplier sells has nothing to compare.
     await brands.getByRole('button', { name: /^X / }).click();
     await expect(page.getByRole('heading', { name: /X Premium 3个月/ })).toBeVisible();
-    await expect(page.getByRole('region', { name: 'X 同款比价' })).toHaveCount(0);
+    await expect(page.locator('.shop-plan-best:visible')).toHaveCount(0);
     await brands.getByRole('button', { name: /^Muse AI / }).click();
     await expect(page.getByRole('heading', { name: /Muse 成品号/ })).toBeVisible();
 
@@ -75,22 +87,14 @@ const merchant = {
     await page.route('**/api/v1/shop/admin', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(stale) }));
     await page.reload();
     await brands.getByRole('button', { name: /^GPT / }).click();
-    await expect(offers.first()).toContainText('强云');
-    await expect(offers.first()).toContainText('最低');
-    await expect(gptCompare.locator('li.is-stale')).toHaveCount(2);
-    await expect(gptCompare.locator('li.is-stale').first()).toContainText('价格待更新');
-    await expect(gptCompare.locator('li.is-stale .badge.ok')).toHaveCount(0);
-    // Choosing an offer the filter hides lifts the filter and goes to that product.
-    const filters = page.getByRole('group', { name: '规格筛选' });
-    await filters.getByRole('button', { name: /^已上架/ }).click();
-    const target = page.locator('#shop-admin-product-4000000000006');
-    await expect(target).toBeHidden();
-    await gptCompare.locator('li', { hasText: 'Fanai' }).first().getByRole('link').click();
-    await expect(target).toBeVisible();
-    await expect(target).toBeFocused();
-    await expect(target).toBeInViewport();
-    await expect(filters.getByRole('button', { name: /^全部/ })).toHaveAttribute('aria-pressed', 'true');
-    console.log('PASS: shop admin X / Muse AI brands, supplier labels and same-plan price comparison');
+    await expect(plus.locator('.shop-admin-product .shop-admin-supplier')).toHaveText(['强云', 'Fanai', 'Fanai']);
+    await expect(plus.locator('.shop-plan-best')).toHaveText('最低成本 ¥98.00 · 强云');
+    await expect(plus.locator('.shop-admin-supplier.is-stale')).toHaveCount(2);
+    await expect(plus.locator('.shop-admin-product').filter({ has: page.locator('.shop-admin-supplier.is-stale') }).locator('.badge.warn').first()).toHaveText('价格待更新');
+    await expect(plus.locator('.shop-admin-product').filter({ has: page.locator('.shop-admin-supplier.is-stale') }).locator('.badge.ok')).toHaveCount(0);
+    await expect(chips.last()).toHaveClass(/is-warn/);
+    await expect(chips.last()).toContainText('暂不可用');
+    console.log('PASS: shop admin brands, source chips, plans grouping suppliers cheapest first, stale feeds never lowest');
     await context.close();
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

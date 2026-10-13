@@ -1,9 +1,16 @@
 import { useState } from 'react';
-import { countText, type Product } from './catalog';
+import { countText, money, promoCents, promoName, type Product, type Variant } from './catalog';
 
 /** A promotion label such as 学生价, shown before the title. */
 export function PromoBadge({ text }: { text?: string | undefined }) {
   return text ? <span className="shop-promo-badge">{text}</span> : null;
+}
+
+/** "学生价：¥118.00" under the price, for one variant or the lowest of a product's ("起" when they differ). */
+export function PromoPrice({ product, variant }: { product: Product; variant?: Variant | undefined }) {
+  const prices = (variant ? [variant] : product.variants).map(promoCents).filter((value): value is number => value !== null);
+  if (!prices.length) return null;
+  return <span className="shop-promo-price"><span>{promoName(product)}：</span><strong>{money(Math.min(...prices))}</strong>{new Set(prices).size > 1 ? <small>起</small> : null}</span>;
 }
 
 /** "128 人看过 · 已售 36 件", leaving out what is still zero. */

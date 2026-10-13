@@ -22,15 +22,16 @@ async function main() {
     await manager.goto(`${base}/admin/shop`);
     await expect(manager.locator('.shop-admin-product')).toHaveCount(10);
     await expect(manager.locator('.shop-admin-row')).toHaveCount(12);
-    await expect(manager.locator('.shop-admin-source-status p')).toHaveCount(2);
+    const sourceChips = manager.getByRole('group', { name: '来源状态' }).locator('.shop-source-chip');
+    await expect(sourceChips).toHaveCount(2);
     const brandTabs = manager.locator('.shop-admin-brands').getByRole('button');
     const showBrand = name => manager.locator('.shop-admin-brands').getByRole('button', { name: new RegExp(`^${name}\\b`) }).click();
     await expect(brandTabs).toHaveText([/^GPT 7/, /^Claude 3/, /^Grok 2/]);
     await expect(manager.locator('.shop-admin-group:visible')).toHaveCount(1);
     // Where to restock: each source's storefront and each product's own page, in new tabs.
-    const sites = manager.locator('.shop-admin-source-status .shop-admin-source-site');
-    await expect(sites).toHaveText(['qiangyunai.com ↗', 'faka.anligpt.com ↗']);
-    assert.deepEqual(await sites.evaluateAll(links => links.map(link => [link.getAttribute('href'), link.target, link.rel])), [
+    await expect(sourceChips.first()).toHaveAttribute('aria-label', /打开来源网站 qiangyunai\.com$/);
+    await expect(sourceChips.last()).toHaveAttribute('aria-label', /打开来源网站 faka\.anligpt\.com$/);
+    assert.deepEqual(await sourceChips.evaluateAll(links => links.map(link => [link.getAttribute('href'), link.target, link.rel])), [
       ['https://qiangyunai.com/', '_blank', 'noopener noreferrer'], ['https://faka.anligpt.com/', '_blank', 'noopener noreferrer'],
     ]);
     const gptBuy = manager.locator('.shop-admin-group:visible .shop-admin-buy');
@@ -56,7 +57,7 @@ async function main() {
     await expect(brandTabs.filter({ hasText: '有未保存的修改' })).toHaveCount(3);
     await showBrand('Claude');
     const claudeGroup = manager.locator('.shop-admin-product').filter({ has: manager.getByLabel('售价 1000000000005:1', { exact: true }) });
-    await claudeGroup.locator('summary').click();
+    await claudeGroup.getByRole('button', { name: '商品设置 1000000000005', exact: true }).click();
     await manager.getByLabel('商品说明 1000000000005', { exact: true }).fill('本店 Claude 说明');
     await manager.getByLabel('售后条款 1000000000005', { exact: true }).fill('本店 Claude 售后');
     await manager.getByRole('button', { name: '保存商品设置' }).click();
@@ -74,7 +75,7 @@ async function main() {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(base);
       await expect(page.locator('.shop-product-row')).toHaveCount(6);
-      for (const [category, count] of [['全部商品', 6], ['GPT', 1], ['Claude', 3], ['Grok', 2]]) {
+      for (const [category, count] of [['全部', 6], ['GPT', 1], ['Claude', 3], ['Grok', 2]]) {
         const button = page.locator('.shop-category-list button').filter({ hasText: category });
         await expect(button.locator('.shop-count')).toHaveText(String(count));
       }
@@ -125,8 +126,10 @@ async function main() {
     await expect(manager.getByLabel('商品说明 1000000000005', { exact: true })).toHaveValue('未保存说明');
     await expect(manager.getByLabel('售后条款 1000000000005', { exact: true })).toHaveValue('未保存售后');
     await expect(manager.getByLabel('商家 Telegram 用户名')).toHaveValue('unsaved_shop');
-    await expect(manager.locator('.shop-admin-source-status p').first()).toContainText('商品信息已更新');
-    await expect(manager.locator('.shop-admin-source-status p').last()).toContainText('来源暂不可用');
+    await expect(sourceChips.first()).toHaveAttribute('title', /^商品信息已更新/);
+    await expect(sourceChips.last()).toHaveAttribute('title', /来源暂不可用/);
+    await expect(sourceChips.last()).toHaveClass(/is-warn/);
+    await expect(sourceChips.last()).toContainText('暂不可用');
     if (screenshots) { await manager.setViewportSize({ width: 390, height: 900 }); await manager.screenshot({ path: path.join(screenshots, 'admin-partial-390.jpg'), type: 'jpeg', quality: 65, fullPage: false }); }
     await page.goto(base);
     await expect(page.getByRole('button', { name: 'Claude Pro 暂不可购买', exact: true })).toBeDisabled();

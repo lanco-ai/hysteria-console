@@ -96,22 +96,31 @@ class Conflict(ValueError):
     pass
 
 
-def keep_unseen_settings(payload, current):
-    """An older admin page's save, with the settings it cannot show kept as they are.
+def from_older_page(payload, current):
+    """A save from an admin page older than this server, in today's terms.
 
-    Such a page sends every SKU with only its price and 上架, and no WeChat ID, labels or sold
-    counts. Saving it as it stands would clear them; with no WeChat ID and no Telegram, buyers
-    could no longer reach the merchant. A 原价 stays only while it is still above the new price.
+    - Pages from before 628f723 send no WeChat ID, labels or sold counts (no `client` mark and no
+      `wechat` or `display` key): those are kept as they are. Clearing them would also clear the
+      WeChat ID, the only contact when Telegram is empty.
+    - Pages from 628f723 (mark 2) priced a promotion as a selling price under a higher 原价. That
+      becomes the selling price (the 原价) with an 优惠价 (the old selling price), which shows the same.
+    - No older page knows the 优惠价, so a saved one is kept while it is still below the price.
     """
     merged = dict(payload)
-    for field in ('wechat', 'display'):
-        if field not in payload and current.get(field):
-            merged[field] = current[field]
+    if payload.get('client') is None and not {'wechat', 'display'} & set(payload):
+        for field in ('wechat', 'display'):
+            if current.get(field):
+                merged[field] = current[field]
     skus = {}
     for key, item in payload['skus'].items():
-        listed = current['skus'].get(key, {}).get('list_price_cents')
-        if 'list_price_cents' not in item and listed and item['price_cents'] is not None and listed > item['price_cents']:
-            item = {**item, 'list_price_cents': listed}
+        item = dict(item)
+        listed = item.pop('list_price_cents', None)
+        if listed is not None:
+            item.update(price_cents=listed, promo_price_cents=item['price_cents'])
+        else:
+            promo = current['skus'].get(key, {}).get('promo_price_cents')
+            if promo and item['price_cents'] is not None and promo < item['price_cents']:
+                item['promo_price_cents'] = promo
         skus[key] = item
     merged['skus'] = skus
     return merged
@@ -123,9 +132,10 @@ def _integer(value, minimum, maximum):
 
 # A WeChat ID: 6–20 characters, starting with a letter.
 WECHAT_ID = re.compile(r'[A-Za-z][-_A-Za-z0-9]{5,19}')
-# Admin pages since 628f723 send this mark with every save. A page loaded earlier sends none, and
-# knows nothing of the WeChat ID, labels, sold counts or 原价.
-CLIENT_VERSION = 2
+# Admin pages mark every save: 2 from 628f723 (a 原价 above the price), 3 from 优惠价 (a promotion
+# price below the price). Pages loaded before 628f723 send no mark.
+CLIENT_VERSION = 3
+OLDER_CLIENTS = frozenset({2})
 MAX_BADGE = 8
 MAX_SOLD = 10_000_000
 
@@ -140,7 +150,7 @@ def validate_settings(value):
         not isinstance(value, dict)
         or not {'revision', 'telegram', 'skus'} <= set(value)
         or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client'}
-        or value.get('client', CLIENT_VERSION) != CLIENT_VERSION
+        or (value.get('client', CLIENT_VERSION) != CLIENT_VERSION and value.get('client') not in OLDER_CLIENTS)
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
         or (
@@ -158,13 +168,17 @@ def validate_settings(value):
             or not re.fullmatch(r'[1-9]\d{0,15}:[1-9]\d{0,15}', key)
             or not isinstance(item, dict)
             or not {'price_cents', 'published'} <= set(item)
-            or set(item) - {'price_cents', 'published', 'list_price_cents'}
+            or set(item) - {'price_cents', 'published', 'promo_price_cents', 'list_price_cents'}
             or type(item['published']) is not bool
             or (item['price_cents'] is not None and not _integer(item['price_cents'], 1, MAX_CENTS))
             or (item['published'] and item['price_cents'] is None)
         ):
             raise ValueError('invalid SKU settings')
-        # 原价: the struck-through price beside the selling price; it must be higher to mean anything.
+        # 优惠价 (学生价, 限时价…): shown under the price, for buyers it applies to; it must be lower.
+        promo = item.get('promo_price_cents')
+        if promo is not None and (item['price_cents'] is None or not _integer(promo, 1, item['price_cents'] - 1)):
+            raise ValueError('invalid SKU settings')
+        # A 原价 only arrives from a page of 628f723, and is converted before anything is stored.
         listed = item.get('list_price_cents')
         if listed is not None and (
             item['price_cents'] is None or not _integer(listed, item['price_cents'] + 1, MAX_CENTS)
@@ -583,7 +597,7 @@ class ShopStore:
                     'id': row['key'],
                     'label': row['label'],
                     'price_cents': merchant['price_cents'],
-                    'list_price_cents': merchant.get('list_price_cents'),
+                    'promo_price_cents': merchant.get('promo_price_cents'),
                     'available': row['available'] and not state['sources'][provider]['is_stale'],
                     'quantity': None,
                     'sales': None,
@@ -614,10 +628,11 @@ class ShopStore:
             current = self._settings()
             if payload['revision'] != current['revision']:
                 raise Conflict('settings changed; reload before saving')
-            # Pages from 628f723 on send `wechat` and `display` (and later the `client` mark):
-            # a field they leave out is one they cleared. Only older pages get their gaps filled.
-            if payload.get('client') != CLIENT_VERSION and not {'wechat', 'display'} & set(payload):
-                payload = keep_unseen_settings(payload, current)
+            # The current page sends every setting, so a field it leaves out is one it cleared.
+            if payload.get('client') != CLIENT_VERSION:
+                payload = from_older_page(payload, current)
+            elif any('list_price_cents' in item for item in payload['skus'].values()):
+                raise ValueError('a 原价 is not part of today\'s settings')
             payload = {key: value for key, value in payload.items() if key != 'client'}
             known = {
                 row['key'] for source in self._sources().values() for row in source['items']

@@ -1,15 +1,17 @@
-// list_price_cents: the merchant's 原价, shown struck through; badge: a label such as 学生价 before the title.
-export type Variant = { id: string; label: string; price_cents: number; list_price_cents?: number | null; available: boolean; quantity: null; sales: null };
+// promo_price_cents: an 优惠价 below the price, for buyers it applies to; badge: its name (学生价…), also shown before the title.
+export type Variant = { id: string; label: string; price_cents: number; promo_price_cents?: number | null; available: boolean; quantity: null; sales: null };
 export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; badge?: string; sold?: number; views?: number; variants: Variant[] };
 export type Catalog = { currency: 'CNY'; telegram: string; wechat?: string; stats?: { views: number; sold: number }; products: Product[]; status: 'ready' | 'stale' | 'unavailable'; updated_at: number | null };
 export function money(cents: number): string { return `¥${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`; }
 /** Buyers can reach the merchant by Telegram or WeChat. */
 export function hasContact(catalog: Catalog | null): boolean { return Boolean(catalog?.telegram || catalog?.wechat); }
-/** The 原价 and the saving, when the merchant set an original price above the selling price. */
-export function saving(variant: Variant | undefined): { listed: number; saved: number } | null {
-  const listed = variant?.list_price_cents;
-  return variant && listed && listed > variant.price_cents ? { listed, saved: listed - variant.price_cents } : null;
+/** The variant's 优惠价, when the merchant set one below the price. */
+export function promoCents(variant: Variant | undefined): number | null {
+  const promo = variant?.promo_price_cents;
+  return variant && promo && promo < variant.price_cents ? promo : null;
 }
+/** What the 优惠价 is called: the product's label, such as 学生价. */
+export function promoName(product: Product): string { return product.badge || '优惠价'; }
 /** 1,234 or 1.2万, for view and sales counts. */
 export function countText(value: number): string {
   return value >= 10_000 ? `${(Math.floor(value / 1000) / 10).toFixed(1).replace(/\.0$/, '')}万` : value.toLocaleString('zh-CN');

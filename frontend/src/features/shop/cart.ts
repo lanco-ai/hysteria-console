@@ -1,4 +1,4 @@
-import { money, type Catalog } from './catalog';
+import { money, promoCents, promoName, type Catalog } from './catalog';
 
 export type CartItem = { id: string; quantity: number };
 export const CART_KEY = 'hysteria.shop.cart.v1';
@@ -23,6 +23,19 @@ export function findSku(catalog: Catalog | null, id: string) {
   }
   return null;
 }
+/** The total at 优惠价 (学生价…), where items have one; null when none has. */
+export function cartPromo(catalog: Catalog, items: CartItem[]): { name: string; total: number } | null {
+  const names = new Set<string>();
+  let total = 0;
+  for (const item of items) {
+    const row = findSku(catalog, item.id);
+    if (!row) return null;
+    const promo = promoCents(row.variant);
+    if (promo) names.add(promoName(row.product));
+    total += (promo ?? row.variant.price_cents) * item.quantity;
+  }
+  return names.size ? { name: names.size === 1 ? [...names][0]! : '优惠价', total } : null;
+}
 export function purchaseSummary(catalog: Catalog, items: CartItem[]): string {
   if (catalog.status !== 'ready') throw new Error('商品信息正在等待更新，暂时无法购买。');
   if (!catalog.telegram && !catalog.wechat) throw new Error('商家尚未配置联系方式，暂时无法联系购买。');
@@ -32,8 +45,10 @@ export function purchaseSummary(catalog: Catalog, items: CartItem[]): string {
     const row = findSku(catalog, item.id);
     if (!row?.variant.available || !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99) throw new Error('商品已下架、售罄或数量无效，请返回检查商品。');
     const subtotal = row.variant.price_cents * item.quantity;
+    const promo = promoCents(row.variant);
     total += subtotal;
-    return `${row.product.title} · ${row.variant.label}\n数量：${item.quantity} · 单价：${money(row.variant.price_cents)} · 小计：${money(subtotal)}`;
+    return `${row.product.title} · ${row.variant.label}\n数量：${item.quantity} · 单价：${money(row.variant.price_cents)}${promo ? `（${promoName(row.product)} ${money(promo)}）` : ''} · 小计：${money(subtotal)}`;
   });
-  return `购买信息（待商家人工确认）\n${lines.join('\n\n')}\n\n合计：${money(total)} CNY\n请确认账号适用条件、最终价格、付款和交付方式。`;
+  const promo = cartPromo(catalog, items);
+  return `购买信息（待商家人工确认）\n${lines.join('\n\n')}\n\n合计：${money(total)} CNY${promo ? `\n${promo.name}合计：${money(promo.total)} CNY（需符合条件，以商家确认为准）` : ''}\n请确认账号适用条件、最终价格、付款和交付方式。`;
 }
