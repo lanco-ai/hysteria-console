@@ -23,6 +23,89 @@ class Sessions:
 HEADERS = {'Cookie': 'sid=admin', 'Sec-Fetch-Site': 'same-origin'}
 
 
+def test_default_shop_routes_enable_private_local_claude_guidance(tmp_path, monkeypatch):
+    from functools import partial
+
+    from fastapi import FastAPI
+    from web_api import shop_routes
+
+    async def empty():
+        return []
+
+    async def dispatch(fn, request):
+        return fn(headers=request.headers, path=request.url.path)
+
+    monkeypatch.setattr(shop_routes, 'ShopStore', partial(ShopStore, tmp_path / 'source.json', fetcher=empty))
+    monkeypatch.setattr(shop_routes, 'prodseller_configured', lambda: False)
+    monkeypatch.setattr(shop_routes, 'lorry_configured', lambda: False)
+    app = FastAPI()
+    shop_routes.register_shop_routes(app, Sessions(), dispatch)
+    with TestClient(app) as client:
+        assert client.get('/api/v1/shop/admin').status_code == 401
+        admin = client.get('/api/v1/shop/admin', headers=HEADERS)
+        assert admin.status_code == 200
+        assert [(row['key'], row['cost_cents']) for row in admin.json()['items']] == [
+            ('6000000000001:1', 8500), ('6000000000001:2', 10500),
+        ]
+        public = client.get('/api/v1/shop/catalog')
+        assert public.status_code == 200 and public.json()['products'] == []
+        for private in ('6000000000001', 'cost_cents', 'sources', 'source_url'):
+            assert private not in public.text
+        assert not (tmp_path / 'source-merchant.json').exists()
+
+
+def test_injected_shop_store_keeps_local_products_opt_in(tmp_path):
+    from fastapi import FastAPI
+    from web_api.shop_routes import register_shop_routes
+
+    async def empty():
+        return []
+
+    async def dispatch(fn, request):
+        return fn(headers=request.headers, path=request.url.path)
+
+    app = FastAPI()
+    register_shop_routes(app, Sessions(), dispatch,
+                         store=ShopStore(tmp_path / 'source.json', fetcher=empty))
+    with TestClient(app) as client:
+        admin = client.get('/api/v1/shop/admin', headers=HEADERS).json()
+        assert admin['items'] == [] and set(admin['sources']) == {'gpt'}
+        assert client.get('/api/v1/shop/catalog').json()['products'] == []
+
+
+def test_default_routes_still_work_after_store_only_rollback(monkeypatch):
+    from fastapi import FastAPI
+    from web_api import shop_routes
+
+    class LegacyStore:
+        # Rollback restores shop_store.py alone, leaving today's routes in place.
+        def __init__(self, *, secondary_fetcher, prodseller_fetcher, lorry_fetcher,
+                     fanai_fetcher, sms_fetcher):
+            pass
+
+        async def admin(self):
+            return {'items': [], 'revision': 0}
+
+        async def public(self):
+            return {'products': [], 'status': 'unavailable'}
+
+    async def dispatch(fn, request):
+        return fn(headers=request.headers, path=request.url.path)
+
+    monkeypatch.setattr(shop_routes, 'ShopStore', LegacyStore)
+    monkeypatch.setattr(shop_routes, 'prodseller_configured', lambda: False)
+    monkeypatch.setattr(shop_routes, 'lorry_configured', lambda: False)
+    app = FastAPI()
+    shop_routes.register_shop_routes(app, Sessions(), dispatch)
+    with TestClient(app) as client:
+        assert client.get('/api/v1/shop/catalog').json() == {
+            'products': [], 'status': 'unavailable',
+        }
+        assert client.get('/api/v1/shop/admin', headers=HEADERS).json() == {
+            'items': [], 'revision': 0,
+        }
+
+
 def test_routes_auth_csrf_revision_allowlist(tmp_path):
     async def fetch():
         return normalize_products(

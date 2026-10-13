@@ -329,6 +329,7 @@ def test_snapshot_accepts_exact_deploy_runtime_artifacts(recovery):
     static_artifacts = [
         "/root/hysteria/react_server.py",
         "/root/hysteria/subscription_service.py",
+        "/root/hysteria/web_api/shop_local_products.py",
     ]
     prepared = recovery["run"]("prepare")
     assert prepared.returncode == 0, prepared.stderr

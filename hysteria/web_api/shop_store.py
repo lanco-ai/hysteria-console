@@ -21,6 +21,10 @@ from .shop_fanai_source import valid_public_title as fanai_title
 from .shop_lorry_source import ORIGIN as LORRY_ORIGIN
 from .shop_lorry_source import PRODUCT_BASE as LORRY_BASE
 from .shop_lorry_source import PUBLIC_TITLES as LORRY_TITLES
+from .shop_local_products import NOTICE as LOCAL_NOTICE
+from .shop_local_products import PRODUCT_BASE as LOCAL_BASE
+from .shop_local_products import PRODUCT_ID as LOCAL_PRODUCT_ID
+from .shop_local_products import catalog as local_catalog
 from .shop_notices import (
     CLAUDE_NOTICE,
     CLAUDE_PRODUCT_IDS,
@@ -57,6 +61,7 @@ SOURCE_SITES = {
     'lorry': LORRY_ORIGIN + '/',
     'fanai': FANAI_ORIGIN + '/',
     'sms': SMS_ORIGIN + '/',
+    'local': '',
 }
 # Who each feed is, and what it supplies, for the administrator's view. Kept here rather than in
 # the frontend, whose code anyone can download: the public side never names a supplier.
@@ -67,6 +72,7 @@ SOURCE_LABELS = {
     'lorry': ('Lorry', 'X / Muse AI'),
     'fanai': ('Fanai', 'GPT / Claude / Grok'),
     'sms': ('Zephyr', '短信接码'),
+    'local': ('本店', '开通指导'),
 }
 
 
@@ -79,6 +85,8 @@ def buy_url(row):
 
 def provider_of(product_id):
     number = int(product_id)
+    if number >= LOCAL_BASE:
+        return 'local'
     if number >= SMS_BASE:
         return 'sms'
     if number >= FANAI_BASE:
@@ -91,6 +99,8 @@ def provider_of(product_id):
 
 
 def category_of(provider, public_title):
+    if provider == 'local':
+        return 'Claude'
     if provider == 'sms':
         return '短信接码'
     if provider == 'fanai':
@@ -409,6 +419,7 @@ class ShopStore:
         lorry_fetcher=None,
         fanai_fetcher=None,
         sms_fetcher=None,
+        local_products=False,
         clock=time.time,
     ):
         self.path = Path(path)
@@ -424,6 +435,7 @@ class ShopStore:
         self.fanai_path = self.path.with_name(self.path.stem + '-fanai.json')
         self.sms_fetcher = sms_fetcher
         self.sms_path = self.path.with_name(self.path.stem + '-sms.json')
+        self.local_products = local_products
         self.stats = ShopStats(self.path.with_name('stats.json'), clock)
 
     def _feed_ids(self):
@@ -501,11 +513,15 @@ class ShopStore:
             try:
                 sources[provider] = self._source(provider)
             except state_store.InvalidJsonState:
-                if len(self._feed_ids()) == 1:
+                if len(self._feed_ids()) == 1 and not self.local_products:
                     raise
                 # Ignore untrusted cache bytes independently; another fresh feed
                 # stays readable. A successful refresh can replace this cache.
                 sources[provider] = {**self._empty_source(), 'error': 'source_unavailable'}
+        if self.local_products:
+            sources['local'] = {
+                **self._empty_source(), 'items': local_catalog(), 'last_success': self.clock(),
+            }
         return sources
 
     def _feed_status(self, source):
@@ -528,6 +544,8 @@ class ShopStore:
         products = dict(settings.get('products', {}))
         if any(row['product_id'] == SMS_PRODUCT_ID for row in items):
             products.setdefault(SMS_PRODUCT_ID, dict(SMS_NOTICE))
+        if any(row['product_id'] == LOCAL_PRODUCT_ID for row in items):
+            products.setdefault(LOCAL_PRODUCT_ID, dict(LOCAL_NOTICE))
         for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
             # A saved custom or explicitly empty copy always wins. Defaults only
             # belong to this read projection, never the persisted merchant state.
@@ -543,6 +561,8 @@ class ShopStore:
         statuses = {
             provider: {
                 **self._feed_status(source),
+                # Store-owned services have no quote age, even if wall time moves backward.
+                **({'is_stale': False} if provider == 'local' else {}),
                 'site': SOURCE_SITES[provider],
                 'supplier': SOURCE_LABELS[provider][0],
                 'covers': SOURCE_LABELS[provider][1],

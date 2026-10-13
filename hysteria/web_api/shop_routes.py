@@ -26,13 +26,17 @@ from .shop_sms_gateway import register_sms_routes
 def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabled=False):
     # The Gemini and X / Muse AI feeds need reseller API credentials; without
     # them each feed is simply absent.
-    store = store or ShopStore(
-        secondary_fetcher=fetch_anli_catalog,
-        prodseller_fetcher=fetch_prodseller_catalog if prodseller_configured() else None,
-        lorry_fetcher=fetch_lorry_catalog if lorry_configured() else None,
-        fanai_fetcher=fetch_fanai_catalog,
-        sms_fetcher=fetch_sms_catalog,
-    )
+    if store is None:
+        store = ShopStore(
+            secondary_fetcher=fetch_anli_catalog,
+            prodseller_fetcher=fetch_prodseller_catalog if prodseller_configured() else None,
+            lorry_fetcher=fetch_lorry_catalog if lorry_configured() else None,
+            fanai_fetcher=fetch_fanai_catalog,
+            sms_fetcher=fetch_sms_catalog,
+        )
+        # Store-only rollbacks restore an older constructor. The old store simply
+        # ignores this attribute; injected stores retain their own configuration.
+        store.local_products = True
     register_sms_routes(app)
 
     async def scheduler():
