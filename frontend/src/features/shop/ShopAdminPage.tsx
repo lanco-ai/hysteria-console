@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { AdminShell } from '../../shared/AdminShell';
 import { money, priceCents, shopRequest } from './catalog';
 import { isNoticeProduct } from './ShopNotice';
@@ -31,17 +31,22 @@ const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
 // The feed and category come from the server, which knows its feeds; this page does not.
 function providerOf(item: SourceItem | undefined) { return item?.provider ?? 'gpt'; }
 function brandOf(item: SourceItem): Brand { return BRANDS.find(brand => brand === item.category) ?? 'GPT'; }
-type Offer = { provider: string; productId: string; cheapest: SourceItem | undefined; variants: number; published: boolean };
-/** One plan per public title, with each supplier's cheapest purchasable variant. */
-function comparePlans(items: SourceItem[], saved: Record<string, Setting>) {
+type Offer = { provider: string; productId: string; cheapest: SourceItem | undefined; variants: number; published: boolean; stale: boolean };
+/**
+ * One plan per public title, with each supplier's cheapest purchasable variant. A feed that is out
+ * of date cannot be bought from (its products are unavailable on the storefront), so its last
+ * known prices never count as the lowest.
+ */
+function comparePlans(items: SourceItem[], saved: Record<string, Setting>, stale: (provider: string) => boolean) {
   const plans = new Map<string, Map<string, Offer>>();
   for (const item of items) {
     const title = item.public_title ?? item.title;
     const offers = plans.get(title) ?? new Map<string, Offer>();
-    const offer = offers.get(item.product_id) ?? { provider: providerOf(item), productId: item.product_id, cheapest: undefined, variants: 0, published: false };
+    const provider = providerOf(item);
+    const offer = offers.get(item.product_id) ?? { provider, productId: item.product_id, cheapest: undefined, variants: 0, published: false, stale: stale(provider) };
     offer.variants += 1;
     offer.published ||= saved[item.key]?.published === true;
-    if (item.available && (!offer.cheapest || item.cost_cents < offer.cheapest.cost_cents)) offer.cheapest = item;
+    if (item.available && !offer.stale && (!offer.cheapest || item.cost_cents < offer.cheapest.cost_cents)) offer.cheapest = item;
     offers.set(item.product_id, offer);
     plans.set(title, offers);
   }
@@ -127,6 +132,20 @@ export function ShopAdminPage() {
     setDisplay(value => ({ ...value, [productId]: { ...EMPTY_DISPLAY, ...value[productId], ...change } }));
     setDirty(true); setNotice('');
   }
+  // A product chosen in 同款比价: lift the filter and search that may hide it, then go to it once shown.
+  const [revealing, setRevealing] = useState<string | null>(null);
+  function reveal(target: Brand, productId: string) {
+    setFilter('all'); setQuery(''); chooseBrand(target); setRevealing(productId);
+  }
+  useLayoutEffect(() => {
+    if (!revealing) return;
+    const heading = document.getElementById(`shop-admin-product-${revealing}`);
+    setRevealing(null);
+    if (!heading) return;
+    history.replaceState(null, '', `#shop-admin-product-${revealing}`);
+    heading.scrollIntoView({ block: 'start' });
+    heading.focus({ preventScroll: true });
+  }, [revealing]);
   function chooseBadge(productId: string, choice: string) {
     setCustomBadges(old => { const next = new Set(old); if (choice === CUSTOM_BADGE) next.add(productId); else next.delete(productId); return next; });
     editDisplay(productId, { badge: choice === CUSTOM_BADGE ? '' : choice });
@@ -177,7 +196,8 @@ export function ShopAdminPage() {
     }
     if (telegram && !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(telegram)) { setError('请输入 5–32 位 Telegram 用户名，不包含 @ 或链接。'); return; }
     if (wechat && !/^[A-Za-z][-_A-Za-z0-9]{5,19}$/.test(wechat)) { setError('请输入 6–20 位微信号：字母开头，可包含字母、数字、下划线和减号。'); return; }
-    const settings = { revision: state.revision, telegram, wechat, skus, products: copy, display: shown };
+    // `client` tells the server this page sends every setting, so a field left out is cleared.
+    const settings = { revision: state.revision, client: 2, telegram, wechat, skus, products: copy, display: shown };
     const body = JSON.stringify(settings);
     const savedBody = JSON.stringify({ ...settings, revision: state.revision + 1 });
     const encoder = new TextEncoder();
@@ -261,7 +281,7 @@ export function ShopAdminPage() {
             <label className="shop-telegram-field">商家 Telegram 用户名<span className="shop-admin-affix"><span aria-hidden="true">@</span><input value={telegram} disabled={busy} placeholder="不含 @，例如 my_shop" autoComplete="off" onChange={event => { setTelegram(event.target.value.trim()); setDirty(true); setNotice(''); }}/></span></label>
             <label className="shop-telegram-field">商家微信号<span className="shop-admin-affix"><input value={wechat} disabled={busy} placeholder="例如 upc-bh" autoComplete="off" onChange={event => { setWechat(event.target.value.trim()); setDirty(true); setNotice(''); }}/></span></label>
             <small className={telegram || wechat ? undefined : 'is-warn'}>客户可以通过 Telegram 或微信联系你购买；两者都留空时，前台无法联系购买。</small>
-            <p className="shop-admin-stats">前台数据：累计浏览 {(state.stats?.site ?? 0).toLocaleString('zh-CN')} 人次 · 累计售出 {Object.values(state.display ?? {}).reduce((sum, item) => sum + item.sold, 0).toLocaleString('zh-CN')} 件<small>浏览按每位访客每天一次自动统计；已售件数由你在各商品处填写。</small></p>
+            <p className="shop-admin-stats">前台数据：累计浏览 {(state.stats?.site ?? 0).toLocaleString('zh-CN')} 人次 · 累计售出 {Object.values(state.display ?? {}).reduce((sum, item) => sum + item.sold, 0).toLocaleString('zh-CN')} 件<small>浏览按访问 IP 每天计一次，是近似人数：同一网络下的多人会合并，换了网络的人会再计一次。已售件数由你在各商品处填写。</small></p>
           </div>
         </div>
         {present.length > 1 ? <div className="shop-admin-brands" role="group" aria-label="品牌">
@@ -286,7 +306,7 @@ export function ShopAdminPage() {
           const products = [...(groups.get(brand) ?? [])];
           const brandItems = products.flatMap(([, group]) => group);
           const brandId = brand.replace(/\s+/g, '-');
-          const plans = comparePlans(brandItems, saved);
+          const plans = comparePlans(brandItems, saved, provider => state.sources?.[provider]?.is_stale === true);
           // Comparing only helps once a plan is offered by more than one supplier.
           const compared = plans.filter(plan => plan.offers.length > 1 && new Set(plan.offers.map(offer => offer.provider)).size > 1);
           return <section key={brand} className="shop-admin-group" aria-labelledby={`shop-admin-group-${brandId}`} hidden={!brandItems.some(visible)}>
@@ -295,12 +315,12 @@ export function ShopAdminPage() {
               <span>{products.length} 个商品 · {brandItems.length} 个规格 · 已上架 {brandItems.filter(item => saved[item.key]?.published).length}</span>
             </header>
             {compared.length ? <div className="shop-admin-compare" role="region" aria-label={`${brand} 同款比价`}>
-              <h3>同款比价<small>按来源的最低可购成本排序，选便宜的那个上架</small></h3>
+              <h3>同款比价<small>按来源的最低可购成本排序，选便宜的那个上架。同款按套餐名归类，上架前请核对来源的商品说明。</small></h3>
               {compared.map(plan => <div key={plan.title} className="shop-admin-compare-plan">
                 <strong>{plan.title}</strong>
-                <ol>{plan.offers.map(offer => <li key={offer.productId} className={offer.productId === plan.best ? 'is-best' : offer.cheapest ? undefined : 'is-soldout'}>
-                  <a href={`#shop-admin-product-${offer.productId}`} title={offer.cheapest?.title ?? undefined}>{supplierOf(offer.provider)}</a>
-                  <span className="shop-admin-compare-cost">{offer.cheapest ? money(offer.cheapest.cost_cents) : '售罄'}</span>
+                <ol>{plan.offers.map(offer => <li key={offer.productId} className={offer.productId === plan.best ? 'is-best' : offer.stale ? 'is-stale' : offer.cheapest ? undefined : 'is-soldout'}>
+                  <a href={`#shop-admin-product-${offer.productId}`} title={offer.cheapest?.title ?? undefined} onClick={event => { event.preventDefault(); reveal(brand, offer.productId); }}>{supplierOf(offer.provider)}</a>
+                  <span className="shop-admin-compare-cost">{offer.stale ? '价格待更新' : offer.cheapest ? money(offer.cheapest.cost_cents) : '售罄'}</span>
                   {offer.cheapest ? <small>{offer.cheapest.label}{offer.variants > 1 ? ` · 共 ${offer.variants} 个规格` : ''}</small> : null}
                   {offer.productId === plan.best ? <span className="badge ok">最低</span> : null}
                   {offer.published ? <span className="badge">已上架</span> : null}
@@ -319,7 +339,7 @@ export function ShopAdminPage() {
               const custom = customBadges.has(productId) || Boolean(shown.badge && !BADGES.includes(shown.badge));
               return <section key={productId} className="shop-admin-product" aria-labelledby={`shop-admin-product-${productId}`} hidden={!group.some(visible)}>
                 <header className="shop-admin-product-header">
-                  <h3 id={`shop-admin-product-${productId}`}>{first?.title}</h3>
+                  <h3 id={`shop-admin-product-${productId}`} tabIndex={-1}>{first?.title}</h3>
                   <p className="shop-admin-product-meta">
                     <span className="shop-admin-supplier">来源：{supplierOf(providerOf(first))}</span>
                     {first?.public_title ? <span>前台名称：{first.public_title}</span> : null}

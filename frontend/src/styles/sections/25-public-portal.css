@@ -447,6 +447,8 @@ div.shop-admin-empty p { margin: 0; }
 .shop-admin-compare-plan li { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-surface); }
 .shop-admin-compare-plan li.is-best { border-color: var(--ok); background: var(--ok-soft); }
 .shop-admin-compare-plan li.is-soldout { color: var(--text-tertiary); }
+/* A feed out of date: its last prices are shown but not ranked. */
+.shop-admin-compare-plan li.is-stale { border-style: dashed; color: var(--text-tertiary); }
 .shop-admin-compare-plan li a { color: var(--text-primary); font-weight: 600; text-decoration: none; }
 .shop-admin-compare-plan li a:hover { text-decoration: underline; }
 .shop-admin-compare-cost { font-variant-numeric: tabular-nums; }

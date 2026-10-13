@@ -182,3 +182,58 @@ def test_store_rejects_tampered_fanai_rows(tmp_path):
                    {'source_url': 'https://fanai.us.ci/item/23'}):
         with pytest.raises(ValueError):
             validate_items([{**row, **change}], 'fanai')
+
+
+@pytest.mark.parametrize('pages', [
+    # A first page shorter than its total, with nothing after it.
+    {1: (2, [0])},
+    # An empty page while items are still missing.
+    {1: (3, [0, 1]), 2: (3, [])},
+    # The total changing between pages.
+    {1: (3, [0, 1]), 2: (2, [2])},
+    # More items than the total promised.
+    {1: (1, [0, 1])},
+])
+def test_an_incomplete_category_fails_the_refresh_instead_of_dropping_items(pages):
+    from web_api.shop_fanai_source import fetch_catalog
+    from web_api.shop_source import SourceError
+
+    claude = [commodity(30 + n, f'Claude Pro {n}', 128, 8) for n in range(3)]
+
+    def handler(request):
+        if request.url.path == '/user/api/index/data':
+            return httpx.Response(200, json={'code': 200, 'data': [{'id': 8, 'name': 'CLAUDE', 'status': 1, 'hide': 0}]})
+        # A page past those listed repeats the first page's total with no items.
+        total, indexes = pages.get(int(request.url.params['page']), (pages[1][0], []))
+        return httpx.Response(200, json={'code': 200, 'total': total, 'data': [claude[n] for n in indexes]})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_catalog(client=client)
+
+    with pytest.raises(SourceError):
+        asyncio.run(run())
+
+
+def test_a_category_spread_over_pages_arrives_whole():
+    from web_api import shop_fanai_source
+    from web_api.shop_fanai_source import fetch_catalog
+
+    claude = [commodity(30 + n, 'Claude Pro', 128, 8) for n in range(5)]
+
+    def handler(request):
+        if request.url.path == '/user/api/index/data':
+            return httpx.Response(200, json={'code': 200, 'data': [{'id': 8, 'name': 'CLAUDE', 'status': 1, 'hide': 0}]})
+        page, size = int(request.url.params['page']), int(request.url.params['limit'])
+        return httpx.Response(200, json={'code': 200, 'total': 5, 'data': claude[(page - 1) * size:page * size]})
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch_catalog(client=client)
+
+    original = shop_fanai_source.PAGE_SIZE
+    shop_fanai_source.PAGE_SIZE = 2
+    try:
+        assert len(asyncio.run(run())) == 5
+    finally:
+        shop_fanai_source.PAGE_SIZE = original

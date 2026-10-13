@@ -350,3 +350,52 @@ def test_unreadable_statistics_never_break_the_catalog(tmp_path):
         assert catalog.status_code == 200 and catalog.json()['stats']['views'] == 0
     # The damaged file is left for inspection rather than overwritten.
     assert (tmp_path / 'stats.json').read_text() == '{"broken":'
+
+
+def test_an_admin_page_from_before_the_upgrade_keeps_what_it_cannot_see(tmp_path):
+    store, app = shop_app(tmp_path)
+    current = {
+        'revision': 0, 'telegram': '', 'wechat': 'upc-bh', 'client': 2,
+        'skus': {'2:7': {'price_cents': 13300, 'published': True, 'list_price_cents': 15300}},
+        'display': {'2': {'badge': '学生价', 'sold': 36}},
+    }
+    with TestClient(app) as client:
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json=current).status_code == 200
+        # The old page sends only prices and 上架, and no mark of its version.
+        legacy = {'revision': 1, 'telegram': '', 'skus': {'2:7': {'price_cents': 13900, 'published': True}}, 'products': {}}
+        saved = client.put('/api/v1/shop/admin', headers=HEADERS, json=legacy)
+        assert saved.status_code == 200, saved.text
+        state = saved.json()
+        assert (state['wechat'], state['display'], state['skus']['2:7']) == (
+            'upc-bh', {'2': {'badge': '学生价', 'sold': 36}}, {'price_cents': 13900, 'published': True, 'list_price_cents': 15300},
+        )
+        assert 'client' not in state
+        # A 原价 no longer above the new price is dropped rather than refusing the save.
+        legacy = {'revision': 2, 'telegram': '', 'skus': {'2:7': {'price_cents': 16000, 'published': True}}}
+        state = client.put('/api/v1/shop/admin', headers=HEADERS, json=legacy).json()
+        assert 'list_price_cents' not in state['skus']['2:7'] and state['wechat'] == 'upc-bh'
+        # A page from 628f723, which sends the WeChat ID and labels but no mark, clears a 原价 by leaving it out.
+        restored = {'revision': 3, 'telegram': '', 'wechat': 'upc-bh', 'client': 2, 'skus': {'2:7': {'price_cents': 13300, 'published': True, 'list_price_cents': 15300}}}
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json=restored).status_code == 200
+        unmarked = {'revision': 4, 'telegram': '', 'wechat': 'upc-bh', 'skus': {'2:7': {'price_cents': 13300, 'published': True}}, 'display': {}}
+        state = client.put('/api/v1/shop/admin', headers=HEADERS, json=unmarked).json()
+        assert 'list_price_cents' not in state['skus']['2:7'] and state['display'] == {}
+        # The current page clears a field by leaving it out.
+        cleared = {'revision': 5, 'telegram': '', 'wechat': '', 'client': 2, 'skus': {'2:7': {'price_cents': 13300, 'published': True}}, 'display': {}}
+        state = client.put('/api/v1/shop/admin', headers=HEADERS, json=cleared).json()
+        assert (state['wechat'], state['display']) == ('', {})
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json={**cleared, 'revision': 6, 'client': 3}).status_code == 422
+    assert 'client' not in json.loads((tmp_path / 'source-merchant.json').read_text())
+
+
+def test_the_shops_sold_total_keeps_products_taken_off_sale(tmp_path):
+    store, app = shop_app(tmp_path)
+    with TestClient(app) as client:
+        on_sale = {'revision': 0, 'telegram': 'my_shop',
+                   'skus': {'2:7': {'price_cents': 13300, 'published': True}}, 'display': {'2': {'badge': '', 'sold': 36}}}
+        client.put('/api/v1/shop/admin', headers=HEADERS, json=on_sale)
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 36
+        off_sale = {**on_sale, 'revision': 1, 'skus': {'2:7': {'price_cents': 13300, 'published': False}}}
+        client.put('/api/v1/shop/admin', headers=HEADERS, json=off_sale)
+        catalog = client.get('/api/v1/shop/catalog').json()
+    assert catalog['products'] == [] and catalog['stats']['sold'] == 36

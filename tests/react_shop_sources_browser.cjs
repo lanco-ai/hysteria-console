@@ -68,6 +68,28 @@ const merchant = {
     await brands.getByRole('button', { name: /^GPT / }).click();
     const width = await page.evaluate(() => document.documentElement.scrollWidth);
     assert(width <= 390, `shop admin should fit 390px (scrollWidth ${width}px)`);
+    // A feed that is out of date is not ranked: its last prices read 价格待更新, never 最低.
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    const stale = { ...merchant, sources: { ...merchant.sources, fanai: { ...merchant.sources.fanai, is_stale: true, error: 'source_unavailable' } } };
+    await page.unroute('**/api/v1/shop/admin');
+    await page.route('**/api/v1/shop/admin', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(stale) }));
+    await page.reload();
+    await brands.getByRole('button', { name: /^GPT / }).click();
+    await expect(offers.first()).toContainText('强云');
+    await expect(offers.first()).toContainText('最低');
+    await expect(gptCompare.locator('li.is-stale')).toHaveCount(2);
+    await expect(gptCompare.locator('li.is-stale').first()).toContainText('价格待更新');
+    await expect(gptCompare.locator('li.is-stale .badge.ok')).toHaveCount(0);
+    // Choosing an offer the filter hides lifts the filter and goes to that product.
+    const filters = page.getByRole('group', { name: '规格筛选' });
+    await filters.getByRole('button', { name: /^已上架/ }).click();
+    const target = page.locator('#shop-admin-product-4000000000006');
+    await expect(target).toBeHidden();
+    await gptCompare.locator('li', { hasText: 'Fanai' }).first().getByRole('link').click();
+    await expect(target).toBeVisible();
+    await expect(target).toBeFocused();
+    await expect(target).toBeInViewport();
+    await expect(filters.getByRole('button', { name: /^全部/ })).toHaveAttribute('aria-pressed', 'true');
     console.log('PASS: shop admin X / Muse AI brands, supplier labels and same-plan price comparison');
     await context.close();
   } finally { await browser.close(); }

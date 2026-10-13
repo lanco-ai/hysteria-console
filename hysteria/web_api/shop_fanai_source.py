@@ -167,18 +167,31 @@ async def fetch_catalog(*, client=None):
             categories = categories_of((await _json(client, '/user/api/index/data'))['data'])
             commodities = []
             for category in sorted(categories):
+                # Each category must arrive whole: the same total on every page, and exactly that
+                # many items. A short or empty page fails the refresh, which keeps the last list.
+                expected, received = None, 0
                 for page in range(1, MAX_PAGES + 1):
                     response = await _json(
                         client, '/user/api/index/commodity', {'categoryId': category, 'limit': PAGE_SIZE, 'page': page},
                     )
-                    total = response.get('total')
-                    if type(total) is not int or not 0 <= total <= MAX_ROWS:
+                    total, rows = response.get('total'), response['data']
+                    if type(total) is not int or not 0 <= total <= MAX_ROWS or len(rows) > PAGE_SIZE:
                         raise SourceError('invalid pagination')
-                    commodities.extend(response['data'])
+                    if expected is not None and total != expected:
+                        raise SourceError('changed pagination')
+                    expected = total
+                    commodities.extend(rows)
+                    received += len(rows)
                     if len(commodities) > MAX_ROWS:
                         raise SourceError('too many products')
-                    if not response['data'] or page * PAGE_SIZE >= total:
+                    if received >= expected:
                         break
+                    if not rows:
+                        raise SourceError('incomplete pagination')
+                else:
+                    raise SourceError('incomplete pagination')
+                if received != expected:
+                    raise SourceError('incomplete pagination')
             return normalize_products(commodities, categories)
     except (httpx.HTTPError, TimeoutError) as exc:
         raise SourceError('upstream unavailable') from exc

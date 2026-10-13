@@ -96,12 +96,36 @@ class Conflict(ValueError):
     pass
 
 
+def keep_unseen_settings(payload, current):
+    """An older admin page's save, with the settings it cannot show kept as they are.
+
+    Such a page sends every SKU with only its price and 上架, and no WeChat ID, labels or sold
+    counts. Saving it as it stands would clear them; with no WeChat ID and no Telegram, buyers
+    could no longer reach the merchant. A 原价 stays only while it is still above the new price.
+    """
+    merged = dict(payload)
+    for field in ('wechat', 'display'):
+        if field not in payload and current.get(field):
+            merged[field] = current[field]
+    skus = {}
+    for key, item in payload['skus'].items():
+        listed = current['skus'].get(key, {}).get('list_price_cents')
+        if 'list_price_cents' not in item and listed and item['price_cents'] is not None and listed > item['price_cents']:
+            item = {**item, 'list_price_cents': listed}
+        skus[key] = item
+    merged['skus'] = skus
+    return merged
+
+
 def _integer(value, minimum, maximum):
     return type(value) is int and minimum <= value <= maximum
 
 
 # A WeChat ID: 6–20 characters, starting with a letter.
 WECHAT_ID = re.compile(r'[A-Za-z][-_A-Za-z0-9]{5,19}')
+# Admin pages since 628f723 send this mark with every save. A page loaded earlier sends none, and
+# knows nothing of the WeChat ID, labels, sold counts or 原价.
+CLIENT_VERSION = 2
 MAX_BADGE = 8
 MAX_SOLD = 10_000_000
 
@@ -115,7 +139,8 @@ def validate_settings(value):
     if (
         not isinstance(value, dict)
         or not {'revision', 'telegram', 'skus'} <= set(value)
-        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display'}
+        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client'}
+        or value.get('client', CLIENT_VERSION) != CLIENT_VERSION
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
         or (
@@ -576,7 +601,8 @@ class ShopStore:
             'currency': 'CNY',
             'telegram': state['telegram'],
             'wechat': state.get('wechat', ''),
-            'stats': {'views': stats['site'], 'sold': sum(product['sold'] for product in products)},
+            # Units sold over the shop's life, as in 商品管理: a product taken off sale keeps its count.
+            'stats': {'views': stats['site'], 'sold': sum(item['sold'] for item in display.values())},
             'products': products,
             'status': 'ready' if ready else ('stale' if successes else 'unavailable'),
             'updated_at': max(successes, default=None),
@@ -588,6 +614,11 @@ class ShopStore:
             current = self._settings()
             if payload['revision'] != current['revision']:
                 raise Conflict('settings changed; reload before saving')
+            # Pages from 628f723 on send `wechat` and `display` (and later the `client` mark):
+            # a field they leave out is one they cleared. Only older pages get their gaps filled.
+            if payload.get('client') != CLIENT_VERSION and not {'wechat', 'display'} & set(payload):
+                payload = keep_unseen_settings(payload, current)
+            payload = {key: value for key, value in payload.items() if key != 'client'}
             known = {
                 row['key'] for source in self._sources().values() for row in source['items']
             } | set(current['skus'])
