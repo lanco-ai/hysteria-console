@@ -322,7 +322,6 @@ export function ShopAdminPage() {
               <h2 id={`shop-admin-group-${brandId}`}>{brandName}</h2>
               <span>{plans.length} 个前台商品 · {brandItems.length} 个规格 · 已上架 {brandItems.filter(item => saved[item.key]?.published).length}</span>
             </header>
-            <div className="shop-admin-columns" aria-hidden="true"><span>来源 · 规格</span><span>成本</span><span>售价（元）</span><span>优惠价（元）</span><span>毛利</span><span>上架</span></div>
             {plans.map(plan => {
               const planItems = plan.products.flatMap(product => product.rows);
               const publishedRows = planItems.filter(item => saved[item.key]?.published && saved[item.key]?.price_cents != null);
@@ -331,8 +330,9 @@ export function ShopAdminPage() {
               const comparable = new Set(plan.products.map(product => product.provider)).size > 1;
               return <article key={plan.title} className="shop-plan" aria-label={plan.title} hidden={!planItems.some(visible)}>
                 <header className="shop-plan-head">
-                  <h3>{plan.title}</h3>
-                  {prices.length ? <span className="badge ok">前台 {money(Math.min(...prices))}{Math.max(...prices) !== Math.min(...prices) ? `–${money(Math.max(...prices)).slice(1)}` : ''}</span> : <span className="badge">未上架</span>}
+                  <div className="shop-plan-title"><h3>{plan.title}</h3>
+                    {prices.length ? <span className="badge ok">前台 {money(Math.min(...prices))}{Math.max(...prices) !== Math.min(...prices) ? `–${money(Math.max(...prices)).slice(1)}` : ''}</span> : <span className="badge">未上架</span>}
+                  </div>
                   {comparable ? plan.best ? <button type="button" className="shop-plan-best" title="同款按套餐名归类，上架前请核对来源的商品说明" onClick={() => reveal(brandName, plan.best!.productId)}>最低成本 {money(plan.best.cheapest!.cost_cents)} · {supplierOf(plan.best.provider)}</button> : <span className="shop-plan-note">暂无可购来源</span> : null}
                   {sellers > 1 ? <span className="shop-plan-warn">{sellers} 个来源同时上架，前台会出现重复商品</span> : null}
                 </header>
@@ -349,9 +349,11 @@ export function ShopAdminPage() {
                   const settingsChanged = displayChanged(productId) || copyChanged(productId);
                   return <section key={productId} className={`shop-admin-product${open ? ' is-open' : ''}`} aria-labelledby={`shop-admin-product-${productId}`} hidden={!product.rows.some(visible)}>
                     <header className="shop-admin-product-header">
-                      <span className={`shop-admin-supplier${product.stale ? ' is-stale' : ''}`}>{supplierOf(product.provider)}</span>
-                      {comparable && plan.best?.productId === productId ? <span className="badge ok">最低</span> : null}
-                      {product.stale ? <span className="badge warn">价格待更新</span> : null}
+                      <div className="shop-admin-source-heading">
+                        <span className={`shop-admin-supplier${product.stale ? ' is-stale' : ''}`}>{supplierOf(product.provider)}</span>
+                        {comparable && plan.best?.productId === productId ? <span className="badge ok">最低</span> : null}
+                        {product.stale ? <span className="badge warn">价格待更新</span> : null}
+                      </div>
                       <h4 id={`shop-admin-product-${productId}`} tabIndex={-1} title={product.title}>{product.title}</h4>
                       <span className="shop-admin-product-flags">
                         {shown.badge.trim() ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
@@ -359,25 +361,34 @@ export function ShopAdminPage() {
                         {views ? <span>浏览 {views.toLocaleString('zh-CN')}</span> : null}
                         {published && !filled ? <span className="is-warn">缺说明</span> : null}
                       </span>
-                      <button type="button" className={`shop-admin-product-toggle${settingsChanged ? ' is-changed' : ''}`} aria-expanded={open} aria-controls={`shop-admin-settings-${productId}`} aria-label={`商品设置 ${productId}`} onClick={() => toggleProduct(productId)}>设置{settingsChanged ? ' · 已修改' : ''}</button>
-                      {first?.buy_url ? <a className="shop-admin-buy" href={first.buy_url} target="_blank" rel="noopener noreferrer" aria-label={`去来源购买 ${product.title}`}>购买<span aria-hidden="true"> ↗</span></a> : null}
+                      <div className="shop-admin-product-actions">
+                        <button type="button" className={`shop-admin-product-toggle${settingsChanged ? ' is-changed' : ''}`} aria-expanded={open} aria-controls={`shop-admin-settings-${productId}`} aria-label={`商品设置 ${productId}`} onClick={() => toggleProduct(productId)}>设置{settingsChanged ? ' · 已修改' : ''}<span aria-hidden="true">{open ? ' −' : ' +'}</span></button>
+                        {first?.buy_url ? <a className="shop-admin-buy" href={first.buy_url} target="_blank" rel="noopener noreferrer" aria-label={`去来源购买 ${product.title}`}>去进货<span aria-hidden="true"> ↗</span></a> : null}
+                      </div>
                     </header>
-                    {[...product.rows].sort((a, b) => a.cost_cents - b.cost_cents).map(item => {
-                      const value = draft[item.key] ?? EMPTY_DRAFT;
-                      const margin = marginOf(item.cost_cents, value.price, value.published);
-                      const promoMargin = value.promo ? marginOf(item.cost_cents, value.promo, false) : null;
-                      return <article key={item.key} className={`shop-admin-row${changed(item.key) ? ' is-changed' : ''}${item.available ? '' : ' is-soldout'}`} hidden={!visible(item)}>
-                        <div className="shop-admin-spec">
-                          <strong>{item.label}</strong>
-                          {item.available && !changed(item.key) ? null : <small>{item.available ? null : <span className="badge warn">来源售罄</span>}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
-                        </div>
-                        <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
-                        <label className="shop-admin-price"><span className="shop-admin-mobile-label">售价</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`售价 ${item.key}`} aria-invalid={margin.tone === 'invalid' || undefined} inputMode="decimal" autoComplete="off" value={value.price} disabled={busy} placeholder="待填写" onChange={event => edit(item.key, { price: event.target.value })}/></span></label>
-                        <label className="shop-admin-promo"><span className="shop-admin-mobile-label">{shown.badge.trim() || '优惠价'}</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`优惠价 ${item.key}`} inputMode="decimal" autoComplete="off" value={value.promo} disabled={busy} placeholder="不优惠" onChange={event => edit(item.key, { promo: event.target.value })}/></span></label>
-                        <div className={`shop-admin-margin is-${margin.tone}`}><span className="shop-admin-mobile-label">毛利</span><strong>{margin.amount}</strong>{margin.rate ? <small>{margin.rate}{promoMargin && promoMargin.tone !== 'invalid' && promoMargin.tone !== 'empty' ? ` · 优惠 ${promoMargin.amount}` : ''}</small> : null}</div>
-                        <label className="shop-publish"><input aria-label={`上架 ${item.key}`} className="shop-admin-switch" type="checkbox" checked={value.published} disabled={busy} onChange={event => edit(item.key, { published: event.target.checked })}/><span>上架</span></label>
-                      </article>;
-                    })}
+                    <div className="shop-admin-variants">
+                      <div className="shop-admin-columns" aria-hidden="true"><span>规格</span><span>成本</span><span>售价（元）</span><span>{shown.badge.trim() || '优惠价'}（元）</span><span>毛利 / 毛利率</span><span>上架</span></div>
+                      {[...product.rows].sort((a, b) => a.cost_cents - b.cost_cents).map(item => {
+                        const value = draft[item.key] ?? EMPTY_DRAFT;
+                        const margin = marginOf(item.cost_cents, value.price, value.published);
+                        const promoMargin = value.promo ? marginOf(item.cost_cents, value.promo, false) : null;
+                        return <article key={item.key} className={`shop-admin-row${changed(item.key) ? ' is-changed' : ''}${item.available ? '' : ' is-soldout'}`} hidden={!visible(item)}>
+                          <div className="shop-admin-spec">
+                            <strong>{item.label}</strong>
+                            {item.available && !changed(item.key) ? null : <small>{item.available ? null : <span className="badge warn">来源售罄</span>}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
+                          </div>
+                          <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
+                          <label className="shop-admin-price"><span className="shop-admin-mobile-label">售价</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`售价 ${item.key}`} aria-invalid={margin.tone === 'invalid' || undefined} inputMode="decimal" autoComplete="off" value={value.price} disabled={busy} placeholder="待填写" onChange={event => edit(item.key, { price: event.target.value })}/></span></label>
+                          <label className="shop-admin-promo"><span className="shop-admin-mobile-label">{shown.badge.trim() || '优惠价'}</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`优惠价 ${item.key}`} inputMode="decimal" autoComplete="off" value={value.promo} disabled={busy} placeholder="不优惠" onChange={event => edit(item.key, { promo: event.target.value })}/></span></label>
+                          <div className={`shop-admin-margin is-${margin.tone}`}>
+                            <span className="shop-admin-mobile-label">毛利</span>
+                            <div className="shop-admin-margin-main"><strong>{margin.amount}</strong>{margin.rate ? <span>{margin.rate}</span> : null}</div>
+                            {margin.rate && promoMargin && promoMargin.tone !== 'invalid' && promoMargin.tone !== 'empty' ? <small className={promoMargin.tone === 'loss' ? 'is-loss' : undefined}>优惠 {promoMargin.amount}</small> : null}
+                          </div>
+                          <label className="shop-publish"><input aria-label={`上架 ${item.key}`} className="shop-admin-switch" type="checkbox" checked={value.published} disabled={busy} onChange={event => edit(item.key, { published: event.target.checked })}/><span>上架</span></label>
+                        </article>;
+                      })}
+                    </div>
                     {open ? <div className="shop-admin-product-settings" id={`shop-admin-settings-${productId}`}>
                       <div className="shop-admin-display">
                         <label>优惠标签<select aria-label={`优惠标签 ${productId}`} value={custom ? CUSTOM_BADGE : shown.badge} disabled={busy} onChange={event => chooseBadge(productId, event.target.value)}>

@@ -47,6 +47,7 @@ def main():
         'react_plans_layout_browser.cjs',
         'react_plans_schedule_browser.cjs',
         'react_shop_sources_browser.cjs',
+        'react_shop_admin_layout_browser.cjs',
         'react_shop_promo_browser.cjs',
         'react_shop_offer_browser.cjs',
         'react_shop_gemini_browser.cjs',
