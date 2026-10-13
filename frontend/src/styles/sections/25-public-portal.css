@@ -259,7 +259,8 @@ h1 > .shop-promo-badge { margin-right: 10px; vertical-align: 4px; }
 .shop-promo-price { display: inline-flex; align-items: baseline; gap: 2px; padding: 3px 10px; border-radius: var(--radius-pill); background: #fff0ed; color: #e0402a; font-size: 13px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .shop-promo-price strong { font-size: 16px; font-weight: 800; }
 .shop-promo-price small { margin-left: 2px; font-size: 12px; }
-.shop-product-price .shop-promo-price { margin-top: 6px; }
+.shop-product-price .shop-promo-price { flex-wrap: wrap; max-width: 100%; margin-top: 6px; white-space: normal; }
+.shop-product-price .shop-promo-price > span { min-width: 0; overflow-wrap: anywhere; }
 .shop-detail-price .shop-promo-price { padding: 6px 14px; font-size: 15px; }
 .shop-detail-price .shop-promo-price strong { color: inherit; font-size: 24px; }
 .shop-cart-row .shop-promo-price { margin-top: 6px; }

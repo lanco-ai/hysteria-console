@@ -107,16 +107,46 @@ Your subscription is covered for the full one-month term. If the subscription is
 """,
 }
 
-# Plain text: Gemini copy is not rendered as Markdown on the storefront.
+# Gemini's activity requirements and merchant terms are rendered as safe Markdown.
 GEMINI_NOTICE = {
-    "description": """Gemini Pro（Google AI Pro）18 个月会员激活链接，独立账号使用，不是邀请加入。
+    "description": """# 💎 Gemini AI Pro｜18个月官方订阅
 
-· 含 5TB 云端存储，可添加 5 位家庭成员
-· 无需绑定银行卡，任何地区均可激活
-· 链接自交付起 7 天内有效，请尽快兑换
+**印度 Jio 官方合作活动｜个人账号开通｜支持家庭共享**
 
-使用方法：在浏览器中打开收到的兑换链接，点击“Activate Offer”即可完成激活。如果页面提示链接不可用，请点击“Not Working”按钮获取新链接。""",
-    "after_sales": """交付后 24 小时内如链接无法激活，请联系本店处理；激活成功后不再提供售后。""",
+通过印度 Jio 官方合作活动领取 Google AI Pro 订阅权益，**有效期18个月**。使用自己的 Google 账号即可领取，无需提供密码或验证码。
+
+### 🚀 套餐权益
+
+- **AI 模型：** 支持 Gemini Pro、Flash 等高级模型，具体版本以官方开放为准。
+- **视频生成：** 支持 Veo 系列视频创作功能，具体额度以官方为准。
+- **家庭共享：** 最多6人（本人+5位成员），共享权益以官方政策为准。
+- **隐私独立：** 各成员使用自己的账号，个人聊天和文件互不可见。
+
+### ⚡ 开通步骤
+
+1. 登录自己的 Google 账号。
+2. 复制本店发送的官方订阅领取链接。
+3. 使用 Chrome 浏览器打开并按提示领取。
+4. 领取成功，即可使用对应订阅权益。
+
+### 🌍 购买前请自查
+
+- Google 账号年龄已满18周岁。
+- 账号地区符合活动要求。
+- 付款资料及家庭地址符合 Google 相关政策。
+- 符合印度 Jio 活动的实际领取资格。
+
+账号地区查询：
+
+[https://policies.google.com/terms?hl=zh_CN](https://policies.google.com/terms?hl=zh_CN)""",
+    "after_sales": """### 📌 购买须知
+
+- 本商品出售的是**官方活动订阅领取链接**，非成品账号。
+- 订阅期限及具体 AI 权益以 Google 官方页面为准。
+- 默认无额外质保。
+- **虚拟商品，售出不退。**
+
+**⚠️ 下单前请自行确认账号领取资格，避免因地区或账号限制导致无法开通。**""",
 }
 
 # Plain text: X Premium is delivered as an official gift to the buyer's handle.

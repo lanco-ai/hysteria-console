@@ -6,9 +6,9 @@ export function PromoBadge({ text }: { text?: string | undefined }) {
   return text ? <span className="shop-promo-badge">{text}</span> : null;
 }
 
-/** "学生价：¥118.00" under the price, for one variant or the lowest of a product's ("起" when they differ). */
+/** A selected variant's offer, or the lowest available offer on a product card ("起" when they differ). */
 export function PromoPrice({ product, variant }: { product: Product; variant?: Variant | undefined }) {
-  const prices = (variant ? [variant] : product.variants).map(promoCents).filter((value): value is number => value !== null);
+  const prices = (variant ? [variant] : product.variants.filter(item => item.available)).map(promoCents).filter((value): value is number => value !== null);
   if (!prices.length) return null;
   return <span className="shop-promo-price"><span>{promoName(product)}：</span><strong>{money(Math.min(...prices))}</strong>{new Set(prices).size > 1 ? <small>起</small> : null}</span>;
 }
