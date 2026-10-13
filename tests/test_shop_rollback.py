@@ -120,6 +120,23 @@ def test_cli_defaults_to_check_only(deployment):
     assert snapshot(runtime) == before
 
 
+def test_disabled_sources_block_previous_schema_before_any_rollback_mutation(deployment):
+    runtime, candidate, _, _ = deployment
+    candidate.write_bytes((ROOT / 'tests/fixtures/shop/legacy_settings_f143cea.py').read_bytes())
+    run_rollback(deployment)
+    settings = runtime / 'state/shop/source-merchant.json'
+    value = json.loads(settings.read_text())
+    value['source_enabled'] = {'gpt': False}
+    settings.write_text(json.dumps(value))
+    before, calls = snapshot(runtime), []
+    with pytest.raises(rollback.RollbackError, match='incompatible'):
+        run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
+    assert calls == [] and snapshot(runtime) == before
+    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    run_rollback(deployment)
+    assert snapshot(runtime) == before
+
+
 def test_legacy_target_is_compatible_only_without_new_price_fields(deployment):
     runtime, candidate, _, _ = deployment
     candidate.write_bytes((ROOT / 'tests/fixtures/shop/legacy_settings_d767a70.py').read_bytes())

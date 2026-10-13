@@ -50,6 +50,7 @@ from .shop_sms_source import TITLE as SMS_TITLE
 TTL = 900
 BACKOFF = 900
 MANUAL_COOLDOWN = 60
+REMOTE_SOURCES = frozenset({'gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms'})
 PRODSELLER_BY_NUMBER = {
     number: (supplier_id, title) for supplier_id, (number, title) in PRODSELLER_SELECTED.items()
 }
@@ -196,11 +197,23 @@ def valid_badge(text):
     return isinstance(text, str) and (text == '' or (len(text) <= MAX_BADGE and safe_label(text)))
 
 
+def source_enabled(value):
+    """Only explicit OFF choices are stored; an absent source defaults to enabled."""
+    if (not isinstance(value, dict) or set(value) - REMOTE_SOURCES
+            or any(type(enabled) is not bool for enabled in value.values())):
+        raise ValueError('invalid source controls')
+    return {provider: False for provider, enabled in value.items() if not enabled}
+
+
+def is_source_enabled(settings, provider):
+    return provider == 'local' or settings.get('source_enabled', {}).get(provider, True)
+
+
 def validate_settings(value):
     if (
         not isinstance(value, dict)
         or not {'revision', 'telegram', 'skus'} <= set(value)
-        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client', 'local_names'}
+        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client', 'local_names', 'source_enabled'}
         or (value.get('client', CLIENT_VERSION) != CLIENT_VERSION and value.get('client') not in OLDER_CLIENTS)
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
@@ -215,6 +228,8 @@ def validate_settings(value):
         raise ValueError('invalid settings')
     if 'local_names' in value:
         local_names(value['local_names'])
+    if 'source_enabled' in value:
+        source_enabled(value['source_enabled'])
     for key, item in value['skus'].items():
         if (
             not isinstance(key, str)
@@ -538,13 +553,15 @@ class ShopStore:
         except (ValueError, TypeError) as exc:
             raise state_store.InvalidJsonState('invalid merchant settings') from exc
 
-    def _sources(self):
+    def _sources(self, settings=None):
+        settings = self._settings() if settings is None else settings
         sources = {}
         for provider in self._feed_ids():
             try:
                 sources[provider] = self._source(provider)
             except state_store.InvalidJsonState:
-                if len(self._feed_ids()) == 1 and not self.local_products:
+                if (len(self._feed_ids()) == 1 and not self.local_products
+                        and is_source_enabled(settings, provider)):
                     raise
                 # Ignore untrusted cache bytes independently; another fresh feed
                 # stays readable. A successful refresh can replace this cache.
@@ -570,7 +587,8 @@ class ShopStore:
         }
 
     def _admin(self):
-        sources, settings = self._sources(), self._settings()
+        settings = self._settings()
+        sources = self._sources(settings)
         items = [row for source in sources.values() for row in source['items']]
         names = local_names(settings.get('local_names', {}))
         # Names are merchant metadata, never supplier/source identities or cached source rows.
@@ -601,15 +619,19 @@ class ShopStore:
                 **self._feed_status(source),
                 # Store-owned services have no quote age, even if wall time moves backward.
                 **({'is_stale': False} if provider == 'local' else {}),
+                'enabled': is_source_enabled(settings, provider),
                 'site': SOURCE_SITES[provider],
                 'supplier': SOURCE_LABELS[provider][0],
                 'covers': SOURCE_LABELS[provider][1],
             }
             for provider, source in sources.items()
         }
+        effective = {provider: source for provider, source in sources.items()
+                     if is_source_enabled(settings, provider)}
+        effective_statuses = [statuses[provider] for provider in effective]
         successes = [
             source['last_success']
-            for source in sources.values()
+            for source in effective.values()
             if source['last_success'] is not None
         ]
         return {
@@ -630,15 +652,15 @@ class ShopStore:
             'sources': statuses,
             'last_success': max(successes, default=None),
             'error': 'source_unavailable'
-            if any(source['error'] for source in sources.values())
+            if any(source['error'] for source in effective.values())
             else None,
-            'retry_after': min(source['retry_after'] for source in sources.values()),
-            'manual_after': min(source['manual_after'] for source in sources.values()),
-            'is_stale': all(status['is_stale'] for status in statuses.values()),
+            'retry_after': min((source['retry_after'] for source in effective.values()), default=0),
+            'manual_after': min((source['manual_after'] for source in effective.values()), default=0),
+            'is_stale': all(status['is_stale'] for status in effective_statuses),
             'retry_after_seconds': min(
-                status['retry_after_seconds'] for status in statuses.values()
+                (status['retry_after_seconds'] for status in effective_statuses), default=0
             ),
-            'cooldown_seconds': min(status['cooldown_seconds'] for status in statuses.values()),
+            'cooldown_seconds': min((status['cooldown_seconds'] for status in effective_statuses), default=0),
         }
 
     async def admin(self):
@@ -650,10 +672,12 @@ class ShopStore:
         display = state.get('display', {})
         groups, applicable = {}, set()
         for row in state['items']:
+            provider = provider_of(row['product_id'])
+            if not state['sources'][provider]['enabled']:
+                continue
             merchant = state['skus'].get(row['key'], {})
             if not merchant.get('published'):
                 continue
-            provider = provider_of(row['product_id'])
             applicable.add(provider)
             group = groups.setdefault(
                 row['product_id'],
@@ -686,7 +710,8 @@ class ShopStore:
                 }
             )
         relevant = [
-            state['sources'][provider] for provider in (applicable or set(state['sources']))
+            status for provider, status in state['sources'].items()
+            if status['enabled'] and (not applicable or provider in applicable)
         ]
         ready = any(not status['is_stale'] for status in relevant)
         successes = [
@@ -713,15 +738,19 @@ class ShopStore:
             # Earlier pages also use client 3: omission must preserve names on every version.
             # An explicit empty local_names resets names to the built-in catalog defaults.
             names = local_names(payload.get('local_names', current.get('local_names', {})))
+            controls = source_enabled(payload.get('source_enabled', current.get('source_enabled', {})))
             if payload.get('client') != CLIENT_VERSION:
                 payload = from_older_page(payload, current)
             elif any('list_price_cents' in item for item in payload['skus'].values()):
                 raise ValueError('a 原价 is not part of today\'s settings')
-            payload = {key: value for key, value in payload.items() if key not in {'client', 'local_names'}}
+            payload = {key: value for key, value in payload.items()
+                       if key not in {'client', 'local_names', 'source_enabled'}}
             if names:
                 payload['local_names'] = names
+            if controls:
+                payload['source_enabled'] = controls
             known = {
-                row['key'] for source in self._sources().values() for row in source['items']
+                row['key'] for source in self._sources(payload).values() for row in source['items']
             } | set(current['skus'])
             if set(payload['skus']) - known:
                 raise ValueError('unknown SKU')
@@ -764,6 +793,24 @@ class ShopStore:
             return None
         return lock
 
+    def _prepare_refresh(self, provider, manual):
+        # Check the latest saved choice before every feed. The merchant lock only
+        # protects this reservation; supplier I/O never runs while it is held.
+        with state_store.file_lock(str(self.settings_path) + '.lock', timeout=2):
+            settings = self._settings()
+            if not is_source_enabled(settings, provider):
+                return None
+            source = self._sources(settings)[provider]
+            status = self._feed_status(source)
+            if (status['retry_after_seconds'] or (manual and status['cooldown_seconds'])
+                    or (not manual and not status['is_stale'])):
+                return None
+            source['manual_after'] = self.clock() + MANUAL_COOLDOWN
+            # Persist before acquisition so cancellation cannot busy-loop.
+            source['retry_after'] = self.clock() + BACKOFF
+            state_store.save_json(self._path(provider), source)
+            return source
+
     async def refresh(self, *, manual=False):
         acquiring = asyncio.create_task(asyncio.to_thread(self._acquire))
         try:
@@ -777,19 +824,10 @@ class ShopStore:
             return await self.admin()
         try:
             for provider in self._feed_ids():
-                source = (await asyncio.to_thread(self._sources))[provider]
-                status = self._feed_status(source)
-                if (
-                    status['retry_after_seconds']
-                    or (manual and status['cooldown_seconds'])
-                    or (not manual and not status['is_stale'])
-                ):
+                source = await self._finish_thread(self._prepare_refresh, provider, manual)
+                if source is None:
                     continue
                 path, fetcher = self._path(provider), self._fetcher(provider)
-                source['manual_after'] = self.clock() + MANUAL_COOLDOWN
-                # Persist before acquisition so cancellation cannot busy-loop.
-                source['retry_after'] = self.clock() + BACKOFF
-                await self._finish_thread(state_store.save_json, path, source)
                 try:
                     async with asyncio.timeout(30):
                         items = await fetcher()

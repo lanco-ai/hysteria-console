@@ -13,14 +13,14 @@ type LocalNames = { products: Record<string, string>; variants: Record<string, s
 type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; cost_cents: number; available: boolean; buy_url?: string; provider?: string; category?: string };
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
-type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; site?: string; supplier?: string; covers?: string };
-type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; site?: string; supplier?: string; covers?: string };
+type Merchant = { source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '短信接码';
 type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
 // One supplier's product within a storefront plan, and the plan with every supplier offering it.
-type SupplierProduct = { productId: string; provider: string; title: string; rows: SourceItem[]; cheapest: SourceItem | undefined; stale: boolean };
+type SupplierProduct = { productId: string; provider: string; title: string; rows: SourceItem[]; cheapest: SourceItem | undefined; stale: boolean; enabled: boolean };
 type Plan = { key: string; title: string; products: SupplierProduct[]; best: SupplierProduct | undefined };
 
 const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码'];
@@ -35,13 +35,20 @@ const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
 // The feed and category come from the server, which knows its feeds; this page does not.
 function providerOf(item: SourceItem | undefined) { return item?.provider ?? 'gpt'; }
 function brandOf(item: SourceItem): Brand { return BRANDS.find(brand => brand === item.category) ?? 'GPT'; }
+function sourceEnabled(value: Merchant | null, provider: string) {
+  return provider === 'local' || (value?.source_enabled?.[provider] ?? value?.sources?.[provider]?.enabled ?? true);
+}
+function sourcesFor(value: Merchant) {
+  return { ...value.source_enabled, ...Object.fromEntries(Object.keys(value.sources ?? { gpt: value })
+    .filter(provider => provider !== 'local').map(provider => [provider, sourceEnabled(value, provider)])) };
+}
 /**
  * Storefront plans (one per public title), each with the supplier products that sell it, cheapest
  * first. Store-owned products remain separate even when their names match a supplier plan.
  * A feed that is out of date cannot be bought from (its products are unavailable on the
  * storefront), so its last known prices never count as the lowest.
  */
-function plansOf(items: SourceItem[], stale: (provider: string) => boolean): Plan[] {
+function plansOf(items: SourceItem[], stale: (provider: string) => boolean, enabled: (provider: string) => boolean): Plan[] {
   const plans = new Map<string, { title: string; products: Map<string, SupplierProduct> }>();
   for (const item of items) {
     const title = item.public_title ?? item.title;
@@ -49,9 +56,9 @@ function plansOf(items: SourceItem[], stale: (provider: string) => boolean): Pla
     const key = provider === 'local' ? `local:${item.product_id}` : `source:${title}`;
     const plan = plans.get(key) ?? { title, products: new Map<string, SupplierProduct>() };
     const products = plan.products;
-    const product = products.get(item.product_id) ?? { productId: item.product_id, provider, title: item.title, rows: [], cheapest: undefined, stale: stale(provider) };
+    const product = products.get(item.product_id) ?? { productId: item.product_id, provider, title: item.title, rows: [], cheapest: undefined, stale: stale(provider), enabled: enabled(provider) };
     product.rows.push(item);
-    if (item.available && !product.stale && (!product.cheapest || item.cost_cents < product.cheapest.cost_cents)) product.cheapest = item;
+    if (product.enabled && item.available && !product.stale && (!product.cheapest || item.cost_cents < product.cheapest.cost_cents)) product.cheapest = item;
     products.set(item.product_id, product);
     plans.set(key, plan);
   }
@@ -89,11 +96,11 @@ function validName(text: string, limit: number) {
 // NaN marks unparsable input so it never compares equal to a saved price.
 function draftCents(price: string) { return price === '' ? null : priceCents(price) ?? Number.NaN; }
 // Filters and counts describe the saved storefront, so rows never jump while being edited.
-function matchesFilter(filter: Filter, item: SourceItem, saved: Setting | undefined) {
-  if (filter === 'published') return saved?.published === true;
-  if (filter === 'unpublished') return saved?.published !== true;
-  if (filter === 'unpriced') return saved?.price_cents == null;
-  if (filter === 'soldout') return !item.available;
+function matchesFilter(filter: Filter, item: SourceItem, saved: Setting | undefined, enabled: boolean) {
+  if (filter === 'published') return enabled && saved?.published === true;
+  if (filter === 'unpublished') return !enabled || saved?.published !== true;
+  if (filter === 'unpriced') return enabled && saved?.price_cents == null;
+  if (filter === 'soldout') return enabled && !item.available;
   return true;
 }
 function marginOf(cost: number, price: string, published: boolean) {
@@ -117,6 +124,8 @@ export function ShopAdminPage() {
   const [draft, setDraft] = useState<Draft>({});
   const [display, setDisplay] = useState<DisplayDraft>({});
   const [names, setNames] = useState<LocalNames>({ products: {}, variants: {} });
+  const [sourceDraft, setSourceDraft] = useState<Record<string, boolean>>({});
+  const [openSources, setOpenSources] = useState(false);
   // Products whose label is being written by hand rather than picked from BADGES.
   const [customBadges, setCustomBadges] = useState<Set<string>>(() => new Set());
   // Products whose settings (label, sold count, description) are open.
@@ -133,7 +142,7 @@ export function ShopAdminPage() {
     setBrand(value); setQuery('');
     try { localStorage.setItem(BRAND_KEY, value); } catch { /* Storage unavailable: keep the choice for this visit. */ }
   }
-  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setDirty(false); }
+  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setSourceDraft(sourcesFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setDirty(false); }
   useEffect(() => {
     let active = true;
     void shopRequest<Merchant>('admin').then(value => { if (active) accept(value); }).catch(reason => { if (active) setError(String(reason.message)); });
@@ -155,6 +164,10 @@ export function ShopAdminPage() {
   }
   function editName(field: keyof LocalNames, id: string, name: string) {
     setNames(value => ({ ...value, [field]: { ...value[field], [id]: name } }));
+    setDirty(true); setNotice('');
+  }
+  function editSource(provider: string, enabled: boolean) {
+    setSourceDraft(value => ({ ...value, [provider]: enabled }));
     setDirty(true); setNotice('');
   }
   function toggleProduct(productId: string) {
@@ -202,7 +215,9 @@ export function ShopAdminPage() {
           // Local names belong to the retained merchant revision, not the source refresh.
           return previous ? { ...item, title: previous.title, public_title: previous.public_title ?? previous.title, label: previous.label } : item;
         });
-        return { ...old, products: { ...value.products, ...old.products }, sources: value.sources ?? { gpt: value }, items: refreshedItems, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds };
+        const sources = Object.fromEntries(Object.entries(value.sources ?? { gpt: value })
+          .map(([provider, source]) => [provider, { ...source, enabled: sourceEnabled(old, provider) }]));
+        return { ...old, products: { ...value.products, ...old.products }, sources, items: refreshedItems, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds };
       });
       setDraft(old => { const next = { ...old }; for (const item of value.items) next[item.key] ??= { ...EMPTY_DRAFT }; return next; });
       // Newly discovered products receive effective defaults; existing dirty or
@@ -243,7 +258,8 @@ export function ShopAdminPage() {
       }
     }
     // Keep client 3 for existing price semantics; local_names is an explicit optional field.
-    const settings = { revision: state.revision, client: 3, telegram, wechat, skus, products: copy, display: shown, local_names: localNames };
+    const controls = Object.fromEntries(Object.entries(sourceDraft).filter(([, enabled]) => !enabled));
+    const settings = { revision: state.revision, client: 3, telegram, wechat, skus, products: copy, display: shown, local_names: localNames, source_enabled: controls };
     const body = JSON.stringify(settings);
     const savedBody = JSON.stringify({ ...settings, revision: state.revision + 1 });
     const encoder = new TextEncoder();
@@ -258,6 +274,9 @@ export function ShopAdminPage() {
 
   const items = state?.items ?? [];
   const saved = state?.skus ?? {};
+  const isEnabled = (provider: string) => sourceEnabled(state, provider);
+  const sourceChanged = (provider: string) => (sourceDraft[provider] ?? true) !== isEnabled(provider);
+  const sourceChanges = Object.keys(sourceDraft).filter(sourceChanged).length;
   const savedNames = state ? namesFor(state) : { products: {}, variants: {} };
   const nameChanged = (field: keyof LocalNames, id: string) => names[field][id] !== undefined && names[field][id]!.trim() !== savedNames[field][id];
   const productNamesChanged = (productId: string) => nameChanged('products', productId) || items.some(item => item.product_id === productId && nameChanged('variants', item.key));
@@ -269,9 +288,9 @@ export function ShopAdminPage() {
   const found = (item: SourceItem) => !needle || [item.title, item.public_title, item.label, item.key].some(text => text?.toLowerCase().includes(needle));
   // Tabs show one brand at a time; a search looks across every brand.
   const inScope = (item: SourceItem) => (needle !== '' || brandOf(item) === activeBrand) && found(item);
-  const counts = Object.fromEntries(FILTERS.map(([value]) => [value, items.filter(item => inScope(item) && matchesFilter(value, item, saved[item.key])).length])) as Record<Filter, number>;
-  const visible = (item: SourceItem) => inScope(item) && matchesFilter(filter, item, saved[item.key]);
-  const brandCount = (name: Brand) => items.filter(item => brandOf(item) === name && found(item) && matchesFilter(filter, item, saved[item.key])).length;
+  const counts = Object.fromEntries(FILTERS.map(([value]) => [value, items.filter(item => inScope(item) && matchesFilter(value, item, saved[item.key], isEnabled(providerOf(item)))).length])) as Record<Filter, number>;
+  const visible = (item: SourceItem) => inScope(item) && matchesFilter(filter, item, saved[item.key], isEnabled(providerOf(item)));
+  const brandCount = (name: Brand) => items.filter(item => brandOf(item) === name && found(item) && matchesFilter(filter, item, saved[item.key], isEnabled(providerOf(item)))).length;
   const priceChanged = (key: string) => {
     const value = draft[key];
     return value !== undefined && (value.published !== (saved[key]?.published ?? false) || draftCents(value.price) !== (saved[key]?.price_cents ?? null)
@@ -293,6 +312,7 @@ export function ShopAdminPage() {
     [Object.keys(names.products).filter(productNamesChanged).length, '个商品的名称或规格名称'],
     [Object.keys({ ...copy, ...state?.products }).filter(copyChanged).length, '个商品的说明'],
     [Object.keys({ ...display, ...state?.display }).filter(displayChanged).length, '个商品的优惠标签或销量'],
+    [sourceChanges, '个来源读取设置'],
   ].filter(([count]) => count).map(([count, unit]) => `${count} ${unit}`);
   if (state && telegram !== state.telegram) pending.push('Telegram 用户名');
   if (state && wechat !== (state.wechat ?? '')) pending.push('微信号');
@@ -302,8 +322,8 @@ export function ShopAdminPage() {
   const supplierOf = (provider: string) => state?.sources?.[provider]?.supplier ?? provider;
   const sourceName = (provider: string, source: SourceStatus) => [source.covers, source.supplier].filter(Boolean).join(' · ') || provider;
   const isStale = (provider: string) => state?.sources?.[provider]?.is_stale === true;
-  const onSale = new Set(items.filter(item => saved[item.key]?.published).map(item => item.product_id)).size;
-  const unpriced = items.filter(item => saved[item.key]?.price_cents == null).length;
+  const onSale = new Set(items.filter(item => isEnabled(providerOf(item)) && saved[item.key]?.published).map(item => item.product_id)).size;
+  const unpriced = items.filter(item => isEnabled(providerOf(item)) && saved[item.key]?.price_cents == null).length;
   const soldTotal = Object.values(state?.display ?? {}).reduce((sum, item) => sum + item.sold, 0);
   const feedback = <>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
@@ -327,15 +347,28 @@ export function ShopAdminPage() {
           </div>
           <div className="shop-admin-sources" role="group" aria-label="来源状态">
             {Object.entries(state.sources ?? { gpt: state }).map(([provider, source]) => {
-              const warn = source.is_stale || Boolean(source.error);
+              const enabled = isEnabled(provider);
+              const count = providerCount(provider);
+              const warn = enabled && (source.is_stale || Boolean(source.error));
               const wait = Math.max(source.retry_after_seconds, source.cooldown_seconds);
-              const status = `${source.is_stale ? '商品信息待更新，此来源商品暂不能购买' : '商品信息已更新'}${source.error ? ' · 来源暂不可用，稍后自动重试' : ''}${wait > 0 ? ` · 刷新等待 ${wait} 秒` : ''} · 最近成功更新 ${updatedAt(source.last_success)}`;
-              const body = <><span className="shop-source-dot" aria-hidden="true"/>{sourceName(provider, source)}<b>{providerCount(provider)}</b>{warn ? <small>{source.error ? '暂不可用' : '待更新'}</small> : null}</>;
+              const status = enabled ? `${source.is_stale ? '商品信息待更新，此来源商品暂不能购买' : '商品信息已更新'}${source.error ? ' · 来源暂不可用，稍后自动重试' : ''}${wait > 0 ? ` · 刷新等待 ${wait} 秒` : ''} · 最近成功更新 ${updatedAt(source.last_success)}` : '读取已停用 · 前台隐藏 · 商品设置已保留';
+              const body = <><span className="shop-source-dot" aria-hidden="true"/>{sourceName(provider, source)}<b>{count}</b>{!enabled ? <small>已停用</small> : warn ? <small>{source.error ? '暂不可用' : '待更新'}</small> : !count ? <small>暂无商品</small> : null}</>;
+              const chipClass = `shop-source-chip${!enabled ? ' is-disabled' : warn ? ' is-warn' : ''}`;
               return source.site
-                ? <a key={provider} className={`shop-source-chip${warn ? ' is-warn' : ''}`} href={source.site} target="_blank" rel="noopener noreferrer" title={status} aria-label={`${sourceName(provider, source)}：${status}，打开来源网站 ${hostOf(source.site)}`}>{body}</a>
-                : <span key={provider} className={`shop-source-chip${warn ? ' is-warn' : ''}`} title={status}>{body}</span>;
+                ? <a key={provider} className={chipClass} href={source.site} target="_blank" rel="noopener noreferrer" title={status} aria-label={`${sourceName(provider, source)}：${status}，打开来源网站 ${hostOf(source.site)}`}>{body}</a>
+                : <span key={provider} className={chipClass} title={status}>{body}</span>;
             })}
+            <button type="button" className="shop-admin-source-toggle" aria-expanded={openSources} aria-controls="shop-admin-source-settings" onClick={() => setOpenSources(value => !value)}>来源设置{sourceChanges ? <span aria-hidden="true" className="shop-admin-source-dirty"/> : null}</button>
           </div>
+          {openSources ? <div className="shop-admin-source-settings" id="shop-admin-source-settings" role="group" aria-label="来源读取设置">
+            <p>停用后停止读取并隐藏该来源的前台商品，已保存的价格、文案和上架设置会保留。本店商品独立管理。</p>
+            <div className="shop-admin-source-options">{Object.entries(state.sources ?? { gpt: state }).filter(([provider]) => provider !== 'local').map(([provider, source]) => <label key={provider} className={`shop-admin-source-option${sourceChanged(provider) ? ' is-changed' : ''}`}>
+              <span><strong>{source.supplier ?? provider}</strong><small>{source.covers}</small></span>
+              {sourceChanged(provider) ? <small className="shop-admin-source-pending">未保存</small> : null}
+              <input type="checkbox" role="switch" className="shop-admin-switch" aria-label={`读取 ${source.supplier ?? provider}`} checked={sourceDraft[provider] ?? true} disabled={busy} onChange={event => editSource(provider, event.target.checked)}/>
+            </label>)}</div>
+            <small>修改后点击“保存商品设置”生效。</small>
+          </div> : null}
         </section>
         <div className="shop-admin-toolbar">
           {present.length > 1 ? <div className="shop-admin-brands" role="group" aria-label="品牌">
@@ -361,18 +394,18 @@ export function ShopAdminPage() {
         <div className="shop-admin-products">{BRANDS.filter(name => byBrand.has(name)).map(brandName => {
           const brandItems = byBrand.get(brandName) ?? [];
           const brandId = brandName.replace(/\s+/g, '-');
-          const plans = plansOf(brandItems, isStale);
+          const plans = plansOf(brandItems, isStale, isEnabled);
           return <section key={brandName} className="shop-admin-group" aria-labelledby={`shop-admin-group-${brandId}`} hidden={!brandItems.some(visible)}>
             <header className="shop-admin-group-header">
               <h2 id={`shop-admin-group-${brandId}`}>{brandName}</h2>
-              <span>{plans.length} 个前台商品 · {brandItems.length} 个规格 · 已上架 {brandItems.filter(item => saved[item.key]?.published).length}</span>
+              <span>{plans.length} 个商品方案 · {brandItems.length} 个规格 · 已上架 {brandItems.filter(item => isEnabled(providerOf(item)) && saved[item.key]?.published).length}</span>
             </header>
             {plans.map(plan => {
               const planItems = plan.products.flatMap(product => product.rows);
-              const publishedRows = planItems.filter(item => saved[item.key]?.published && saved[item.key]?.price_cents != null);
+              const publishedRows = planItems.filter(item => isEnabled(providerOf(item)) && saved[item.key]?.published && saved[item.key]?.price_cents != null);
               const prices = publishedRows.map(item => saved[item.key]!.price_cents!);
               const sellers = new Set(publishedRows.map(item => providerOf(item))).size;
-              const comparable = new Set(plan.products.map(product => product.provider)).size > 1;
+              const comparable = new Set(plan.products.filter(product => product.enabled).map(product => product.provider)).size > 1;
               return <article key={plan.key} className="shop-plan" aria-label={plan.title} hidden={!planItems.some(visible)}>
                 <header className="shop-plan-head">
                   <div className="shop-plan-title"><h3>{plan.title}</h3>
@@ -389,16 +422,16 @@ export function ShopAdminPage() {
                   const shown = display[productId] ?? EMPTY_DISPLAY;
                   const custom = customBadges.has(productId) || Boolean(shown.badge && !BADGES.includes(shown.badge));
                   const open = openProducts.has(productId);
-                  const published = product.rows.some(item => saved[item.key]?.published);
+                  const published = product.enabled && product.rows.some(item => saved[item.key]?.published);
                   const views = state.stats?.products[productId] ?? 0;
                   const settingsChanged = displayChanged(productId) || copyChanged(productId) || productNamesChanged(productId);
-                  return <section key={productId} className={`shop-admin-product${open ? ' is-open' : ''}`} aria-labelledby={`shop-admin-product-${productId}`} hidden={!product.rows.some(visible)}>
+                  return <section key={productId} className={`shop-admin-product${open ? ' is-open' : ''}${!product.enabled ? ' is-disabled' : ''}`} aria-labelledby={`shop-admin-product-${productId}`} hidden={!product.rows.some(visible)}>
                     <header className="shop-admin-product-header">
                       <div className="shop-admin-source-info">
                         <div className="shop-admin-source-heading">
-                          <span className={`shop-admin-supplier${product.stale ? ' is-stale' : ''}`}>{supplierOf(product.provider)}</span>
+                          <span className={`shop-admin-supplier${product.enabled && product.stale ? ' is-stale' : ''}`}>{supplierOf(product.provider)}</span>
                           {comparable && plan.best?.productId === productId ? <span className="badge ok">最低</span> : null}
-                          {product.stale ? <span className="badge warn">价格待更新</span> : null}
+                          {!product.enabled ? <span className="badge shop-admin-source-off">来源已停用 · 前台隐藏</span> : product.stale ? <span className="badge warn">价格待更新</span> : null}
                           <span className="shop-admin-product-flags">
                             {shown.badge.trim() ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
                             {Number(shown.sold) ? <span>已售 {Number(shown.sold).toLocaleString('zh-CN')}</span> : null}
@@ -422,7 +455,7 @@ export function ShopAdminPage() {
                         return <article key={item.key} className={`shop-admin-row${changed(item.key) ? ' is-changed' : ''}${item.available ? '' : ' is-soldout'}`} hidden={!visible(item)}>
                           <div className="shop-admin-spec">
                             <strong>{item.label}</strong>
-                            {item.available && !changed(item.key) ? null : <small>{item.available ? null : <span className="badge warn">来源售罄</span>}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
+                            {(item.available || !product.enabled) && !changed(item.key) ? null : <small>{product.enabled && !item.available ? <span className="badge warn">来源售罄</span> : null}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
                           </div>
                           <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
                           <label className="shop-admin-price"><span className="shop-admin-mobile-label">售价</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`售价 ${item.key}`} aria-invalid={margin.tone === 'invalid' || undefined} inputMode="decimal" autoComplete="off" value={value.price} disabled={busy} placeholder="待填写" onChange={event => edit(item.key, { price: event.target.value })}/></span></label>

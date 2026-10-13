@@ -34,6 +34,25 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-source-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
 .shop-source-chip.is-warn { border-color: var(--warn); background: var(--warn-soft); }
 .shop-source-chip.is-warn .shop-source-dot { background: var(--warn); }
+.shop-source-chip.is-disabled { border-color: var(--hairline); background: var(--bg-subtle); color: var(--text-tertiary); }
+.shop-source-chip.is-disabled b,
+.shop-source-chip.is-disabled small { color: var(--text-tertiary); }
+.shop-source-chip.is-disabled .shop-source-dot { background: var(--text-disabled); }
+.shop-admin-source-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-surface); color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.shop-admin-source-toggle:hover,
+.shop-admin-source-toggle[aria-expanded="true"] { border-color: var(--border-strong); color: var(--text-primary); }
+.shop-admin-source-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.shop-admin-source-dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+.shop-admin-source-settings { display: grid; grid-column: 1 / -1; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-overlay); }
+.shop-admin-source-settings p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.shop-admin-source-settings > small { color: var(--text-tertiary); font-size: 11px; }
+.shop-admin-source-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; min-width: 0; }
+.shop-admin-source-option { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg-surface); cursor: pointer; }
+.shop-admin-source-option > span { display: grid; flex: 1 1 auto; gap: 3px; min-width: 0; }
+.shop-admin-source-option strong { color: var(--text-primary); font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+.shop-admin-source-option small { color: var(--text-tertiary); font-size: 11px; }
+.shop-admin-source-option.is-changed { border-color: var(--warn); }
+.shop-admin-source-option .shop-admin-source-pending { flex: 0 0 auto; color: var(--warn); }
 
 /* Brand tabs, then filters and search; they stay below the sticky shell topbar while a long list scrolls. */
 .shop-admin-toolbar { position: sticky; z-index: 3; top: 68px; display: grid; gap: 10px; min-width: 0; padding-bottom: 10px; background: var(--bg-page); }
@@ -84,6 +103,8 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-product-header .badge { height: 20px; padding: 0 6px; border-color: transparent; font-size: 10px; }
 .shop-admin-supplier { min-width: 0; color: var(--text-primary); font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .shop-admin-supplier.is-stale { color: var(--warn); }
+.shop-admin-product.is-disabled .shop-admin-supplier { color: var(--text-tertiary); }
+.shop-admin-product-header .shop-admin-source-off { background: var(--bg-subtle); color: var(--text-secondary); }
 .shop-admin-product-flags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; line-height: 1.5; }
 .shop-admin-product-flags:empty { display: none; }
 .shop-admin-product-flags .is-warn { color: var(--warn); }
