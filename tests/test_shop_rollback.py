@@ -77,6 +77,27 @@ def test_historical_schema_rejected_before_service_or_files_change(deployment):
     assert snapshot(runtime) == before
 
 
+def test_local_names_block_pre_names_rollback_only_after_a_name_was_saved(deployment):
+    runtime, candidate, _, _ = deployment
+    candidate.write_bytes((ROOT / 'tests/fixtures/shop/legacy_settings_8fedc2e.py').read_bytes())
+    # Existing promo/display settings alone still pass the previous strict schema.
+    run_rollback(deployment)
+    settings = runtime / 'state/shop/source-merchant.json'
+    saved = json.loads(settings.read_text())
+    saved['local_names'] = {'products': {'6000000000001': '自定义指导'},
+                            'variants': {'6000000000001:1': '自定义规格'}}
+    settings.write_text(json.dumps(saved))
+    before = snapshot(runtime)
+    calls = []
+    with pytest.raises(rollback.RollbackError, match='incompatible'):
+        run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
+    assert calls == [] and snapshot(runtime) == before
+    # The new validator can itself run inside the rollback compatibility guard.
+    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    run_rollback(deployment)
+    assert snapshot(runtime) == before
+
+
 def test_cli_defaults_to_check_only(deployment):
     runtime, candidate, previous, _ = deployment
     before = snapshot(runtime)

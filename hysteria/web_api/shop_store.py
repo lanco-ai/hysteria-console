@@ -7,6 +7,7 @@ import math
 import re
 import secrets
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -160,6 +161,34 @@ CLIENT_VERSION = 3
 OLDER_CLIENTS = frozenset({2})
 MAX_BADGE = 8
 MAX_SOLD = 10_000_000
+MAX_LOCAL_TITLE = 120
+MAX_LOCAL_LABEL = 80
+
+
+def local_names(value):
+    """Validate names against actual store-owned identities and omit unchanged defaults."""
+    if not isinstance(value, dict) or set(value) - {'products', 'variants'}:
+        raise ValueError('invalid local names')
+    rows = local_catalog()
+    defaults = {
+        'products': {row['product_id']: row['title'] for row in rows},
+        'variants': {row['key']: row['label'] for row in rows},
+    }
+    result = {}
+    for field, limit in (('products', MAX_LOCAL_TITLE), ('variants', MAX_LOCAL_LABEL)):
+        names = value.get(field, {})
+        if not isinstance(names, dict) or set(names) - set(defaults[field]):
+            raise ValueError('unknown local name identity')
+        normalized = {}
+        for key, name in names.items():
+            if (not isinstance(name, str) or not 0 < len(name.strip()) <= limit
+                    or any(unicodedata.category(char) in {'Cc', 'Cf', 'Cs', 'Zl', 'Zp'} or char in '<>' for char in name)):
+                raise ValueError('invalid local name text')
+            if name.strip() != defaults[field][key]:
+                normalized[key] = name.strip()
+        if normalized:
+            result[field] = normalized
+    return result
 
 
 def valid_badge(text):
@@ -171,7 +200,7 @@ def validate_settings(value):
     if (
         not isinstance(value, dict)
         or not {'revision', 'telegram', 'skus'} <= set(value)
-        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client'}
+        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client', 'local_names'}
         or (value.get('client', CLIENT_VERSION) != CLIENT_VERSION and value.get('client') not in OLDER_CLIENTS)
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
@@ -184,6 +213,8 @@ def validate_settings(value):
         or len(value['skus']) > MAX_ROWS
     ):
         raise ValueError('invalid settings')
+    if 'local_names' in value:
+        local_names(value['local_names'])
     for key, item in value['skus'].items():
         if (
             not isinstance(key, str)
@@ -541,6 +572,13 @@ class ShopStore:
     def _admin(self):
         sources, settings = self._sources(), self._settings()
         items = [row for source in sources.values() for row in source['items']]
+        names = local_names(settings.get('local_names', {}))
+        # Names are merchant metadata, never supplier/source identities or cached source rows.
+        for row in items:
+            if provider_of(row['product_id']) == 'local':
+                title = names.get('products', {}).get(row['product_id'], row['title'])
+                row.update(title=title, public_title=title,
+                           label=names.get('variants', {}).get(row['key'], row['label']))
         products = dict(settings.get('products', {}))
         if any(row['product_id'] == SMS_PRODUCT_ID for row in items):
             products.setdefault(SMS_PRODUCT_ID, dict(SMS_NOTICE))
@@ -672,12 +710,16 @@ class ShopStore:
             current = self._settings()
             if payload['revision'] != current['revision']:
                 raise Conflict('settings changed; reload before saving')
-            # The current page sends every setting, so a field it leaves out is one it cleared.
+            # Earlier pages also use client 3: omission must preserve names on every version.
+            # An explicit empty local_names resets names to the built-in catalog defaults.
+            names = local_names(payload.get('local_names', current.get('local_names', {})))
             if payload.get('client') != CLIENT_VERSION:
                 payload = from_older_page(payload, current)
             elif any('list_price_cents' in item for item in payload['skus'].values()):
                 raise ValueError('a 原价 is not part of today\'s settings')
-            payload = {key: value for key, value in payload.items() if key != 'client'}
+            payload = {key: value for key, value in payload.items() if key not in {'client', 'local_names'}}
+            if names:
+                payload['local_names'] = names
             known = {
                 row['key'] for source in self._sources().values() for row in source['items']
             } | set(current['skus'])

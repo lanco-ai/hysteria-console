@@ -7,20 +7,21 @@ import { isNoticeProduct } from './ShopNotice';
 type Setting = { price_cents: number | null; published: boolean; promo_price_cents?: number | null };
 // What the storefront shows with a product: the name of its 优惠价 (a label before the title) and units sold.
 type Display = Record<string, { badge: string; sold: number }>;
+type LocalNames = { products: Record<string, string>; variants: Record<string, string> };
 // buy_url, provider and category come only with the administrator's view: where each item is bought,
 // from which feed, and the storefront category it belongs to.
 type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; cost_cents: number; available: boolean; buy_url?: string; provider?: string; category?: string };
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; site?: string; supplier?: string; covers?: string };
-type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '短信接码';
 type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
 // One supplier's product within a storefront plan, and the plan with every supplier offering it.
 type SupplierProduct = { productId: string; provider: string; title: string; rows: SourceItem[]; cheapest: SourceItem | undefined; stale: boolean };
-type Plan = { title: string; products: SupplierProduct[]; best: SupplierProduct | undefined };
+type Plan = { key: string; title: string; products: SupplierProduct[]; best: SupplierProduct | undefined };
 
 const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码'];
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
@@ -36,24 +37,27 @@ function providerOf(item: SourceItem | undefined) { return item?.provider ?? 'gp
 function brandOf(item: SourceItem): Brand { return BRANDS.find(brand => brand === item.category) ?? 'GPT'; }
 /**
  * Storefront plans (one per public title), each with the supplier products that sell it, cheapest
- * first. A feed that is out of date cannot be bought from (its products are unavailable on the
+ * first. Store-owned products remain separate even when their names match a supplier plan.
+ * A feed that is out of date cannot be bought from (its products are unavailable on the
  * storefront), so its last known prices never count as the lowest.
  */
 function plansOf(items: SourceItem[], stale: (provider: string) => boolean): Plan[] {
-  const plans = new Map<string, Map<string, SupplierProduct>>();
+  const plans = new Map<string, { title: string; products: Map<string, SupplierProduct> }>();
   for (const item of items) {
     const title = item.public_title ?? item.title;
-    const products = plans.get(title) ?? new Map<string, SupplierProduct>();
     const provider = providerOf(item);
+    const key = provider === 'local' ? `local:${item.product_id}` : `source:${title}`;
+    const plan = plans.get(key) ?? { title, products: new Map<string, SupplierProduct>() };
+    const products = plan.products;
     const product = products.get(item.product_id) ?? { productId: item.product_id, provider, title: item.title, rows: [], cheapest: undefined, stale: stale(provider) };
     product.rows.push(item);
     if (item.available && !product.stale && (!product.cheapest || item.cost_cents < product.cheapest.cost_cents)) product.cheapest = item;
     products.set(item.product_id, product);
-    plans.set(title, products);
+    plans.set(key, plan);
   }
-  return [...plans].map(([title, products]) => {
+  return [...plans].map(([key, { title, products }]) => {
     const list = [...products.values()].sort((a, b) => (a.cheapest?.cost_cents ?? Infinity) - (b.cheapest?.cost_cents ?? Infinity));
-    return { title, products: list, best: list[0]?.cheapest ? list[0] : undefined };
+    return { key, title, products: list, best: list[0]?.cheapest ? list[0] : undefined };
   }).sort((a, b) => a.title.localeCompare(b.title, 'zh-CN', { numeric: true }));
 }
 function storedBrand(): Brand | null {
@@ -68,6 +72,19 @@ function draftFor(value: Merchant): Draft {
 }
 function displayFor(value: Merchant): DisplayDraft {
   return Object.fromEntries(Object.entries(value.display ?? {}).map(([id, item]) => [id, { badge: item.badge, sold: item.sold ? String(item.sold) : '' }]));
+}
+function namesFor(value: Merchant): LocalNames {
+  const names = { products: { ...value.local_names?.products }, variants: { ...value.local_names?.variants } };
+  for (const item of value.items) {
+    if (providerOf(item) !== 'local') continue;
+    names.products[item.product_id] = item.public_title ?? item.title;
+    names.variants[item.key] = item.label;
+  }
+  return names;
+}
+function validName(text: string, limit: number) {
+  const length = [...text.trim()].length;
+  return length > 0 && length <= limit && !/[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}<>]/u.test(text);
 }
 // NaN marks unparsable input so it never compares equal to a saved price.
 function draftCents(price: string) { return price === '' ? null : priceCents(price) ?? Number.NaN; }
@@ -99,6 +116,7 @@ export function ShopAdminPage() {
   const [wechat, setWechat] = useState('');
   const [draft, setDraft] = useState<Draft>({});
   const [display, setDisplay] = useState<DisplayDraft>({});
+  const [names, setNames] = useState<LocalNames>({ products: {}, variants: {} });
   // Products whose label is being written by hand rather than picked from BADGES.
   const [customBadges, setCustomBadges] = useState<Set<string>>(() => new Set());
   // Products whose settings (label, sold count, description) are open.
@@ -115,7 +133,7 @@ export function ShopAdminPage() {
     setBrand(value); setQuery('');
     try { localStorage.setItem(BRAND_KEY, value); } catch { /* Storage unavailable: keep the choice for this visit. */ }
   }
-  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setDirty(false); }
+  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setDirty(false); }
   useEffect(() => {
     let active = true;
     void shopRequest<Merchant>('admin').then(value => { if (active) accept(value); }).catch(reason => { if (active) setError(String(reason.message)); });
@@ -133,6 +151,10 @@ export function ShopAdminPage() {
   }
   function editDisplay(productId: string, change: Partial<DisplayDraft[string]>) {
     setDisplay(value => ({ ...value, [productId]: { ...EMPTY_DISPLAY, ...value[productId], ...change } }));
+    setDirty(true); setNotice('');
+  }
+  function editName(field: keyof LocalNames, id: string, name: string) {
+    setNames(value => ({ ...value, [field]: { ...value[field], [id]: name } }));
     setDirty(true); setNotice('');
   }
   function toggleProduct(productId: string) {
@@ -172,11 +194,21 @@ export function ShopAdminPage() {
       const value = await shopRequest<Merchant>('refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       // Keep the merchant revision and all unsaved values: source refresh is not a save.
       // Default copy for newly discovered products joins the saved baseline, not the edits.
-      setState(old => old ? { ...old, products: { ...value.products, ...old.products }, sources: value.sources ?? { gpt: value }, items: value.items, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds } : value);
+      setState(old => {
+        if (!old) return value;
+        const local = new Map(old.items.filter(item => providerOf(item) === 'local').map(item => [item.key, item]));
+        const refreshedItems = value.items.map(item => {
+          const previous = providerOf(item) === 'local' ? local.get(item.key) : undefined;
+          // Local names belong to the retained merchant revision, not the source refresh.
+          return previous ? { ...item, title: previous.title, public_title: previous.public_title ?? previous.title, label: previous.label } : item;
+        });
+        return { ...old, products: { ...value.products, ...old.products }, sources: value.sources ?? { gpt: value }, items: refreshedItems, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds };
+      });
       setDraft(old => { const next = { ...old }; for (const item of value.items) next[item.key] ??= { ...EMPTY_DRAFT }; return next; });
       // Newly discovered products receive effective defaults; existing dirty or
       // explicitly cleared input continues to win over the refreshed response.
       setCopy(old => ({ ...value.products, ...old }));
+      setNames(old => { const added = namesFor(value); return { products: { ...added.products, ...old.products }, variants: { ...added.variants, ...old.variants } }; });
       setNotice(value.error ? '部分来源暂不可用；售价和未保存输入已保留。' : '来源检查完成；售价和未保存输入已保留。');
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
@@ -202,8 +234,16 @@ export function ShopAdminPage() {
     }
     if (telegram && !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(telegram)) { setError('请输入 5–32 位 Telegram 用户名，不包含 @ 或链接。'); return; }
     if (wechat && !/^[A-Za-z][-_A-Za-z0-9]{5,19}$/.test(wechat)) { setError('请输入 6–20 位微信号：字母开头，可包含字母、数字、下划线和减号。'); return; }
-    // `client` tells the server this page sends every setting, so a field left out is cleared.
-    const settings = { revision: state.revision, client: 3, telegram, wechat, skus, products: copy, display: shown };
+    const localNames: LocalNames = { products: {}, variants: {} };
+    for (const field of ['products', 'variants'] as const) {
+      const limit = field === 'products' ? 120 : 80;
+      for (const [id, name] of Object.entries(names[field])) {
+        if (!validName(name, limit)) { setError(`${field === 'products' ? '商品名称' : '规格名称'}请填写 1–${limit} 个字的单行纯文本。`); return; }
+        localNames[field][id] = name.trim();
+      }
+    }
+    // Keep client 3 for existing price semantics; local_names is an explicit optional field.
+    const settings = { revision: state.revision, client: 3, telegram, wechat, skus, products: copy, display: shown, local_names: localNames };
     const body = JSON.stringify(settings);
     const savedBody = JSON.stringify({ ...settings, revision: state.revision + 1 });
     const encoder = new TextEncoder();
@@ -218,6 +258,9 @@ export function ShopAdminPage() {
 
   const items = state?.items ?? [];
   const saved = state?.skus ?? {};
+  const savedNames = state ? namesFor(state) : { products: {}, variants: {} };
+  const nameChanged = (field: keyof LocalNames, id: string) => names[field][id] !== undefined && names[field][id]!.trim() !== savedNames[field][id];
+  const productNamesChanged = (productId: string) => nameChanged('products', productId) || items.some(item => item.product_id === productId && nameChanged('variants', item.key));
   const byBrand = new Map<Brand, SourceItem[]>();
   for (const item of items) byBrand.set(brandOf(item), [...(byBrand.get(brandOf(item)) ?? []), item]);
   const present = BRANDS.filter(name => byBrand.has(name));
@@ -229,11 +272,12 @@ export function ShopAdminPage() {
   const counts = Object.fromEntries(FILTERS.map(([value]) => [value, items.filter(item => inScope(item) && matchesFilter(value, item, saved[item.key])).length])) as Record<Filter, number>;
   const visible = (item: SourceItem) => inScope(item) && matchesFilter(filter, item, saved[item.key]);
   const brandCount = (name: Brand) => items.filter(item => brandOf(item) === name && found(item) && matchesFilter(filter, item, saved[item.key])).length;
-  const changed = (key: string) => {
+  const priceChanged = (key: string) => {
     const value = draft[key];
     return value !== undefined && (value.published !== (saved[key]?.published ?? false) || draftCents(value.price) !== (saved[key]?.price_cents ?? null)
       || draftCents(value.promo) !== (saved[key]?.promo_price_cents ?? null));
   };
+  const changed = (key: string) => priceChanged(key) || nameChanged('variants', key);
   const displayChanged = (productId: string) => {
     const current = display[productId] ?? EMPTY_DISPLAY;
     const base = state?.display?.[productId];
@@ -245,14 +289,15 @@ export function ShopAdminPage() {
     return current.description !== base.description || current.after_sales !== base.after_sales;
   };
   const pending = [
-    [Object.keys(draft).filter(changed).length, '个规格'],
+    [Object.keys(draft).filter(priceChanged).length, '个规格'],
+    [Object.keys(names.products).filter(productNamesChanged).length, '个商品的名称或规格名称'],
     [Object.keys({ ...copy, ...state?.products }).filter(copyChanged).length, '个商品的说明'],
     [Object.keys({ ...display, ...state?.display }).filter(displayChanged).length, '个商品的优惠标签或销量'],
   ].filter(([count]) => count).map(([count, unit]) => `${count} ${unit}`);
   if (state && telegram !== state.telegram) pending.push('Telegram 用户名');
   if (state && wechat !== (state.wechat ?? '')) pending.push('微信号');
   const shownCount = items.filter(visible).length;
-  const brandDirty = (name: Brand) => items.some(item => brandOf(item) === name && (changed(item.key) || copyChanged(item.product_id) || displayChanged(item.product_id)));
+  const brandDirty = (name: Brand) => items.some(item => brandOf(item) === name && (changed(item.key) || productNamesChanged(item.product_id) || copyChanged(item.product_id) || displayChanged(item.product_id)));
   const providerCount = (provider: string) => items.filter(item => providerOf(item) === provider).length;
   const supplierOf = (provider: string) => state?.sources?.[provider]?.supplier ?? provider;
   const sourceName = (provider: string, source: SourceStatus) => [source.covers, source.supplier].filter(Boolean).join(' · ') || provider;
@@ -328,7 +373,7 @@ export function ShopAdminPage() {
               const prices = publishedRows.map(item => saved[item.key]!.price_cents!);
               const sellers = new Set(publishedRows.map(item => providerOf(item))).size;
               const comparable = new Set(plan.products.map(product => product.provider)).size > 1;
-              return <article key={plan.title} className="shop-plan" aria-label={plan.title} hidden={!planItems.some(visible)}>
+              return <article key={plan.key} className="shop-plan" aria-label={plan.title} hidden={!planItems.some(visible)}>
                 <header className="shop-plan-head">
                   <div className="shop-plan-title"><h3>{plan.title}</h3>
                     {prices.length ? <span className="badge ok">前台 {money(Math.min(...prices))}{Math.max(...prices) !== Math.min(...prices) ? `–${money(Math.max(...prices)).slice(1)}` : ''}</span> : <span className="badge">未上架</span>}
@@ -346,7 +391,7 @@ export function ShopAdminPage() {
                   const open = openProducts.has(productId);
                   const published = product.rows.some(item => saved[item.key]?.published);
                   const views = state.stats?.products[productId] ?? 0;
-                  const settingsChanged = displayChanged(productId) || copyChanged(productId);
+                  const settingsChanged = displayChanged(productId) || copyChanged(productId) || productNamesChanged(productId);
                   return <section key={productId} className={`shop-admin-product${open ? ' is-open' : ''}`} aria-labelledby={`shop-admin-product-${productId}`} hidden={!product.rows.some(visible)}>
                     <header className="shop-admin-product-header">
                       <div className="shop-admin-source-info">
@@ -392,6 +437,10 @@ export function ShopAdminPage() {
                       })}
                     </div>
                     {open ? <div className="shop-admin-product-settings" id={`shop-admin-settings-${productId}`}>
+                      {product.provider === 'local' ? <div className="shop-admin-names">
+                        <label className="shop-admin-product-name">商品名称<input aria-label={`商品名称 ${productId}`} aria-invalid={!validName(names.products[productId] ?? '', 120) || undefined} maxLength={120} value={names.products[productId] ?? ''} disabled={busy} onChange={event => editName('products', productId, event.target.value)}/></label>
+                        {product.rows.map((item, index) => <label key={item.key}>规格 {index + 1} 名称<input aria-label={`规格名称 ${item.key}`} aria-invalid={!validName(names.variants[item.key] ?? '', 80) || undefined} maxLength={80} value={names.variants[item.key] ?? ''} disabled={busy} onChange={event => editName('variants', item.key, event.target.value)}/></label>)}
+                      </div> : null}
                       <div className="shop-admin-display">
                         <label>优惠标签<select aria-label={`优惠标签 ${productId}`} value={custom ? CUSTOM_BADGE : shown.badge} disabled={busy} onChange={event => chooseBadge(productId, event.target.value)}>
                           <option value="">不显示</option>{BADGES.map(name => <option key={name} value={name}>{name}</option>)}<option value={CUSTOM_BADGE}>自定义…</option>

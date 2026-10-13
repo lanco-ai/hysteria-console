@@ -147,8 +147,14 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .shop-admin-switch:disabled { cursor: not-allowed; opacity: .5; }
 
-/* A supplier product's settings: its 优惠价 label, sold count, description and after-sales terms. */
+/* Product settings, including names only for store-owned products. */
 .shop-admin-product-settings { display: grid; grid-column: 1 / -1; gap: 12px; margin: 8px 24px 4px; padding: 18px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-overlay); }
+.shop-admin-names { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.shop-admin-names label { display: grid; gap: 6px; min-width: 0; color: var(--text-secondary); font-size: 13px; }
+.shop-admin-product-name { grid-column: 1 / -1; }
+.shop-admin-names input { width: 100%; min-width: 0; min-height: 36px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; scroll-margin-top: 190px; scroll-margin-bottom: 120px; }
+.shop-admin-names input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.shop-admin-names input[aria-invalid="true"] { border-color: var(--danger); }
 .shop-admin-display { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; color: var(--text-secondary); font-size: 12px; }
 .shop-admin-display label { display: inline-flex; align-items: center; gap: 6px; }
 .shop-admin-display select,
@@ -195,7 +201,7 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
   .shop-admin-promo .shop-admin-mobile-label { display: block; margin-bottom: 4px; }
   .shop-admin-row .shop-admin-affix input { min-height: 40px; }
   .shop-admin-product-settings { margin-inline: 12px; padding: 14px 12px; }
-  .shop-copy-fields { grid-template-columns: minmax(0, 1fr); }
+  .shop-copy-fields, .shop-admin-names { grid-template-columns: minmax(0, 1fr); }
 }
 
 @media (max-width: 900px) {
@@ -213,7 +219,7 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
   /* Only the brand tabs stay on screen: filters and search would take too much of a phone. */
   .shop-admin-toolbar { display: contents; }
   .shop-admin-brands { position: sticky; z-index: 3; top: 68px; background: var(--bg-page); }
-  .shop-admin-product, .shop-admin-product-header h4, .shop-admin-row input, .shop-copy-fields textarea { scroll-margin-top: 130px; }
+  .shop-admin-product, .shop-admin-product-header h4, .shop-admin-row input, .shop-admin-names input, .shop-copy-fields textarea { scroll-margin-top: 130px; }
   .shop-admin-toolbar-row { align-items: stretch; flex-direction: column; }
   .shop-admin-search.user-filter-input { width: 100%; height: 40px; }
   .shop-admin-savebar { bottom: 8px; padding: 10px 60px 10px 12px; }

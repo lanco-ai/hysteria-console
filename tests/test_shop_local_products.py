@@ -8,7 +8,7 @@ import pytest
 import state_store
 
 from web_api.shop_source import SourceError
-from web_api.shop_store import ShopStore
+from web_api.shop_store import Conflict, ShopStore, validate_settings
 
 
 PRODUCT_ID = '6000000000001'
@@ -208,3 +208,121 @@ def test_corrupt_single_supplier_keeps_only_enabled_local_guidance(tmp_path, loc
         assert [row['key'] for row in repaired['items']] == [MICROSOFT_KEY, GOOGLE_KEY]
 
     asyncio.run(run())
+
+
+def test_local_names_persist_in_admin_and_public_without_changing_other_fields(tmp_path):
+    async def run():
+        store = local_store(tmp_path)
+        initial = await store.admin()
+        names = {'products': {PRODUCT_ID: 'Claude 本人账号操作指导'},
+                 'variants': {MICROSOFT_KEY: '微软邮箱指导', GOOGLE_KEY: '谷歌邮箱指导'}}
+        skus = {MICROSOFT_KEY: {'price_cents': 12345, 'promo_price_cents': 11000, 'published': True},
+                GOOGLE_KEY: {'price_cents': 15678, 'published': True}}
+        await store.update({'revision': 0, 'telegram': '', 'client': 3, 'skus': skus,
+                            'display': {PRODUCT_ID: {'badge': '限时价', 'sold': 12}},
+                            'local_names': {'products': {PRODUCT_ID: '  Claude 本人账号操作指导  '},
+                                            'variants': names['variants']}})
+        reopened = local_store(tmp_path)
+        admin = await reopened.refresh(manual=True)
+        assert admin['local_names'] == names
+        assert admin['skus'] == skus and admin['products'] == initial['products']
+        assert admin['sources']['local']['supplier'] == '本店'
+        for original, row in zip(initial['items'], admin['items']):
+            assert row['title'] == row['public_title'] == 'Claude 本人账号操作指导'
+            assert row['label'] == names['variants'][row['key']]
+            assert {key: value for key, value in row.items() if key not in ('title', 'public_title', 'label')} == {
+                key: value for key, value in original.items() if key not in ('title', 'public_title', 'label')}
+        product, = (await reopened.public())['products']
+        assert product['id'] == PRODUCT_ID and product['category'] == 'Claude'
+        assert product['title'] == 'Claude 本人账号操作指导'
+        assert [(row['id'], row['label'], row['price_cents']) for row in product['variants']] == [
+            (MICROSOFT_KEY, '微软邮箱指导', 12345), (GOOGLE_KEY, '谷歌邮箱指导', 15678)]
+        assert product['variants'][0]['promo_price_cents'] == 11000
+        assert product['badge'] == '限时价' and product['sold'] == 12
+        assert '本人账号' in product['description']
+        assert not {'cost_cents', 'provider', 'local_names'} & set(product)
+        assert 'cost_cents' not in json.dumps(product)
+        admin['local_names']['products'][PRODUCT_ID] = 'caller mutation'
+        assert (await reopened.admin())['items'][0]['title'] == 'Claude 本人账号操作指导'
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('client', [None, 2, 3])
+def test_pages_omitting_local_names_preserve_them_and_explicit_empty_resets(tmp_path, client):
+    async def run():
+        store = local_store(tmp_path)
+        names = {'products': {PRODUCT_ID: '自定义指导名称'}, 'variants': {MICROSOFT_KEY: '自定义规格'}}
+        await store.update({'revision': 0, 'telegram': '', 'client': 3, 'skus': {}, 'local_names': names})
+        payload = {'revision': 1, 'telegram': 'my_shop', 'skus': {}}
+        if client is not None:
+            payload['client'] = client
+        await local_store(tmp_path).update(payload)
+        assert json.loads(store.settings_path.read_text())['local_names'] == names
+        assert (await store.admin())['items'][0]['label'] == '自定义规格'
+        await store.update({**payload, 'revision': 2, 'local_names': {}})
+        admin = await local_store(tmp_path).admin()
+        assert admin['items'][0]['title'] == 'Claude 开通指导'
+        assert admin['items'][0]['label'] == '微软邮箱'
+        assert 'local_names' not in json.loads(store.settings_path.read_text())
+
+    asyncio.run(run())
+
+
+def test_default_local_names_do_not_make_ordinary_saves_incompatible_with_old_schema(tmp_path):
+    async def run():
+        store = local_store(tmp_path)
+        await store.update({'revision': 0, 'telegram': '', 'client': 3, 'skus': {},
+                            'local_names': {'products': {PRODUCT_ID: 'Claude 开通指导'},
+                                            'variants': {MICROSOFT_KEY: '微软邮箱', GOOGLE_KEY: '谷歌邮箱'}}})
+        assert 'local_names' not in json.loads(store.settings_path.read_text())
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('names', [
+    None, [], {'unexpected': {}}, {'products': []}, {'variants': []},
+    {'products': {'1': '供应商改名'}}, {'variants': {'1:1': '供应商改名'}},
+    {'products': {'6000000000002': '未知本店商品'}}, {'variants': {'6000000000001:3': '未知规格'}},
+    {'products': {PRODUCT_ID: ''}}, {'variants': {MICROSOFT_KEY: '  '}},
+    {'products': {PRODUCT_ID: '商品\n名称'}}, {'variants': {MICROSOFT_KEY: '规格\x00名称'}},
+    {'products': {PRODUCT_ID: '商品\u2028名称'}}, {'variants': {MICROSOFT_KEY: '规格\u2029名称'}},
+    {'products': {PRODUCT_ID: '\u202e隐藏方向'}}, {'variants': {MICROSOFT_KEY: '<b>规格</b>'}},
+    {'products': {PRODUCT_ID: '名' * 121}}, {'variants': {MICROSOFT_KEY: '名' * 81}},
+    {'products': {PRODUCT_ID: 123}}, {'variants': {MICROSOFT_KEY: False}},
+])
+def test_invalid_local_names_never_partially_change_merchant_settings(tmp_path, names):
+    async def run():
+        store = local_store(tmp_path)
+        await store.update({'revision': 0, 'telegram': '', 'client': 3, 'skus': {}})
+        before = store.settings_path.read_bytes()
+        with pytest.raises(ValueError):
+            await store.update({'revision': 1, 'telegram': 'my_shop', 'client': 3, 'skus': {},
+                                'local_names': names})
+        assert store.settings_path.read_bytes() == before
+
+    asyncio.run(run())
+
+
+def test_conflicting_name_save_changes_neither_names_nor_prices(tmp_path):
+    async def run():
+        store = local_store(tmp_path)
+        payload = {'revision': 0, 'telegram': '', 'client': 3,
+                   'skus': {MICROSOFT_KEY: {'price_cents': 12000, 'published': True}},
+                   'local_names': {'products': {PRODUCT_ID: '已保存指导'}}}
+        await store.update(payload)
+        before = store.settings_path.read_bytes()
+        with pytest.raises(Conflict):
+            await local_store(tmp_path).update({**payload,
+                'skus': {MICROSOFT_KEY: {'price_cents': 13000, 'published': False}},
+                'local_names': {'products': {PRODUCT_ID: '过期页面指导'}}})
+        assert store.settings_path.read_bytes() == before
+
+    asyncio.run(run())
+
+
+def test_valid_local_name_boundaries_and_partial_maps():
+    for names in ({}, {'products': {PRODUCT_ID: '名' * 120}},
+                  {'variants': {MICROSOFT_KEY: '名' * 80}},
+                  {'products': {}, 'variants': {}}):
+        assert validate_settings({'revision': 0, 'telegram': '', 'skus': {}, 'local_names': names})
