@@ -7,7 +7,7 @@ import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart'
 import { PurchaseDialog } from './ShopPurchase';
 import { ProductDetail, CartView } from './ShopProductDetail';
 
-const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI'];
+const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码'];
 
 function ProductRow({ product, catalogReady, onAdd }: { product: Product; catalogReady: boolean; onAdd: (item: CartItem) => void }) {
   const prices = product.variants.map(item => item.price_cents);

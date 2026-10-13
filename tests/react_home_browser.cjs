@@ -21,8 +21,8 @@ async function main() {
     assert.equal((await sessionResponse).status(), 401);
     await expect(anonymous).toHaveTitle('购物 · LancoAI');
     await expect(anonymous.locator('.sidebar')).toHaveCount(0);
-    // AI chat and video live in the admin console; the portal shows shopping and discovery.
-    await expect(anonymous.locator('nav[aria-label="主导航"] a')).toHaveText(['购物', '开源发现']);
+    // AI tools stay in the console; the portal also lets customers redeem their SMS codes.
+    await expect(anonymous.locator('nav[aria-label="主导航"] a')).toHaveText(['购物', '短信接码', '开源发现']);
     await expect(anonymous.getByRole('dialog')).toHaveCount(0);
     await expect(anonymous.getByRole('heading', { name: '暂无商品' })).toBeVisible();
     await anonymous.evaluate(() => { window.__portalMarker = 'same-document'; });
@@ -38,6 +38,12 @@ async function main() {
     await anonymous.goForward();
     await expect(anonymous).toHaveTitle('GitHub 热榜 · LancoAI');
     assert.equal(privateRequests, 0, 'the public portal must not call private chat or video APIs');
+    await anonymous.getByRole('link', { name: '短信接码', exact: true }).click();
+    await expect(anonymous).toHaveURL(`${baseUrl}/__react/?view=sms`);
+    await expect(anonymous).toHaveTitle('短信接码 · LancoAI');
+    await expect(anonymous.getByLabel('激活码', { exact: true })).toBeVisible();
+    await expect(anonymous.getByRole('dialog')).toHaveCount(0);
+    assert.equal(await anonymous.evaluate(() => window.__portalMarker), 'same-document');
 
     // Old portal links follow the tools into the admin console and ask for a login there.
     for (const [view, route] of [['chat', '/admin/chat'], ['video', '/admin/video']]) {

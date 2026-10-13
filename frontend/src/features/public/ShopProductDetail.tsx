@@ -31,6 +31,7 @@ export function ProductDetail({ productId, catalog, error, onAdd, onBuy, onRetry
       <div className="shop-detail-image"><ShopBrandImage category={product.category}/></div>
       <div className="shop-detail-info"><p className="portal-eyebrow">{product.category} · 人工交付</p><h1 ref={title} tabIndex={-1}><PromoBadge text={product.badge}/>{product.title}</h1>
         <ProductStats product={product}/>
+        {product.category === '短信接码' ? <p className="shop-note">已有激活码？<a href="/?view=sms">进入短信接码</a></p> : null}
         <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{variant ? <PromoPrice product={product} variant={variant}/> : null}</div>
         <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <button key={item.id} type="button" aria-pressed={variantId === item.id} onClick={() => setSelection(item.id)}>{item.label}{!item.available ? ' · 暂不可购买' : ''}</button>)}</fieldset>
         <div className="shop-detail-quantity"><span>购买数量</span><Quantity value={quantity} onChange={setQuantity}/><small>每次 1–99 件</small></div>

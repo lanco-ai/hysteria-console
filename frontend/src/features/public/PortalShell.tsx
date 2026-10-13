@@ -5,7 +5,7 @@ import { Icon } from '../../shared/icons';
 import { LancoAgent } from '../agent/LancoAgent';
 import { PlanReminderCenter } from '../plans/PlanReminderCenter';
 
-export type PortalView = 'shop' | 'trending';
+export type PortalView = 'shop' | 'trending' | 'sms';
 export const PortalSessionContext = createContext({
   authenticated: false,
   status: 'anonymous' as SessionStatus,
@@ -33,6 +33,7 @@ export function PortalShell({ active, children, agentEnabled = false }: CodexShe
       <a className="portal-brand" href="/" aria-label="LancoAI 首页"><BrandMark/><strong>Lanco<span>AI</span></strong></a>
       <nav className="portal-nav" aria-label="主导航">
         <a href="/" aria-current={active === 'shop' ? 'page' : undefined}><ShopIcon/><span>购物</span></a>
+        <a href="/?view=sms" aria-current={active === 'sms' ? 'page' : undefined}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 6h4M10 18h4"/></svg><span>短信接码</span></a>
         <a href="/?view=trending" aria-current={active === 'trending' ? 'page' : undefined}><Icon name="trending"/><span>开源发现</span></a>
       </nav>
       {session.authenticated

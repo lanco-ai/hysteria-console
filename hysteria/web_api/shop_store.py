@@ -35,6 +35,12 @@ from .shop_prodseller_source import ORIGIN as PRODSELLER_ORIGIN
 from .shop_prodseller_source import PRODUCT_BASE as PRODSELLER_BASE
 from .shop_prodseller_source import SELECTED as PRODSELLER_SELECTED
 from .shop_source import MAX_CENTS, MAX_ROWS, ORIGIN, fetch_catalog, safe_label
+from .shop_sms_source import LABEL as SMS_LABEL
+from .shop_sms_source import NOTICE as SMS_NOTICE
+from .shop_sms_source import ORIGIN as SMS_ORIGIN
+from .shop_sms_source import PRODUCT_BASE as SMS_BASE
+from .shop_sms_source import PRODUCT_ID as SMS_PRODUCT_ID
+from .shop_sms_source import TITLE as SMS_TITLE
 
 TTL = 900
 BACKOFF = 900
@@ -50,6 +56,7 @@ SOURCE_SITES = {
     'prodseller': PRODSELLER_ORIGIN + '/',
     'lorry': LORRY_ORIGIN + '/',
     'fanai': FANAI_ORIGIN + '/',
+    'sms': SMS_ORIGIN + '/',
 }
 # Who each feed is, and what it supplies, for the administrator's view. Kept here rather than in
 # the frontend, whose code anyone can download: the public side never names a supplier.
@@ -59,6 +66,7 @@ SOURCE_LABELS = {
     'prodseller': ('ProdSeller', 'Gemini'),
     'lorry': ('Lorry', 'X / Muse AI'),
     'fanai': ('Fanai', 'GPT / Claude / Grok'),
+    'sms': ('Zephyr', '短信接码'),
 }
 
 
@@ -71,6 +79,8 @@ def buy_url(row):
 
 def provider_of(product_id):
     number = int(product_id)
+    if number >= SMS_BASE:
+        return 'sms'
     if number >= FANAI_BASE:
         return 'fanai'
     if number >= LORRY_BASE:
@@ -81,6 +91,8 @@ def provider_of(product_id):
 
 
 def category_of(provider, public_title):
+    if provider == 'sms':
+        return '短信接码'
     if provider == 'fanai':
         return 'GPT' if public_title.startswith('ChatGPT ') else public_title.split(' ', 1)[0]
     if provider == 'lorry':
@@ -249,6 +261,11 @@ def validate_items(items, provider='gpt'):
         if provider == 'gpt':
             if product_number >= PRODUCT_BASE:
                 raise ValueError('reserved product namespace')
+        elif provider == 'sms':
+            if (row['product_id'] != SMS_PRODUCT_ID or key != f'{SMS_PRODUCT_ID}:1'
+                    or row['source_url'] != SMS_ORIGIN + '/' or row['public_title'] != SMS_TITLE
+                    or row['label'] != SMS_LABEL):
+                raise ValueError('invalid sms source identity')
         elif provider == 'anli':
             external = product_number - PRODUCT_BASE
             if (
@@ -391,6 +408,7 @@ class ShopStore:
         prodseller_fetcher=None,
         lorry_fetcher=None,
         fanai_fetcher=None,
+        sms_fetcher=None,
         clock=time.time,
     ):
         self.path = Path(path)
@@ -404,12 +422,14 @@ class ShopStore:
         self.lorry_path = self.path.with_name(self.path.stem + '-lorry.json')
         self.fanai_fetcher = fanai_fetcher
         self.fanai_path = self.path.with_name(self.path.stem + '-fanai.json')
+        self.sms_fetcher = sms_fetcher
+        self.sms_path = self.path.with_name(self.path.stem + '-sms.json')
         self.stats = ShopStats(self.path.with_name('stats.json'), clock)
 
     def _feed_ids(self):
         return tuple(
             provider
-            for provider in ('gpt', 'anli', 'prodseller', 'lorry', 'fanai')
+            for provider in ('gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms')
             if self._fetcher(provider)
         )
 
@@ -420,6 +440,7 @@ class ShopStore:
             'prodseller': self.prodseller_fetcher,
             'lorry': self.lorry_fetcher,
             'fanai': self.fanai_fetcher,
+            'sms': self.sms_fetcher,
         }[provider]
 
     def _path(self, provider):
@@ -429,6 +450,7 @@ class ShopStore:
             'prodseller': self.prodseller_path,
             'lorry': self.lorry_path,
             'fanai': self.fanai_path,
+            'sms': self.sms_path,
         }[provider]
 
     @staticmethod
@@ -504,6 +526,8 @@ class ShopStore:
         sources, settings = self._sources(), self._settings()
         items = [row for source in sources.values() for row in source['items']]
         products = dict(settings.get('products', {}))
+        if any(row['product_id'] == SMS_PRODUCT_ID for row in items):
+            products.setdefault(SMS_PRODUCT_ID, dict(SMS_NOTICE))
         for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
             # A saved custom or explicitly empty copy always wins. Defaults only
             # belong to this read projection, never the persisted merchant state.

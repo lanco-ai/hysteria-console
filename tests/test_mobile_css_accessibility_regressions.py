@@ -26,8 +26,22 @@ def _block(source: str, marker: str) -> str:
     raise AssertionError(f"Unclosed CSS block: {marker}")
 
 
+def _mobile_user_rules() -> str:
+    # The traffic summary and user table have separate blocks at the same
+    # breakpoint. Read every block instead of assuming the first belongs to users.
+    remaining = CSS
+    blocks = []
+    marker = "@media (max-width: 720px)"
+    while marker in remaining:
+        start = remaining.index(marker)
+        block = _block(remaining[start:], marker)
+        blocks.append(block)
+        remaining = remaining[start + len(block):]
+    return "\n".join(blocks)
+
+
 def test_mobile_user_table_header_is_visually_hidden_but_semantic() -> None:
-    mobile = _block(CSS, "@media (max-width: 720px)")
+    mobile = _mobile_user_rules()
     table_head = _block(mobile, ".users-table thead")
 
     assert "display: none" not in table_head
@@ -40,7 +54,7 @@ def test_mobile_user_table_header_is_visually_hidden_but_semantic() -> None:
 
 
 def test_mobile_user_cards_fit_inside_the_table_viewport() -> None:
-    mobile = _block(CSS, "@media (max-width: 720px)")
+    mobile = _mobile_user_rules()
     card = _block(mobile, ".users-table tbody tr")
 
     assert "width: calc(100% - 24px)" in card
@@ -48,7 +62,7 @@ def test_mobile_user_cards_fit_inside_the_table_viewport() -> None:
 
 
 def test_mobile_user_identity_and_notes_wrap_unbroken_content() -> None:
-    mobile = _block(CSS, "@media (max-width: 720px)")
+    mobile = _mobile_user_rules()
 
     assert '.users-table td[data-label="用户"] .bold' in mobile
     assert '.users-table td[data-label="用户"] .small' in mobile

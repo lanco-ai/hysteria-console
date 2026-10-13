@@ -16,13 +16,13 @@ type SourceStatus = { last_success: number | null; error: string | null; is_stal
 type Merchant = { sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string }>;
-type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI';
+type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '短信接码';
 type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
 // One supplier's product within a storefront plan, and the plan with every supplier offering it.
 type SupplierProduct = { productId: string; provider: string; title: string; rows: SourceItem[]; cheapest: SourceItem | undefined; stale: boolean };
 type Plan = { title: string; products: SupplierProduct[]; best: SupplierProduct | undefined };
 
-const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI'];
+const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码'];
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
 const EMPTY_COPY = { description: '', after_sales: '' };
 const EMPTY_DRAFT = { price: '', published: false, promo: '' };

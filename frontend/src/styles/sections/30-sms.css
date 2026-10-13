@@ -1,0 +1,85 @@
+.sms-page { max-width: 1120px; margin: 0 auto; padding: 28px 0 64px; color: var(--text-primary); }
+.sms-heading { margin-bottom: 36px; }
+.sms-back { display: inline-block; margin-bottom: 32px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
+.sms-eyebrow { display: block; margin-bottom: 12px; color: #658578; font-size: 11px; font-weight: 600; letter-spacing: .12em; }
+.sms-heading h1 { margin: 0; font-size: clamp(25px, 3vw, 38px); font-weight: 600; line-height: 1.35; letter-spacing: -.04em; }
+.sms-heading p { margin: 14px 0 0; color: var(--text-secondary); font-size: 14px; }
+.sms-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 48px; align-items: start; }
+.sms-workspace { min-width: 0; overflow: hidden; border: 1px solid var(--hairline); border-radius: 20px; background: var(--bg-surface); box-shadow: 0 10px 40px rgb(31 52 42 / 3%); }
+.sms-card-header { display: flex; align-items: center; gap: 14px; padding: 28px 32px; }
+.sms-symbol { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; border-radius: 14px; background: #eef5f1; color: #386b59; }
+.sms-symbol svg { width: 32px; height: 32px; }
+.sms-card-header h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.sms-card-header p { margin: 5px 0 0; color: var(--text-secondary); font-size: 12px; }
+.sms-private { margin-left: auto; color: #719080; font-size: 11px; white-space: nowrap; }
+.sms-steps { display: flex; justify-content: space-between; gap: 10px; margin: 0; padding: 18px 32px; border-block: 1px solid var(--hairline); background: #fafbf9; list-style: none; }
+.sms-steps li { display: flex; align-items: center; gap: 8px; color: #939b94; font-size: 12px; }
+.sms-steps li > span { font-variant-numeric: tabular-nums; font-size: 11px; }
+.sms-steps .is-current { color: #30654f; font-weight: 600; }
+.sms-content { padding: 32px; }
+.sms-field { display: grid; gap: 12px; font-size: 13px; font-weight: 600; }
+.sms-field input { width: 100%; min-width: 0; height: 52px; padding: 0 16px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-surface); color: var(--text-primary); font-size: 16px; }
+.sms-field input:focus { border-color: #719582; outline: 3px solid rgb(75 128 99 / 10%); }
+.sms-field input:disabled { background: #f7f8f5; color: var(--text-secondary); }
+.sms-field-hint { margin: 10px 0 24px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
+.sms-primary { display: flex; width: 100%; min-height: 48px; align-items: center; justify-content: space-between; padding-inline: 18px; border-radius: 10px; }
+.sms-verified > div { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.sms-verified > div > span:last-child { margin-left: auto; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.sms-verified p, .sms-finish p { color: var(--text-secondary); font-size: 13px; line-height: 1.8; }
+.sms-verified > button:last-child { margin-top: 16px; }
+.sms-status-dot { display: inline-block; width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: #6f9680; }
+.sms-live-status { display: flex; align-items: center; gap: 9px; color: #67786c; font-size: 12px; }
+.sms-live-status.is-received { color: #24784f; }
+.sms-number { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; margin: 28px 0; }
+.sms-number > span, .sms-code-result > span { grid-column: 1 / -1; color: var(--text-secondary); font-size: 12px; }
+.sms-number strong { font-size: clamp(22px, 3vw, 32px); font-variant-numeric: tabular-nums; font-weight: 550; letter-spacing: -.03em; overflow-wrap: anywhere; }
+.sms-copy { min-height: 34px; padding: 6px 12px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--bg-surface); color: var(--text-primary); font-size: 12px; white-space: nowrap; cursor: pointer; }
+.sms-copy:hover { background: #f6f8f4; }
+.sms-code-result, .sms-waiting { padding: 28px 20px; border: 1px solid #dfe9e0; border-radius: 12px; background: #f5f8f3; text-align: center; }
+.sms-code-result { display: grid; justify-items: center; gap: 14px; }
+.sms-code-result strong { max-width: 100%; color: #2a6248; font-size: clamp(26px, 5vw, 42px); font-weight: 550; letter-spacing: .1em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sms-code-placeholder { color: #a8b6a8; font-size: 28px; letter-spacing: .08em; }
+.sms-waiting p { margin: 18px 0 0; color: #7b877b; font-size: 12px; line-height: 1.8; }
+.sms-poll-status { display: flex; justify-content: space-between; gap: 12px; padding-top: 18px; color: var(--text-secondary); font-size: 11px; line-height: 1.6; }
+.sms-cancel { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--hairline); }
+.sms-text-button { padding: 0; border: 0; background: none; color: #68766b; font-size: 12px; text-align: left; cursor: pointer; }
+.sms-text-button:hover { color: #26593d; }
+.sms-text-button:disabled { opacity: .45; cursor: default; }
+.sms-cancel-confirm p { margin: 0 0 16px; color: var(--text-secondary); font-size: 12px; line-height: 1.7; }
+.sms-cancel-confirm > div { display: flex; align-items: center; gap: 18px; }
+.sms-finish { margin-top: 24px; }
+.sms-feedback { padding: 0 32px; }
+.sms-feedback p:empty { display: none; }
+.sms-feedback p { margin: 0 0 24px; color: #47765b; font-size: 13px; line-height: 1.7; }
+.sms-feedback [role="alert"] { color: #a35335; }
+.sms-guide { padding: 12px 0; }
+.sms-guide h2 { margin: 0 0 30px; font-size: 21px; font-weight: 550; letter-spacing: -.03em; }
+.sms-guide > div { position: relative; margin-bottom: 26px; padding-left: 32px; }
+.sms-guide > div > span { position: absolute; top: 2px; left: 0; color: #8c9b8d; font-size: 11px; font-variant-numeric: tabular-nums; }
+.sms-guide h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.sms-guide p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.95; }
+.sms-guide footer { display: grid; gap: 10px; margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--hairline); color: var(--text-secondary); font-size: 12px; }
+.sms-guide footer a { color: #3a6851; text-decoration: none; }
+
+@media (max-width: 880px) {
+  .sms-layout { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .sms-guide { max-width: 620px; }
+  .sms-heading { margin-bottom: 24px; }
+}
+
+@media (max-width: 540px) {
+  .sms-page { padding-top: 8px; }
+  .sms-back { margin-bottom: 24px; }
+  .sms-card-header, .sms-content { padding: 22px 20px; }
+  .sms-card-header { gap: 10px; }
+  .sms-card-header h2 { font-size: 16px; }
+  .sms-card-header p { font-size: 11px; }
+  .sms-private { display: none; }
+  .sms-steps { padding: 16px 20px; gap: 5px; }
+  .sms-steps li { gap: 5px; font-size: 11px; }
+  .sms-feedback { padding-inline: 20px; }
+  .sms-number { gap: 10px; }
+  .sms-copy { padding-inline: 8px; }
+  .sms-code-result, .sms-waiting { padding: 24px 12px; }
+  .sms-poll-status { flex-wrap: wrap; }
+}

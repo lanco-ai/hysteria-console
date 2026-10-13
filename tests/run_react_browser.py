@@ -51,6 +51,7 @@ def main():
         'react_shop_promo_browser.cjs',
         'react_shop_offer_browser.cjs',
         'react_shop_gemini_browser.cjs',
+        'react_shop_sms_browser.cjs',
         'react_unified_daily_browser.cjs',
         'react_journal_browser.cjs',
         'react_journal_rework_browser.cjs',
@@ -82,6 +83,14 @@ def main():
     if selected == 'react_shop_gemini_browser.cjs':
         subprocess.run(
             [sys.executable, str(root / 'tests/run_shop_gemini_browser.py')],
+            cwd=root,
+            check=True,
+            timeout=180,
+        )
+        return
+    if selected == 'react_shop_sms_browser.cjs':
+        subprocess.run(
+            [sys.executable, str(root / 'tests/run_shop_sms_browser.py')],
             cwd=root,
             check=True,
             timeout=180,

@@ -485,6 +485,10 @@ def _handler(api_client, allowed_assets):
                     '/api/chat/completions',
                     '/api/v1/shop/refresh',
                     '/api/v1/shop/visit',
+                    '/api/v1/shop/sms/verify',
+                    '/api/v1/shop/sms/acquire',
+                    '/api/v1/shop/sms/check',
+                    '/api/v1/shop/sms/cancel',
                     '/api/v1/admin/services/probe',
                     '/api/journal',
                 }

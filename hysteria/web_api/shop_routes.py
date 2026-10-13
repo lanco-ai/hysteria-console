@@ -19,6 +19,8 @@ from .shop_lorry_source import fetch_catalog as fetch_lorry_catalog
 from .shop_prodseller_source import configured as prodseller_configured
 from .shop_prodseller_source import fetch_catalog as fetch_prodseller_catalog
 from .shop_store import Conflict, ShopStore
+from .shop_sms_source import fetch_catalog as fetch_sms_catalog
+from .shop_sms_gateway import register_sms_routes
 
 
 def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabled=False):
@@ -29,7 +31,9 @@ def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabl
         prodseller_fetcher=fetch_prodseller_catalog if prodseller_configured() else None,
         lorry_fetcher=fetch_lorry_catalog if lorry_configured() else None,
         fanai_fetcher=fetch_fanai_catalog,
+        sms_fetcher=fetch_sms_catalog,
     )
+    register_sms_routes(app)
 
     async def scheduler():
         while True:

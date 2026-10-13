@@ -44,6 +44,7 @@ const ServicesPage = lazyPage(() => import('./features/services/ServicesPage').t
 const VideoPage = lazyPage(() => import('./features/video/VideoPage').then(module => module.VideoPage));
 const PlansPage = lazyPage(() => import('./features/plans/PlansPage').then(module => module.PlansPage));
 const GithubTrendingPage = lazyPage(() => import('./features/github-trending/GithubTrendingPage').then(module => module.GithubTrendingPage));
+const SmsPage = lazyPage(() => import('./features/shop/SmsPage').then(module => module.SmsPage));
 const ShopAdminPage = lazyPage(() => import('./features/shop/ShopAdminPage').then(module => module.ShopAdminPage));
 
 const root = document.getElementById('root');
@@ -241,7 +242,7 @@ function applyRouteDocument(route: string): void {
     : ROUTE_METADATA[route];
   if (!metadata) return;
   const view = new URLSearchParams(window.location.search).get('view');
-  document.title = route === '/' && view === 'trending' ? 'GitHub 热榜 · LancoAI' : metadata.title;
+  document.title = route === '/' && view === 'trending' ? 'GitHub 热榜 · LancoAI' : route === '/' && view === 'sms' ? '短信接码 · LancoAI' : metadata.title;
   if (metadata.bodyClass) document.body.className = metadata.bodyClass;
   else document.body.removeAttribute('class');
   if (metadata.shell) applyInitialShellPreferences();
@@ -336,7 +337,7 @@ function legacyToolLocation(url: URL): string | null {
 
 function pagesForLocation(url: URL): Array<{ preload: () => Promise<void> }> {
   const route = normalizeRoute(url.pathname);
-  if (WORKBENCH_ROUTES.has(route)) return url.searchParams.get('view') === 'trending' ? [GithubTrendingPage] : [];
+  if (WORKBENCH_ROUTES.has(route)) return url.searchParams.get('view') === 'trending' ? [GithubTrendingPage] : url.searchParams.get('view') === 'sms' ? [SmsPage] : [];
   const tool = ADMIN_TOOL_PAGES[route];
   if (tool) return [tool];
   if (/^\/admin\/user\/[^/]+$/.test(route)) return [UserDetailPage];
@@ -360,7 +361,7 @@ function WorkbenchRoute({ route, publicHost, authenticated, status, loginOpen, o
   return <PortalSessionContext.Provider value={{ authenticated, status, onLogin: onUnauthenticated }}>
     <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}><Suspense fallback={null}>{view === 'trending'
       ? <GithubTrendingPage period={location.searchParams.get('period') === 'daily' ? 'daily' : 'weekly'} authenticated={authenticated}/>
-      : <ShopPage key={location.search}/>}</Suspense></div>
+      : view === 'sms' ? <SmsPage/> : <ShopPage key={location.search}/>}</Suspense></div>
     <LoginModal open={loginOpen} realm={route === '/user/login' ? 'user' : 'admin'} passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
   </PortalSessionContext.Provider>;
 }
