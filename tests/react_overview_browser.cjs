@@ -5,7 +5,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const { expect } = require('@playwright/test');
 
 const baseUrl = process.env.PREVIEW_BASE_URL;
-const screenshots = path.resolve('.superpowers/sdd/2026-09-14-react-overview/screenshots');
+const screenshots = path.resolve(process.env.REACT_SCREENSHOT_DIR || '.superpowers/sdd/2026-09-14-react-overview/screenshots');
 const rowFor = (page, user = 'demo_alex') => page.locator(`tr[data-user="${user}"]`);
 const bootPath = '/api/v1/admin/overview-page';
 async function snapshot(context) {
@@ -25,6 +25,93 @@ async function contextFor(browser) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   await context.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: baseUrl }]);
   return context;
+}
+async function trafficSummary(browser) {
+  const context = await contextFor(browser), page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const now = new Date('2026-10-13T12:00:00Z');
+  await page.clock.install({ time: now }); await page.clock.pauseAt(now);
+  const usage = { ts: '2026-10-13T12:00:00', stats: {
+    current_hour_bytes: 63.31 * 1024 ** 2 | 0, today_bytes: 10.81 * 1024 ** 3,
+    yesterday_bytes: 17.74 * 1024 ** 3, last_7d_bytes: 87.17 * 1024 ** 3,
+    cycle_bytes: 284.45 * 1024 ** 3, cycle_day: 29, cycle_total_days: 30, online: 2,
+  } };
+  for (const key of ['today_bytes', 'yesterday_bytes', 'last_7d_bytes', 'cycle_bytes']) usage.stats[key] = Math.floor(usage.stats[key]);
+  let summaryReads = 0, fail = false, forbidden = false;
+  await page.route('**/api/v1/admin/usage?summary=yes', route => {
+    summaryReads++;
+    return route.fulfill({ status: forbidden ? 401 : fail ? 503 : 200, contentType: 'application/json', body: JSON.stringify(forbidden || fail ? { error: 'unavailable' } : usage) });
+  });
+  await goto(page);
+  const cards = page.locator('.overview-traffic-card');
+  const values = page.locator('.overview-traffic-value');
+  await expect(values).toHaveText(['63.31 MB', '10.81 GB', '87.17 GB', '284.45 GB']);
+  await expect(page.locator('.overview-traffic-detail')).toHaveText(['2 在线', '昨日 17.74 GB', '日均 12.45 GB', '第 29 / 30 天']);
+  await expect(page.getByRole('link', { name: '查看流量分析' })).toHaveAttribute('href', '/admin/usage');
+  const cycle = await page.locator('.overview-cycle').boundingBox();
+  const summaryBox = await page.locator('.overview-traffic').boundingBox();
+  assert(summaryBox.y + summaryBox.height <= cycle.y, 'global summary must precede existing billing controls');
+  fs.mkdirSync(screenshots, { recursive: true });
+  for (const width of [1440, 1024, 390, 320]) {
+    await page.setViewportSize({ width, height: 1080 });
+    // Resizing from the desktop rail starts the existing mobile drawer transition.
+    // Finish finite animations before checking visibility or taking review evidence.
+    await page.screenshot({ path: path.join(screenshots, `users-traffic-${width}.png`), fullPage: true, animations: 'disabled' });
+    const boxes = await cards.evaluateAll(nodes => nodes.map(node => {
+      const box = node.getBoundingClientRect();
+      return { x: box.x, y: box.y, right: box.right, height: box.height };
+    }));
+    assert.equal(boxes.length, 4);
+    assert(Math.abs(boxes[0].y - boxes[1].y) < 1, `${width}: first pair must align`);
+    if (width > 720) assert(boxes.every(box => Math.abs(box.y - boxes[0].y) < 1), `${width}: four metrics must share one row`);
+    else {
+      assert(boxes[2].y > boxes[0].y && Math.abs(boxes[2].y - boxes[3].y) < 1, `${width}: mobile metrics must form two rows`);
+      assert(boxes.every(box => box.x >= 0 && box.right <= width), `${width}: cards must fit the viewport`);
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), `${width}: mobile page must not overflow horizontally`);
+      const visible = await cards.evaluateAll(nodes => nodes.map(node => {
+        const box = node.getBoundingClientRect();
+        return document.elementFromPoint(box.x + 4, box.y + 4)?.closest('.overview-traffic-card') === node;
+      }));
+      assert(visible.every(Boolean), `${width}: navigation must not cover any metric card`);
+    }
+    const numbers = await page.locator('.overview-traffic-number').evaluateAll(nodes => nodes.map(node => ({ size: getComputedStyle(node).fontSize, y: node.getBoundingClientRect().y })));
+    assert.equal(new Set(numbers.map(number => number.size)).size, 1, 'all metrics need the same type scale');
+    assert(Math.abs(numbers[0].y - numbers[1].y) < 1, 'paired values must align');
+    await expect(page.getByRole('link', { name: '查看流量分析' })).toBeVisible();
+  }
+  await page.setViewportSize({ width: 1440, height: 1080 });
+  const before = await values.allTextContents(), readsBefore = summaryReads;
+  await page.getByRole('searchbox').fill('no-match');
+  await expect(page.locator('#filter-empty')).toBeVisible();
+  assert.deepEqual(await values.allTextContents(), before, 'user search cannot change global metrics');
+  await page.getByRole('searchbox').fill('');
+  await page.locator('[data-filter="online"]').click();
+  assert.deepEqual(await values.allTextContents(), before, 'user status filter cannot change global metrics');
+  assert.equal(summaryReads, readsBefore, 'local filters do not trigger global requests');
+  await page.locator('[data-filter="all"]').click();
+  await page.locator('.create-toggle').click();
+  await page.locator('#create-note').fill('summary failures preserve this draft');
+  fail = true;
+  await page.locator('[data-role="admin-poll-status"]').click();
+  await expect(page.getByRole('button', { name: '重试流量概览' })).toBeEnabled();
+  await expect(values).toHaveText(['—', '—', '—', '—']);
+  await ready(page);
+  await expect(page.locator('#create-note')).toHaveValue('summary failures preserve this draft');
+  fail = false;
+  await page.getByRole('button', { name: '重试流量概览' }).click();
+  await expect(values).toHaveText(['63.31 MB', '10.81 GB', '87.17 GB', '284.45 GB']);
+  await expect(page.locator('#create-note')).toHaveValue('summary failures preserve this draft');
+  const refreshedReads = summaryReads;
+  await page.clock.runFor(30_000);
+  await expect.poll(() => summaryReads).toBe(refreshedReads + 1);
+  forbidden = true;
+  await page.locator('[data-role="admin-poll-status"]').click();
+  await expect(page.locator('.users-table')).toHaveCount(0);
+  await expect(page.locator('.overview-traffic-card')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: '管理员登录' })).toHaveAttribute('href', '/login');
+  assert.deepEqual(errors, []);
+  await context.close();
 }
 async function realOperations(browser) {
   const context = await contextFor(browser), page = await context.newPage();
@@ -165,6 +252,12 @@ async function main() {
     args: ['--disable-gpu', '--num-raster-threads=1', '--renderer-process-limit=2'],
   });
   try {
+    if (process.env.REACT_OVERVIEW_TRAFFIC_ONLY) {
+      await trafficSummary(browser);
+      console.log('React overview traffic summary acceptance passed');
+      return;
+    }
+    if (!process.env.REACT_OVERVIEW_LIFECYCLE_ONLY) await trafficSummary(browser);
     if (!process.env.REACT_OVERVIEW_LIFECYCLE_ONLY) await realOperations(browser);
     const context = await contextFor(browser);
     const baseline = await snapshot(context);

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ResourceError } from '../../../shared/readResource';
+import { readUsageSummary } from '../usage/requests';
+import type { UsageSummary } from '../usage/types';
 import { feedback } from './presentation';
 import { parseOverview, parsePoll, parseReload, readJson, write } from './requests';
 import type { Action, Mutate, MutationResult, Overview } from './types';
@@ -7,6 +9,7 @@ import type { Action, Mutate, MutationResult, Overview } from './types';
 const UNKNOWN = '操作结果尚未确认，请刷新核对后再操作';
 const RELOAD = '用户列表或配置已更改，请刷新加载；未保存草稿保留原版本，保存时可能冲突';
 let cachedOverview: Overview | undefined;
+export type OverviewSummary = { data?: UsageSummary; loading: boolean; error?: string; auth?: boolean };
 
 export function useOverview() {
   const [data, setData] = useState<Overview | undefined>(() => cachedOverview);
@@ -18,25 +21,31 @@ export function useOverview() {
   const [readError, setReadError] = useState('');
   const [pollStatus, setPollStatus] = useState('自动更新 · 30 s');
   const [reloadStatus, setReloadStatus] = useState('');
-  const state = useRef({ active: false, suspended: false, epoch: 0, pending: false, blocked: false, data: cachedOverview, failures: 0, pollTimer: 0, watcherTimer: 0, read: undefined as AbortController | undefined, readKind: undefined as 'bootstrap' | 'poll' | undefined, post: undefined as AbortController | undefined, watcher: undefined as AbortController | undefined });
+  const [summary, setSummary] = useState<OverviewSummary>({ loading: true });
+  const state = useRef({ active: false, suspended: false, auth: false, epoch: 0, pending: false, blocked: false, data: cachedOverview, failures: 0, pollTimer: 0, watcherTimer: 0, summaryTimer: 0, summaryRead: undefined as AbortController | undefined, read: undefined as AbortController | undefined, readKind: undefined as 'bootstrap' | 'poll' | undefined, post: undefined as AbortController | undefined, watcher: undefined as AbortController | undefined });
   const pollRef = useRef<() => Promise<void>>(async () => {});
+  const summaryRef = useRef<() => Promise<void>>(async () => {});
 
   const usable = useCallback((epoch: number) => state.current.active && !state.current.suspended && state.current.epoch === epoch, []);
   const invalidate = useCallback(() => {
     const s = state.current;
     s.epoch++;
-    clearTimeout(s.pollTimer); clearTimeout(s.watcherTimer);
-    s.read?.abort(); s.watcher?.abort();
-    s.read = undefined; s.readKind = undefined; s.watcher = undefined;
-    if (s.active) setLoading(false);
+    clearTimeout(s.pollTimer); clearTimeout(s.watcherTimer); clearTimeout(s.summaryTimer);
+    s.read?.abort(); s.watcher?.abort(); s.summaryRead?.abort();
+    s.read = undefined; s.readKind = undefined; s.watcher = undefined; s.summaryRead = undefined;
+    if (s.active) { setLoading(false); setSummary({ loading: false }); }
   }, []);
   const lock = useCallback((value: boolean) => { state.current.blocked = value; setBlocked(value); }, []);
   const loseAuth = useCallback(() => {
+    invalidate(); // A separate summary request can expire the session during a list read.
     cachedOverview = undefined;
+    state.current.auth = true;
+    state.current.pending = false;
     state.current.data = undefined;
-    setData(undefined); setAuth(true); lock(true);
+    setData(undefined); setBusy(false); setAuth(true); lock(true);
+    setSummary({ loading: false, auth: true, error: '登录已失效，请重新登录管理员账号' });
     setReadError('登录已失效，请重新登录管理员账号');
-  }, [lock]);
+  }, [invalidate, lock]);
   const schedule = useCallback(() => {
     const s = state.current;
     clearTimeout(s.pollTimer);
@@ -44,6 +53,36 @@ export function useOverview() {
     const delay = Math.min(240_000, 30_000 * 2 ** s.failures + (s.failures ? Math.random() * 4_000 : 0));
     s.pollTimer = window.setTimeout(() => { void pollRef.current(); }, delay);
   }, []);
+
+  const scheduleSummary = useCallback(() => {
+    const s = state.current;
+    clearTimeout(s.summaryTimer);
+    if (!s.active || s.suspended || s.pending || s.auth || document.hidden) return;
+    // Summary failures must not stop the user list or its mutation safeguards.
+    s.summaryTimer = window.setTimeout(() => { void summaryRef.current(); }, 30_000);
+  }, []);
+  const loadSummary = useCallback(async () => {
+    const s = state.current;
+    if (!s.active || s.suspended || s.pending || s.auth || document.hidden) return;
+    clearTimeout(s.summaryTimer); s.summaryRead?.abort();
+    const controller = new AbortController(), epoch = s.epoch;
+    s.summaryRead = controller;
+    setSummary(previous => previous.data ? { data: previous.data, loading: true } : { loading: true });
+    const timeout = window.setTimeout(() => controller.abort(), 10_000);
+    try {
+      const next = await readUsageSummary(controller.signal);
+      if (!usable(epoch) || s.summaryRead !== controller) return;
+      setSummary({ data: next, loading: false });
+    } catch (error) {
+      if (!usable(epoch) || s.summaryRead !== controller) return;
+      if (error instanceof ResourceError && error.status === 401) loseAuth();
+      else setSummary({ loading: false, error: '流量概览更新失败，暂无法显示最新用量' });
+    } finally {
+      clearTimeout(timeout);
+      if (usable(epoch) && s.summaryRead === controller) { s.summaryRead = undefined; scheduleSummary(); }
+    }
+  }, [loseAuth, scheduleSummary, usable]);
+  summaryRef.current = loadSummary;
 
   const bootstrap = useCallback(async (): Promise<boolean> => {
     const s = state.current;
@@ -58,7 +97,7 @@ export function useOverview() {
       const next = await readJson('/api/v1/admin/overview-page', controller.signal, parseOverview);
       if (!usable(epoch) || s.read !== controller) return false;
       cachedOverview = next;
-      s.data = next; s.failures = 0;
+      s.data = next; s.failures = 0; s.auth = false;
       setData(next); setAuth(false); lock(false); setPollStatus('自动更新 · 30 s');
       return true;
     } catch (error) {
@@ -152,28 +191,35 @@ export function useOverview() {
       watchReload();
     } else if (result.kind === 'auth') loseAuth();
     else if (result.kind !== 'invalid') { lock(true); setReadError(result.kind === 'unknown' ? UNKNOWN : result.code); }
-    s.pending = false; setBusy(false); schedule();
+    s.pending = false; setBusy(false); schedule(); void loadSummary();
     return result;
-  }, [bootstrap, invalidate, lock, loseAuth, schedule, usable, watchReload]);
+  }, [bootstrap, invalidate, loadSummary, lock, loseAuth, schedule, usable, watchReload]);
 
   const refresh = useCallback(() => {
     const s = state.current;
     if (s.pending || !s.active || s.suspended) return;
     invalidate();
-    void bootstrap();
-  }, [bootstrap, invalidate]);
+    s.auth = false;
+    void bootstrap(); void loadSummary();
+  }, [bootstrap, invalidate, loadSummary]);
   const retryPoll = useCallback(() => {
     if (state.current.blocked || !state.current.data) refresh();
-    else void poll();
-  }, [poll, refresh]);
+    else { void poll(); void loadSummary(); }
+  }, [loadSummary, poll, refresh]);
 
   useEffect(() => {
     const s = state.current; s.active = true; s.suspended = false;
-    void bootstrap();
+    void bootstrap(); void loadSummary();
     const visibility = () => {
-      clearTimeout(s.pollTimer);
-      if (document.hidden) { if (!s.pending && s.readKind === 'poll') { s.read?.abort(); s.read = undefined; s.readKind = undefined; } }
-      else if (!s.pending && !s.blocked && !s.read) { if (s.data) void pollRef.current(); else void bootstrap(); }
+      clearTimeout(s.pollTimer); clearTimeout(s.summaryTimer);
+      if (document.hidden) {
+        s.summaryRead?.abort(); s.summaryRead = undefined;
+        setSummary(previous => ({ ...previous, loading: false }));
+        if (!s.pending && s.readKind === 'poll') { s.read?.abort(); s.read = undefined; s.readKind = undefined; }
+      } else {
+        void loadSummary();
+        if (!s.pending && !s.blocked && !s.read) { if (s.data) void pollRef.current(); else void bootstrap(); }
+      }
     };
     const hide = () => {
       const writeUnconfirmed = Boolean(s.post);
@@ -186,7 +232,8 @@ export function useOverview() {
     };
     const show = (event: PageTransitionEvent) => {
       if (!event.persisted) return;
-      s.suspended = false; s.pending = false; setBusy(false); lock(true); invalidate(); void bootstrap();
+      s.suspended = false; s.pending = false; setBusy(false); lock(true); invalidate();
+      if (!s.auth) { void bootstrap(); void loadSummary(); }
     };
     document.addEventListener('visibilitychange', visibility);
     window.addEventListener('pagehide', hide); window.addEventListener('pageshow', show);
@@ -195,7 +242,7 @@ export function useOverview() {
       document.removeEventListener('visibilitychange', visibility);
       window.removeEventListener('pagehide', hide); window.removeEventListener('pageshow', show);
     };
-  }, [bootstrap, invalidate, lock]);
+  }, [bootstrap, invalidate, loadSummary, lock]);
 
-  return { data, loading, busy, blocked, auth, message, readError, pollStatus, reloadStatus, mutate, refresh, retryPoll };
+  return { data, loading, busy, blocked, auth, message, readError, pollStatus, reloadStatus, summary, retrySummary: loadSummary, mutate, refresh, retryPoll };
 }

@@ -2,6 +2,117 @@
    DASHBOARD OVERVIEW
    ===================================================== */
 
+.overview-traffic {
+  margin-bottom: 20px;
+}
+
+.overview-traffic-header,
+.overview-traffic-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.overview-traffic-header {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.overview-traffic-heading h2 {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+
+.overview-traffic-caption,
+.overview-traffic-label,
+.overview-traffic-detail {
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+.overview-traffic-link {
+  color: var(--data);
+  font-size: var(--text-small);
+  text-decoration: none;
+}
+
+.overview-traffic-link:hover {
+  text-decoration: underline;
+}
+
+.overview-traffic-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.overview-traffic-card {
+  min-width: 0;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+.overview-traffic-label {
+  margin: 0 0 10px;
+  font-weight: 400;
+}
+
+.overview-traffic-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.overview-traffic-number {
+  font-size: clamp(26px, 2.2vw, 32px);
+  font-weight: 600;
+  letter-spacing: -.04em;
+}
+
+.overview-traffic-unit {
+  color: var(--text-secondary);
+  font-size: var(--text-body);
+  font-weight: 400;
+}
+
+.overview-traffic-detail {
+  margin: 10px 0 0;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+
+.overview-traffic-feedback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--text-small);
+}
+
+@media (max-width: 1100px) {
+  .overview-traffic-card { padding: 16px 14px 14px; }
+}
+
+@media (max-width: 720px) {
+  .overview-traffic-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .overview-traffic-card { padding: 16px 14px 14px; }
+}
+
+@media (pointer: coarse) {
+  .overview-traffic-link { display: inline-flex; align-items: center; min-height: 44px; }
+}
+
 /* One slim bar: the billing cycle, its settings and cycle-wide actions. */
 .overview-cycle {
   container-type: inline-size;
@@ -296,4 +407,3 @@ body.has-shell .form-field .select {
 .users-table tbody tr:hover {
   background: var(--bg-subtle);
 }
-

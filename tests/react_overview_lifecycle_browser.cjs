@@ -6,6 +6,9 @@ const boot = '**/api/v1/admin/overview-page';
 const pollUrl = '**/api/v1/admin/overview';
 const operation = '**/api/v1/admin/operations/*';
 const row = page => page.locator('tr[data-user="demo_alex"]');
+// These scenarios exercise list snapshots and their action gate. The global
+// traffic summary can independently report a read failure at the same time.
+const listError = page => page.locator('#main-content > .err[role="alert"]');
 const copy = value => structuredClone(value);
 const reply = (route, value, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(value) });
 const counters = data => ({ ts: '2026-07-18T12:00:00+08:00', total_used: data.cycle.total_used, users: data.users.map(({ user, tx, rx, used, total, percent, online, revision, disabled }) => ({ user, tx, rx, used, total, percent, online, revision, disabled })) });
@@ -49,10 +52,10 @@ async function initialStates(browser, baseline) {
     if (kind === 'array') data.cycle = [];
     await page.route(boot, route => kind === '503' ? reply(route, { error: 'state_unavailable' }, 503) : kind === 'auth' ? reply(route, { error: 'login_required' }, 401) : kind === 'html' ? route.fulfill({ contentType: 'text/html', body: '<h1>login</h1>' }) : reply(route, kind === 'malformed' ? {} : data));
     await page.reload();
-    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(listError(page)).toBeVisible();
     await expect(page.locator('.users-table')).toHaveCount(0);
     await expect(page.getByText('暂无用户，使用下方表单创建第一个用户')).toHaveCount(0);
-    if (kind === 'auth') await expect(page.getByRole('link', { name: '管理员登录' })).toHaveAttribute('href', '/login');
+    if (kind === 'auth') await expect(listError(page).getByRole('link', { name: '管理员登录' })).toHaveAttribute('href', '/login');
     else {
       await page.unroute(boot); await page.route(boot, route => reply(route, baseline));
       await page.getByRole('button', { name: '刷新核对' }).click();
@@ -188,7 +191,7 @@ async function pollingAndRaces(browser, baseline) {
   await page.locator('.create-toggle').click(); await page.locator('#create-note').fill('poll must keep draft'); await page.locator('#cycle-day').fill('9');
   payload.users.find(item => item.user === 'demo_alex').revision = 'external-change';
   await page.clock.runFor(30_000);
-  await expect(page.getByRole('alert')).toContainText('用户列表或配置已更改');
+  await expect(listError(page)).toContainText('用户列表或配置已更改');
   await expect(page.locator('#create-note')).toHaveValue('poll must keep draft'); await expect(page.locator('#cycle-day')).toHaveValue('9');
   const count = polls; await page.clock.runFor(300_000); assert.equal(polls, count);
   const bootstrapReads = fixture.reads();
@@ -200,7 +203,7 @@ async function pollingAndRaces(browser, baseline) {
   await expect(row(page).getByRole('button', { name: '清流量', exact: true })).toBeEnabled();
   await expect(page.locator('#cycle-day')).toHaveValue('9');
   payload = counters(baseline); payload.users.pop();
-  await page.locator('[data-role="admin-poll-status"]').click(); await expect(page.getByRole('alert')).toContainText('用户列表或配置已更改');
+  await page.locator('[data-role="admin-poll-status"]').click(); await expect(listError(page)).toContainText('用户列表或配置已更改');
   await clean(fixture);
 
   const race = await setup(browser, baseline, { clock: true }), racePage = race.page;
@@ -294,7 +297,7 @@ async function lateReadsAndClipboard(browser, baseline) {
   await expect(page.getByRole('status', { name: '正在加载用户…' })).toBeVisible();
   assert.equal(await page.getByText('正在加载用户…', { exact: true }).count(), 0, 'loading state has no visible text node');
   await page.clock.runFor(10_000);
-  await expect(page.getByRole('alert')).toContainText('总览加载失败');
+  await expect(listError(page)).toContainText('总览加载失败');
   await reply(delayed, baseline).catch(() => {});
   await expect(page.locator('.users-table')).toHaveCount(0);
   await page.unroute(boot); await page.route(boot, route => reply(route, baseline));
@@ -435,10 +438,10 @@ async function bfcacheRecoveryLocksStaleSnapshot(browser, baseline) {
       } else if (outcome === 'auth') {
         await reply(pendingBootstrap, { error: 'login_required' }, 401);
         await expect(page.locator('.users-table')).toHaveCount(0);
-        await expect(page.getByRole('link', { name: '管理员登录' })).toHaveAttribute('href', '/login');
+        await expect(listError(page).getByRole('link', { name: '管理员登录' })).toHaveAttribute('href', '/login');
       } else {
         await reply(pendingBootstrap, { error: 'state_unavailable' }, 503);
-        await expect(page.getByRole('alert')).toContainText('数据尚未更新');
+        await expect(listError(page)).toContainText('数据尚未更新');
         await expect(account.getByRole('button', { name: '清流量', exact: true })).toBeDisabled();
         assert.equal(await account.locator('.link-row a').first().getAttribute('href'), null);
       }

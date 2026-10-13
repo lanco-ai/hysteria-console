@@ -3,6 +3,7 @@ import { AdminShell } from '../../../shared/AdminShell';
 import { LoadingState } from '../../../shared/LoadingState';
 import { useInitialFragmentNavigation } from '../../../shared/useInitialFragmentNavigation';
 import { OverviewTable } from './OverviewTable';
+import { TrafficSummary } from './TrafficSummary';
 import { CreateForm, CycleForm, EditDialog } from './UserForms';
 import { useOverview } from './useOverview';
 import type { OverviewUser } from './types';
@@ -49,6 +50,7 @@ export function OverviewPage({ publicHost }: { publicHost: string }) {
     subtitle={publicHost}
     topbarExtra={topbarExtra}
   >
+    <TrafficSummary summary={overview.summary} busy={busy} retry={overview.retrySummary}/>
     {overview.message ? <div className="flash" role="status">{overview.message}</div> : null}
     {overview.reloadStatus ? <div className="flash" role="status">{overview.reloadStatus}</div> : null}
     {overview.readError ? <div className="err" role="alert">

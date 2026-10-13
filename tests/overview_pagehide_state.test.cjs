@@ -85,6 +85,7 @@ async function loadOverviewHook({ writeConfirmed = true } = {}) {
     `],
     ['../../../shared/readResource', 'export class ResourceError extends Error {}'],
     ['./presentation', 'export const feedback = value => value;'],
+    ['../usage/requests', 'export const readUsageSummary = async () => ({ ts: "", stats: {} });'],
     ['./requests', `
       export const parseOverview = value => value;
       export const parsePoll = value => value;
