@@ -190,7 +190,7 @@ export function SmsPage() {
           </div>}
           <div className="sms-feedback">{phoneMismatch ? <p role="alert">返回的号码与指定号码不同，已保留本次订单。请先核对处理，不要重复取号。</p> : null}{error ? <p role="alert">{error}{remainingCooldown ? `（${remainingCooldown} 秒后可重试）` : ''}</p> : null}<p role="status">{notice}</p></div>
         </section>
-        <aside className="sms-guide" aria-label="使用提示"><span className="sms-eyebrow">开始前，了解这些</span><h2>准备好，再取号。</h2><div><span>01</span><h3>先确认适用平台</h3><p>当前默认服务为 ChatGPT。其他平台及账号限制，请在购买前向商家确认。</p></div><div><span>02</span><h3>取号后及时使用</h3><p>号码有时效。请在需要验证的平台发起短信，本页会自动查看接收结果。</p></div><div><span>03</span><h3>妥善保管激活码</h3><p>本页不保存激活码。刷新或离开后需重新输入；离开页面不会替你取消号码。</p></div><footer>还没有激活码？<a href="/">返回商店咨询购买 <span aria-hidden="true">↗</span></a></footer></aside>
+        <aside className="sms-guide" aria-label="使用提示"><span className="sms-eyebrow">开始前，了解这些</span><h2>准备好，再取号。</h2><div><span>01</span><h3>先确认适用平台</h3><p>当前默认服务为 ChatGPT Codex。其他平台及账号限制，请在购买前向商家确认。</p></div><div><span>02</span><h3>取号后及时使用</h3><p>号码有时效。请在需要验证的平台发起短信，本页会自动查看接收结果。</p></div><div><span>03</span><h3>妥善保管激活码</h3><p>本页不保存激活码。刷新或离开后需重新输入；离开页面不会替你取消号码。</p></div><footer>还没有激活码？<a href="/">返回商店咨询购买 <span aria-hidden="true">↗</span></a></footer></aside>
       </div>
     </div>
   </PortalShell>;
