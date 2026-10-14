@@ -21,6 +21,11 @@
 .sms-field input { width: 100%; min-width: 0; height: 52px; padding: 0 16px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-surface); color: var(--text-primary); font-size: 16px; }
 .sms-field input:focus { border-color: #719582; outline: 3px solid rgb(75 128 99 / 10%); }
 .sms-field input:disabled { background: #f7f8f5; color: var(--text-secondary); }
+.sms-code-field { position: relative; min-width: 0; }
+.sms-code-field input { padding-right: 70px; }
+.sms-code-visibility { position: absolute; top: 4px; right: 4px; display: grid; min-width: 52px; min-height: 44px; place-items: center; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #47765b; font-size: 12px; font-weight: 500; cursor: pointer; }
+.sms-code-visibility:hover { background: #eef5f1; }
+.sms-code-visibility:focus-visible { outline: 2px solid #719582; outline-offset: -2px; }
 .sms-field-hint { margin: 10px 0 24px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
 .sms-specific { margin-bottom: 24px; padding: 16px; border: 1px solid var(--hairline); border-radius: 12px; background: #fafbf9; }
 .sms-specific.is-enabled { border-color: #cbded1; background: #f5f9f5; }
@@ -51,7 +56,9 @@
 .sms-live-status { display: flex; align-items: center; gap: 9px; color: #67786c; font-size: 12px; }
 .sms-live-status.is-received { color: #24784f; }
 .sms-number { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 16px; margin: 28px 0; }
-.sms-number > span, .sms-code-result > span { grid-column: 1 / -1; color: var(--text-secondary); font-size: 12px; }
+.sms-number-meta { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; color: var(--text-secondary); font-size: 12px; }
+.sms-country { padding: 4px 8px; border: 1px solid #dfe9e0; border-radius: 6px; background: #f5f8f3; color: #47765b; font-size: 11px; }
+.sms-code-result > span { grid-column: 1 / -1; color: var(--text-secondary); font-size: 12px; }
 .sms-number strong { font-size: clamp(22px, 3vw, 32px); font-variant-numeric: tabular-nums; font-weight: 550; letter-spacing: -.03em; overflow-wrap: anywhere; }
 .sms-copy { min-height: 34px; padding: 6px 12px; border: 1px solid var(--hairline); border-radius: 7px; background: var(--bg-surface); color: var(--text-primary); font-size: 12px; white-space: nowrap; cursor: pointer; }
 .sms-copy:hover { background: #f6f8f4; }
@@ -100,6 +107,8 @@
   .sms-steps li { gap: 5px; font-size: 11px; }
   .sms-feedback { padding-inline: 20px; }
   .sms-number { gap: 10px; }
+  .sms-number strong { grid-column: 1 / -1; font-size: clamp(20px, 5.7vw, 28px); white-space: nowrap; }
+  .sms-number > .sms-copy { grid-column: 1 / -1; justify-self: start; }
   .sms-copy { padding-inline: 8px; }
   .sms-code-result, .sms-waiting { padding: 24px 12px; }
   .sms-poll-status { flex-wrap: wrap; }

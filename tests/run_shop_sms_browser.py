@@ -44,8 +44,13 @@ class MockGateway(sms_gateway.SmsGateway):
                 if code.startswith('REUSE'):
                     acquisitions[code] = acquisitions.get(code, 0) + 1
                     return httpx.Response(200, json={'ok': True, 'phone': '1' + payload.get('specific_phone', '2025550123'),
-                                                   'order_id': 123 + acquisitions[code], 'price': 0.13})
-                return httpx.Response(200, json={'ok': True, 'phone': '12025550123', 'order_id': 123, 'price': 0.13})
+                                                   'country': 187, 'order_id': 123 + acquisitions[code], 'price': 0.13})
+                phone, country = ('+447700900123', 'uk') if code.startswith('FOREIGN') else \
+                                 ('+14165550123', 'canada') if code.startswith('CANADA') else \
+                                 ('2025550123', {'note': 'private-country-note'}) if code.startswith('UNKNOWN') else \
+                                 ('+12025550123', None) if code.startswith('LEGACY') else ('2025550123', 187)
+                return httpx.Response(200, json={'ok': True, 'phone': phone, 'country': country, 'order_id': 123,
+                                               'price': 0.13, 'operator': 'private-operator'})
             if request.url.path == '/api/cancel':
                 return httpx.Response(200, json={'ok': True, 'status': 'CANCEL_PENDING', 'cancel_pending': True})
             assert request.url.path == '/api/check-sms'

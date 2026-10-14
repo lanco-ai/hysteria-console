@@ -98,12 +98,42 @@ def gateway(handler):
 HEADERS = {'Sec-Fetch-Site': 'same-origin'}
 
 
+@pytest.mark.parametrize('phone,country,expected_phone,expected_country', [
+    ('9382805510', 187, '+19382805510', 'US'),
+    ('2025550123', '187', '+12025550123', 'US'),
+    ('2025550123', 12, '+12025550123', 'US'),
+    ('2025550123', 'UsA', '+12025550123', 'US'),
+    ('12025550123', 'america', '+12025550123', 'US'),
+    ('+12025550123', 'usa', '+12025550123', 'US'),
+    ('+14165550123', 'canada', '+14165550123', 'CA'),
+    ('+5511987654321', 73, '+5511987654321', 'BR'),
+    ('+447700900123', 'england', '+447700900123', 'GB'),
+    ('+447700900123', 187, '+447700900123', None),
+    ('2025550123', None, '2025550123', None),
+    ('+12025550123', None, '+12025550123', None),
+    ('12025550123', None, '12025550123', None),
+    ('2025550123', 'private-country-note', '2025550123', None),
+    ('2025550123', {'name': 'usa', 'note': 'private-country-note'}, '2025550123', None),
+    ('2025550123', True, '2025550123', None),
+    ('2025550123', ['usa'], '2025550123', None),
+])
+def test_acquired_phone_uses_confirmed_country_without_leaking_supplier_metadata(phone, country, expected_phone, expected_country):
+    upstream = {'ok': True, 'phone': phone, 'country': country, 'order_id': 123,
+                'price': 0.13, 'operator': 'private-operator', 'note': 'private-country-note'}
+    with gateway(lambda _: httpx.Response(200, json=upstream)) as client:
+        result = client.post('/api/v1/shop/sms/acquire', headers=HEADERS, json={'activation_code': CODE})
+        assert result.status_code == 200
+        assert result.json() == {'ok': True, 'status': 'PENDING', 'sms_code': None, 'wait_seconds': 0,
+                                 'phone': expected_phone, 'order_id': 123, 'country': expected_country}
+        assert 'private-' not in result.text and 'price' not in result.text and CODE not in result.text
+
+
 def test_specific_phone_is_optional_and_only_forwarded_on_acquire():
     seen = []
 
     def handle(request):
         seen.append(json.loads(request.content))
-        return httpx.Response(200, json={'ok': True, 'phone': '12025550123', 'order_id': 124})
+        return httpx.Response(200, json={'ok': True, 'phone': '12025550123', 'country': 187, 'order_id': 124})
 
     with gateway(handle) as client:
         url = '/api/v1/shop/sms/acquire'
@@ -241,7 +271,7 @@ def test_upstream_failure_does_not_echo_credentials_or_follow_redirects(response
 def test_rate_limit_has_bounded_retry_and_acquire_does_not_echo_cost():
     def handle(request):
         if request.url.path == '/api/get-phone':
-            return httpx.Response(200, json={'ok': True, 'phone': '12025550123', 'order_id': 123,
+            return httpx.Response(200, json={'ok': True, 'phone': '12025550123', 'country': 187, 'order_id': 123,
                                            'product': 'dr', 'price': 0.13, 'wait_seconds': 10})
         return httpx.Response(429, headers={'Retry-After': '35'}, json={'ok': False, 'error': CODE})
 

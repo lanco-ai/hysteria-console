@@ -17,6 +17,9 @@ from .shop_sms_source import ORIGIN
 
 STATES = frozenset({'PENDING', 'RECEIVED', 'CANCEL_PENDING', 'CANCELED', 'TIMEOUT', 'BANNED', 'FINISHED'})
 PATHS = {'verify': '/api/verify-code', 'acquire': '/api/get-phone', 'check': '/api/check-sms', 'cancel': '/api/cancel'}
+COUNTRIES = {'187': 'US', '12': 'US', 'usa': 'US', 'america': 'US', 'canada': 'CA',
+             '73': 'BR', 'brazil': 'BR', 'uk': 'GB', 'england': 'GB'}
+DIAL_CODES = {'US': '1', 'CA': '1', 'BR': '55', 'GB': '44'}
 
 
 class _PrivateRequestFilter(logging.Filter):
@@ -68,6 +71,25 @@ def rejection_reason(action, data):
     return 'request_rejected'
 
 
+def acquired_phone(phone, metadata):
+    country = COUNTRIES.get(str(metadata).strip().lower()) if type(metadata) in (str, int) else None
+    if country in {'US', 'CA'}:
+        if re.fullmatch(r'[1-9][0-9]{9}', phone):
+            return '+1' + phone, country
+        if re.fullmatch(r'\+?1[0-9]{10}', phone):
+            return '+' + phone.lstrip('+'), country
+        # Do not turn an explicitly international number into a US/Canada one
+        # when upstream metadata disagrees with the allocated number.
+        return phone, None
+    if country:
+        dial = DIAL_CODES[country]
+        if phone.startswith('+'):
+            return phone, country if phone.startswith('+' + dial) else None
+        return ('+' + phone if phone.startswith(dial) else phone), country
+    # An allocated order remains usable even without trustworthy country data.
+    return phone, None
+
+
 def project(action, data):
     if not isinstance(data, dict) or data.get('ok') is not True:
         raise SmsError(400, rejection_reason(action, data))
@@ -95,7 +117,8 @@ def project(action, data):
         phone, order = data.get('phone'), data.get('order_id')
         if not isinstance(phone, str) or not re.fullmatch(r'\+?[1-9]\d{6,14}', phone) or not integer(order) or not order:
             raise SmsError()
-        result.update(phone='+' + phone.lstrip('+'), order_id=order)
+        phone, country = acquired_phone(phone, data.get('country'))
+        result.update(phone=phone, order_id=order, country=country)
     return result
 
 

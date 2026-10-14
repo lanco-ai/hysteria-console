@@ -3,9 +3,11 @@ import { PortalShell } from '../public/PortalShell';
 
 type Action = 'verify' | 'acquire' | 'check' | 'cancel';
 type State = 'PENDING' | 'CANCEL_PENDING' | 'RECEIVED' | 'CANCELED' | 'TIMEOUT' | 'BANNED' | 'FINISHED';
-type Order = { order_id: number; phone: string; status: State; sms_code: string | null; wait_seconds: number; requested_phone?: string };
+type Country = 'US' | 'CA' | 'BR' | 'GB';
+type Order = { order_id: number; phone: string; country?: Country | null; status: State; sms_code: string | null; wait_seconds: number; requested_phone?: string };
 type Verified = { remaining: number; max_uses: number; has_pending_order: boolean };
 const ACTIVE = new Set<State>(['PENDING', 'CANCEL_PENDING']);
+const COUNTRIES: Record<Country, string> = { US: '美国 · USA', CA: '加拿大 · Canada', BR: '巴西 · Brazil', GB: '英国 · UK' };
 const STATUS: Record<State, string> = { PENDING: '等待短信', CANCEL_PENDING: '正在确认取消', RECEIVED: '验证码已收到', CANCELED: '本次接码已取消', TIMEOUT: '本次接码已超时', BANNED: '当前号码不可用', FINISHED: '本次接码已结束' };
 const UNKNOWN_RESULT = '操作结果尚未确认，请保留当前激活码并重试。不要立即更换激活码。';
 const SPECIFIC_ERRORS: Record<string, string> = {
@@ -21,12 +23,23 @@ function usPhone(value: string) {
   return /^[0-9]{10}$/.test(number) ? number : '';
 }
 
+function displayPhone(phone: string) {
+  if (!/^\+1[0-9]{10}$/.test(phone)) return phone;
+  const number = phone.slice(2);
+  return `+1 (${number.slice(0, 3)}) ${number.slice(3, 6)}-${number.slice(6)}`;
+}
+
+function reusablePhone(order: Order) {
+  return order.country === 'US' || (order.country === undefined && /^\+1[0-9]{10}$/.test(order.phone)) ? usPhone(order.phone) : '';
+}
+
 function SmsMark() {
   return <svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="8" y="3" width="16" height="26" rx="4" stroke="currentColor" strokeWidth="1.5"/><path d="M13 7h6M14 25h4M12 13h8M12 17h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>;
 }
 
 export function SmsPage() {
   const [code, setCode] = useState('');
+  const [showCode, setShowCode] = useState(false);
   const [verified, setVerified] = useState<Verified | null>(null);
   const [useSpecific, setUseSpecific] = useState(false);
   const [specificPhone, setSpecificPhone] = useState('');
@@ -133,11 +146,11 @@ export function SmsPage() {
 
   function reset(keepPhone = false) {
     generation.current += 1; controller.current?.abort(); lock.current = false; failures.current = 0;
-    setBusy(null); setOrder(null); setVerified(null); setCode(''); setError(''); setNotice(''); setPaused(false); setConfirmCancel(false);
+    setBusy(null); setOrder(null); setVerified(null); setCode(''); setShowCode(false); setError(''); setNotice(''); setPaused(false); setConfirmCancel(false);
     if (!keepPhone) { setUseSpecific(false); setSpecificPhone(''); }
   }
   function reusePhone() {
-    const phone = order ? usPhone(order.phone) : '';
+    const phone = order ? reusablePhone(order) : '';
     if (!phone || active) return;
     reset(); setCode(code); setUseSpecific(true); setSpecificPhone(phone);
   }
@@ -158,7 +171,7 @@ export function SmsPage() {
           <ol className="sms-steps" aria-label="接码步骤">{['验证激活码', '获取号码', '接收验证码'].map((label, index) => <li key={label} className={step >= index ? 'is-current' : ''} aria-current={step === index ? 'step' : undefined}><span>{step > index ? '✓' : `0${index + 1}`}</span>{label}</li>)}</ol>
           {!order ? <div className="sms-content">
             <form onSubmit={event => { event.preventDefault(); if (!verified && !blocked && !invalidPhone && code.trim().length >= 8) void perform('verify'); }}>
-              <label className="sms-field" htmlFor="sms-code">激活码<input id="sms-code" type="password" autoComplete="off" spellCheck={false} maxLength={128} placeholder="输入商家交付的激活码" value={code} disabled={busy !== null || verified !== null} onChange={event => { setCode(event.target.value); setError(''); }}/></label>
+              <div className="sms-field"><label htmlFor="sms-code">激活码</label><div className="sms-code-field"><input id="sms-code" type={showCode ? 'text' : 'password'} autoComplete="off" spellCheck={false} maxLength={128} placeholder="输入商家交付的激活码" value={code} disabled={busy !== null || verified !== null} onChange={event => { setCode(event.target.value); setError(''); }}/><button className="sms-code-visibility" type="button" aria-label={showCode ? '隐藏激活码' : '显示激活码'} aria-controls="sms-code" aria-pressed={showCode} onClick={() => setShowCode(value => !value)}>{showCode ? '隐藏' : '显示'}</button></div></div>
               <p className="sms-field-hint">激活码仅用于本次接码，请勿分享给他人。</p>
               {!verified?.has_pending_order ? <div className={`sms-specific${useSpecific ? ' is-enabled' : ''}`}>
                 <label className="sms-specific-toggle"><input type="checkbox" role="switch" aria-label="指定手机号" checked={useSpecific} disabled={busy !== null || verified !== null} onChange={event => { setUseSpecific(event.target.checked); setError(''); }}/><span className="sms-toggle-track" aria-hidden="true"/><span><strong>指定手机号</strong><small>再次使用原号码时开启</small></span></label>
@@ -169,11 +182,11 @@ export function SmsPage() {
             {verified ? <div className="sms-verified"><div><span className="sms-status-dot"/><strong>激活码已验证</strong><span>剩余 {verified.remaining} 次</span></div><p>{verified.has_pending_order ? '此激活码有未结束的接码，将恢复原订单，不重新申请指定号码。' : !verified.remaining ? '此激活码已无可用次数，请更换有效激活码。' : '确认已准备好接收短信，再获取号码。号码有效时间有限。'}</p><button className="btn btn-primary sms-primary" type="button" disabled={blocked || invalidPhone || (!verified.remaining && !verified.has_pending_order)} onClick={() => void perform('acquire')}>{busy === 'acquire' ? '正在获取号码…' : verified.has_pending_order ? '恢复当前号码' : '获取接收号码'}<span aria-hidden="true">→</span></button><button className="sms-text-button" type="button" disabled={busy !== null} onClick={() => reset(true)}>使用其他激活码</button></div> : null}
           </div> : <div className="sms-content">
             <div className={`sms-live-status${order.status === 'RECEIVED' ? ' is-received' : ''}`} role="status"><span className="sms-status-dot"/>{STATUS[order.status]}</div>
-            <div className="sms-number"><span>接收号码</span><strong>{order.phone}</strong><button type="button" className="sms-copy" onClick={() => void copy(order.phone, '号码')}>复制号码</button></div>
+            <div className="sms-number"><div className="sms-number-meta"><span>接收号码</span><span className="sms-country">{order.country && Object.hasOwn(COUNTRIES, order.country) ? COUNTRIES[order.country] : '国家/地区未确认'}</span></div><strong>{displayPhone(order.phone)}</strong><button type="button" className="sms-copy" onClick={() => void copy(order.phone, '号码')}>复制号码</button></div>
             {order.sms_code ? <div className="sms-code-result"><span>短信验证码</span><strong>{order.sms_code}</strong><button type="button" className="sms-copy" onClick={() => void copy(order.sms_code!, '验证码')}>复制验证码</button></div> : <div className="sms-waiting"><span className="sms-code-placeholder" aria-hidden="true">— — — — — —</span><p>{active ? order.status === 'CANCEL_PENDING' ? '正在等待取消结果。确认前请保留当前页面。' : '请在需要验证的平台填写上方号码并发送短信。' : '当前接码已结束，未收到验证码。'}</p></div>}
             {active ? <><div className="sms-poll-status"><span>{paused ? '自动查询已暂停' : !visible ? '返回页面后继续查询' : busy === 'check' ? '正在查询验证码…' : `约 ${Math.max(0, Math.ceil((Math.max(due, cooldown) - now) / 1000))} 秒后自动查询`}</span>{paused ? <button className="sms-text-button" type="button" disabled={blocked} onClick={() => void perform('check')}>重试查询</button> : <span>收到后自动停止</span>}</div>
               {order.status === 'PENDING' ? <div className="sms-cancel">{confirmCancel ? <div className="sms-cancel-confirm"><p>确认取消当前号码？只有确认取消并退回次数后，才能再次取号。</p><div><button className="btn btn-secondary" type="button" disabled={blocked} onClick={() => void perform('cancel')}>{busy === 'cancel' ? '正在提交…' : '确认取消当前号码'}</button><button className="sms-text-button" type="button" disabled={busy !== null} onClick={() => setConfirmCancel(false)}>继续等待</button></div></div> : <button className="sms-text-button" type="button" disabled={blocked} onClick={() => setConfirmCancel(true)}>号码无法使用？申请取消</button>}</div> : null}
-            </> : <div className="sms-finish"><p>{order.status === 'RECEIVED' ? '请及时使用验证码。再次接码需重新验证可用次数，并申请新的接码订单。' : '如需再次取号，请重新验证激活码的剩余次数。'}</p><div className="sms-finish-actions">{usPhone(order.phone) ? <button className="btn btn-secondary" type="button" onClick={reusePhone}>再次使用此号码</button> : null}<button className="sms-text-button" type="button" onClick={() => reset()}>返回激活码输入</button></div></div>}
+            </> : <div className="sms-finish"><p>{order.status === 'RECEIVED' ? '请及时使用验证码。再次接码需重新验证可用次数，并申请新的接码订单。' : '如需再次取号，请重新验证激活码的剩余次数。'}</p><div className="sms-finish-actions">{reusablePhone(order) ? <button className="btn btn-secondary" type="button" onClick={reusePhone}>再次使用此号码</button> : null}<button className="sms-text-button" type="button" onClick={() => reset()}>返回激活码输入</button></div></div>}
           </div>}
           <div className="sms-feedback">{phoneMismatch ? <p role="alert">返回的号码与指定号码不同，已保留本次订单。请先核对处理，不要重复取号。</p> : null}{error ? <p role="alert">{error}{remainingCooldown ? `（${remainingCooldown} 秒后可重试）` : ''}</p> : null}<p role="status">{notice}</p></div>
         </section>
