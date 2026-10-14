@@ -37,7 +37,8 @@ def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabl
         # Store-only rollbacks restore an older constructor. The old store simply
         # ignores this attribute; injected stores retain their own configuration.
         store.local_products = True
-    register_sms_routes(app)
+    # getattr also keeps routes usable after a store-only rollback.
+    register_sms_routes(app, on_received=getattr(store, 'record_sms_received', None))
 
     async def scheduler():
         while True:

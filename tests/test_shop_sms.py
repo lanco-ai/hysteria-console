@@ -98,6 +98,227 @@ def gateway(handler):
 HEADERS = {'Sec-Fetch-Site': 'same-origin'}
 
 
+def sales_shop(tmp_path, monkeypatch, handler, *, default_store=False):
+    """Keep the route factory and store real, replacing only supplier HTTP."""
+    from functools import partial
+
+    from web_api import shop_routes, shop_sms_gateway
+    from web_api.shop_sms_source import normalize_config
+    from web_api.shop_store import ShopStore
+
+    async def empty():
+        return []
+
+    async def sms():
+        return normalize_config(CONFIG)
+
+    store = ShopStore(tmp_path / 'source.json', fetcher=empty, sms_fetcher=sms)
+    asyncio.run(store.refresh())
+    asyncio.run(store.update({'revision': 0, 'client': 3, 'telegram': 'test_shop',
+                             'skus': {'5000000000001:1': {'price_cents': 250, 'published': True}},
+                             'display': {'5000000000001': {'badge': '', 'sold': 7}}}))
+    service = shop_sms_gateway.SmsGateway(transport=httpx.MockTransport(handler))
+    monkeypatch.setattr(shop_sms_gateway, 'SmsGateway', lambda: service)
+    if default_store:
+        monkeypatch.setattr(shop_routes, 'ShopStore', lambda **kwargs: store)
+        monkeypatch.setattr(shop_routes, 'prodseller_configured', lambda: False)
+        monkeypatch.setattr(shop_routes, 'lorry_configured', lambda: False)
+
+    class Sessions:
+        def read_session(self, **kwargs):
+            return {'role': 'admin'}
+
+    async def dispatch(fn, request):
+        return fn(headers=request.headers, path=request.url.path)
+
+    app = FastAPI()
+    shop_routes.register_shop_routes(app, Sessions(), dispatch,
+                                     **({} if default_store else {'store': store}))
+    return store, TestClient(app)
+
+
+def test_received_order_increases_public_sold_once_across_repeated_polls(tmp_path, monkeypatch):
+    store, client = sales_shop(tmp_path, monkeypatch, lambda _: httpx.Response(
+        200, json={'ok': True, 'status': 'RECEIVED', 'sms_code': '246810'}))
+    with client:
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 7
+        for _ in range(3):
+            result = client.post('/api/v1/shop/sms/check', headers=HEADERS,
+                                 json={'activation_code': CODE, 'order_id': 123})
+            assert result.status_code == 200 and result.json()['sms_code'] == '246810'
+            public = client.get('/api/v1/shop/catalog').json()
+            assert public['products'][0]['sold'] == 8
+            assert public['stats']['sold'] == 8
+        admin = client.get('/api/v1/shop/admin').json()
+        assert admin['display']['5000000000001']['sold'] == 7
+        assert admin['automatic_sold'] == {'5000000000001': 1}
+
+
+@pytest.mark.parametrize('default_store', [False, True])
+def test_received_acquire_check_cancel_count_distinct_orders_and_preserve_old_manual_draft(tmp_path, monkeypatch, default_store):
+    def handle(request):
+        data = {'ok': True, 'status': 'RECEIVED', 'sms_code': '246810',
+                'full_sms': 'private full SMS', 'activation_code': CODE}
+        if request.url.path == '/api/get-phone':
+            data.update(phone='2025550123', country=187, order_id=123)
+        if request.url.path == '/api/cancel':
+            data['status'] = 'CANCELED'
+        return httpx.Response(200, json=data)
+
+    store, client = sales_shop(tmp_path, monkeypatch, handle, default_store=default_store)
+    with client:
+        old = client.get('/api/v1/shop/admin').json()
+        draft = {field: copy.deepcopy(old[field]) for field in ('revision', 'telegram', 'skus', 'display')}
+        draft['client'] = 3
+        requests = [('acquire', {'activation_code': CODE}),
+                    ('check', {'activation_code': CODE, 'order_id': 124}),
+                    ('cancel', {'activation_code': CODE, 'order_id': 125}),
+                    ('check', {'activation_code': CODE + '-OTHER', 'order_id': 123})]
+        for action, payload in requests:
+            response = client.post('/api/v1/shop/sms/' + action, headers=HEADERS, json=payload)
+            assert response.status_code == 200 and response.json()['status'] == 'RECEIVED'
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 10
+        saved = client.put('/api/v1/shop/admin', headers=HEADERS, json=draft)
+        assert saved.status_code == 200 and saved.json()['automatic_sold'] == {'5000000000001': 3}
+        assert saved.json()['display']['5000000000001']['sold'] == 7
+        assert client.get('/api/v1/shop/catalog').json()['products'][0]['sold'] == 10
+        stored = json.loads(store.settings_path.read_text())
+        assert 'automatic_sold' not in stored
+        assert stored['revision'] == 2
+        # Legacy pages omit display/client and must keep the manual history too.
+        legacy = client.put('/api/v1/shop/admin', headers=HEADERS, json={
+            'revision': 2, 'telegram': 'test_shop', 'skus': draft['skus'],
+        })
+        assert legacy.status_code == 200
+        assert legacy.json()['display']['5000000000001']['sold'] == 7
+        assert legacy.json()['automatic_sold'] == {'5000000000001': 3}
+        spoofed = client.put('/api/v1/shop/admin', headers=HEADERS, json={
+            **draft, 'revision': 3, 'automatic_sold': {'5000000000001': 0},
+        })
+        assert spoofed.status_code == 422
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 10
+        ledger = (tmp_path / 'sms-sales.json').read_text()
+        for private in (CODE, '246810', '2025550123', 'private full SMS', 'phoneali', 'order_id'):
+            assert private not in ledger
+        assert (tmp_path / 'sms-sales.json').stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.parametrize('upstream,status', [
+    ({'ok': True, 'status': 'PENDING', 'sms_code': None}, 200),
+    ({'ok': True, 'status': 'CANCELED'}, 200),
+    ({'ok': True, 'status': 'TIMEOUT'}, 200),
+    ({'ok': True, 'status': 'BANNED'}, 200),
+    ({'ok': True, 'status': 'RECEIVED', 'sms_code': ''}, 502),
+    ({'ok': False, 'status': 'RECEIVED', 'sms_code': '123456'}, 400),
+    ({'ok': True, 'status': 'RECEIVED', 'sms_code': ['123456']}, 502),
+    ({'ok': True, 'status': 'RECEIVED', 'sms_code': '123456', 'wait_seconds': -1}, 502),
+])
+def test_no_valid_received_sms_never_counts_a_sale(tmp_path, monkeypatch, upstream, status):
+    _, client = sales_shop(tmp_path, monkeypatch, lambda _: httpx.Response(200, json=upstream))
+    with client:
+        result = client.post('/api/v1/shop/sms/check', headers=HEADERS,
+                             json={'activation_code': CODE, 'order_id': 123})
+        assert result.status_code == status
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 7
+        assert not (tmp_path / 'sms-sales.json').exists()
+
+
+def test_client_cannot_spoof_received_status_or_sales_fields(tmp_path, monkeypatch):
+    _, client = sales_shop(tmp_path, monkeypatch, lambda _: pytest.fail('spoof reached provider'))
+    with client:
+        for extra in ({'status': 'RECEIVED', 'sms_code': '123456'}, {'automatic_sold': 1}):
+            result = client.post('/api/v1/shop/sms/check', headers=HEADERS,
+                                 json={'activation_code': CODE, 'order_id': 123, **extra})
+            assert result.status_code == 422
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 7
+
+
+def test_verify_metadata_is_not_a_received_order(tmp_path, monkeypatch):
+    _, client = sales_shop(tmp_path, monkeypatch, lambda _: httpx.Response(200, json={
+        'ok': True, 'remaining': 1, 'max_uses': 1, 'status': 'RECEIVED', 'sms_code': '123456', 'order_id': 123,
+    }))
+    with client:
+        assert client.post('/api/v1/shop/sms/verify', headers=HEADERS,
+                           json={'activation_code': CODE}).status_code == 200
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 7
+        assert not (tmp_path / 'sms-sales.json').exists()
+
+
+@pytest.mark.parametrize('invalid', [{'order_id': 0}, {'order_id': True}, {'phone': 'bad phone'}])
+def test_unvalidated_acquire_sms_cannot_count_sales(tmp_path, monkeypatch, invalid):
+    upstream = {'ok': True, 'phone': '2025550123', 'country': 187, 'order_id': 123,
+                'status': 'RECEIVED', 'sms_code': '246810', **invalid}
+    _, client = sales_shop(tmp_path, monkeypatch, lambda _: httpx.Response(200, json=upstream))
+    with client:
+        assert client.post('/api/v1/shop/sms/acquire', headers=HEADERS,
+                           json={'activation_code': CODE}).status_code == 502
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 7
+        assert not (tmp_path / 'sms-sales.json').exists()
+
+
+def test_failed_ledger_write_delivers_sms_and_logs_no_private_error(tmp_path, monkeypatch, caplog):
+    import state_store
+
+    store, client = sales_shop(tmp_path, monkeypatch, lambda _: httpx.Response(
+        200, json={'ok': True, 'status': 'RECEIVED', 'sms_code': '246810'}))
+
+    def fail(*args):
+        raise OSError(CODE + ' private full SMS 246810')
+
+    monkeypatch.setattr(state_store, 'save_json_compact', fail)
+    with client:
+        result = client.post('/api/v1/shop/sms/check', headers=HEADERS,
+                             json={'activation_code': CODE, 'order_id': 123})
+        assert result.status_code == 200 and result.json()['sms_code'] == '246810'
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 7
+    assert CODE not in caplog.text and '246810' not in caplog.text
+    assert 'could not be recorded' in caplog.text
+
+
+def test_replaced_sales_ledger_deduplicates_retry_after_directory_fsync_failure(tmp_path, monkeypatch):
+    import state_store
+    from web_api.shop_store import ShopSmsSales
+
+    store, client = sales_shop(tmp_path, monkeypatch, lambda _: httpx.Response(
+        200, json={'ok': True, 'status': 'RECEIVED', 'sms_code': '246810'}))
+    original = state_store._fsync_dir
+
+    def fail_directory_fsync(path):
+        raise OSError('simulated directory fsync failure')
+
+    monkeypatch.setattr(state_store, '_fsync_dir', fail_directory_fsync)
+    with client:
+        payload = {'activation_code': CODE, 'order_id': 123}
+        first = client.post('/api/v1/shop/sms/check', headers=HEADERS, json=payload)
+        assert first.status_code == 200 and first.json()['sms_code'] == '246810'
+        # Rename made both the count and deduplication mark visible together.
+        assert ShopSmsSales(tmp_path / 'sms-sales.json').read() == 1
+        monkeypatch.setattr(state_store, '_fsync_dir', original)
+        retry = client.post('/api/v1/shop/sms/check', headers=HEADERS, json=payload)
+        assert retry.status_code == 200
+        assert client.get('/api/v1/shop/catalog').json()['stats']['sold'] == 8
+        assert store.sms_sales.read() == 1
+
+
+def test_automatic_sold_survives_hidden_source_and_unpublishing_without_changing_manual_limit(tmp_path, monkeypatch):
+    store, client = sales_shop(tmp_path, monkeypatch, lambda _: httpx.Response(
+        200, json={'ok': True, 'status': 'RECEIVED', 'sms_code': '246810'}))
+    with client:
+        client.post('/api/v1/shop/sms/check', headers=HEADERS,
+                    json={'activation_code': CODE, 'order_id': 123})
+        for revision, source_enabled, published in [(1, {'sms': False}, True), (2, {}, False)]:
+            result = client.put('/api/v1/shop/admin', headers=HEADERS, json={
+                'client': 3, 'revision': revision, 'telegram': 'test_shop', 'source_enabled': source_enabled,
+                'skus': {'5000000000001:1': {'price_cents': 250, 'published': published}},
+                'display': {'5000000000001': {'badge': '', 'sold': 10_000_000}},
+            })
+            assert result.status_code == 200
+            assert result.json()['automatic_sold'] == {'5000000000001': 1}
+            public = client.get('/api/v1/shop/catalog').json()
+            assert public['products'] == [] and public['stats']['sold'] == 10_000_001
+        assert store.settings_path.exists()
+
+
 @pytest.mark.parametrize('phone,country,expected_phone,expected_country', [
     ('9382805510', 187, '+19382805510', 'US'),
     ('2025550123', '187', '+12025550123', 'US'),

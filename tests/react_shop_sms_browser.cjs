@@ -8,6 +8,9 @@ const path = require('node:path');
   const browser = await chromium.launch({ headless: true });
   try {
     const base = process.env.PREVIEW_BASE_URL;
+    const admin = await browser.newContext();
+    await admin.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
+    const id = '5000000000001', key = `${id}:1`;
     const context = await browser.newContext();
     await context.addInitScript(() => {
       Object.defineProperty(navigator, 'clipboard', { value: { writeText: async value => { window.__smsClipboard = value; } } });
@@ -127,14 +130,34 @@ const path = require('node:path');
     await page.getByLabel('美国手机号', { exact: true }).fill('20255501234');
     await expect(page.getByRole('button', { name: '验证激活码' })).toBeDisabled();
     await page.getByLabel('美国手机号', { exact: true }).fill('+1 (202) 555-0123');
+    // A manual draft opened before later receipts must preserve both kinds of sales.
+    const beforeReuse = await (await admin.request.get(`${base}/api/v1/shop/admin`)).json();
+    assert.deepEqual(beforeReuse.automatic_sold, { [id]: 1 });
+    assert.equal(beforeReuse.skus[key], undefined, 'new SMS SKU was configured without a merchant save');
+    const manualSave = await admin.request.put(`${base}/api/v1/shop/admin`, { data: {
+      client: 3, revision: beforeReuse.revision, telegram: 'test_shop', skus: beforeReuse.skus,
+      products: beforeReuse.products, display: { [id]: { badge: '', sold: 7 } },
+    } });
+    assert.equal(manualSave.status(), 200);
+    const adminPage = await admin.newPage();
+    await adminPage.goto(`${base}/admin/shop`);
+    await adminPage.getByRole('button', { name: /^短信接码 / }).click();
+    await adminPage.getByRole('button', { name: `商品设置 ${id}`, exact: true }).click();
+    await expect(adminPage.getByLabel(`已售件数 ${id}`, { exact: true })).toHaveValue('7');
+    await adminPage.getByLabel(`已售件数 ${id}`, { exact: true }).fill('9');
+    await expect(adminPage.getByText('自动记录 1 次，合计 10 件', { exact: true })).toBeVisible();
     const reuseStart = requests.length;
-    for (const sms of ['112233', '223344', '334455']) {
+    for (const [index, sms] of ['112233', '223344', '334455'].entries()) {
       await page.getByRole('button', { name: '验证激活码' }).click();
       await expect(page.getByLabel('美国手机号', { exact: true })).toBeDisabled();
       await page.getByRole('button', { name: '获取接收号码' }).click();
       await expect(page.getByText('+1 (202) 555-0123', { exact: true })).toBeVisible();
       await page.clock.runFor(10_500);
       await expect(page.getByText(sms, { exact: true })).toBeVisible();
+      assert.equal((await (await context.request.get(`${base}/api/v1/shop/catalog`)).json()).stats.sold, 9 + index);
+      await page.getByRole('button', { name: '复制验证码', exact: true }).click();
+      assert.equal(await page.evaluate(() => window.__smsClipboard), sms);
+      assert.equal((await (await context.request.get(`${base}/api/v1/shop/catalog`)).json()).stats.sold, 9 + index);
       await page.getByRole('button', { name: '再次使用此号码' }).click();
       await expect(page.getByText(sms, { exact: true })).toHaveCount(0);
     }
@@ -142,6 +165,30 @@ const path = require('node:path');
     assert.deepEqual(reuseRequests.filter(r => r.url.endsWith('/acquire')).map(r => JSON.parse(r.body)),
       Array.from({ length: 3 }, () => ({ activation_code: 'REUSE-TEST-FAKE-CDK', specific_phone: '2025550123' })));
     assert.deepEqual(reuseRequests.filter(r => r.url.endsWith('/check')).map(r => JSON.parse(r.body).order_id), [124, 125, 126]);
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const received = await context.request.post(`${base}/api/v1/shop/sms/check`, {
+        headers: { 'Sec-Fetch-Site': 'same-origin' }, data: { activation_code: 'REUSE-TEST-FAKE-CDK', order_id: 126 },
+      });
+      assert.equal(received.status(), 200);
+    }
+    assert.equal((await (await context.request.get(`${base}/api/v1/shop/catalog`)).json()).stats.sold, 11);
+    await adminPage.getByRole('button', { name: '刷新来源', exact: true }).click();
+    await expect(adminPage.getByText('自动记录 4 次，合计 13 件', { exact: true })).toBeVisible();
+    await expect(adminPage.getByLabel(`已售件数 ${id}`, { exact: true })).toHaveValue('9');
+    await expect(adminPage.locator('.shop-admin-product-header').getByText('已售 13', { exact: true })).toBeVisible();
+    await expect(adminPage.locator('.shop-admin-kpis > div').filter({ hasText: '累计售出' }).locator('dd')).toHaveText('11件');
+    await adminPage.getByRole('button', { name: '保存商品设置', exact: true }).click();
+    await expect(adminPage.getByRole('status')).toContainText('已保存');
+    const afterDraft = await (await admin.request.get(`${base}/api/v1/shop/admin`)).json();
+    assert.equal(afterDraft.display[id].sold, 9);
+    assert.deepEqual(afterDraft.automatic_sold, { [id]: 4 });
+    assert.equal((await (await context.request.get(`${base}/api/v1/shop/catalog`)).json()).stats.sold, 13);
+    for (const width of [1440, 390]) {
+      await adminPage.setViewportSize({ width, height: 1000 });
+      await expect(adminPage.getByText('自动记录 4 次，合计 13 件', { exact: true })).toBeVisible();
+      assert.ok(await adminPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      if (process.env.REACT_SCREENSHOT_DIR) await adminPage.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, `sms-sales-admin-${width}.png`), fullPage: true, animations: 'disabled' });
+    }
     await page.getByRole('button', { name: '验证激活码' }).click();
     await expect(page.getByText('剩余 0 次', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '获取接收号码' })).toBeDisabled();
@@ -314,26 +361,35 @@ const path = require('node:path');
     await page.unroute('**/shop/sms/verify');
 
     // Supplier quote is private; new SKU is unpriced/unpublished until explicit merchant save.
-    const admin = await browser.newContext();
-    await admin.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: base }]);
     const state = await (await admin.request.get(`${base}/api/v1/shop/admin`)).json();
-    const id = '5000000000001', key = `${id}:1`;
     assert.equal(state.items.find(item => item.key === key).cost_cents, 100);
-    assert.equal(state.skus[key], undefined);
+    assert.deepEqual(state.skus[key], { price_cents: null, published: false });
     assert.ok(!(await (await context.request.get(`${base}/api/v1/shop/catalog`)).json()).products.some(p => p.id === id));
-    const adminPage = await admin.newPage();
     await adminPage.goto(`${base}/admin/shop`);
     await adminPage.getByRole('button', { name: /^短信接码 / }).click();
     await expect(adminPage.getByRole('heading', { name: '短信接码激活码' }).first()).toBeVisible();
-    const saved = await admin.request.put(`${base}/api/v1/shop/admin`, { data: { client: 3, revision: state.revision, telegram: 'test_shop', skus: { [key]: { price_cents: 250, published: true } }, products: state.products } });
+    const saved = await admin.request.put(`${base}/api/v1/shop/admin`, { data: { client: 3, revision: state.revision, telegram: 'test_shop', skus: { [key]: { price_cents: 250, published: true } }, products: state.products, display: state.display } });
     assert.equal(saved.status(), 200);
     await page.goto(`${base}/?product=${id}`);
     await expect(page.getByRole('link', { name: '进入短信接码' })).toHaveAttribute('href', '/?view=sms');
     await expect(page.getByRole('img', { name: '短信接码', exact: true })).toBeVisible();
+    await expect(page.getByText('已售 13 件', { exact: true }).first()).toBeVisible();
+    await page.goto(`${base}/`);
+    await expect(page.getByText('累计售出 13 件', { exact: false })).toBeVisible();
+    await expect(page.locator('.shop-product-row').filter({ hasText: '短信接码激活码' }).locator('.shop-product-stats')).toContainText('已售 13 件');
     const catalog = await (await context.request.get(`${base}/api/v1/shop/catalog`)).text();
-    assert.ok(!catalog.includes('zephyr') && !catalog.includes('cost_cents'));
+    assert.ok(!catalog.includes('zephyr') && !catalog.includes('cost_cents') && !catalog.includes('automatic_sold'));
+    assert.equal(JSON.parse(catalog).products.find(product => product.id === id).sold, 13);
+    // A frontend roll forward still opens SMS settings against a backend without the new field.
+    const oldBackend = { ...(await saved.json()) };
+    delete oldBackend.automatic_sold;
+    await adminPage.route('**/api/v1/shop/admin', route => route.fulfill({ contentType: 'application/json', body: JSON.stringify(oldBackend) }));
+    await adminPage.goto(`${base}/admin/shop`);
+    await adminPage.getByRole('button', { name: /^短信接码 / }).click();
+    await adminPage.getByRole('button', { name: `商品设置 ${id}`, exact: true }).click();
+    await expect(adminPage.getByText('自动记录 0 次，合计 9 件', { exact: true })).toBeVisible();
     assert.deepEqual(errors, []);
     assert.deepEqual(external, []);
-    console.log('PASS: SMS country/full number/canonical copy, accessible credential visibility and reset, Canada/foreign/unknown labels, draft/private cost, specified phone, three separate reuse orders, remaining credit, unavailable/no fallback, pending recovery, mismatch race, 10s polling, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');
+    console.log('PASS: SMS country/full number/canonical copy, accessible credential visibility and reset, Canada/foreign/unknown labels, draft/private cost, specified phone, three separate reuse orders, automatic sold totals, repeated poll/copy dedup, old manual draft save/refresh, old backend compatibility, remaining credit, unavailable/no fallback, pending recovery, mismatch race, 10s polling, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

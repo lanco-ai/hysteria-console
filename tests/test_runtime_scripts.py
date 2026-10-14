@@ -123,6 +123,7 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
         'shop/prodseller.key': 'key',
         'shop/lorry.json': '{"api_key":"k","api_secret":"s"}',
         'shop/stats.json': '{"schema_version":1}',
+        'shop/sms-sales.json': '{"schema_version":1,"sold":0,"orders":[]}',
         'shop/source.json': '{"items":[]}',
         'video/settings.json': '{}',
         'video/workflows.json': '{"workflows":[]}',
@@ -146,7 +147,7 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
 
     names, _ = backed_up()
     # Settings, the merchant's prices and copy, the reseller key and the user's video work are kept.
-    for name in ('ai/services.json', 'shop/source-merchant.json', 'shop/prodseller.key', 'shop/lorry.json', 'shop/stats.json', 'video/settings.json',
+    for name in ('ai/services.json', 'shop/source-merchant.json', 'shop/prodseller.key', 'shop/lorry.json', 'shop/stats.json', 'shop/sms-sales.json', 'video/settings.json',
                  'video/workflows.json', 'video/runs.json', 'video/assets/upload-1.png', 'chat/settings.json'):
         assert name in names, name
     # Supplier caches are re-fetched, and migration leftovers and locks are not state.
@@ -157,6 +158,35 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
     names, warning = backed_up()
     assert 'video/assets/upload-1.png' not in names and 'video/workflows.json' in names
     assert 'HY2_BACKUP_ASSETS_MAX_BYTES' in warning
+
+
+def test_backup_restores_sms_sales_and_order_deduplication_together(tmp_path):
+    from web_api.shop_store import ShopSmsSales
+
+    hy_dir = tmp_path / 'hysteria'
+    path = hy_dir / 'state/shop/sms-sales.json'
+    original = ShopSmsSales(path)
+    original.record(123)
+    original.record(124)
+    # Keep a pre-existing backup member so the old script produces an archive.
+    (hy_dir / 'users.json').write_text('{}')
+    result = subprocess.run(
+        ['bash', str(ROOT / 'scripts/hy2-backup.sh')], check=True,
+        capture_output=True, text=True, env=isolated_backup_env(tmp_path, hy_dir),
+    )
+    restored_path = tmp_path / 'restored/sms-sales.json'
+    restored_path.parent.mkdir()
+    with tarfile.open(result.stdout.strip(), 'r:gz') as archive:
+        member, = [entry for entry in archive.getmembers() if entry.name.endswith('/state/shop/sms-sales.json')]
+        restored_path.write_bytes(archive.extractfile(member).read())
+        restored_path.chmod(member.mode)
+    restored = ShopSmsSales(restored_path)
+    assert restored.read() == 2
+    restored.record(123)
+    assert restored.read() == 2
+    restored.record(125)
+    assert restored.read() == 3
+    assert restored_path.stat().st_mode & 0o777 == 0o600
 
 
 def test_restore_check_accepts_plain_backup_archive(tmp_path):

@@ -454,6 +454,54 @@ class ShopStats:
                 state_store.save_json(self.path, value)
 
 
+class ShopSmsSales:
+    """One durable sale per supplier order, with no credential, phone or SMS retained."""
+
+    def __init__(self, path):
+        self.path = Path(path)
+
+    @staticmethod
+    def _empty():
+        return {'schema_version': 1, 'sold': 0, 'orders': []}
+
+    def _load(self):
+        value = state_store.load_json_strict(self.path, self._empty())
+        if (
+            not isinstance(value, dict)
+            or set(value) != set(self._empty())
+            or type(value['schema_version']) is not int
+            or value['schema_version'] != 1
+            or not _integer(value['sold'], 0, 2**53 - 1)
+            or not isinstance(value['orders'], list)
+            or not all(isinstance(mark, str) and re.fullmatch(r'[0-9a-f]{64}', mark)
+                       for mark in value['orders'])
+            or value['sold'] != len(value['orders'])
+            or len(set(value['orders'])) != len(value['orders'])
+        ):
+            raise state_store.InvalidJsonState('invalid SMS sales statistics')
+        return value
+
+    def read(self):
+        try:
+            return self._load()['sold']
+        except (state_store.StateStoreError, OSError, ValueError):
+            return 0
+
+    def record(self, order_id):
+        if not _integer(order_id, 1, 2**53 - 1):
+            raise ValueError('invalid SMS order identity')
+        # Use provider-scoped order_id as the order identity. This assumes the
+        # supplier does not recycle it; CDK reuse cannot create a second identity.
+        mark = hashlib.sha256(f'{SMS_ORIGIN}|{order_id}'.encode()).hexdigest()
+        with state_store.file_lock(str(self.path) + '.lock', timeout=2):
+            value = self._load()
+            if mark in value['orders']:
+                return
+            value['orders'].append(mark)
+            value['sold'] += 1
+            state_store.save_json_compact(self.path, value)
+
+
 class ShopStore:
     def __init__(
         self,
@@ -483,6 +531,7 @@ class ShopStore:
         self.sms_path = self.path.with_name(self.path.stem + '-sms.json')
         self.local_products = local_products
         self.stats = ShopStats(self.path.with_name('stats.json'), clock)
+        self.sms_sales = ShopSmsSales(self.path.with_name('sms-sales.json'))
 
     def _feed_ids(self):
         return tuple(
@@ -638,6 +687,8 @@ class ShopStore:
             **settings,
             # Visit counts, for the merchant as for the storefront.
             'stats': self.stats.read(),
+            # Read-only automatic counts are independent from revisioned manual settings.
+            'automatic_sold': {SMS_PRODUCT_ID: self.sms_sales.read()},
             'products': products,
             # The feed and storefront category of each item, so the admin page needs no list of feeds.
             'items': [
@@ -670,6 +721,7 @@ class ShopStore:
         state = await self.admin()
         stats = state['stats']
         display = state.get('display', {})
+        automatic_sold = state.get('automatic_sold', {})
         groups, applicable = {}, set()
         for row in state['items']:
             provider = provider_of(row['product_id'])
@@ -693,7 +745,8 @@ class ShopStore:
                     .get('after_sales', ''),
                     # Merchandising set by the merchant: a label before the title and units sold.
                     'badge': display.get(row['product_id'], {}).get('badge', ''),
-                    'sold': display.get(row['product_id'], {}).get('sold', 0),
+                    'sold': (display.get(row['product_id'], {}).get('sold', 0)
+                             + automatic_sold.get(row['product_id'], 0)),
                     'views': stats['products'].get(row['product_id'], 0),
                     'variants': [],
                 },
@@ -723,7 +776,8 @@ class ShopStore:
             'telegram': state['telegram'],
             'wechat': state.get('wechat', ''),
             # Units sold over the shop's life, as in 商品管理: a product taken off sale keeps its count.
-            'stats': {'views': stats['site'], 'sold': sum(item['sold'] for item in display.values())},
+            'stats': {'views': stats['site'], 'sold': (sum(item['sold'] for item in display.values())
+                                                     + sum(automatic_sold.values()))},
             'products': products,
             'status': 'ready' if ready else ('stale' if successes else 'unavailable'),
             'updated_at': max(successes, default=None),
@@ -772,6 +826,9 @@ class ShopStore:
         }:
             product_id = None
         await self._finish_thread(self.stats.record, address, product_id)
+
+    async def record_sms_received(self, order_id):
+        await self._finish_thread(self.sms_sales.record, order_id)
 
     async def update(self, payload):
         return await self._finish_thread(self._update, payload)

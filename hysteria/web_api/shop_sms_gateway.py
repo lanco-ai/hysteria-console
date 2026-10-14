@@ -1,4 +1,4 @@
-"""Fixed-origin CDK gateway. No payment, persistence, forwarding cookies or raw errors."""
+"""Fixed-origin CDK gateway. No payment, credential persistence, forwarded cookies or raw errors."""
 
 import asyncio
 import hashlib
@@ -181,7 +181,7 @@ class SmsGateway:
             self.inflight.discard(identity)
 
 
-def register_sms_routes(app, *, gateway=None):
+def register_sms_routes(app, *, gateway=None, on_received=None):
     gateway = gateway or SmsGateway()
 
     def respond(value, status=200, retry=None):
@@ -207,7 +207,16 @@ def register_sms_routes(app, *, gateway=None):
                 payload = validate_payload(action, json.loads(body))
                 peer = request.client.host if request.client else ''
                 address = http_utils.request_client_ip(SimpleNamespace(client_address=(peer, 0), headers=request.headers))
-                return respond(await gateway.call(action, payload, address))
+                result = await gateway.call(action, payload, address)
+                if on_received and result.get('status') == 'RECEIVED' and result.get('sms_code'):
+                    order_id = result['order_id'] if action == 'acquire' else payload['order_id']
+                    try:
+                        await on_received(order_id)
+                    except Exception:
+                        # Accounting is best effort; a delivered SMS must remain
+                        # visible. Never log an exception that may carry secrets.
+                        logging.getLogger(__name__).warning('SMS sale could not be recorded')
+                return respond(result)
             except SmsError as exc:
                 return respond({'ok': False, 'error': exc.error, 'retry_after': exc.retry_after}, exc.status,
                                exc.retry_after if exc.status == 429 else None)

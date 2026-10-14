@@ -14,7 +14,7 @@ type SourceItem = { key: string; product_id: string; title: string; public_title
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; site?: string; supplier?: string; covers?: string };
-type Merchant = { source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type Merchant = { source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '短信接码';
@@ -217,7 +217,7 @@ export function ShopAdminPage() {
         });
         const sources = Object.fromEntries(Object.entries(value.sources ?? { gpt: value })
           .map(([provider, source]) => [provider, { ...source, enabled: sourceEnabled(old, provider) }]));
-        return { ...old, products: { ...value.products, ...old.products }, sources, items: refreshedItems, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds };
+        return { ...old, products: { ...value.products, ...old.products }, automatic_sold: value.automatic_sold ?? {}, sources, items: refreshedItems, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds };
       });
       setDraft(old => { const next = { ...old }; for (const item of value.items) next[item.key] ??= { ...EMPTY_DRAFT }; return next; });
       // Newly discovered products receive effective defaults; existing dirty or
@@ -324,7 +324,8 @@ export function ShopAdminPage() {
   const isStale = (provider: string) => state?.sources?.[provider]?.is_stale === true;
   const onSale = new Set(items.filter(item => isEnabled(providerOf(item)) && saved[item.key]?.published).map(item => item.product_id)).size;
   const unpriced = items.filter(item => isEnabled(providerOf(item)) && saved[item.key]?.price_cents == null).length;
-  const soldTotal = Object.values(state?.display ?? {}).reduce((sum, item) => sum + item.sold, 0);
+  const soldTotal = Object.values(state?.display ?? {}).reduce((sum, item) => sum + item.sold, 0)
+    + Object.values(state?.automatic_sold ?? {}).reduce((sum, count) => sum + count, 0);
   const feedback = <>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
     <p role="status" className="shop-admin-feedback">{notice}</p>
@@ -338,7 +339,7 @@ export function ShopAdminPage() {
             <div><dt>在售商品</dt><dd>{onSale}</dd></div>
             <div className={unpriced ? 'is-attention' : undefined}><dt>待定价规格</dt><dd>{unpriced}</dd></div>
             <div><dt>累计浏览</dt><dd title="按访问 IP 每天计一次，是近似人数：同一网络下的多人会合并，换了网络的人会再计一次。">{(state.stats?.site ?? 0).toLocaleString('zh-CN')}<small>人次</small></dd></div>
-            <div><dt>累计售出</dt><dd title="由你在各商品的设置里填写">{soldTotal.toLocaleString('zh-CN')}<small>件</small></dd></div>
+            <div><dt>累计售出</dt><dd title="已保存的补录销量与自动记录合计">{soldTotal.toLocaleString('zh-CN')}<small>件</small></dd></div>
           </dl>
           <div className="shop-admin-contact" role="group" aria-label="商家联系方式">
             <label>微信<input aria-label="商家微信号" value={wechat} disabled={busy} placeholder="例如 upc-bh" autoComplete="off" onChange={event => { setWechat(event.target.value.trim()); setDirty(true); setNotice(''); }}/></label>
@@ -420,6 +421,8 @@ export function ShopAdminPage() {
                   const productCopy = copy[productId] ?? EMPTY_COPY;
                   const filled = Boolean(productCopy.description.trim() && productCopy.after_sales.trim());
                   const shown = display[productId] ?? EMPTY_DISPLAY;
+                  const automaticSold = state.automatic_sold?.[productId] ?? 0;
+                  const sold = (Number(shown.sold) || 0) + automaticSold;
                   const custom = customBadges.has(productId) || Boolean(shown.badge && !BADGES.includes(shown.badge));
                   const open = openProducts.has(productId);
                   const published = product.enabled && product.rows.some(item => saved[item.key]?.published);
@@ -434,7 +437,7 @@ export function ShopAdminPage() {
                           {!product.enabled ? <span className="badge shop-admin-source-off">来源已停用 · 前台隐藏</span> : product.stale ? <span className="badge warn">价格待更新</span> : null}
                           <span className="shop-admin-product-flags">
                             {shown.badge.trim() ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
-                            {Number(shown.sold) ? <span>已售 {Number(shown.sold).toLocaleString('zh-CN')}</span> : null}
+                            {sold ? <span>已售 {sold.toLocaleString('zh-CN')}</span> : null}
                             {views ? <span>浏览 {views.toLocaleString('zh-CN')}</span> : null}
                             {published && !filled ? <span className="is-warn">缺说明</span> : null}
                           </span>
@@ -479,7 +482,8 @@ export function ShopAdminPage() {
                           <option value="">不显示</option>{BADGES.map(name => <option key={name} value={name}>{name}</option>)}<option value={CUSTOM_BADGE}>自定义…</option>
                         </select></label>
                         {custom ? <input className="shop-admin-display-text" aria-label={`自定义标签 ${productId}`} maxLength={8} placeholder="最多 8 个字" value={shown.badge} disabled={busy} onChange={event => editDisplay(productId, { badge: event.target.value })}/> : null}
-                        <label>已售<input className="shop-admin-display-sold" aria-label={`已售件数 ${productId}`} inputMode="numeric" placeholder="0" value={shown.sold} disabled={busy} onChange={event => editDisplay(productId, { sold: event.target.value.trim() })}/>件</label>
+                        <label>{product.provider === 'sms' ? '补录销量' : '已售'}<input className="shop-admin-display-sold" aria-label={`已售件数 ${productId}`} inputMode="numeric" placeholder="0" value={shown.sold} disabled={busy} onChange={event => editDisplay(productId, { sold: event.target.value.trim() })}/>件</label>
+                        {product.provider === 'sms' ? <span>自动记录 {automaticSold.toLocaleString('zh-CN')} 次，合计 {sold.toLocaleString('zh-CN')} 件</span> : null}
                         <p className="shop-note">标签显示在前台标题前，并作为优惠价的名称，例如「学生价 ¥118.00」。优惠价在各规格行里填写。</p>
                       </div>
                       {isNoticeProduct(productId) && <p className="shop-note">商品说明支持 Markdown 标题、列表和强调。清空并保存后，客户将看到未填写提示。</p>}
