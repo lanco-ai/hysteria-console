@@ -155,7 +155,7 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-row input { scroll-margin-top: 190px; scroll-margin-bottom: 110px; }
 .shop-admin-affix { display: flex; align-items: center; min-width: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-page); color: var(--text-tertiary); transition: border-color var(--transition), box-shadow var(--transition); }
 .shop-admin-affix > span { flex: 0 0 auto; padding-left: 12px; font-size: 13px; }
-.shop-admin-affix input { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 36px; padding: 6px 12px 6px 6px; border: 0; border-radius: 10px; outline: none; background: transparent; color: var(--text-primary); font: inherit; font-variant-numeric: tabular-nums; }
+.shop-admin-affix input { flex: 1 1 auto; width: 100%; min-width: 0; min-height: 36px; padding: 6px 12px 6px 6px; border: 0; border-radius: 10px; outline: none; box-shadow: none; background: transparent; color: var(--text-primary); font: inherit; font-variant-numeric: tabular-nums; }
 .shop-admin-row .shop-admin-affix { border-color: #e1e5df; border-radius: 8px; background: #fff; color: var(--text-tertiary); }
 .shop-admin-row .shop-admin-affix input { min-height: 38px; border-radius: 8px; font-size: 15px; font-weight: 600; }
 .shop-admin-row .shop-admin-affix input::placeholder { color: var(--text-tertiary); font-size: 12px; font-weight: 400; }

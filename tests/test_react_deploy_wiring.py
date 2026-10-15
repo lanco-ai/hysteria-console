@@ -6,8 +6,15 @@ silently changing the production nginx route.
 """
 
 import ast
+import os
 import re
+import runpy
+import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = ROOT / 'deploy.sh'
@@ -136,6 +143,62 @@ def test_react_web_api_imports_are_rendered_and_recoverable():
         assert f'render "$REPO_DIR/hysteria/web_api/{module}" "{destination}"' in deploy, module
         assert f'add_durable_artifact "{destination}"' in deploy, module
         assert f'"/root/hysteria/web_api/{module}"' in recovery, module
+
+
+@pytest.mark.parametrize('stage', ('inventory', 'render', 'durable', 'recovery'))
+def test_clean_react_deployment_imports_application(tmp_path, stage):
+    """Every deployment/recovery module set must support a clean app import."""
+    deploy = DEPLOY.read_text(encoding='utf-8')
+    inventory = re.search(r'(?ms)^declare -a REACT_WEB_API_MODULES=\(\n(.*?)^\)', deploy)
+    assert inventory
+    rendered_sources = re.findall(
+        r'(?m)^\s*render "\$REPO_DIR/hysteria/([^"\n]+\.py)"'
+        r'\s+"\$HY_DIR/\1"$',
+        deploy,
+    )
+    render_modules = {
+        path.removeprefix('web_api/') for path in rendered_sources if path.startswith('web_api/')
+    }
+    module_sets = {
+        'inventory': set(inventory.group(1).split()),
+        'render': render_modules,
+        'durable': set(
+            re.findall(r'add_durable_artifact "\$HY_DIR/web_api/([^"\n]+\.py)"', deploy)
+        ),
+        'recovery': {
+            path.removeprefix('/root/hysteria/web_api/')
+            for path in runpy.run_path(str(RECOVERY))['EXACT_ALLOWED_PATHS']
+            if path.startswith('/root/hysteria/web_api/')
+        },
+    }
+    sources = {path for path in rendered_sources if '/' not in path}
+    sources.update(f'web_api/{module}' for module in module_sets[stage])
+    for relative in sources:
+        destination = tmp_path / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / 'hysteria' / relative, destination)
+
+    environment = os.environ.copy()
+    environment['PYTHONPATH'] = os.pathsep.join(
+        path for path in sys.path if path and not Path(path).resolve().is_relative_to(ROOT)
+    )
+    imported = subprocess.run(
+        [
+            sys.executable,
+            '-B',
+            '-c',
+            'import web_api; from pathlib import Path; '
+            'assert callable(web_api.create_app); '
+            'assert Path(web_api.__file__).resolve().parent == Path.cwd() / "web_api"',
+        ],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert imported.returncode == 0, f'{stage}: {imported.stderr}'
+    assert module_sets[stage] == render_modules
 
 
 def test_react_release_is_staged_and_activated_atomically():
