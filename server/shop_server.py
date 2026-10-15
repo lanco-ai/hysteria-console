@@ -10,6 +10,7 @@ import re
 import stat
 from pathlib import Path
 
+from standby import create_standby_app, standby_enabled
 from web_api import create_app
 from web_api.services import NETWORK_SESSION_URL, RemoteSessionServices
 
@@ -92,6 +93,8 @@ def scheduler_enabled(environ=None) -> bool:
 
 def build_app(environ=None):
     environ = environ if environ is not None else os.environ
+    if standby_enabled(environ, 'SHOP_SCHEDULER'):
+        return create_standby_app(REACT_DIST, '/static/shop')
     return create_app(
         RemoteSessionServices(environ.get('LANCOAI_SESSION_URL', NETWORK_SESSION_URL)),
         react_dist=REACT_DIST,

@@ -32,3 +32,5 @@
 ## 测试与工具
 
 `tests/conftest.py`、`tests/preview_http_server.py`、`tsconfig.json`、`vite.config.ts`（资源前缀不同）、`eslint.config.cjs`、`stylelint.config.cjs`、`package.json`/`package-lock.json`（依赖版本保持一致）、`pyproject.toml`、`pytest.ini`、`.github/workflows/backend-quality.yml`。
+
+商品和工作台分支另共享 `scripts/install_service.py`（事务安装器）、`server/standby.py`（无业务处理器的预装待机入口），修改时须同步。

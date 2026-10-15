@@ -7,6 +7,10 @@ quality_python="${PYTHON:-python3}"
 "$quality_python" -m ruff check server scripts tests
 # Files held to the full lint (F, I) and format gate.
 adopted=(
+  scripts/install_service.py
+  server/standby.py
+  tests/test_service_install.py
+  tests/test_service_standby.py
   server/shop_server.py
   server/web_api/__init__.py
   server/web_api/app.py

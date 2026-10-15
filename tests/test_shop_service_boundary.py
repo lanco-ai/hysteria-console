@@ -252,7 +252,11 @@ def test_entrypoint_keeps_the_scheduler_off_unless_enabled(tmp_path, monkeypatch
     spec.loader.exec_module(shop_server)
 
     assert shop_server.REACT_DIST == release.resolve()
-    assert captured['shop_scheduler_enabled'] is False
+    assert captured == {}
+    with TestClient(shop_server.app) as client:
+        assert client.get('/healthz').json()['standby'] is True
+        assert client.get('/api/v1/shop/catalog').status_code == 503
+        assert client.post('/api/v1/shop/sms/receive', json={}).status_code == 503
     assert shop_server.scheduler_enabled({}) is False
     assert shop_server.scheduler_enabled({'SHOP_SCHEDULER': 'true'}) is False
     assert shop_server.scheduler_enabled({'SHOP_SCHEDULER': '1'}) is True
