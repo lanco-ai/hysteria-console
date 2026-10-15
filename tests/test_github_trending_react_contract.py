@@ -15,12 +15,13 @@ def test_trending_is_a_public_portal_document_with_the_login_limit():
     assert '/admin/github-trending' not in REACT_DOCUMENTS
 
 
-def test_trending_has_portal_navigation_and_no_admin_console_entry():
+def test_trending_has_workbench_navigation_without_shop_links():
     main = (ROOT / 'frontend/src/main.tsx').read_text()
     navigation = (ROOT / 'frontend/src/shared/navigation.ts').read_text()
     portal = (ROOT / 'frontend/src/features/public/PortalShell.tsx').read_text()
     assert '<GithubTrendingPage' in main and "'/trending'" in main
     assert '/admin/github-trending' not in navigation and '/admin/github-trending' not in main
     assert 'href="/trending"' in portal and '开源发现' in portal
-    # Shopping and SMS codes are the shop service's pages: full page loads.
-    assert 'href="/"' in portal and 'href="/?view=sms"' in portal
+    assert "href: '/trending'" in navigation
+    assert 'href="/admin/plans"' in portal
+    assert 'href="/"' not in portal and 'href="/?view=sms"' not in portal

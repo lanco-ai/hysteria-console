@@ -33,6 +33,8 @@ const { expect } = require('@playwright/test');
 
     await page.goto(`${base}/admin/plans`);
     await expect(page.locator('#daily-plans-heading')).toBeVisible();
+    await expect(page.locator('.sidebar-nav .sidebar-link')).toHaveText(['今日计划', 'AI 对话', 'AI 视频', '服务中心']);
+    await expect(page.locator('.sidebar-footer a')).toHaveText(['开源发现']);
     await expect(page.locator('.plans-header .plans-eyebrow')).toHaveCount(0);
     await expect(page.locator('.plans-quote')).toHaveCount(0);
     await expect(page.locator('.daily-section-heading')).toHaveCount(0);

@@ -2,7 +2,7 @@
 
 状态：三服务已上线。2026-10-15 用户进一步指定三个独立网站入口：商品 `https://lancoai.site/`，网络管理 `https://lancoai.site:8444/`，工作台 + AI `https://lancoai.site:8445/`。下述原“网址不变”方案由本段更新；后台回环端口仍为 8083/8084/8085。
 
-页面 GET/HEAD 会转到各自的 HTTPS 入口；网络入口根路径进入用户管理，工作台入口根路径进入今日计划。三个入口均在本 origin 提供登录、会话与跨服务组件所需的 API，使用已有的同主机 cookie；不放宽 CORS 或 CSRF 校验。原订阅地址和 API 继续兼容。三份 `frontend/src/shared/serviceHref.ts` 必须同步，侧栏和登录后导航使用它选择入口。外部业务端口 8444/8445 由 nginx 提供 TLS，Python 服务继续只绑定回环。
+页面 GET/HEAD 会转到各自的 HTTPS 入口；网络入口根路径进入用户管理，工作台入口根路径进入今日计划。三个入口均在本 origin 提供登录、会话与跨服务组件所需的 API，使用已有的同主机 cookie；不放宽 CORS 或 CSRF 校验。原订阅地址和 API 继续兼容。各网站独立维护菜单：商城提供购物、短信接码和商品管理；网络站提供用户、流量、路由、运维和设置；工作台提供计划、AI 和开源发现。侧栏不提供跨站入口，计划提醒仅在工作台显示。`frontend/src/shared/serviceHref.ts` 只用于兼容旧链接和登录返回地址。外部业务端口 8444/8445 由 nginx 提供 TLS，Python 服务继续只绑定回环。
 
 拆分基线：`main` `dd6be5a`。
 

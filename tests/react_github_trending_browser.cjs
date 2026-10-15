@@ -69,6 +69,8 @@ function fixture() {
     await page.goto(`${base}/__react/trending`);
     await expect(page.getByRole('heading', { name: 'GitHub 热榜', level: 1 })).toBeVisible();
     await expect(page.locator('nav[aria-label="主导航"] a[aria-current="page"]')).toHaveText('开源发现');
+    await expect(page.locator('nav[aria-label="主导航"] a')).toHaveText(['开源发现']);
+    await expect(page.locator('.portal-brand')).toHaveAttribute('href', '/trending');
     await expect(page.locator('.trending-period a[aria-current="page"]')).toHaveText('周榜');
     await expect(page.getByText('5 分钟前更新')).toBeVisible();
     await expect(page.getByRole('button', { name: '刷新榜单' })).toHaveCount(0);
