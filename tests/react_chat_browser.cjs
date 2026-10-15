@@ -197,8 +197,15 @@ async function main() {
   assert(launcherAfterPanelDrag.x !== 1200 || launcherAfterPanelDrag.y !== 820,
     'closing a dragged panel should keep the launcher anchored to that panel');
   await launcher.click();
-  const reopenedPanel = await agentBounds();
-  assert(reopenedPanel && Math.abs(reopenedPanel.x - afterDrag.x) < 3 && Math.abs(reopenedPanel.y - afterDrag.y) < 3,
+  // The open animation starts one frame after the panel mounts, so a single
+  // measurement can catch it mid-flight. Wait until two measurements agree.
+  let reopenedPanel = null;
+  await expect.poll(async () => {
+    const previous = reopenedPanel;
+    reopenedPanel = await agentBounds();
+    return Boolean(previous && reopenedPanel && previous.x === reopenedPanel.x && previous.y === reopenedPanel.y);
+  }, { message: 'the reopened agent panel should settle', timeout: 5000 }).toBe(true);
+  assert(Math.abs(reopenedPanel.x - afterDrag.x) < 3 && Math.abs(reopenedPanel.y - afterDrag.y) < 3,
     'reopening should preserve the dragged panel position');
   await page.getByRole('button', { name: '重置位置' }).click();
   await expect.poll(async () => {
