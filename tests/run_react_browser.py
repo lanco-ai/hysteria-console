@@ -35,6 +35,7 @@ def main():
         # Keep each browser suite in a fresh Python process so one suite's
         # fixtures and threads can never leak into the next.
         for browser_test in BROWSER_TESTS:
+            print(f'== {browser_test}', flush=True)
             env = dict(os.environ, REACT_BROWSER_TEST=browser_test)
             subprocess.run(
                 [sys.executable, str(Path(__file__).resolve())],

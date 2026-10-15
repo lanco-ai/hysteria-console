@@ -29,7 +29,8 @@ jobs:
       - name: Run frontend checks
         run: |
           set -o pipefail
-          npm run check:frontend 2>&1 | tee "$RUNNER_TEMP/step.log" || {
+          # Fail (and report) before the job limit if anything hangs.
+          timeout --kill-after=30 1200 npm run check:frontend 2>&1 | tee "$RUNNER_TEMP/step.log" || {
             # Surface the failure in the public check annotations, not only the raw log.
             tail -n 80 "$RUNNER_TEMP/step.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
             echo "::error title=check:frontend failed::$(cat "$RUNNER_TEMP/tail.txt")"

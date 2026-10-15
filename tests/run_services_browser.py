@@ -8,6 +8,7 @@ from react_preview_server import preview_server
 ROOT = Path(__file__).resolve().parents[1]
 
 if __name__ == '__main__':
+    print('== react_services_browser.cjs', flush=True)
     with preview_server() as server:
         subprocess.run(
             ['node', 'tests/react_services_browser.cjs'], cwd=ROOT,
@@ -16,3 +17,4 @@ if __name__ == '__main__':
                      PREVIEW_OPENAI_BASE_URL=server.preview_openai_base_url),
             check=True, timeout=75,
         )
+        print('== services preview teardown', flush=True)
