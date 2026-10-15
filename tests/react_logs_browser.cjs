@@ -14,14 +14,6 @@ const navigation = [
   ['流量分析', '/admin/usage'],
   ['路由与出口', '/admin/config'],
   ['运维', '/admin/health'],
-  ['工作台', null],
-  ['今日计划', '/admin/plans'],
-  ['商品管理', '/admin/shop'],
-  ['AI 工具', null],
-  ['AI 对话', '/admin/chat'],
-  ['AI 视频', '/admin/video'],
-  ['服务中心', '/admin/services'],
-  ['访问网站', '/'],
   ['设置', '/admin/settings'],
 ];
 
