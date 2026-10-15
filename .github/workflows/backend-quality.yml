@@ -10,7 +10,8 @@ permissions:
 jobs:
   frontend-quality:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # This service carries the heaviest browser suites (chat, plans, journal).
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
