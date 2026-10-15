@@ -44,7 +44,7 @@
 | 网络管理 `:8083` | 其余全部（默认 `location /`）：`/admin`、`/admin/usage`、`/admin/config`、`/admin/health`、`/admin/settings` 等、`/login`、`/logout`、`/user/*`、`/sub/*`、`/panel/*`、其余 `/api/v1/*`、`/static/react/` |
 | 不对外 | `^~ /internal/` 一律 404，只允许本机回环访问 |
 
-旧地址兼容：`/?view=trending` 和 `/admin/github-trending` 跳转到 `/trending`；`/?view=chat`、`/?view=video` 跳转到 `/admin/chat`、`/admin/video`。
+旧地址兼容：`/?view=trending`、`/?view=chat`、`/?view=video` 由商品服务分别跳转到 `/trending`、`/admin/chat`、`/admin/video`；`/admin/github-trending` 由网络服务跳转到 `/trending`。
 
 ## 5. 登录与会话
 
@@ -60,7 +60,7 @@
 
 ## 6. 数据归属
 
-第一阶段不移动任何数据文件，每个服务只读写自己的那部分；路径可用环境变量覆盖，方便以后迁移到 `/var/lib/lancoai/<服务>/`。
+第一阶段不移动任何数据文件，沿用现有路径（`/root/hysteria/state/...`），每个服务只读写自己的那部分，systemd 单元也只给本服务的数据目录写权限。以后迁移到 `/var/lib/lancoai/<服务>/` 时再把路径改成可配置。
 
 | 服务 | 数据 |
 |---|---|
@@ -82,11 +82,14 @@
 ## 8. 前端
 
 - 每个分支一个独立的 Vite 项目（`frontend/`），只包含本服务的页面：
-  - 网络管理：用户、流量分析、路由与出口、运维、设置、登录页、登出、改密、用户面板、LancoAgent；资源前缀 `/static/react/`（不变）。
+  - 网络管理：用户、流量分析、路由与出口、运维、设置、登录页、登出、改密、用户面板；资源前缀 `/static/react/`（不变）。
   - 商品：门户首页（购物）、商品详情与购买、短信接码、商品管理、登录弹窗；资源前缀 `/static/shop/`。
   - 工作台 + AI：今日计划、AI 对话、AI 视频、服务中心、开源发现；资源前缀 `/static/workbench/`。
 - 外壳（侧边栏、顶栏）、导航、会话读取、请求工具、图标、样式在三个分支各复制一份。侧边栏菜单保持现在的样子，指向其他服务的链接是普通整页跳转；单页路由只拦截本服务自己的路径。
 - 登录弹窗（门户里）直接调用网络服务的 `/api/v1/login`，同源，无需改动。
+- 后台外壳里的两个跨服务组件在三个分支都保留，行为与拆分前一致：
+  - 今日计划提醒（`PlanReminderCenter`）请求 `/api/plans/reminders`，由 nginx 转给工作台 + AI；该服务不可用时只显示“提醒暂时无法读取”。
+  - LancoAgent 浮动助手请求 `/api/v1/admin/rules` 和 `/api/v1/admin/agent/*`，由 nginx 转给网络服务；网络服务不可用时助手报错，页面其他部分不受影响。
 
 ## 9. 部署
 
@@ -97,6 +100,7 @@
 - **商品、工作台 + AI 分支**各自提供 `deploy/install.sh`：把代码装到 `/opt/lancoai/<服务>/`，用 `hy2_panel_release.py` 的同一格式发布前端（`/opt/lancoai/<服务>/panel/releases/<id>` + `current`），安装 systemd 单元，并检查 `/healthz`。
 - **Python 环境**：服务器磁盘只比健康检查门槛多约 110 MB，所以第一阶段三个服务共用 `/root/hysteria/.venv-web`（102 MB）；扩容磁盘后再各自建虚拟环境。共用环境意味着升级依赖会同时影响三个服务，这是第一阶段已知的耦合。
 - 三个服务都以 `root:hy2-xray` 运行，沿用现有文件权限。
+- 商品和工作台 + AI 的配置分别在 `/etc/lancoai/shop.env`、`/etc/lancoai/workbench.env`（公开域名、会话地址、定时任务开关），安装脚本只在文件不存在时创建。
 
 ## 10. 切换步骤（一次维护窗口，可回滚）
 

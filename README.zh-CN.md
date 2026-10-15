@@ -11,6 +11,9 @@
   <a href="README.md"><img alt="lang" src="https://img.shields.io/badge/lang-English-f87171?style=flat-square"></a>
 </p>
 
+> **服务拆分（分支 `service/network`）**：本分支是 lancoai.site 的**网络管理服务**：Hysteria2、Xray、TUIC，用户与流量，订阅，网络管理后台，三个服务共用的登录与会话，以及 LancoAgent。购物门户与商品管理在分支 `service/shop`；今日计划、AI 对话与视频、服务中心和开源发现在分支 `service/workbench-ai`。nginx 按路径把请求转给负责的服务，见 [docs/service-split-design.md](docs/service-split-design.md) 和 [docs/shared-code.md](docs/shared-code.md)。
+
+
 <p align="center">
   <a href="#特性">特性</a> ·
   <a href="#架构">架构</a> ·

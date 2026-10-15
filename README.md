@@ -11,6 +11,9 @@
   <a href="README.zh-CN.md"><img alt="lang" src="https://img.shields.io/badge/lang-中文-f87171?style=flat-square"></a>
 </p>
 
+> **Service split (branch `service/network`).** This branch is the **network service** of lancoai.site: Hysteria2, Xray and TUIC, users and traffic, subscriptions, the network console, the login and sessions shared by all three services, and the LancoAgent. The storefront and 商品管理 live in branch `service/shop`; 今日计划, AI chat and video, the services center and 开源发现 live in branch `service/workbench-ai`. nginx routes every path to the service that owns it: see [docs/service-split-design.md](docs/service-split-design.md) and [docs/shared-code.md](docs/shared-code.md).
+
+
 <p align="center">
   <a href="#features">Features</a> ·
   <a href="#architecture">Architecture</a> ·
