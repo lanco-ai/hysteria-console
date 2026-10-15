@@ -137,6 +137,27 @@ def test_disabled_sources_block_previous_schema_before_any_rollback_mutation(dep
     assert snapshot(runtime) == before
 
 
+@pytest.mark.parametrize('bookmark_settings', [
+    {'source_enabled': {'wzyp': False}},
+    {'source_lifecycle': {'wzyp': {'generation': 1, 'deleted': True}}},
+    {'source_lifecycle': {'wzyp': {'generation': 2, 'deleted': False}}},
+])
+def test_bookmark_settings_block_pre_bookmark_rollback_before_service_or_files_change(deployment, bookmark_settings):
+    runtime, candidate, _, _ = deployment
+    candidate.write_bytes((ROOT / 'tests/fixtures/shop/legacy_settings_9608aeb.py').read_bytes())
+    run_rollback(deployment)
+    settings = runtime / 'state/shop/source-merchant.json'
+    value = json.loads(settings.read_text())
+    settings.write_text(json.dumps({**value, **bookmark_settings}))
+    before, calls = snapshot(runtime), []
+    with pytest.raises(rollback.RollbackError, match='incompatible'):
+        run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
+    assert calls == [] and snapshot(runtime) == before
+    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    run_rollback(deployment)
+    assert snapshot(runtime) == before
+
+
 def test_legacy_target_is_compatible_only_without_new_price_fields(deployment):
     runtime, candidate, _, _ = deployment
     candidate.write_bytes((ROOT / 'tests/fixtures/shop/legacy_settings_d767a70.py').read_bytes())

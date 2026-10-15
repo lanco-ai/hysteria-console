@@ -34,6 +34,14 @@ const { expect } = require('@playwright/test');
     const reload = page.getByRole('button', { name: '重新读取', exact: true });
     const refresh = page.getByRole('button', { name: '刷新来源', exact: true });
     assert.equal(await remove('本店').count(), 0);
+    const bookmark = page.locator('.shop-source-chip').filter({ hasText: 'WZYP' });
+    const bookmarkSwitch = panel.getByRole('switch', { name: '读取 WZYP', exact: true });
+    await expect(bookmark).toHaveAttribute('href', 'https://wzyp.cn/shop/LHCdeAiPuzi');
+    await expect(bookmark).toContainText('暂不读取');
+    await expect(bookmark).not.toHaveClass(/is-warn/);
+    await expect(bookmarkSwitch).toBeDisabled(); await expect(bookmarkSwitch).not.toBeChecked();
+    assert.equal(baseline.sources.wzyp.can_read, false);
+    assert.equal(baseline.items.some(row => row.provider === 'wzyp'), false);
 
     // Cancel is a zero-request operation, and confirmation explains the irreversible scope.
     let confirmation = '';
@@ -45,6 +53,7 @@ const { expect } = require('@playwright/test');
 
     await page.getByLabel('商家 Telegram 用户名', { exact: true }).fill('draft_contact');
     await expect(remove('16688')).toBeDisabled();
+    await expect(remove('WZYP')).toBeDisabled();
     await expect(panel).toContainText('先保存或重新读取');
     assert.equal(mutations, 0);
     page.once('dialog', dialog => dialog.accept()); await reload.click();
@@ -118,8 +127,37 @@ const { expect } = require('@playwright/test');
     assert(seven.every(row => !readded.skus[row.key]));
     assert.equal(readded.source_lifecycle.shop16688.generation, 2);
     assert.equal((await catalog()).products.length, 2);
+
+    // A bookmark uses the same delete/re-add controls but can never become a feed.
+    const beforeBookmark = await admin(); const publicBeforeBookmark = await catalog();
+    page.once('dialog', dialog => { confirmation = dialog.message(); return dialog.dismiss(); });
+    const beforeCancel = mutations;
+    await remove('WZYP').click();
+    assert.equal(mutations, beforeCancel); assert(confirmation.includes('暂不读取'));
+    page.once('dialog', dialog => dialog.accept()); await remove('WZYP').click();
+    await expect(add('WZYP')).toBeVisible(); await expect(bookmark).toHaveCount(0);
+    assert.equal((await admin()).removed_sources.wzyp.can_add, true);
+    await page.getByLabel('商家 Telegram 用户名', { exact: true }).fill('bookmark_draft');
+    await expect(add('WZYP')).toBeDisabled();
+    page.once('dialog', dialog => dialog.accept()); await reload.click();
+    await add('WZYP').click(); await expect(page.getByRole('status')).toContainText('暂不读取');
+    await expect(bookmark).toContainText('暂不读取');
+    await expect(bookmarkSwitch).toBeDisabled(); await expect(bookmarkSwitch).not.toBeChecked();
+    await refresh.click(); await expect(page.getByRole('status')).toContainText('检查完成');
+    const final = await admin();
+    assert.equal(final.sources.wzyp.can_read, false); assert.equal(final.sources.wzyp.enabled, false);
+    assert.equal(final.source_lifecycle.wzyp.generation, 2);
+    assert.equal(final.items.some(row => row.provider === 'wzyp'), false);
+    for (const field of ['skus', 'products', 'display', 'local_names']) assert.deepEqual(final[field], beforeBookmark[field]);
+    assert.deepEqual((await catalog()).products, publicBeforeBookmark.products);
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await expect(bookmark).toBeVisible(); await expect(bookmarkSwitch).toBeDisabled();
+      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      if (process.env.REACT_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, `source-bookmark-${width}.png`), fullPage: true, animations: 'disabled' });
+    }
     assert.deepEqual(errors, []); assert.equal(external, 0);
-    console.log('PASS: irreversible-source confirmation/cancel, dirty and busy guards, stale-page 409, clean re-add, existing Muse/local preservation, 1440/390 layout');
+    console.log('PASS: source lifecycle, dirty/busy/stale guards, WZYP private bookmark cannot read, delete/re-add stays disabled, merchant preservation, 1440/390 layout');
     await context.close();
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

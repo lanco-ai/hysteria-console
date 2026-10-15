@@ -44,12 +44,14 @@ def test_default_shop_routes_enable_private_local_claude_guidance(tmp_path, monk
         assert client.get('/api/v1/shop/admin').status_code == 401
         admin = client.get('/api/v1/shop/admin', headers=HEADERS)
         assert admin.status_code == 200
+        assert admin.json()['sources']['wzyp']['can_read'] is False
+        assert admin.json()['sources']['wzyp']['enabled'] is False
         assert [(row['key'], row['cost_cents']) for row in admin.json()['items']] == [
             ('6000000000001:1', 8500), ('6000000000001:2', 10500),
         ]
         public = client.get('/api/v1/shop/catalog')
         assert public.status_code == 200 and public.json()['products'] == []
-        for private in ('6000000000001', 'cost_cents', 'sources', 'source_url'):
+        for private in ('6000000000001', 'cost_cents', 'sources', 'source_url', 'wzyp', 'LHCdeAiPuzi'):
             assert private not in public.text
         assert not (tmp_path / 'source-merchant.json').exists()
 

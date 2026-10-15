@@ -17,7 +17,7 @@ class FixtureStore(ShopStore):
     def __init__(self, *args, **kwargs):
         self.fixture_now = 1000
         self.seeded = False
-        super().__init__(*args, **kwargs, local_products=True,
+        super().__init__(*args, **kwargs, local_products=True, bookmarked_sources=True,
                          shop16688_fetcher=new_feed, prodseller_fetcher=prodseller_feed,
                          clock=lambda: self.fixture_now)
 

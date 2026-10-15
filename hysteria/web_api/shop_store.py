@@ -58,6 +58,9 @@ TTL = 900
 BACKOFF = 900
 MANUAL_COOLDOWN = 60
 REMOTE_SOURCES = frozenset({'gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms', 'shop16688'})
+# Private source links waiting for an integration: no fetcher or product namespace.
+BOOKMARKED_SOURCES = frozenset({'wzyp'})
+MANAGED_SOURCES = REMOTE_SOURCES | BOOKMARKED_SOURCES
 PRODSELLER_BY_NUMBER = {
     number: (supplier_id, title) for supplier_id, (number, title) in PRODSELLER_SELECTED.items()
 }
@@ -71,6 +74,7 @@ SOURCE_SITES = {
     'fanai': FANAI_ORIGIN + '/',
     'sms': SMS_ORIGIN + '/',
     'shop16688': f'{SHOP16688_ORIGIN}/shop/{SHOP16688_SHOP}',
+    'wzyp': 'https://wzyp.cn/shop/LHCdeAiPuzi',
     'local': '',
 }
 # Who each feed is, and what it supplies, for the administrator's view. Kept here rather than in
@@ -83,6 +87,7 @@ SOURCE_LABELS = {
     'fanai': ('Fanai', 'GPT / Claude / Grok'),
     'sms': ('Zephyr', '短信接码'),
     'shop16688': ('16688', 'GPT / Claude / Gemini / Muse AI'),
+    'wzyp': ('WZYP', '待接入'),
     'local': ('本店', '开通指导'),
 }
 
@@ -211,16 +216,17 @@ def valid_badge(text):
 
 
 def source_enabled(value):
-    """Only explicit OFF choices are stored; an absent source defaults to enabled."""
-    if (not isinstance(value, dict) or set(value) - REMOTE_SOURCES
-            or any(type(enabled) is not bool for enabled in value.values())):
+    """Only OFF choices are stored; bookmarks cannot be enabled, even explicitly."""
+    if (not isinstance(value, dict) or set(value) - MANAGED_SOURCES
+            or any(type(enabled) is not bool for enabled in value.values())
+            or any(value.get(provider) is True for provider in BOOKMARKED_SOURCES)):
         raise ValueError('invalid source controls')
     return {provider: False for provider, enabled in value.items() if not enabled}
 
 
 def source_lifecycle(value):
     """Persisted generations fence requests started before deletion or re-addition."""
-    if not isinstance(value, dict) or set(value) - REMOTE_SOURCES:
+    if not isinstance(value, dict) or set(value) - MANAGED_SOURCES:
         raise ValueError('invalid source lifecycle')
     for entry in value.values():
         if (not isinstance(entry, dict) or set(entry) != {'generation', 'deleted'}
@@ -239,7 +245,8 @@ def is_source_deleted(settings, provider):
 
 
 def is_source_enabled(settings, provider):
-    return provider == 'local' or (not is_source_deleted(settings, provider)
+    return provider == 'local' or (provider not in BOOKMARKED_SOURCES
+                                 and not is_source_deleted(settings, provider)
                                  and settings.get('source_enabled', {}).get(provider, True))
 
 
@@ -558,6 +565,7 @@ class ShopStore:
         sms_fetcher=None,
         shop16688_fetcher=None,
         local_products=False,
+        bookmarked_sources=False,
         clock=time.time,
     ):
         self.path = Path(path)
@@ -576,6 +584,7 @@ class ShopStore:
         self.shop16688_fetcher = shop16688_fetcher
         self.shop16688_path = self.path.with_name(self.path.stem + '-shop16688.json')
         self.local_products = local_products
+        self.bookmarked_sources = bookmarked_sources
         self.stats = ShopStats(self.path.with_name('stats.json'), clock)
         self.sms_sales = ShopSmsSales(self.path.with_name('sms-sales.json'))
 
@@ -606,6 +615,8 @@ class ShopStore:
             'fanai': self.fanai_path,
             'sms': self.sms_path,
             'shop16688': self.shop16688_path,
+            # Lifecycle cleanup only: bookmarks never load a source snapshot.
+            'wzyp': self.path.with_name(self.path.stem + '-wzyp.json'),
         }[provider]
 
     @staticmethod
@@ -669,6 +680,10 @@ class ShopStore:
             sources['local'] = {
                 **self._empty_source(), 'items': local_catalog(), 'last_success': self.clock(),
             }
+        if self.bookmarked_sources:
+            for provider in BOOKMARKED_SOURCES:
+                if not is_source_deleted(settings, provider):
+                    sources[provider] = self._empty_source()
         return sources
 
     def _feed_status(self, source):
@@ -720,6 +735,8 @@ class ShopStore:
                 **self._feed_status(source),
                 # Store-owned services have no quote age, even if wall time moves backward.
                 **({'is_stale': False} if provider == 'local' else {}),
+                **({'is_stale': False, 'can_read': False}
+                   if provider in BOOKMARKED_SOURCES else {}),
                 'enabled': is_source_enabled(settings, provider),
                 'site': SOURCE_SITES[provider],
                 'supplier': SOURCE_LABELS[provider][0],
@@ -756,8 +773,10 @@ class ShopStore:
             'removed_sources': {
                 provider: {'supplier': SOURCE_LABELS[provider][0],
                            'covers': SOURCE_LABELS[provider][1], 'site': SOURCE_SITES[provider],
-                           'can_add': self._fetcher(provider) is not None}
-                for provider in sorted(REMOTE_SOURCES) if is_source_deleted(settings, provider)
+                           'can_add': provider in BOOKMARKED_SOURCES or self._fetcher(provider) is not None,
+                           **({'can_read': False} if provider in BOOKMARKED_SOURCES else {})}
+                for provider in sorted(REMOTE_SOURCES | (BOOKMARKED_SOURCES if self.bookmarked_sources else frozenset()))
+                if is_source_deleted(settings, provider)
             },
             'last_success': max(successes, default=None),
             'error': 'source_unavailable'
@@ -889,7 +908,9 @@ class ShopStore:
 
     def _change_source(self, provider, payload, deleted):
         expected = {'revision', 'confirm'} if deleted else {'revision'}
-        if (provider not in REMOTE_SOURCES or not isinstance(payload, dict)
+        if (provider not in MANAGED_SOURCES
+                or (provider in BOOKMARKED_SOURCES and not self.bookmarked_sources)
+                or not isinstance(payload, dict)
                 or set(payload) != expected or not _integer(payload['revision'], 0, 2**53 - 2)
                 or (deleted and payload['confirm'] != 'delete-source-and-products')):
             raise ValueError('invalid source operation')
@@ -897,7 +918,7 @@ class ShopStore:
             current = self._settings()
             if payload['revision'] != current['revision']:
                 raise Conflict('settings changed; reload before changing source')
-            if not deleted and self._fetcher(provider) is None:
+            if not deleted and provider not in BOOKMARKED_SOURCES and self._fetcher(provider) is None:
                 raise ValueError('source is not configured')
             if is_source_deleted(current, provider) != deleted:
                 saved = {**current, 'revision': current['revision'] + 1}
