@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { countText, money, promoCents, promoName, type Product, type Variant } from './catalog';
 
+const WARRANTY_PRODUCTS = new Set(['ChatGPT Plus', 'ChatGPT Go', 'ChatGPT Pro 100', 'ChatGPT Pro 200', 'ChatGPT Pro 500']);
+
+/** The merchant's 30-day warranty applies to these five GPT subscription plans. */
+export function WarrantyBadge({ product }: { product: Product }) {
+  return product.category === 'GPT' && WARRANTY_PRODUCTS.has(product.title)
+    ? <span className="shop-warranty-badge">质保30天</span> : null;
+}
+
 /** A promotion label such as 学生价, shown before the title. */
 export function PromoBadge({ text }: { text?: string | undefined }) {
   return text ? <span className="shop-promo-badge">{text}</span> : null;

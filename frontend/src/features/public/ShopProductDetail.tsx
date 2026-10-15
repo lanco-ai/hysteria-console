@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { isNoticeProduct, ShopCopyText, ShopNotice } from '../shop/ShopNotice';
 import { hasContact, money, promoCents, promoName, type Catalog } from '../shop/catalog';
-import { ProductStats, PromoBadge, PromoPrice } from '../shop/ShopMerch';
+import { ProductStats, PromoBadge, PromoPrice, WarrantyBadge } from '../shop/ShopMerch';
 import { cartPromo, findSku, type CartItem } from '../shop/cart';
 import { PLUS_REFERRAL_ANCHOR, PlusReferralDetails, isPlusReferralVariant, plusReferralVariant } from '../shop/PlusReferral';
 
@@ -32,7 +32,7 @@ export function ProductDetail({ productId, catalog, error, onAdd, onBuy, onRetry
     <CatalogNotice catalog={catalog} error={error} onRetry={onRetry}/>
     {product ? <><section className="shop-detail portal-card">
       <div className="shop-detail-image"><ShopBrandImage category={product.category}/></div>
-      <div className="shop-detail-info"><p className="portal-eyebrow">{product.category} · 人工交付</p><h1 ref={title} tabIndex={-1}><PromoBadge text={product.badge}/>{product.title}</h1>
+      <div className="shop-detail-info"><p className="portal-eyebrow">{product.category} · 人工交付</p><div className="shop-detail-heading"><h1 ref={title} tabIndex={-1}><PromoBadge text={product.badge}/>{product.title}</h1><WarrantyBadge product={product}/></div>
         <ProductStats product={product}/>
         {product.category === '短信接码' ? <p className="shop-note">已有激活码？<a href="/?view=sms">进入短信接码</a></p> : null}
         <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{variant ? <PromoPrice product={product} variant={variant}/> : null}</div>

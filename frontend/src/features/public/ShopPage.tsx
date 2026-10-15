@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { PortalShell, ShopIcon } from './PortalShell';
 import { countText, money, reportVisit, shopRequest, type Catalog, type Product } from '../shop/catalog';
-import { ProductStats, PromoBadge, PromoPrice, WechatContact } from '../shop/ShopMerch';
+import { ProductStats, PromoBadge, PromoPrice, WarrantyBadge, WechatContact } from '../shop/ShopMerch';
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
 import { PurchaseDialog } from './ShopPurchase';
 import { ProductDetail, CartView } from './ShopProductDetail';
@@ -18,7 +18,7 @@ function ProductRow({ product, catalogReady, onAdd }: { product: Product; catalo
   const cartIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 3h2l2.5 12h11l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>;
   // A card: the brand, the title with its promotion label, then the price and its 优惠价 below it.
   return <article className="shop-product-row">
-    <div className="shop-product-name"><span className="shop-product-thumbnail"><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title"><PromoBadge text={product.badge}/><h3><a href={`/?product=${product.id}`}>{product.title}</a></h3></div><div className="shop-product-tags">{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span><ProductStats product={product}/></div></div></div>
+    <div className="shop-product-name"><span className="shop-product-thumbnail"><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title"><PromoBadge text={product.badge}/><h3><a href={`/?product=${product.id}`}>{product.title}</a></h3><WarrantyBadge product={product}/></div><div className="shop-product-tags">{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span><ProductStats product={product}/></div></div></div>
     <div className="shop-product-price"><strong>{money(minimum).slice(1)}{maximum !== minimum ? `–${money(maximum).slice(1)}` : ''} <span>CNY</span></strong><PromoPrice product={product}/></div>
     <div className="shop-product-action">{available && !single ? <a className="shop-product-cart" href={`/?product=${product.id}`} aria-label={`选择 ${product.title} 规格`}>{cartIcon}</a> : <button className="shop-product-cart" type="button" disabled={!available} aria-label={available ? `将 ${product.title} 加入购物车` : `${product.title} 暂不可购买`} onClick={() => { if (catalogReady && single?.available) onAdd({ id: single.id, quantity: 1 }); }}>{cartIcon}</button>}<a className="shop-product-detail-link" href={`/?product=${product.id}`} aria-label={`${product.title} 商品详情`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a></div>
     {catalogReady && plusReferralVariant(product) ? <PlusReferralLink product={product}/> : null}

@@ -220,6 +220,10 @@ body.page-portal {
 .shop-detail-image img { width: 100%; max-width: 531px; height: auto; border-radius: 14px; }
 .shop-detail-info { min-width: 0; }
 .shop-detail-info h1 { font-size: clamp(24px, 3vw, 36px); margin: 12px 0 24px; }
+.shop-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 12px 0 24px; }
+.shop-detail-heading h1 { margin: 0; }
+.shop-warranty-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #d7e6f4; border-radius: 5px; background: #f1f7fc; color: #3b6085; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.shop-detail-heading .shop-warranty-badge { padding: 4px 9px; font-size: 13px; }
 .shop-detail-price { display: grid; justify-items: start; gap: 10px; padding: 20px; background: #f1f4ef; border-radius: 10px; }
 .shop-detail-price p { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; }
 .shop-detail-price strong { font-size: 30px; color: #365a43; }
