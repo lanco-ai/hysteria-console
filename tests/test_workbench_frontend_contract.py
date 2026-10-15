@@ -114,12 +114,11 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     assert 'className="main"' not in adapter
     assert "navigationGroups" in navigation
     assert "placement: 'bottom'" in navigation
-    for label in ("网络管理", "工作台", "AI 工具"):
-        assert label in navigation
+    assert "网络管理" in navigation
+    assert "工作台" not in navigation and "AI 工具" not in navigation
     for href in (
         "/admin", "/admin/usage", "/admin/health",
         "/admin/settings", "/admin/config",
-        "/admin/plans", "/admin/services",
     ):
         assert href in navigation
     # 家宽出口 is a tab of 路由与出口 and 事故处理 part of 流量分析; both keep their addresses.
@@ -128,9 +127,10 @@ def test_admin_shell_adapts_to_codex_shell_and_keeps_admin_routes_available():
     assert "'/admin/landing-egresses':" in routes and "key: 'landing'" in template_rules
     assert "route === '/admin/incidents') return <UsagePage" in routes
     for route in ("/admin/chat", "/admin/video", "/admin/plans", "/admin/services", "/admin/shop"):
-        assert f"href: '{route}'" in navigation, "the sidebar still lists every service's pages"
-        # Those pages belong to the shop and workbench + AI services: full page loads.
-        assert f"'{route}'" not in routes
+        assert f"href: '{route}'" not in navigation, "network navigation must not list other sites"
+        # The shared login can return to another site's page, but the network
+        # application does not register or display that page itself.
+        assert f"'{route}':" not in routes
     for route, tab in (("/admin/health", "health"), ("/admin/logs", "logs")):
         assert f"'{route}':" in routes
         assert f"key: '{tab}'" in operations

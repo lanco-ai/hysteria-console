@@ -60,7 +60,7 @@ async function main() {
     await page.locator('#login-modal-username').fill('admin');
     await page.locator('#login-modal-password').fill(fixturePassword);
     await page.getByRole('button', { name: '登录', exact: true }).click();
-    await expect(page).toHaveURL(`${baseUrl}/__react/`);
+    await expect(page).toHaveURL(`${baseUrl}/__react/admin`);
 
     await page.goto(`${baseUrl}/__react/login?next=${encodeURIComponent('/?product=2&secret=private-copy')}`);
     await page.locator('#login-modal-username').fill('admin');

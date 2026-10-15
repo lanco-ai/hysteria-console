@@ -42,12 +42,10 @@ async function main() {
         label: group.querySelector('.sidebar-section')?.textContent?.trim() || '',
         hrefs: Array.from(group.querySelectorAll('a[href]'), link => new URL(link.href).pathname),
       })));
-      assert.deepEqual(navGroups.map(group => group.label), ['网络管理', '工作台', 'AI 工具']);
+      assert.deepEqual(navGroups.map(group => group.label), ['网络管理']);
       assert.deepEqual(navGroups.find(group => group.label === '网络管理')?.hrefs, ['/admin', '/admin/usage', '/admin/config', '/admin/health']);
-      assert.equal(navGroups.find(group => group.hrefs.includes('/admin/plans'))?.label, '工作台');
-      assert.deepEqual(navGroups.find(group => group.label === 'AI 工具')?.hrefs, ['/admin/chat', '/admin/video', '/admin/services']);
       assert.equal(navGroups.find(group => group.hrefs.includes('/admin/github-trending')), undefined, 'GitHub trending has moved to the public portal');
-      assert.deepEqual(await page.locator('.sidebar-footer a[href]').evaluateAll(links => links.map(link => new URL(link.href).pathname)), ['/', '/admin/settings']);
+      assert.deepEqual(await page.locator('.sidebar-footer a[href]').evaluateAll(links => links.map(link => new URL(link.href).pathname)), ['/admin/settings']);
       // Each entry has its own icon, so the collapsed rail stays readable.
       const icons = await page.locator('.sidebar a.sidebar-link svg').evaluateAll(svgs => svgs.map(svg => svg.innerHTML));
       assert.equal(new Set(icons).size, icons.length, 'sidebar icons must be distinct');
@@ -117,37 +115,23 @@ async function main() {
     const reminderContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     await reminderContext.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: baseUrl }]);
     const reminderPage = await reminderContext.newPage();
-    const date = await reminderPage.evaluate(() => {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-      const parts = new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
-      const get = type => parts.find(part => part.type === type)?.value || '00';
-      return `${get('year')}-${get('month')}-${get('day')}`;
-    });
-    const task = { id: 'reminder-demo', title: '核验提醒跨页显示', notes: '', quadrant: 'important_urgent', plan_date: date,
-      timezone: 'UTC', start_time: null, due_at: null, estimate_minutes: 30, reminder_at: '2026-09-18T00:00:00Z',
-      status: 'todo', created_at: '2026-09-18T00:00:00Z', updated_at: '2026-09-18T00:00:00Z' };
-    let due = [{ id: task.id, title: task.title, plan_date: task.plan_date, reminder_at: task.reminder_at }];
-    let actionBody = null;
-    await reminderPage.route('**/api/plans', route => route.fulfill({ json: { revision: '1'.repeat(64), items: [task] } }));
-    await reminderPage.route('**/api/plans/reminders', route => route.fulfill({ json: { items: due } }));
-    await reminderPage.route('**/api/plans/reminders/**', async route => {
-      actionBody = route.request().postDataJSON();
-      due = [];
-      await route.fulfill({ json: { item: { ...task, reminder_at: null } } });
+    const foreignRequests = [];
+    await reminderPage.route('**/api/plans**', async route => {
+      foreignRequests.push(route.request().url());
+      await route.fulfill({ json: { items: [{ id: 'foreign-reminder', title: '工作台提醒', plan_date: '2026-10-15', reminder_at: '2026-10-15T00:00:00Z' }] } });
     });
     await reminderPage.goto(`${baseUrl}/__react/admin`);
-    await expect(reminderPage.getByRole('complementary', { name: '今日计划提醒' })).toContainText(task.title);
-    // The reminder follows the console across this service's pages.
+    await expect(reminderPage.locator('.overview-cycle')).toBeVisible();
+    await expect(reminderPage.locator('.plans-global-reminders')).toHaveCount(0);
     await reminderPage.locator('.sidebar-link[href="/admin/usage"]').click();
     await expect(reminderPage).toHaveURL(`${baseUrl}/__react/admin/usage`);
-    await expect(reminderPage.locator('.plans-global-reminders')).toContainText(task.title);
-    await reminderPage.getByRole('button', { name: '稍后', exact: true }).click();
-    await expect.poll(() => actionBody?.action).toBe('snooze');
+    await expect(reminderPage.getByRole('heading', { name: '流量分析', level: 1 })).toBeVisible();
     await expect(reminderPage.locator('.plans-global-reminders')).toHaveCount(0);
+    assert.deepEqual(foreignRequests, [], 'network pages must not poll workbench reminders');
     await reminderContext.close();
 
     console.log('Shared sidebar geometry and client navigation passed: desktop, iPad landscape/portrait, mobile');
-    console.log('Global plan reminders follow the network console pages and persist actions');
+    console.log('Network-only navigation does not load workbench reminders');
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

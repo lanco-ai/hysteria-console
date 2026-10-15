@@ -322,6 +322,17 @@ function LoginRoute({ route, loginOpen, onAuthenticated, onClose }: {
   </>;
 }
 
+function defaultLoginReturnTo(route: string): string {
+  if (route === '/user/login') return '/user/panel';
+  // The network service supplies /login on all three origins. A direct login
+  // without a return path must enter the site on which the visitor signed in.
+  if (window.location.protocol === 'https:') {
+    if (window.location.port === '8445') return '/admin/plans';
+    if (['', '443', '9444'].includes(window.location.port)) return '/admin/shop';
+  }
+  return '/admin';
+}
+
 function App() {
   const [locationKey, setLocationKey] = useState(currentLocationKey);
   const [loginRequested, setLoginRequested] = useState(false);
@@ -354,7 +365,7 @@ function App() {
   const handleAuthenticated = useCallback(async (candidate?: string) => {
     await session.refresh();
     setLoginRequested(false);
-    const returnTo = sanitizeReturnTo(candidate) || (route === '/user/login' ? '/user/panel' : '/');
+    const returnTo = sanitizeReturnTo(candidate) || defaultLoginReturnTo(route);
     const destination = serviceHref(previewPath(returnTo));
     if (new URL(destination, window.location.origin).origin !== window.location.origin) {
       window.location.assign(destination);

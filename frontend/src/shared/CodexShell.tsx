@@ -1,11 +1,9 @@
-import { serviceHref } from './serviceHref';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useLogout } from '../features/auth/useLogout';
 import { Icon } from './icons';
 import { navigationGroups } from './navigation';
 import type { SessionStatus } from './session';
 import { LancoAgent } from '../features/agent/LancoAgent';
-import { PlanReminderCenter } from '../features/plans/PlanReminderCenter';
 
 export type CodexShellProps = {
   active: string;
@@ -111,7 +109,7 @@ export function CodexShell({ active, pageTitle, badge, children, subtitle, topba
     <div className={`app${effectiveCollapsed ? ' sidebar-collapsed' : ''}${animationReady ? ' anim-ready' : ''}`} data-auth-status={authStatus}>
       <aside className={`sidebar${effectiveCollapsed ? ' collapsed' : ''}${mobile && open ? ' open' : ''}`} id="sidebar" ref={sidebarRef} inert={mobile && !open ? true : undefined}>
         <div className="sidebar-brand">
-          <a className="sidebar-home" href={serviceHref('/admin')} aria-label="控制台首页"><span className="sidebar-logo">H</span><div className="sidebar-brand-text"><strong>网络管理</strong><small>Network Console</small></div></a>
+          <a className="sidebar-home" href="/admin" aria-label="控制台首页"><span className="sidebar-logo">H</span><div className="sidebar-brand-text"><strong>网络管理</strong><small>Network Console</small></div></a>
           <button className="sidebar-close" id="sidebar-close" type="button" aria-label="关闭导航" aria-controls="sidebar" onClick={() => closeSidebar(true)}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
@@ -123,12 +121,12 @@ export function CodexShell({ active, pageTitle, badge, children, subtitle, topba
         <nav className="sidebar-nav" aria-label="管理导航">
           {navigation.map((group, index) => <div key={group.label} role="group" aria-labelledby={`sidebar-group-${index}`}>
             <div className="sidebar-section" id={`sidebar-group-${index}`}>{group.label}</div>
-            {group.items.map(item => <a key={item.key} href={serviceHref(item.href)} className={`sidebar-link ${item.key === active ? 'active' : ''}`} aria-current={item.key === active ? 'page' : undefined} title={item.label} aria-label={item.label} onClick={() => closeSidebar(false)}><Icon name={item.icon}/><span>{item.label}</span></a>)}
+            {group.items.map(item => <a key={item.key} href={item.href} className={`sidebar-link ${item.key === active ? 'active' : ''}`} aria-current={item.key === active ? 'page' : undefined} title={item.label} aria-label={item.label} onClick={() => closeSidebar(false)}><Icon name={item.icon}/><span>{item.label}</span></a>)}
           </div>)}
         </nav>
         <div className="sidebar-footer">
           {sidebarBottom ? <div className="sidebar-bottom">{sidebarBottom}</div> : null}
-          {footerNavigation.map(item => <a key={item.key} href={serviceHref(item.href)} className={`sidebar-link ${item.key === active ? 'active' : ''}`} aria-current={item.key === active ? 'page' : undefined} title={item.label} aria-label={item.label} onClick={() => closeSidebar(false)}><Icon name={item.icon}/><span>{item.label}</span></a>)}
+          {footerNavigation.map(item => <a key={item.key} href={item.href} className={`sidebar-link ${item.key === active ? 'active' : ''}`} aria-current={item.key === active ? 'page' : undefined} title={item.label} aria-label={item.label} onClick={() => closeSidebar(false)}><Icon name={item.icon}/><span>{item.label}</span></a>)}
           <form method="post" action="/logout" onSubmit={logout.onSubmit}>
             <button type="submit" className="sidebar-logout" title="退出登录" aria-label="退出登录" disabled={logout.busy} aria-busy={logout.busy ? true : undefined}><Icon name="logout"/><span>{logout.busy ? '正在退出…' : '退出登录'}</span></button>
           </form>
@@ -148,7 +146,6 @@ export function CodexShell({ active, pageTitle, badge, children, subtitle, topba
         </main>
       </div>
     </div>
-    {authStatus === 'anonymous' || authStatus === 'unavailable' ? null : <PlanReminderCenter/>}
     {agentEnabled ? <LancoAgent /> : null}
   </>;
 }
