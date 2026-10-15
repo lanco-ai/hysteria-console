@@ -19,7 +19,6 @@ export const navigationGroups: NavigationGroup[] = [
     label: '商城',
     items: [
       { key: 'shop', href: '/admin/shop', label: '商品管理', icon: 'shop' },
-      { key: 'sms', href: '/?view=sms', label: '短信接码', icon: 'chat' },
     ],
   },
   {
