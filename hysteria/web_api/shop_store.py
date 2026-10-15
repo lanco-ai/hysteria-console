@@ -33,6 +33,8 @@ from .shop_notices import (
     GEMINI_PRODUCT_IDS,
     GROK_NOTICE,
     GROK_PRODUCT_IDS,
+    MUSE_NOTICE,
+    MUSE_PRODUCT_IDS,
     X_PREMIUM_NOTICE,
     sanitize_product_copy,
 )
@@ -70,7 +72,7 @@ SOURCE_SITES = {
 SOURCE_LABELS = {
     'gpt': ('强云', 'GPT'),
     'anli': ('Anli', 'Claude / Grok'),
-    'prodseller': ('ProdSeller', 'Gemini'),
+    'prodseller': ('ProdSeller', 'Gemini / Muse AI'),
     'lorry': ('Lorry', 'X / Muse AI'),
     'fanai': ('Fanai', 'GPT / Claude / Grok'),
     'sms': ('Zephyr', '短信接码'),
@@ -110,7 +112,7 @@ def category_of(provider, public_title):
     if provider == 'lorry':
         return 'X' if public_title.startswith('X ') else 'Muse AI'
     if provider == 'prodseller':
-        return 'Gemini'
+        return 'Muse AI' if public_title == 'Muse AI' else 'Gemini'
     if provider == 'anli':
         return 'Claude' if public_title.startswith('Claude ') else 'Grok'
     return 'GPT'
@@ -659,6 +661,8 @@ class ShopStore:
             products.setdefault(product_id, dict(GROK_NOTICE))
         for product_id in {row['product_id'] for row in items} & GEMINI_PRODUCT_IDS:
             products.setdefault(product_id, dict(GEMINI_NOTICE))
+        for product_id in {row['product_id'] for row in items} & MUSE_PRODUCT_IDS:
+            products.setdefault(product_id, dict(MUSE_NOTICE))
         for product_id in {row['product_id'] for row in items if row['public_title'].startswith('X Premium ')}:
             products.setdefault(product_id, dict(X_PREMIUM_NOTICE))
         # Older saved copy may still carry supplier links; never project them.

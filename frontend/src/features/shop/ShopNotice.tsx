@@ -7,6 +7,7 @@ import grokMonthly from '../../assets/shop-notices/grok-supergrok-monthly.png';
 const claudeProductIds = new Set(['1000000000005', '1000000000007', '1000000000008']);
 const grokProductIds = new Set(['1000000000011']);
 const geminiProductIds = new Set(['2000000000001']);
+const museProductIds = new Set(['2000000000002']);
 const noticeImages = [
   { alias: '/shop-notices/claude/active-subscription', src: activeSubscription, width: 1280, height: 957 },
   { alias: '/shop-notices/claude/message-restriction', src: messageRestriction, width: 2672, height: 1466 },
@@ -14,12 +15,19 @@ const noticeImages = [
   { alias: '/shop-notices/grok/supergrok-monthly', src: grokMonthly, width: 770, height: 1132 },
 ];
 
-// Only redemption portals and the exact official eligibility link are clickable.
+// Redemption portals and these exact eligibility/login/tutorial pages are clickable.
 const redeemHosts = new Set(['aiflbchengzi.com', 'sub2buy.com']);
+const noticeUrls = new Set([
+  'https://policies.google.com/terms?hl=zh_CN',
+  'https://dev-api.cc/muse.php',
+  'https://www.tmail.pk/login',
+  'https://muse.ai/',
+  'https://www.youtube.com/watch?v=lpsRG9VSDuQ',
+]);
 function noticeLink(href: string | undefined) {
   try {
     const url = new URL(href ?? '');
-    return (url.protocol === 'https:' && redeemHosts.has(url.hostname)) || url.href === 'https://policies.google.com/terms?hl=zh_CN' ? url.href : null;
+    return (url.protocol === 'https:' && redeemHosts.has(url.hostname)) || noticeUrls.has(url.href) ? url.href : null;
   } catch { return null; }
 }
 
@@ -31,7 +39,7 @@ export function ShopCopyText({ text }: { text: string }) {
 }
 
 export function isClaudeNoticeProduct(productId: string) { return claudeProductIds.has(productId); }
-export function isNoticeProduct(productId: string) { return isClaudeNoticeProduct(productId) || grokProductIds.has(productId) || geminiProductIds.has(productId); }
+export function isNoticeProduct(productId: string) { return isClaudeNoticeProduct(productId) || grokProductIds.has(productId) || geminiProductIds.has(productId) || museProductIds.has(productId); }
 
 export function ShopNotice({ text }: { text: string }) {
   return <div className="shop-notice"><ReactMarkdown skipHtml unwrapDisallowed allowedElements={['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'strong', 'em', 'br', 'img', 'a']} components={{

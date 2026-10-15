@@ -5,6 +5,7 @@ import re
 CLAUDE_PRODUCT_IDS = frozenset({"1000000000005", "1000000000007", "1000000000008"})
 GROK_PRODUCT_IDS = frozenset({"1000000000011"})
 GEMINI_PRODUCT_IDS = frozenset({"2000000000001"})
+MUSE_PRODUCT_IDS = frozenset({"2000000000002"})
 
 CLAUDE_NOTICE = {
     "description": """# ⚠️ 充值前重要须知
@@ -147,6 +148,41 @@ GEMINI_NOTICE = {
 - **虚拟商品，售出不退。**
 
 **⚠️ 下单前请自行确认账号领取资格，避免因地区或账号限制导致无法开通。**""",
+}
+
+# Product details supplied by the merchant, not copied from the live supplier feed.
+MUSE_NOTICE = {
+    "description": """# Muse AI
+
+## 套餐内容
+
+- 商品资料标注含 **10 亿（1 Billion）Tokens**。
+- 支持 **AI 图像生成**与 **AI 视频生成**。
+- 适合短视频、长视频创作，包括 1 小时以上视频。
+
+## 交付格式
+
+邮箱地址 | 邮箱登录信息（或密码）
+
+## 登录方法
+
+### 方法一：OTP 获取页面
+
+打开 [Muse OTP 获取页面](https://dev-api.cc/muse.php)，按页面提示获取登录验证码。
+
+### 方法二：临时邮箱
+
+1. 打开 [临时邮箱登录页](https://www.tmail.pk/login)，使用交付的邮箱地址和邮箱登录信息登录。
+2. 进入 [Muse AI 官网](https://muse.ai/)或 Muse AI App，输入交付的邮箱地址。
+3. 返回临时邮箱，查看 Muse 发来的 OTP 验证码。
+4. 将 OTP 填入 Muse 登录页面，完成登录。
+
+登录后建议将账户邮箱修改为自己的常用邮箱。
+
+## 视频教程
+
+[查看登录操作教程](https://www.youtube.com/watch?v=lpsRG9VSDuQ)""",
+    "after_sales": "",
 }
 
 # Plain text: X Premium is delivered as an official gift to the buyer's handle.
