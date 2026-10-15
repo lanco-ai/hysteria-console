@@ -1,3 +1,4 @@
+import { serviceHref } from './shared/serviceHref';
 import { createRoot } from 'react-dom/client';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import type { ComponentType } from 'react';
@@ -145,7 +146,11 @@ function installClientNavigation(onNavigate: () => void): () => void {
     if (!(event.target instanceof Element)) return;
     const anchor = event.target.closest<HTMLAnchorElement>('a[href]');
     if (!anchor || anchor.target || anchor.hasAttribute('download')) return;
-    const url = new URL(anchor.href, window.location.href);
+    const url = new URL(serviceHref(anchor.href), window.location.href);
+    if (url.origin !== window.location.origin) {
+      if (url.href !== anchor.href) { event.preventDefault(); window.location.assign(url.href); }
+      return;
+    }
     if (url.origin !== window.location.origin || !isShopDocument(url)) return;
     if (url.pathname === window.location.pathname && url.search === window.location.search && url.hash) {
       event.preventDefault();
@@ -257,7 +262,11 @@ function App() {
     await session.refresh();
     setLoginRequested(false);
     const returnTo = sanitizeReturnTo(candidate) || PORTAL_ROUTE;
-    const destination = previewPath(returnTo);
+    const destination = serviceHref(previewPath(returnTo));
+    if (new URL(destination, window.location.origin).origin !== window.location.origin) {
+      window.location.assign(destination);
+      return;
+    }
     // Pages of the other services are separate documents.
     if (!isShopDocument(new URL(returnTo, window.location.origin))) {
       window.location.assign(destination);
