@@ -28,14 +28,30 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Run frontend checks
         run: |
-          set -o pipefail
-          # Fail (and report) before the job limit if anything hangs.
-          timeout --kill-after=30 1200 npm run check:frontend 2>&1 | tee "$RUNNER_TEMP/step.log" || {
-            # Surface the failure in the public check annotations, not only the raw log.
-            tail -n 80 "$RUNNER_TEMP/step.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
-            echo "::error title=check:frontend failed::$(cat "$RUNNER_TEMP/tail.txt")"
+          # Log to a file, not a pipe: a timed-out browser suite can leave an orphaned
+          # process holding the pipe open forever. The checks run in their own process
+          # group under a 20-minute watchdog, and failures post the log tail as a
+          # public annotation (job logs need a token to read).
+          log="$RUNNER_TEMP/step.log"
+          setsid npm run check:frontend >"$log" 2>&1 &
+          pid=$!
+          status=0
+          for _ in $(seq 1 1200); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+          if kill -0 "$pid" 2>/dev/null; then
+            { echo "== still running after 20 minutes; process tree:"; ps -eo pid,pgid,etimes,args --forest; } >>"$log" 2>&1 || true
+            kill -TERM -- "-$pid" 2>/dev/null || true
+            sleep 5
+            kill -KILL -- "-$pid" 2>/dev/null || true
+            status=124
+          else
+            wait "$pid" || status=$?
+          fi
+          cat "$log"
+          if [ "$status" -ne 0 ]; then
+            tail -n 120 "$log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
+            echo "::error title=check:frontend failed (exit $status)::$(cat "$RUNNER_TEMP/tail.txt")"
             exit 1
-          }
+          fi
   backend-quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
