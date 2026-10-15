@@ -127,6 +127,15 @@ def test_react_preview_leaves_the_portal_to_the_shop_service(running_preview):
         assert error.value.code == 404
 
 
+def test_react_preview_plays_the_workbench_reminder_feed(running_preview):
+    _, base_url = running_preview
+    # Every console shell shows the plan reminders; in production nginx sends
+    # this request to the workbench + AI service.
+    with urlopen(base_url + '/api/plans/reminders', timeout=5) as response:
+        assert response.status == 200
+        assert json.load(response) == {'items': []}
+
+
 def test_react_preview_serves_exact_login_entry_with_password_limit(running_preview):
     _, base_url = running_preview
     with urlopen(base_url + '/__react/login', timeout=5) as response:

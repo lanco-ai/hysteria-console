@@ -218,6 +218,15 @@ def _handler(api_client, allowed_assets):
                 path.startswith('/__react/admin/user/') and path.count('/') == 4
             ):
                 self._react_page(path)
+            elif path == '/api/plans/reminders':
+                # The workbench + AI service owns reminders (nginx routes them
+                # there); the console's shared reminder widget reads none here.
+                self._write(
+                    200,
+                    json.dumps({'items': []}).encode(),
+                    'application/json',
+                    [('Cache-Control', 'no-store'), *http_utils.SECURITY_HEADERS.items()],
+                )
             elif path.startswith('/api/'):
                 self._api()
             elif path.startswith('/static/react/'):
