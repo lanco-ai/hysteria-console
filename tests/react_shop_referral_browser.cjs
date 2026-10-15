@@ -37,9 +37,9 @@ function fixture() {
       await page.goto(base);
       const banner = page.locator('.shop-referral-banner');
       const teaser = page.locator('.shop-referral-teaser');
-      await expect(banner).toContainText('续费最低 ¥113/月，另享 ¥3/人返利');
+      await expect(banner).toContainText('每推荐 1 人购买，续费减 ¥1，最低 ¥113/月');
       await expect(teaser).toHaveCount(1);
-      await expect(teaser).toContainText('每推荐 1 人购买，续费减 ¥1 · 另返 ¥3');
+      await expect(teaser).toContainText('每推荐 1 人购买，后续每月续费减 ¥1');
       const card = page.locator('.shop-product-row').filter({ has: teaser });
       await page.evaluate(() => document.fonts.ready);
       const promo = await teaser.boundingBox();
@@ -57,8 +57,8 @@ function fixture() {
       await expect(rules).toBeFocused();
       await expect(page.getByRole('button', { name: '一个月', exact: true })).toHaveAttribute('aria-pressed', 'true');
       await expect(rules).toContainText('后续每月续费价格累计降低 ¥1，最低 ¥113/月');
-      await expect(rules).toContainText('累计返利 ¥15');
-      await expect(rules).toContainText('续费优惠及返利由商家确认');
+      await expect(page.locator('body')).not.toContainText('返利');
+      await expect(rules).toContainText('续费优惠由商家确认');
       await expect(page.getByTestId('purchase-total')).toHaveText('¥128.00');
       await expect(page.locator('.shop-detail-price .shop-promo-price')).toHaveText('限时价：¥118.00');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `detail fits ${width}px`);
