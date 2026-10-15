@@ -8,6 +8,7 @@ from pathlib import Path
 from react_preview_server import preview_server
 
 BROWSER_TESTS = (
+    'react_home_browser.cjs',
     'react_shop_browser.cjs',
     'react_shop_sources_browser.cjs',
     'react_shop_admin_layout_browser.cjs',
