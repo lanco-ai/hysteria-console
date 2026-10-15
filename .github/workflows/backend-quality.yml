@@ -48,7 +48,12 @@ jobs:
           fi
           cat "$log"
           if [ "$status" -ne 0 ]; then
-            tail -n 120 "$log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
+            # Annotations are truncated at about 4 KB: keep the suites reached and the
+            # last meaningful lines, without build listings and passing-test noise.
+            {
+              echo "suites reached: $(grep -E '^== ' "$log" | tr '\n' ' ')"
+              grep -vE 'frontend/dist/|DeprecationWarning|from starlette|^[[:space:]]*(ok [0-9]+|# Subtest|duration_ms|type: .test.|\.\.\.|---)' "$log" | tail -n 40
+            } | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
             echo "::error title=check:frontend failed (exit $status)::$(cat "$RUNNER_TEMP/tail.txt")"
             exit 1
           fi
