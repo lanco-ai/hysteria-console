@@ -25,7 +25,15 @@ jobs:
       - run: python -m pip install -r requirements-dev.txt
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
-      - run: npm run check:frontend
+      - name: Run frontend checks
+        run: |
+          set -o pipefail
+          npm run check:frontend 2>&1 | tee "$RUNNER_TEMP/step.log" || {
+            # Surface the failure in the public check annotations, not only the raw log.
+            tail -n 80 "$RUNNER_TEMP/step.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
+            echo "::error title=check:frontend failed::$(cat "$RUNNER_TEMP/tail.txt")"
+            exit 1
+          }
   backend-quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -47,4 +55,11 @@ jobs:
       - name: Check backend and run tests
         # Lock/deployment tests require root. Use only this disposable runner,
         # with no production credentials and no deployment step.
-        run: sudo env "PATH=$PATH" "PYTHON=$(command -v python)" bash scripts/check-quality.sh
+        run: |
+          set -o pipefail
+          sudo env "PATH=$PATH" "PYTHON=$(command -v python)" bash scripts/check-quality.sh 2>&1 | tee "$RUNNER_TEMP/step.log" || {
+            # Surface the failure in the public check annotations, not only the raw log.
+            tail -n 80 "$RUNNER_TEMP/step.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
+            echo "::error title=check-quality failed::$(cat "$RUNNER_TEMP/tail.txt")"
+            exit 1
+          }

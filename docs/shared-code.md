@@ -25,6 +25,7 @@
 | `frontend/src/styles/*` | 全部样式（门户和后台共用类名，暂未按服务裁剪） |
 | `frontend/src/features/auth/LoginModal.tsx` 等 | 登录弹窗与登出（调用网络服务的 `/api/v1/login`、`/api/v1/logout`） |
 | `frontend/src/features/plans/PlanReminderCenter.tsx` | 今日计划提醒（调用工作台 + AI 的 `/api/plans/reminders`） |
+| `frontend/src/features/agent/*` | LancoAgent 浮动助手（调用网络服务的 `/api/v1/admin/rules`、`/api/v1/admin/agent/*`） |
 
 侧边栏菜单（`frontend/src/shared/navigation.ts`）三个分支保持一致；链接到其他服务的页面时是整页跳转。
 

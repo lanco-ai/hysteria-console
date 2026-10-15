@@ -2,6 +2,7 @@ import { createContext, useContext } from 'react';
 import type { CodexShellProps } from '../../shared/CodexShell';
 import type { SessionStatus } from '../../shared/session';
 import { Icon } from '../../shared/icons';
+import { LancoAgent } from '../agent/LancoAgent';
 import { PlanReminderCenter } from '../plans/PlanReminderCenter';
 
 export type PortalView = 'shop' | 'sms';
@@ -24,7 +25,7 @@ function BrandMark() {
   </svg>;
 }
 
-export function PortalShell({ active, children }: CodexShellProps) {
+export function PortalShell({ active, children, agentEnabled = false }: CodexShellProps) {
   const session = useContext(PortalSessionContext);
   return <div className={`portal portal-${active}`}>
     <a className="skip-link" href="#main-content">跳到主内容</a>
@@ -45,5 +46,6 @@ export function PortalShell({ active, children }: CodexShellProps) {
       {children}
     </main>
     {session.authenticated ? <PlanReminderCenter/> : null}
+    {agentEnabled && session.authenticated ? <LancoAgent/> : null}
   </div>;
 }
