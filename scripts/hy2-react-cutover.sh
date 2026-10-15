@@ -225,8 +225,9 @@ read_current_pointer() {
 verify_loopback_react() {
   "$systemctl_bin" is-active --quiet hysteria-react.service ||
     die 'hysteria-react.service is not active.'
+  # / is the shop service's page after the split; /login is served here.
   "$curl_bin" --fail --silent --show-error --noproxy '*' --max-time 5 \
-    http://127.0.0.1:8083/ >/dev/null ||
+    http://127.0.0.1:8083/login >/dev/null ||
     die 'React loopback health check failed.'
 }
 

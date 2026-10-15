@@ -125,23 +125,22 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         assert retired_chat.status_code == 404
         assert 'location' not in retired_chat.headers
 
-        chat_anonymous = client.get('/admin/chat', follow_redirects=False)
-        assert chat_anonymous.status_code == 303
-        assert chat_anonymous.headers['location'] == '/login?next=%2Fadmin%2Fchat'
-        bookmarked = client.get(
-            '/admin/chat?conversation=conversation-id&api_key=secret', follow_redirects=False
-        )
-        assert (
-            bookmarked.headers['location']
-            == '/login?next=%2Fadmin%2Fchat%3Fconversation%3Dconversation-id'
-        )
-        chat = client.get('/admin/chat', headers={'Cookie': 'sid=admin'})
-        assert chat.status_code == 200
-        assert '<title>AI 对话</title>' in chat.text
+        # The shop and workbench + AI services serve their own pages.
+        for moved in (
+            '/',
+            '/admin/chat',
+            '/admin/video',
+            '/admin/plans',
+            '/admin/services',
+            '/admin/shop',
+        ):
+            assert client.get(moved, headers={'Cookie': 'sid=admin'}).status_code == 404
+        bookmarked = client.get('/admin/usage?range=week&api_key=secret', follow_redirects=False)
+        assert bookmarked.headers['location'] == '/login?next=%2Fadmin%2Fusage%3Frange%3Dweek'
 
         user_login = client.get('/user/login')
         assert user_login.status_code == 200
-        assert '<title>购物 · LancoAI</title>' in user_login.text
+        assert '<title>登录 · LancoAI</title>' in user_login.text
         assert '<body class="page-portal page-workbench">' in user_login.text
         assert 'data-password-max-length="128"' in user_login.text
 
@@ -175,19 +174,14 @@ def test_react_documents_are_exactly_served_and_guarded(tmp_path):
         assert 'data-password-max-length' not in password.text
 
 
-def test_moved_discovery_redirects_everyone_and_ai_tools_use_the_admin_shell(tmp_path):
+def test_moved_discovery_redirects_everyone_to_the_workbench_page(tmp_path):
     with TestClient(create_app(StubDocumentServices(), react_dist=_dist(tmp_path))) as client:
         for headers in ({}, {'Cookie': 'sid=admin'}):
             for method in (client.get, client.head):
                 moved = method('/admin/github-trending', headers=headers, follow_redirects=False)
                 assert moved.status_code == 302
-                assert moved.headers['location'] == '/?view=trending'
+                assert moved.headers['location'] == '/trending'
         assert client.get('/admin/github-trending/unknown').status_code == 404
-        chat = client.get('/admin/chat', headers={'Cookie': 'sid=admin'})
-        assert '<body class="has-shell page-workbench">' in chat.text
-        video = client.get('/admin/video', headers={'Cookie': 'sid=admin'})
-        assert '<title>AI 视频</title>' in video.text
-        assert '<body class="has-shell">' in video.text
 
 
 def test_react_documents_do_not_spa_fallback_and_assets_are_immutable(tmp_path):

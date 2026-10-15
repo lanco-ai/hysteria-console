@@ -130,34 +130,11 @@ declare -a REACT_WEB_API_MODULES=(
   agent_service.py
   app.py
   auth_routes.py
-  chat_routes.py
-  chat_service.py
-  chat_workspace_store.py
-  chat_workspace_routes.py
-  chat_documents.py
-  chat_pdf_worker.py
-  chat_context.py
-  chat_document_jobs.py
-  chat_document_worker.py
-  chat_embedding_worker.py
-  chat_knowledge.py
-  chat_python_sandbox.py
-  chat_search_worker.py
-  chat_tool_network.py
-  chat_tool_routes.py
-  chat_tools.py
-  chat_schema_worker.py
   compat_routes.py
   config_models.py
   document_routes.py
   health_models.py
   health_routes.py
-  service_center.py
-  github_trending_avatar.py
-  github_trending_source.py
-  github_trending_store.py
-  github_trending_routes.py
-  service_probe.py
   incident_models.py
   landing_models.py
   landing_routes.py
@@ -165,41 +142,14 @@ declare -a REACT_WEB_API_MODULES=(
   operation_models.py
   operation_routes.py
   overview_models.py
-  plans_routes.py
-  plans_service.py
-  schedule_service.py
-  journal_routes.py
-  journal_service.py
   requests.py
   rules_routes.py
   services.py
-  shop_routes.py
-  shop_source.py
-  shop_anli_source.py
-  shop_prodseller_source.py
-  shop_lorry_source.py
-  shop_fanai_source.py
-  shop16688_source.py
-  shop_sms_source.py
-  shop_sms_gateway.py
-  shop_notices.py
-  shop_local_products.py
-  shop_store.py
   subscription_routes.py
   usage_models.py
   user_detail_models.py
   user_detail_routes.py
   user_models.py
-  video_models.py
-  video_provider.py
-  video_routes.py
-  video_service.py
-  ai/__init__.py
-  ai/compat.py
-  ai/routes.py
-  ai/service_store.py
-  ai/assistant_generation.py
-  ai/assistant_schemas.py
 )
 declare -a PREVIOUSLY_ACTIVE_UNITS=()
 declare -A PREVIOUS_ENABLE_STATE=()
@@ -405,34 +355,11 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/agent_service.py"
   add_durable_artifact "$HY_DIR/web_api/app.py"
   add_durable_artifact "$HY_DIR/web_api/auth_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_service.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_workspace_store.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_workspace_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_documents.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_pdf_worker.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_context.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_document_jobs.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_document_worker.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_embedding_worker.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_knowledge.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_python_sandbox.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_search_worker.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_tool_network.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_tool_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_tools.py"
-  add_durable_artifact "$HY_DIR/web_api/chat_schema_worker.py"
   add_durable_artifact "$HY_DIR/web_api/compat_routes.py"
   add_durable_artifact "$HY_DIR/web_api/config_models.py"
   add_durable_artifact "$HY_DIR/web_api/document_routes.py"
   add_durable_artifact "$HY_DIR/web_api/health_models.py"
   add_durable_artifact "$HY_DIR/web_api/health_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/service_center.py"
-  add_durable_artifact "$HY_DIR/web_api/github_trending_avatar.py"
-  add_durable_artifact "$HY_DIR/web_api/github_trending_source.py"
-  add_durable_artifact "$HY_DIR/web_api/github_trending_store.py"
-  add_durable_artifact "$HY_DIR/web_api/github_trending_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/service_probe.py"
   add_durable_artifact "$HY_DIR/web_api/incident_models.py"
   add_durable_artifact "$HY_DIR/web_api/landing_models.py"
   add_durable_artifact "$HY_DIR/web_api/landing_routes.py"
@@ -440,41 +367,14 @@ build_durable_artifact_set() {
   add_durable_artifact "$HY_DIR/web_api/operation_models.py"
   add_durable_artifact "$HY_DIR/web_api/operation_routes.py"
   add_durable_artifact "$HY_DIR/web_api/overview_models.py"
-  add_durable_artifact "$HY_DIR/web_api/plans_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/plans_service.py"
-  add_durable_artifact "$HY_DIR/web_api/schedule_service.py"
-  add_durable_artifact "$HY_DIR/web_api/journal_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/journal_service.py"
   add_durable_artifact "$HY_DIR/web_api/requests.py"
   add_durable_artifact "$HY_DIR/web_api/rules_routes.py"
   add_durable_artifact "$HY_DIR/web_api/services.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_source.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_anli_source.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_prodseller_source.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_lorry_source.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_fanai_source.py"
-  add_durable_artifact "$HY_DIR/web_api/shop16688_source.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_sms_source.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_sms_gateway.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_notices.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_local_products.py"
-  add_durable_artifact "$HY_DIR/web_api/shop_store.py"
   add_durable_artifact "$HY_DIR/web_api/subscription_routes.py"
   add_durable_artifact "$HY_DIR/web_api/usage_models.py"
   add_durable_artifact "$HY_DIR/web_api/user_detail_models.py"
   add_durable_artifact "$HY_DIR/web_api/user_detail_routes.py"
   add_durable_artifact "$HY_DIR/web_api/user_models.py"
-  add_durable_artifact "$HY_DIR/web_api/video_models.py"
-  add_durable_artifact "$HY_DIR/web_api/video_provider.py"
-  add_durable_artifact "$HY_DIR/web_api/video_routes.py"
-  add_durable_artifact "$HY_DIR/web_api/video_service.py"
-  add_durable_artifact "$HY_DIR/web_api/ai/__init__.py"
-  add_durable_artifact "$HY_DIR/web_api/ai/compat.py"
-  add_durable_artifact "$HY_DIR/web_api/ai/routes.py"
-  add_durable_artifact "$HY_DIR/web_api/ai/service_store.py"
-  add_durable_artifact "$HY_DIR/web_api/ai/assistant_generation.py"
-  add_durable_artifact "$HY_DIR/web_api/ai/assistant_schemas.py"
   add_durable_artifact "$HY_DIR/panel/current"
   add_durable_artifact "$HY_DIR/state/https_required"
   if [[ ! -f "$HY_DIR/template.yaml" ]]; then
@@ -1711,6 +1611,20 @@ install_react_runtime() {
   [[ -f "$REPO_DIR/requirements-web.txt" &&
      ! -L "$REPO_DIR/requirements-web.txt" ]] ||
     die "React web requirements file is missing or unsafe"
+  # Phase 1 of the service split: the shop and workbench + AI services run from
+  # this same virtualenv. Never change its packages while they are running.
+  if [[ -x "$venv/bin/python" ]] &&
+     { systemctl is-active --quiet lancoai-shop.service ||
+       systemctl is-active --quiet lancoai-workbench.service; }; then
+    local planned
+    planned="$("$venv/bin/python" -m pip install --dry-run \
+      --disable-pip-version-check --no-input --no-cache-dir \
+      -r "$REPO_DIR/requirements-web.txt" 2>/dev/null)" ||
+      die "Could not check whether the shared web virtualenv would change"
+    if grep -q '^Would install' <<<"$planned"; then
+      die "lancoai-shop/lancoai-workbench run from $venv and its pinned packages would change; stop them, deploy, then start them again"
+    fi
+  fi
   if [[ ! -x "$venv/bin/python" ]]; then
     python3 -m venv "$venv" || die "Could not create the React web virtualenv"
     REACT_VENV_CREATED=1
@@ -1744,7 +1658,8 @@ wait_for_stable_readiness() {
     done
     if (( all_ready )); then
       if [[ "${HY_UNIFIED_FASTAPI:-0}" == "1" ]]; then
-        for probe in /livez /readyz /healthz /; do
+        # / is the shop service's page; /login is this service's public document.
+        for probe in /livez /readyz /healthz /login; do
           if ! curl -fsS --noproxy '*' --max-time 3 \
             "http://127.0.0.1:8083${probe}" >/dev/null; then
             all_ready=0
@@ -1760,7 +1675,7 @@ wait_for_stable_readiness() {
         fi
         if (( all_ready )) && [[ "${HY_ENABLE_REACT_PANEL:-0}" == "1" ]] &&
           ! curl -fsS --noproxy '*' --max-time 3 \
-            http://127.0.0.1:8083/ >/dev/null; then
+            http://127.0.0.1:8083/login >/dev/null; then
           all_ready=0
         fi
       fi
@@ -2212,34 +2127,11 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/agent_service.py" "$HY_DIR/web_api/agent_service.py"
   render "$REPO_DIR/hysteria/web_api/app.py" "$HY_DIR/web_api/app.py"
   render "$REPO_DIR/hysteria/web_api/auth_routes.py" "$HY_DIR/web_api/auth_routes.py"
-  render "$REPO_DIR/hysteria/web_api/chat_routes.py" "$HY_DIR/web_api/chat_routes.py"
-  render "$REPO_DIR/hysteria/web_api/chat_service.py" "$HY_DIR/web_api/chat_service.py"
-  render "$REPO_DIR/hysteria/web_api/chat_workspace_store.py" "$HY_DIR/web_api/chat_workspace_store.py"
-  render "$REPO_DIR/hysteria/web_api/chat_workspace_routes.py" "$HY_DIR/web_api/chat_workspace_routes.py"
-  render "$REPO_DIR/hysteria/web_api/chat_documents.py" "$HY_DIR/web_api/chat_documents.py"
-  render "$REPO_DIR/hysteria/web_api/chat_pdf_worker.py" "$HY_DIR/web_api/chat_pdf_worker.py"
-  render "$REPO_DIR/hysteria/web_api/chat_context.py" "$HY_DIR/web_api/chat_context.py"
-  render "$REPO_DIR/hysteria/web_api/chat_document_jobs.py" "$HY_DIR/web_api/chat_document_jobs.py"
-  render "$REPO_DIR/hysteria/web_api/chat_document_worker.py" "$HY_DIR/web_api/chat_document_worker.py"
-  render "$REPO_DIR/hysteria/web_api/chat_embedding_worker.py" "$HY_DIR/web_api/chat_embedding_worker.py"
-  render "$REPO_DIR/hysteria/web_api/chat_knowledge.py" "$HY_DIR/web_api/chat_knowledge.py"
-  render "$REPO_DIR/hysteria/web_api/chat_python_sandbox.py" "$HY_DIR/web_api/chat_python_sandbox.py"
-  render "$REPO_DIR/hysteria/web_api/chat_search_worker.py" "$HY_DIR/web_api/chat_search_worker.py"
-  render "$REPO_DIR/hysteria/web_api/chat_tool_network.py" "$HY_DIR/web_api/chat_tool_network.py"
-  render "$REPO_DIR/hysteria/web_api/chat_tool_routes.py" "$HY_DIR/web_api/chat_tool_routes.py"
-  render "$REPO_DIR/hysteria/web_api/chat_tools.py" "$HY_DIR/web_api/chat_tools.py"
-  render "$REPO_DIR/hysteria/web_api/chat_schema_worker.py" "$HY_DIR/web_api/chat_schema_worker.py"
   render "$REPO_DIR/hysteria/web_api/compat_routes.py" "$HY_DIR/web_api/compat_routes.py"
   render "$REPO_DIR/hysteria/web_api/config_models.py" "$HY_DIR/web_api/config_models.py"
   render "$REPO_DIR/hysteria/web_api/document_routes.py" "$HY_DIR/web_api/document_routes.py"
   render "$REPO_DIR/hysteria/web_api/health_models.py" "$HY_DIR/web_api/health_models.py"
   render "$REPO_DIR/hysteria/web_api/health_routes.py" "$HY_DIR/web_api/health_routes.py"
-  render "$REPO_DIR/hysteria/web_api/service_center.py" "$HY_DIR/web_api/service_center.py"
-  render "$REPO_DIR/hysteria/web_api/github_trending_avatar.py" "$HY_DIR/web_api/github_trending_avatar.py"
-  render "$REPO_DIR/hysteria/web_api/github_trending_source.py" "$HY_DIR/web_api/github_trending_source.py"
-  render "$REPO_DIR/hysteria/web_api/github_trending_store.py" "$HY_DIR/web_api/github_trending_store.py"
-  render "$REPO_DIR/hysteria/web_api/github_trending_routes.py" "$HY_DIR/web_api/github_trending_routes.py"
-  render "$REPO_DIR/hysteria/web_api/service_probe.py" "$HY_DIR/web_api/service_probe.py"
   render "$REPO_DIR/hysteria/web_api/incident_models.py" "$HY_DIR/web_api/incident_models.py"
   render "$REPO_DIR/hysteria/web_api/landing_models.py" "$HY_DIR/web_api/landing_models.py"
   render "$REPO_DIR/hysteria/web_api/landing_routes.py" "$HY_DIR/web_api/landing_routes.py"
@@ -2247,42 +2139,14 @@ if [[ "$HY_ENABLE_REACT_PANEL" == "1" ]]; then
   render "$REPO_DIR/hysteria/web_api/operation_models.py" "$HY_DIR/web_api/operation_models.py"
   render "$REPO_DIR/hysteria/web_api/operation_routes.py" "$HY_DIR/web_api/operation_routes.py"
   render "$REPO_DIR/hysteria/web_api/overview_models.py" "$HY_DIR/web_api/overview_models.py"
-  render "$REPO_DIR/hysteria/web_api/plans_routes.py" "$HY_DIR/web_api/plans_routes.py"
-  render "$REPO_DIR/hysteria/web_api/plans_service.py" "$HY_DIR/web_api/plans_service.py"
-  render "$REPO_DIR/hysteria/web_api/schedule_service.py" "$HY_DIR/web_api/schedule_service.py"
-  render "$REPO_DIR/hysteria/web_api/journal_routes.py" "$HY_DIR/web_api/journal_routes.py"
-  render "$REPO_DIR/hysteria/web_api/journal_service.py" "$HY_DIR/web_api/journal_service.py"
   render "$REPO_DIR/hysteria/web_api/requests.py" "$HY_DIR/web_api/requests.py"
   render "$REPO_DIR/hysteria/web_api/rules_routes.py" "$HY_DIR/web_api/rules_routes.py"
   render "$REPO_DIR/hysteria/web_api/services.py" "$HY_DIR/web_api/services.py"
-  render "$REPO_DIR/hysteria/web_api/shop_routes.py" "$HY_DIR/web_api/shop_routes.py"
-  render "$REPO_DIR/hysteria/web_api/shop_source.py" "$HY_DIR/web_api/shop_source.py"
-  render "$REPO_DIR/hysteria/web_api/shop_anli_source.py" "$HY_DIR/web_api/shop_anli_source.py"
-  render "$REPO_DIR/hysteria/web_api/shop_prodseller_source.py" "$HY_DIR/web_api/shop_prodseller_source.py"
-  render "$REPO_DIR/hysteria/web_api/shop_lorry_source.py" "$HY_DIR/web_api/shop_lorry_source.py"
-  render "$REPO_DIR/hysteria/web_api/shop_fanai_source.py" "$HY_DIR/web_api/shop_fanai_source.py"
-  render "$REPO_DIR/hysteria/web_api/shop16688_source.py" "$HY_DIR/web_api/shop16688_source.py"
-  render "$REPO_DIR/hysteria/web_api/shop_sms_source.py" "$HY_DIR/web_api/shop_sms_source.py"
-  render "$REPO_DIR/hysteria/web_api/shop_sms_gateway.py" "$HY_DIR/web_api/shop_sms_gateway.py"
-  render "$REPO_DIR/hysteria/web_api/shop_notices.py" "$HY_DIR/web_api/shop_notices.py"
-  render "$REPO_DIR/hysteria/web_api/shop_local_products.py" "$HY_DIR/web_api/shop_local_products.py"
-  render "$REPO_DIR/hysteria/web_api/shop_store.py" "$HY_DIR/web_api/shop_store.py"
   render "$REPO_DIR/hysteria/web_api/subscription_routes.py" "$HY_DIR/web_api/subscription_routes.py"
   render "$REPO_DIR/hysteria/web_api/usage_models.py" "$HY_DIR/web_api/usage_models.py"
   render "$REPO_DIR/hysteria/web_api/user_detail_models.py" "$HY_DIR/web_api/user_detail_models.py"
   render "$REPO_DIR/hysteria/web_api/user_detail_routes.py" "$HY_DIR/web_api/user_detail_routes.py"
   render "$REPO_DIR/hysteria/web_api/user_models.py" "$HY_DIR/web_api/user_models.py"
-  render "$REPO_DIR/hysteria/web_api/video_models.py" "$HY_DIR/web_api/video_models.py"
-  render "$REPO_DIR/hysteria/web_api/video_provider.py" "$HY_DIR/web_api/video_provider.py"
-  render "$REPO_DIR/hysteria/web_api/video_routes.py" "$HY_DIR/web_api/video_routes.py"
-  render "$REPO_DIR/hysteria/web_api/video_service.py" "$HY_DIR/web_api/video_service.py"
-  install -d -o root -g root -m 755 "$HY_DIR/web_api/ai"
-  render "$REPO_DIR/hysteria/web_api/ai/__init__.py" "$HY_DIR/web_api/ai/__init__.py"
-  render "$REPO_DIR/hysteria/web_api/ai/compat.py" "$HY_DIR/web_api/ai/compat.py"
-  render "$REPO_DIR/hysteria/web_api/ai/routes.py" "$HY_DIR/web_api/ai/routes.py"
-  render "$REPO_DIR/hysteria/web_api/ai/service_store.py" "$HY_DIR/web_api/ai/service_store.py"
-  render "$REPO_DIR/hysteria/web_api/ai/assistant_generation.py" "$HY_DIR/web_api/ai/assistant_generation.py"
-  render "$REPO_DIR/hysteria/web_api/ai/assistant_schemas.py" "$HY_DIR/web_api/ai/assistant_schemas.py"
 fi
 
 chmod 700 \

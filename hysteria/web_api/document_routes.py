@@ -26,11 +26,13 @@ _SAFE_LOGIN_QUERY_KEYS = frozenset(
 # Keep this list deliberately exact.  Compatibility documents such as
 # ``/admin/daily`` and subscription/CSV/evidence downloads stay on their
 # established handlers until their own cutover contracts are approved.
+# The shop (/, /admin/shop) and workbench + AI (/trending, /admin/plans,
+# /admin/chat, /admin/video, /admin/services) services serve their own pages.
+# Login stays here: this service owns the admin and user sessions.
 REACT_DOCUMENTS = {
-    '/': ('购物 · LancoAI', 'page-portal page-workbench', None),
-    '/auth': ('购物 · LancoAI', 'page-portal page-workbench', None),
-    '/login': ('购物 · LancoAI', 'page-portal page-workbench', None),
-    '/user/login': ('购物 · LancoAI', 'page-portal page-workbench', None),
+    '/auth': ('登录 · LancoAI', 'page-portal page-workbench', None),
+    '/login': ('登录 · LancoAI', 'page-portal page-workbench', None),
+    '/user/login': ('登录 · LancoAI', 'page-portal page-workbench', None),
     '/logout': ('确认退出', '', 'admin'),
     '/user/logout': ('确认退出', '', 'user'),
     '/user/change-password': ('修改面板密码', 'page-auth', 'user-password'),
@@ -44,15 +46,10 @@ REACT_DOCUMENTS = {
     '/admin/config': ('模板与路由', 'has-shell', 'admin'),
     '/admin/rules': ('模板与路由', 'has-shell', 'admin'),
     '/admin/landing-egresses': ('家宽出口', 'has-shell', 'admin'),
-    '/admin/chat': ('AI 对话', 'has-shell page-workbench', 'admin'),
-    '/admin/services': ('服务中心', 'has-shell', 'admin'),
-    '/admin/plans': ('今日计划', 'has-shell', 'admin'),
-    '/admin/shop': ('商品管理', 'has-shell', 'admin'),
-    '/admin/video': ('AI 视频', 'has-shell', 'admin'),
 }
 # Documents that moved; old bookmarks keep working for every visitor.
 MOVED_DOCUMENTS = {
-    '/admin/github-trending': '/?view=trending',
+    '/admin/github-trending': '/trending',
 }
 
 
@@ -173,7 +170,7 @@ def register_react_document_routes(app, services, dispatch, react_dist):
             return denied
         service = getattr(services, 'service_module', None)
         password_max = None
-        if path in ('/', '/auth', '/login', '/user/login'):
+        if path in ('/auth', '/login', '/user/login'):
             password_max = getattr(service, 'PASSWORD_MAX_LENGTH', 256)
             if (
                 isinstance(password_max, bool)

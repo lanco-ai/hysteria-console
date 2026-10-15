@@ -1,6 +1,7 @@
 import fcntl
 import hashlib
 import os
+import json
 import subprocess
 import tarfile
 import time
@@ -160,33 +161,59 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
     assert 'HY2_BACKUP_ASSETS_MAX_BYTES' in warning
 
 
-def test_backup_restores_sms_sales_and_order_deduplication_together(tmp_path):
-    from web_api.shop_store import ShopSmsSales
-
+def test_backup_restores_shop_sms_sales_exactly(tmp_path):
+    # The shop service owns the file's meaning; the backup must keep it byte for byte.
     hy_dir = tmp_path / 'hysteria'
     path = hy_dir / 'state/shop/sms-sales.json'
-    original = ShopSmsSales(path)
-    original.record(123)
-    original.record(124)
+    path.parent.mkdir(parents=True)
+    content = json.dumps({'orders': {'123': 1, '124': 1}, 'count': 2}).encode()
+    path.write_bytes(content)
+    path.chmod(0o600)
     # Keep a pre-existing backup member so the old script produces an archive.
     (hy_dir / 'users.json').write_text('{}')
     result = subprocess.run(
         ['bash', str(ROOT / 'scripts/hy2-backup.sh')], check=True,
         capture_output=True, text=True, env=isolated_backup_env(tmp_path, hy_dir),
     )
-    restored_path = tmp_path / 'restored/sms-sales.json'
-    restored_path.parent.mkdir()
     with tarfile.open(result.stdout.strip(), 'r:gz') as archive:
         member, = [entry for entry in archive.getmembers() if entry.name.endswith('/state/shop/sms-sales.json')]
-        restored_path.write_bytes(archive.extractfile(member).read())
-        restored_path.chmod(member.mode)
-    restored = ShopSmsSales(restored_path)
-    assert restored.read() == 2
-    restored.record(123)
-    assert restored.read() == 2
-    restored.record(125)
-    assert restored.read() == 3
-    assert restored_path.stat().st_mode & 0o777 == 0o600
+        assert archive.extractfile(member).read() == content
+        assert member.mode & 0o777 == 0o600
+
+
+def test_backup_snapshots_the_chat_workspace_database_consistently(tmp_path):
+    # The workbench + AI service writes this SQLite database in WAL mode.
+    import sqlite3
+
+    hy_dir = tmp_path / 'hysteria'
+    database = hy_dir / 'state/chat/workspace.sqlite3'
+    database.parent.mkdir(parents=True)
+    writer = sqlite3.connect(database)
+    writer.execute('PRAGMA journal_mode=WAL')
+    writer.execute('PRAGMA wal_autocheckpoint=0')
+    writer.execute('CREATE TABLE documents (id TEXT PRIMARY KEY, body BLOB)')
+    writer.execute("INSERT INTO documents VALUES ('paper', ?)", (b'original paper',))
+    writer.commit()
+    assert (hy_dir / 'state/chat/workspace.sqlite3-wal').exists()
+    try:
+        result = subprocess.run(
+            ['bash', str(ROOT / 'scripts/hy2-backup.sh')], check=True,
+            capture_output=True, text=True, env=isolated_backup_env(tmp_path, hy_dir),
+        )
+    finally:
+        writer.close()
+    with tarfile.open(result.stdout.strip()) as archive:
+        members = archive.getmembers()
+        member = next(m for m in members if m.name.endswith('workspace.sqlite3'))
+        raw = archive.extractfile(member).read()
+        assert not any(m.name.endswith(('-wal', '-shm')) for m in members)
+    restore = tmp_path / 'restored' / 'workspace.sqlite3'
+    restore.parent.mkdir()
+    restore.write_bytes(raw)
+    with sqlite3.connect(restore) as recovered:
+        assert recovered.execute("SELECT body FROM documents WHERE id = 'paper'").fetchone() == (
+            b'original paper',
+        )
 
 
 def test_restore_check_accepts_plain_backup_archive(tmp_path):

@@ -9,6 +9,7 @@ HTTPS_REQUIRED_FILE="${HY2_HTTPS_REQUIRED_FILE:-$HY_DIR/state/https_required}"
 HTTPS_RENEWAL_PENDING="${HY2_HTTPS_RENEWAL_PENDING:-/var/lib/hysteria/https-activation-recovery/renewal-pending}"
 MAX_BACKUP_AGE="${HY2_MAX_BACKUP_AGE_SECONDS:-129600}"
 MIN_DISK_FREE_PCT="${HY2_MIN_DISK_FREE_PCT:-15}"
+SYSTEMD_UNIT_DIR="${HY2_SYSTEMD_UNIT_DIR:-/etc/systemd/system}"
 failed=0
 
 if [[ -z "$HTTPS_PORT" ]]; then
@@ -35,6 +36,23 @@ if curl --fail --silent --show-error --noproxy '*' \
 else
   bad "hysteria authentication dependencies are not ready"
 fi
+
+# The shop and workbench + AI services are checked once their units are
+# installed; before the service split is deployed they do not exist yet.
+for service in shop:8084 workbench:8085; do
+  unit="lancoai-${service%%:*}.service"
+  port="${service##*:}"
+  [[ -e "$SYSTEMD_UNIT_DIR/$unit" ]] || continue
+  if ! systemctl is-active --quiet "$unit"; then
+    bad "$unit is not active"
+  elif curl --fail --silent --show-error --noproxy '*' \
+      --connect-timeout 1 --max-time 3 \
+      "http://127.0.0.1:$port/healthz" >/dev/null; then
+    ok "$unit active and answering /healthz"
+  else
+    bad "$unit is not answering /healthz on $port"
+  fi
+done
 
 free_pct="$(df -P / | awk 'NR==2 {gsub(/%/, "", $5); print 100-$5}')"
 if [[ "$free_pct" =~ ^[0-9]+$ ]] && (( free_pct >= MIN_DISK_FREE_PCT )); then

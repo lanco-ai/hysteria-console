@@ -29,15 +29,9 @@ WEB_API_MODULES = (
     'account_models.py',
     'account_routes.py',
     'app.py',
-    'chat_routes.py',
-    'chat_service.py',
     'compat_routes.py',
     'config_models.py',
     'document_routes.py',
-    'github_trending_avatar.py',
-    'github_trending_routes.py',
-    'github_trending_source.py',
-    'github_trending_store.py',
     'health_models.py',
     'health_routes.py',
     'incident_models.py',
@@ -47,31 +41,13 @@ WEB_API_MODULES = (
     'operation_models.py',
     'operation_routes.py',
     'overview_models.py',
-    'plans_routes.py',
-    'plans_service.py',
-    'schedule_service.py',
-    'journal_routes.py',
-    'journal_service.py',
     'requests.py',
     'rules_routes.py',
     'services.py',
-    'shop_routes.py',
-    'shop_source.py',
-    'shop_store.py',
     'usage_models.py',
     'user_detail_models.py',
     'user_detail_routes.py',
     'user_models.py',
-    'video_models.py',
-    'video_provider.py',
-    'video_routes.py',
-    'video_service.py',
-    'ai/__init__.py',
-    'ai/compat.py',
-    'ai/routes.py',
-    'ai/service_store.py',
-    'ai/assistant_generation.py',
-    'ai/assistant_schemas.py',
 )
 
 
@@ -102,7 +78,8 @@ def test_react_backend_sources_are_in_every_deploy_inventory():
     assert 'render "$REPO_DIR/hysteria/react_server.py" "$HY_DIR/react_server.py"' in deploy
     assert 'local dist="$HY_REACT_DIST_DIR"' in deploy
     assert 'install -d -o root -g root -m 755 "$HY_DIR/web_api"' in deploy
-    assert 'install -d -o root -g root -m 755 "$HY_DIR/web_api/ai"' in deploy
+    # The web_api/ai package moved to the workbench + AI service.
+    assert '"$HY_DIR/web_api/ai"' not in deploy
     module_inventory = deploy.split('declare -a REACT_WEB_API_MODULES=(', 1)[1].split('\n)', 1)[0]
     for module in WEB_API_MODULES:
         assert f'\n  {module}' in module_inventory
@@ -214,8 +191,17 @@ def test_react_release_is_staged_and_activated_atomically():
         '# Quiesce every critical reader/writer'
     )
     assert 'REACT_VENV_CREATED=1' in deploy
+    # The shop and workbench + AI services share the venv in phase 1: a deploy that
+    # would change its packages under them stops before pip touches anything.
+    guard = deploy.index('systemctl is-active --quiet lancoai-workbench.service')
+    assert deploy.index("grep -q '^Would install'") > guard
+    assert guard < deploy.index('-r "$REPO_DIR/requirements-web.txt" >/dev/null')
     assert "curl -fsS --noproxy '*' --max-time 3" in deploy
     assert 'http://127.0.0.1:8083/' in deploy
+    # The network service no longer serves /; readiness uses its public login page.
+    assert 'for probe in /livez /readyz /healthz /login; do' in deploy
+    assert 'for probe in /livez /readyz /healthz /; do' not in deploy
+    assert 'http://127.0.0.1:8083/ >/dev/null' not in deploy
     assert 'HY_DIR/panel/current' in deploy
 
 

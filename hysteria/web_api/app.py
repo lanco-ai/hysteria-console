@@ -16,10 +16,7 @@ from starlette.exceptions import HTTPException
 
 from .account_routes import register_account_routes
 from .agent_routes import register_agent_routes
-from .ai.routes import register_ai_service_routes
-from .ai.service_store import AIServiceStore
 from .auth_routes import register_auth_routes
-from .chat_routes import register_chat_routes
 from .compat_routes import register_compatibility_routes
 from .config_models import (
     AdminRulesResponse,
@@ -27,11 +24,9 @@ from .config_models import (
     TemplateMutationResponse,
 )
 from .document_routes import register_react_document_routes
-from .github_trending_routes import register_github_trending_routes
 from .health_models import AdminHealthResponse
 from .health_routes import register_health_routes
 from .incident_models import AdminIncidentResponse
-from .journal_routes import register_journal_routes
 from .landing_models import AdminLandingResponse
 from .landing_routes import register_landing_routes
 from .models import (
@@ -50,12 +45,9 @@ from .models import (
 )
 from .operation_routes import register_operation_routes
 from .overview_models import AdminOverviewPageResponse
-from .plans_routes import register_plans_routes
 from .requests import FormReadTimeout, RequestHeaders, read_form
 from .rules_routes import register_rules_routes
-from .service_center import register_service_center_routes
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
-from .shop_routes import register_shop_routes
 from .subscription_routes import register_subscription_routes
 from .usage_models import (
     AdminUsageHistoryResponse,
@@ -64,7 +56,6 @@ from .usage_models import (
 )
 from .user_detail_routes import register_user_detail_routes
 from .user_models import UserPanelResponse
-from .video_routes import register_video_routes
 
 _API_SECURITY_HEADERS = {
     'Cache-Control': 'no-store',
@@ -303,40 +294,10 @@ def create_app(
     max_requests=32,
     react_dist=None,
     lifespan=None,
-    video_settings_store=None,
-    video_provider_factory=None,
-    video_workflow_store=None,
-    video_asset_store=None,
-    video_run_service=None,
-    video_scheduler_enabled=False,
-    video_scheduler_interval=5.0,
-    service_center_store=None,
-    shop_store=None,
-    shop_scheduler_enabled=False,
-    github_trending_store=None,
-    github_trending_avatar_proxy=None,
-    github_trending_scheduler_enabled=False,
-    plans_store=None,
-    schedule_store=None,
-    journal_store=None,
-    chat_settings_store=None,
-    chat_workspace_store=None,
-    chat_workspace_settings=None,
-    ai_services_store: AIServiceStore | None = None,
-    openai_models_fetcher=None,
-    media_provider_factory=None,
+    agent_orchestrator=None,
 ):
     if isinstance(max_requests, bool) or not isinstance(max_requests, int) or max_requests <= 0:
         raise ValueError('max_requests must be a positive integer')
-    if not isinstance(video_scheduler_enabled, bool):
-        raise ValueError('video_scheduler_enabled must be a boolean')
-    if (
-        isinstance(video_scheduler_interval, bool)
-        or not isinstance(video_scheduler_interval, (int, float))
-        or video_scheduler_interval <= 0
-        or video_scheduler_interval > 60
-    ):
-        raise ValueError('video_scheduler_interval must be greater than 0 and at most 60 seconds')
 
     app = FastAPI(
         docs_url=None,
@@ -416,47 +377,6 @@ def create_app(
         finally:
             release_capacity()
 
-    async def dispatch_stream(function, request, *, prepare=None):
-        """Run a streaming handler while retaining one request slot."""
-        if not capacity.acquire(blocking=False):
-            return JSONResponse(
-                status_code=503,
-                content={'error': 'server_busy'},
-                headers={'Retry-After': '1'},
-            )
-        released = False
-
-        def release_capacity():
-            nonlocal released
-            if not released:
-                released = True
-                capacity.release()
-
-        try:
-            headers = _request_headers(request)
-            arguments = {
-                'headers': headers,
-                'path': request.scope['path'],
-            }
-            if prepare is not None:
-                arguments.update(await prepare(request, headers))
-            iterator = function(**arguments)
-        except Exception:
-            release_capacity()
-            raise
-
-        async def retain_capacity():
-            try:
-                async for chunk in iterator:
-                    yield chunk
-            finally:
-                try:
-                    await iterator.aclose()
-                finally:
-                    release_capacity()
-
-        return retain_capacity()
-
     async def prepare_form_write(request, headers):
         origin_request = SimpleNamespace(headers=headers)
         if not http_utils.is_same_origin_post(origin_request):
@@ -497,68 +417,7 @@ def create_app(
     register_rules_routes(app, services, dispatch_form_write)
     register_landing_routes(app, services, dispatch_form_write)
     register_subscription_routes(app, services, dispatch)
-    register_chat_routes(
-        app,
-        services,
-        dispatch,
-        dispatch_stream=dispatch_stream,
-        settings_store=chat_settings_store,
-    )
-    register_video_routes(
-        app,
-        services,
-        dispatch,
-        settings_store=video_settings_store,
-        provider_factory=video_provider_factory,
-        workflow_store=video_workflow_store,
-        asset_store=video_asset_store,
-        run_service=video_run_service,
-        scheduler_enabled=video_scheduler_enabled,
-        scheduler_interval=float(video_scheduler_interval),
-        ai_services_store=ai_services_store,
-    )
-    register_agent_routes(app, services, dispatch)
-    register_service_center_routes(app, services, dispatch, service_center_store)
-    register_shop_routes(
-        app, services, dispatch, store=shop_store, scheduler_enabled=shop_scheduler_enabled
-    )
-    register_github_trending_routes(
-        app,
-        services,
-        dispatch,
-        store=github_trending_store,
-        avatar_proxy=github_trending_avatar_proxy,
-        scheduler_enabled=github_trending_scheduler_enabled,
-    )
-    register_plans_routes(
-        app,
-        services,
-        dispatch,
-        store=plans_store,
-        schedule_store=schedule_store,
-        ai_services_store=ai_services_store,
-    )
-    register_journal_routes(app, services, dispatch, store=journal_store)
-    from .chat_workspace_routes import register_workspace_routes
-
-    register_workspace_routes(
-        app,
-        services,
-        dispatch,
-        dispatch_stream,
-        store=chat_workspace_store,
-        settings=chat_workspace_settings or chat_settings_store,
-        journal=journal_store,
-    )
-    if ai_services_store is not None:
-        register_ai_service_routes(
-            app,
-            services,
-            dispatch,
-            store=ai_services_store,
-            openai_models_fetcher=openai_models_fetcher,
-            media_provider_factory=media_provider_factory,
-        )
+    register_agent_routes(app, services, dispatch, orchestrator=agent_orchestrator)
     if react_dist is not None:
         register_react_document_routes(app, services, dispatch, react_dist)
     # Register the loopback auth transport after React documents so the

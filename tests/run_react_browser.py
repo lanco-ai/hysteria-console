@@ -27,8 +27,6 @@ def main():
     )
     browser_tests = (
         'react_logs_browser.cjs',
-        'react_home_browser.cjs',
-        'react_shop_browser.cjs',
         'react_login_browser.cjs',
         'react_logout_browser.cjs',
         'react_password_pages_browser.cjs',
@@ -39,24 +37,6 @@ def main():
         'react_incidents_browser.cjs',
         'react_config_browser.cjs',
         'react_rules_browser.cjs',
-        'react_chat_browser.cjs',
-        'react_chat_workspace_browser.cjs',
-        'react_chat_layout_browser.cjs',
-        'react_chat_settings_browser.cjs',
-        'react_plans_assistant_browser.cjs',
-        'react_plans_layout_browser.cjs',
-        'react_plans_schedule_browser.cjs',
-        'react_shop_sources_browser.cjs',
-        'react_shop_admin_layout_browser.cjs',
-        'react_shop_promo_browser.cjs',
-        'react_shop_offer_browser.cjs',
-        'react_shop_gemini_browser.cjs',
-        'react_shop_sms_browser.cjs',
-        'react_unified_daily_browser.cjs',
-        'react_journal_browser.cjs',
-        'react_journal_rework_browser.cjs',
-        'react_journal_markdown_browser.cjs',
-        'react_github_trending_browser.cjs',
         'react_shell_navigation_browser.cjs',
         'react_landing_browser.cjs',
         'react_user_panel_browser.cjs',
@@ -79,22 +59,6 @@ def main():
                 check=True,
                 timeout=180,
             )
-        return
-    if selected == 'react_shop_gemini_browser.cjs':
-        subprocess.run(
-            [sys.executable, str(root / 'tests/run_shop_gemini_browser.py')],
-            cwd=root,
-            check=True,
-            timeout=180,
-        )
-        return
-    if selected == 'react_shop_sms_browser.cjs':
-        subprocess.run(
-            [sys.executable, str(root / 'tests/run_shop_sms_browser.py')],
-            cwd=root,
-            check=True,
-            timeout=180,
-        )
         return
     for browser_test in browser_tests:
         if selected != browser_test:

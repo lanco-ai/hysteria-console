@@ -7,30 +7,61 @@ TEMPLATES = (
     ROOT / 'nginx/hysteria-panel-react.conf',
     ROOT / 'nginx/hysteria-panel-react-https.conf',
 )
-REACT_DOCUMENTS = (
-    '/',
-    '/login',
-    '/auth',
-    '/user/login',
-    '/logout',
-    '/user/logout',
-    '/user/change-password',
-    '/user/panel',
-    '/admin',
-    '/admin/logs',
-    '/admin/settings',
-    '/admin/usage',
-    '/admin/health',
-    '/admin/incidents',
-    '/admin/config',
-    '/admin/rules',
-    '/admin/landing-egresses',
-    '/admin/chat',
-    '/admin/plans',
-    '/admin/video',
-    '/admin/github-trending',
-    '/admin/shop',
-)
+NETWORK = 'proxy_pass http://127.0.0.1:8083;'
+SHOP = 'proxy_pass http://127.0.0.1:8084;'
+WORKBENCH = 'proxy_pass http://127.0.0.1:8085;'
+# Exact React documents and the service that owns each one.
+REACT_DOCUMENTS = {
+    '/': SHOP,
+    '/admin/shop': SHOP,
+    '/trending': WORKBENCH,
+    '/admin/plans': WORKBENCH,
+    '/admin/chat': WORKBENCH,
+    '/admin/video': WORKBENCH,
+    '/admin/services': WORKBENCH,
+    '/login': NETWORK,
+    '/auth': NETWORK,
+    '/user/login': NETWORK,
+    '/logout': NETWORK,
+    '/user/logout': NETWORK,
+    '/user/change-password': NETWORK,
+    '/user/panel': NETWORK,
+    '/admin': NETWORK,
+    '/admin/logs': NETWORK,
+    '/admin/settings': NETWORK,
+    '/admin/usage': NETWORK,
+    '/admin/health': NETWORK,
+    '/admin/incidents': NETWORK,
+    '/admin/config': NETWORK,
+    '/admin/rules': NETWORK,
+    '/admin/landing-egresses': NETWORK,
+    '/admin/github-trending': NETWORK,
+}
+API_LOCATIONS = {
+    'location = /api/v1 {': NETWORK,
+    'location ^~ /api/v1/ {': NETWORK,
+    'location ^~ /api/v1/shop/ {': SHOP,
+    'location ^~ /api/v1/admin/services {': WORKBENCH,
+    'location ^~ /api/v1/github-trending {': WORKBENCH,
+    'location = /api/plans {': WORKBENCH,
+    'location ^~ /api/plans/ {': WORKBENCH,
+    'location = /api/journal {': WORKBENCH,
+    'location ^~ /api/journal/ {': WORKBENCH,
+    'location ^~ /api/ai/ {': WORKBENCH,
+    'location ^~ /api/chat/ {': WORKBENCH,
+    'location = /api/chat/completions {': WORKBENCH,
+    'location = /api/chat/documents/upload {': WORKBENCH,
+    'location ^~ /api/video/ {': WORKBENCH,
+    'location ^~ /static/shop/ {': SHOP,
+    'location ^~ /static/workbench/ {': WORKBENCH,
+    'location ^~ /static/react/assets/ {': NETWORK,
+}
+
+
+def _block(text, opening):
+    assert text.count(f'    {opening}\n') == 1, opening
+    start = text.index(f'    {opening}\n')
+    return text[start : text.index('    }\n', start)]
 
 
 def test_templates_are_explicitly_staged_and_preserve_listener_placeholders():
@@ -47,30 +78,22 @@ def test_templates_are_explicitly_staged_and_preserve_listener_placeholders():
             assert 'listen 80;' in text
 
 
-def test_react_documents_and_api_use_8083():
+def test_documents_and_apis_route_to_the_owning_service():
     for path in TEMPLATES:
         text = path.read_text(encoding='utf-8')
-        assert 'location = / {\n        proxy_pass http://127.0.0.1:8083;' in text
-        for document in REACT_DOCUMENTS[1:]:
-            assert f'location = {document} {{\n        proxy_pass http://127.0.0.1:8083;' in text
-        for api_location in (
-            'location = /api/plans {\n        proxy_pass http://127.0.0.1:8083;',
-            'location ^~ /api/plans/ {\n        proxy_pass http://127.0.0.1:8083;',
-            'location ^~ /api/ai/ {\n        proxy_pass http://127.0.0.1:8083;',
-        ):
-            assert api_location in text
-        assert 'location = /api/v1 {\n        proxy_pass http://127.0.0.1:8083;' in text
-        assert 'location ^~ /api/v1/ {\n        proxy_pass http://127.0.0.1:8083;' in text
-        assert 'location ^~ /api/chat/ {\n        proxy_pass http://127.0.0.1:8083;' in text
-        assert 'location ^~ /api/video/ {\n        proxy_pass http://127.0.0.1:8083;' in text
-        assert 'location = /api/chat/completions {' in text
-        assert 'proxy_buffering off;' in text
-        assert 'proxy_read_timeout 660s;' in text
-        assert (
-            'location ^~ /static/react/assets/ {\n        proxy_pass http://127.0.0.1:8083;' in text
+        for document, target in REACT_DOCUMENTS.items():
+            assert target in _block(text, f'location = {document} {{'), (path.name, document)
+        for opening, target in API_LOCATIONS.items():
+            assert target in _block(text, opening), (path.name, opening)
+        chat = _block(text, 'location ^~ /api/chat/ {')
+        assert 'proxy_buffering off;' in chat and 'proxy_read_timeout 660s;' in chat
+        assert 'client_max_body_size 10m;' in _block(
+            text, 'location = /api/chat/documents/upload {'
         )
         assert 'location = /chat {\n        return 404;\n    }' in text
         assert 'location = /chat {\n        proxy_pass' not in text
+        # Service-to-service endpoints never reach the public.
+        assert 'location ^~ /internal/ {\n        return 404;\n    }' in text
 
 
 def test_all_documents_and_downloads_use_unified_fastapi():

@@ -11,8 +11,10 @@ import state_store
 
 from .agent_service import AgentOrchestrator, complete_agent_intent
 from .agent_rule_service import AgentServiceError
-from .chat_service import MAX_BODY_BYTES
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
+
+# Request bodies are bounded as the chat routes bounded them before the split.
+MAX_BODY_BYTES = 128 * 1024
 
 
 def _error(code, status=400):

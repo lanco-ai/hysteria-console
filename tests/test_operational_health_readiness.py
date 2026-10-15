@@ -26,12 +26,17 @@ def _health_env(tmp_path, *, require_https=False):
               "${FAIL_RENEW_TIMER:-0}" == 1 ]]; then
   exit 3
 fi
+if [[ -n "${FAIL_UNIT:-}" && "$*" == "is-active --quiet $FAIL_UNIT" ]]; then
+  exit 3
+fi
 exit 0
 """,
     )
     _write_executable(
         fake_bin / "curl",
-        'printf "%s\\n" "$*" >>"$CALL_LOG"\nexit 0\n',
+        'printf "%s\\n" "$*" >>"$CALL_LOG"\n'
+        'if [[ -n "${FAIL_HEALTHZ_PORT:-}" && "$*" == *":$FAIL_HEALTHZ_PORT/healthz"* ]]; then exit 22; fi\n'
+        'exit 0\n',
     )
     # TLS behavior must not depend on the developer/CI machine's free space.
     _write_executable(fake_bin / 'df', 'printf "Filesystem 1024-blocks Used Available Capacity Mounted on\\nfixture 100 20 80 20%% /\\n"\n')
@@ -58,6 +63,8 @@ exit 0
             "HY2_HTTPS_RENEWAL_PENDING": str(
                 tmp_path / "renewal-pending"
             ),
+            # Hermetic: the split services' units are absent unless a test adds them.
+            "HY2_SYSTEMD_UNIT_DIR": str(tmp_path / "units"),
         }
     )
     return env, call_log
@@ -216,3 +223,45 @@ def test_required_tls_reports_pending_renewal_recovery(tmp_path):
 
     assert result.returncode == 1
     assert "certificate renewal activation is pending recovery" in result.stderr
+
+
+def _install_split_units(env):
+    units = Path(env["HY2_SYSTEMD_UNIT_DIR"])
+    units.mkdir()
+    for name in ("lancoai-shop.service", "lancoai-workbench.service"):
+        (units / name).write_text("[Unit]\n", encoding="utf-8")
+
+
+def _run_health(env):
+    return subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True, timeout=10, env=env)
+
+
+def test_split_services_are_not_checked_before_their_units_exist(tmp_path):
+    env, call_log = _health_env(tmp_path)
+    result = _run_health(env)
+    assert result.returncode == 0, result.stderr
+    assert "lancoai" not in result.stdout + result.stderr
+    assert "/healthz" not in call_log.read_text(encoding="utf-8")
+
+
+def test_installed_split_services_must_be_active_and_healthy(tmp_path):
+    env, call_log = _health_env(tmp_path)
+    _install_split_units(env)
+    result = _run_health(env)
+    assert result.returncode == 0, result.stderr
+    assert "OK: lancoai-shop.service active and answering /healthz" in result.stdout
+    assert "OK: lancoai-workbench.service active and answering /healthz" in result.stdout
+    calls = call_log.read_text(encoding="utf-8")
+    assert "http://127.0.0.1:8084/healthz" in calls
+    assert "http://127.0.0.1:8085/healthz" in calls
+
+
+def test_an_inactive_or_unresponsive_split_service_fails_the_check(tmp_path):
+    env, _ = _health_env(tmp_path)
+    _install_split_units(env)
+    inactive = _run_health({**env, "FAIL_UNIT": "lancoai-shop.service"})
+    assert inactive.returncode != 0
+    assert "ERROR: lancoai-shop.service is not active" in inactive.stderr
+    silent = _run_health({**env, "FAIL_HEALTHZ_PORT": "8085"})
+    assert silent.returncode != 0
+    assert "ERROR: lancoai-workbench.service is not answering /healthz on 8085" in silent.stderr

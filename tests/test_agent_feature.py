@@ -1,4 +1,6 @@
 import json
+
+import pytest
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -180,34 +182,104 @@ def test_agent_orchestrator_routes_custom_rule_intent_to_preview(tmp_path):
     assert result['plan']['additions'] == ['PROCESS-NAME,Example.exe,DIRECT']
 
 
-def test_complete_agent_intent_reads_chat_settings_store_before_forwarding(tmp_path, monkeypatch):
-    from web_api import agent_service
-    from web_api.chat_service import ChatSettingsStore
+def _remote(handler, tmp_path, token='t' * 48):
+    import httpx
+    from web_api.agent_service import RemoteIntentCompleter
 
-    settings_path = Path(tmp_path) / 'chat-settings.json'
-    settings_path.write_text(json.dumps({
-        'base_url': 'https://chat.example.test/v1',
-        'api_key': 'test-key',
-        'temperature': 0.2,
-    }), encoding='utf-8')
+    token_file = Path(tmp_path) / 'internal-token'
+    if token is not None:
+        token_file.write_text(token + '\n', encoding='utf-8')
+    return RemoteIntentCompleter(
+        'http://workbench.test/internal/v1/agent-intent',
+        token_file=token_file,
+        transport=httpx.MockTransport(handler),
+    )
+
+
+def test_remote_intent_sends_what_the_completion_reads_and_validates_the_answer(tmp_path):
+    import httpx
+    from web_api.agent_service import CONTEXT_TEXT_LIMIT
+
     seen = {}
 
-    def fake_forward(settings, messages, **kwargs):
-        seen['settings'] = settings
-        seen['messages'] = messages
-        seen['kwargs'] = kwargs
-        assert settings.api_key == 'test-key'
-        return {'choices': [{'message': {'content': '{"action":"inspect","explanation":"已读取"}'}}]}
+    def handler(request):
+        seen['token'] = request.headers['x-lancoai-internal-token']
+        seen['body'] = json.loads(request.content)
+        return httpx.Response(
+            200, json={'ok': True, 'intent': {'action': 'add_rule', 'rule': ' DOMAIN,a.test,DIRECT '}}
+        )
 
-    monkeypatch.setattr(agent_service, 'forward_chat', fake_forward)
-    result = agent_service.complete_agent_intent(
-        ChatSettingsStore(settings_path),
-        message='查看当前用户规则',
+    rules = [f'DOMAIN,host-{index}.example,DIRECT' for index in range(400)]
+    completer = _remote(handler, tmp_path)
+    intent = completer(
+        None,
+        message='让 alice 直连 a.test',
         target_user='alice',
-        context={'packs': (), 'rules': []},
+        context={'packs': ('openai',), 'rules': rules, 'global_rules': [], 'merged_rules': rules},
     )
-    assert result['action'] == 'inspect'
-    assert seen['kwargs']['model'] == 'gemini-3.8-flash-high'
+    assert intent == {'action': 'add_rule', 'pack': '', 'rule': 'DOMAIN,a.test,DIRECT', 'explanation': ''}
+    assert seen['token'] == 't' * 48
+    body = seen['body']
+    assert body['message'] == '让 alice 直连 a.test' and body['target_user'] == 'alice'
+    assert body['context']['packs'] == ['openai'] and 'merged_rules' not in body['context']
+    sent = body['context']['rules']
+    assert len(sent) < len(rules)
+    # Same model input: the completion joins each list and keeps 2800 characters.
+    assert '\n'.join(sent)[:CONTEXT_TEXT_LIMIT] == '\n'.join(rules)[:CONTEXT_TEXT_LIMIT]
+
+
+@pytest.mark.parametrize('token', [None, 'short'])
+def test_remote_intent_fails_closed_without_a_usable_token(tmp_path, token):
+    def handler(request):
+        raise AssertionError('no request without a token')
+
+    with pytest.raises(AgentServiceError) as error:
+        _remote(handler, tmp_path, token=token)(None, message='m', target_user='alice', context={})
+    assert error.value.code == 'settings_unavailable'
+
+
+@pytest.mark.parametrize(
+    'response, code',
+    [
+        ((503, {'ok': False, 'error': 'settings_unavailable'}), 'settings_unavailable'),
+        ((502, {'ok': False, 'error': 'upstream_unavailable'}), 'upstream_unavailable'),
+        ((502, {'ok': False, 'error': 'invalid_model_response'}), 'invalid_model_response'),
+        ((422, {'ok': False, 'error': 'invalid_rule_pack'}), 'invalid_rule_pack'),
+        ((503, {'ok': False, 'error': 'internal_token_unavailable'}), 'settings_unavailable'),
+        ((403, {'ok': False, 'error': 'forbidden'}), 'settings_unavailable'),
+        ((404, {'error': 'not_found'}), 'settings_unavailable'),
+        ((500, {'error': 'internal_error'}), 'upstream_unavailable'),
+        ((200, {'ok': True, 'intent': {'action': 'drop_table'}}), 'unsupported_action'),
+        ((200, {'ok': True, 'intent': {'action': 'apply_pack'}}), 'invalid_rule_pack'),
+        ((200, {'ok': True, 'intent': {'action': 'delete_rule', 'rule': ' '}}), 'invalid_rule'),
+        ((200, {'ok': True, 'intent': 'inspect'}), 'invalid_model_response'),
+        ((200, ['not', 'an', 'object']), 'upstream_unavailable'),
+    ],
+)
+def test_remote_intent_maps_every_failure_to_an_agent_code(tmp_path, response, code):
+    import httpx
+
+    status, payload = response
+    completer = _remote(lambda request: httpx.Response(status, json=payload), tmp_path)
+    with pytest.raises(AgentServiceError) as error:
+        completer(None, message='m', target_user='alice', context={})
+    assert error.value.code == code
+
+
+def test_remote_intent_maps_transport_and_framing_failures(tmp_path):
+    import httpx
+
+    def refused(request):
+        raise httpx.ConnectError('refused', request=request)
+
+    for handler, code in (
+        (refused, 'upstream_unavailable'),
+        (lambda request: httpx.Response(200, content=b'not json'), 'upstream_unavailable'),
+        (lambda request: httpx.Response(200, content=b'x' * (64 * 1024 + 1)), 'invalid_model_response'),
+    ):
+        with pytest.raises(AgentServiceError) as error:
+            _remote(handler, tmp_path)(None, message='m', target_user='alice', context={})
+        assert error.value.code == code
 
 
 def test_agent_apply_recovers_when_audit_finalize_fails(tmp_path):

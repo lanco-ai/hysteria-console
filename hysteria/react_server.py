@@ -1,7 +1,8 @@
-"""Unified FastAPI entrypoint for the React panel and compatibility APIs.
+"""Network service entrypoint: the React network console and compatibility APIs.
 
 The synchronous domain functions remain in ``subscription_service`` while all
-HTTP transport is owned by this single ASGI process on loopback :8083.
+HTTP transport is owned by this ASGI process on loopback :8083, which is also
+the session authority for the shop and workbench + AI services.
 """
 
 import os
@@ -13,8 +14,6 @@ from pathlib import Path
 
 import subscription_service
 from web_api import create_app
-from web_api.ai.compat import ChatSettingsAdapter, VideoSettingsAdapter
-from web_api.ai.service_store import AIServiceStore
 from web_api.services import LegacyPanelServices
 
 RUNTIME_ROOT = Path(__file__).resolve().parent
@@ -112,17 +111,10 @@ def build_app():
             stop_event.set()
             worker.join(timeout=5)
 
-    ai_services = AIServiceStore()
     return create_app(
         LegacyPanelServices(subscription_service),
         react_dist=REACT_DIST,
         lifespan=lifespan,
-        video_scheduler_enabled=True,
-        github_trending_scheduler_enabled=True,
-        shop_scheduler_enabled=True,
-        chat_settings_store=ChatSettingsAdapter(ai_services),
-        video_settings_store=VideoSettingsAdapter(ai_services),
-        ai_services_store=ai_services,
     )
 
 

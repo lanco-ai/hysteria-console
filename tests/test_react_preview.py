@@ -1,4 +1,3 @@
-import asyncio
 import http.client
 import json
 import os
@@ -7,25 +6,13 @@ import subprocess
 import sys
 import threading
 from contextlib import contextmanager
-from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 import pytest
-from web_api.github_trending_source import SourceError
 
 from tests import react_preview_server as preview
-
-
-def test_trending_preview_store_is_temporary_and_offline(tmp_path, monkeypatch):
-    monkeypatch.setattr(preview, 'DIST', running_preview_dist(tmp_path))
-    with preview.preview_server() as server:
-        store = server.preview_trending_store
-        assert store.path.parent != Path('/root/hysteria/state')
-        assert store.path.name == 'github-trending.json'
-        with pytest.raises(SourceError, match='upstream_unavailable'):
-            asyncio.run(store.fetcher('weekly'))
 
 
 def running_preview_dist(tmp_path):
@@ -129,20 +116,15 @@ def test_react_preview_serves_built_entry_real_api_and_legacy_page(running_previ
         assert '最近清零记录' in response.read().decode()
 
 
-def test_react_preview_serves_exact_public_entry_with_public_document_shell(running_preview):
+def test_react_preview_leaves_the_portal_to_the_shop_service(running_preview):
     _, base_url = running_preview
-    with urlopen(base_url + '/__react/', timeout=5) as response:
-        page = response.read().decode()
-        assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · LancoAI</title>' in page
-        assert '<body class="page-portal page-workbench">' in page
-        assert '/static/react/assets/' in page
-
-    with urlopen(base_url + '/', timeout=5) as response:
-        assert response.status == 200
-        assert '<title>购物 · LancoAI</title>' in response.read().decode()
-
-    _assert_head_matches_get(base_url + '/__react/')
+    # The portal and the moved console pages are the shop's and the workbench +
+    # AI service's React documents now. (Unprefixed paths still reach the legacy
+    # preview pages of this harness, so check the React entries.)
+    for route in ('/__react/', '/__react/admin/shop', '/__react/admin/plans', '/__react/trending'):
+        with pytest.raises(HTTPError) as error:
+            urlopen(base_url + route, timeout=5)
+        assert error.value.code == 404
 
 
 def test_react_preview_serves_exact_login_entry_with_password_limit(running_preview):
@@ -150,7 +132,7 @@ def test_react_preview_serves_exact_login_entry_with_password_limit(running_prev
     with urlopen(base_url + '/__react/login', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · LancoAI</title>' in page
+        assert '<title>登录 · LancoAI</title>' in page
         assert '<body class="page-portal page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/login')
@@ -161,7 +143,7 @@ def test_react_preview_serves_user_login_entry_with_password_limit(running_previ
     with urlopen(base_url + '/__react/user/login', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · LancoAI</title>' in page
+        assert '<title>登录 · LancoAI</title>' in page
         assert '<body class="page-portal page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/user/login')
@@ -172,12 +154,12 @@ def test_react_preview_serves_auth_alias_with_workbench_bootstrap(running_previe
     with urlopen(base_url + '/__react/auth', timeout=5) as response:
         page = response.read().decode()
         assert response.headers.get_content_type() == 'text/html'
-        assert '<title>购物 · LancoAI</title>' in page
+        assert '<title>登录 · LancoAI</title>' in page
         assert '<body class="page-portal page-workbench">' in page
         assert f'data-password-max-length="{preview.legacy_preview.ss.PASSWORD_MAX_LENGTH}"' in page
     _assert_head_matches_get(base_url + '/__react/auth')
     with urlopen(base_url + '/auth', timeout=5) as response:
-        assert '<title>购物 · LancoAI</title>' in response.read().decode()
+        assert '<title>登录 · LancoAI</title>' in response.read().decode()
 
 
 @pytest.mark.parametrize(
@@ -775,39 +757,3 @@ def test_react_browser_selector_rejects_unknown_file():
     )
     assert result.returncode != 0
     assert 'unknown REACT_BROWSER_TEST' in result.stderr
-
-
-def test_react_preview_forwards_source_lifecycle_to_guarded_real_api(running_preview):
-    server, base_url = running_preview
-    endpoint = base_url + '/api/v1/shop/admin/sources/gpt'
-    cookie = f'sid={server.preview_admin_cookie}'
-    _, before = _json(base_url + '/api/v1/shop/admin', cookie=cookie)
-
-    def change(method, payload, *, authenticated=True, site='same-origin'):
-        headers = {'Content-Type': 'application/json', 'Sec-Fetch-Site': site}
-        if authenticated:
-            headers['Cookie'] = cookie
-        request = Request(
-            endpoint, data=json.dumps(payload).encode(), headers=headers, method=method
-        )
-        try:
-            response = urlopen(request, timeout=5)
-        except HTTPError as error:
-            response = error
-        with response:
-            return response.status, json.load(response)
-
-    deletion = {'revision': before['revision'], 'confirm': 'delete-source-and-products'}
-    for method, payload in (('DELETE', deletion), ('POST', {'revision': before['revision']})):
-        assert change(method, payload, authenticated=False)[0] == 401
-        assert change(method, payload, site='cross-site')[0] == 403
-    assert change('DELETE', {**deletion, 'confirm': 'wrong'})[0] == 422
-    status, removed = change('DELETE', deletion)
-    assert status == 200
-    assert 'gpt' not in removed['sources'] and removed['items'] == []
-    assert removed['source_lifecycle']['gpt'] == {'generation': 1, 'deleted': True}
-    assert change('POST', {'revision': before['revision']})[0] == 409
-    status, added = change('POST', {'revision': removed['revision']})
-    assert status == 200
-    assert 'gpt' in added['sources'] and added['items'] == [] and added['skus'] == {}
-    assert added['source_lifecycle']['gpt'] == {'generation': 2, 'deleted': False}

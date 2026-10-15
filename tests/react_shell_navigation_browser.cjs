@@ -59,11 +59,13 @@ async function main() {
         await expect.poll(async () => Math.round((await page.locator('.sidebar').boundingBox()).x)).toBe(0);
       }
       const baseline = await geometry(page);
-      for (const path of ['/admin/plans', '/admin/shop', '/admin/services', '/admin']) {
+      // This service's own console pages switch in the same document; 今日计划,
+      // 商品管理 and the AI tools belong to the other services (full page loads).
+      for (const path of ['/admin/usage', '/admin/config', '/admin/health', '/admin']) {
         await page.locator(`.sidebar-link[href="${path}"]`).click();
         await expect(page).toHaveURL(`${baseUrl}/__react${path}`);
         await expect(page.locator(`.sidebar-link[href="${path}"]`)).toHaveAttribute('aria-current', 'page');
-        if (path === '/admin/plans') await expect(page.getByRole('heading', { name: '今日计划', level: 1 })).toBeVisible();
+        if (path === '/admin/usage') await expect(page.getByRole('heading', { name: '流量分析', level: 1 })).toBeVisible();
         if (mobile) {
           await page.locator('#sidebar-toggle').click();
           await expect.poll(async () => Math.round((await page.locator('.sidebar').boundingBox()).x)).toBe(0);
@@ -79,8 +81,8 @@ async function main() {
       if (viewport.width === 1024) {
         // Another page opens at its top even when the previous one was scrolled
         // (here /admin is taller than the viewport, so the offset would survive).
-        await page.locator('.sidebar-link[href="/admin/services"]').click();
-        await expect(page).toHaveURL(`${baseUrl}/__react/admin/services`);
+        await page.locator('.sidebar-link[href="/admin/usage"]').click();
+        await expect(page).toHaveURL(`${baseUrl}/__react/admin/usage`);
         // Retry until the content has rendered and the page can scroll.
         await expect.poll(() => page.evaluate(() => { window.scrollTo({ top: 400, behavior: 'instant' }); return window.scrollY; })).toBeGreaterThan(0);
         await page.locator('.sidebar-link[href="/admin"]').click();
@@ -134,16 +136,17 @@ async function main() {
     });
     await reminderPage.goto(`${baseUrl}/__react/admin`);
     await expect(reminderPage.getByRole('complementary', { name: '今日计划提醒' })).toContainText(task.title);
-    await reminderPage.locator('.sidebar-link[href="/admin/plans"]').click();
+    // The reminder follows the console across this service's pages.
+    await reminderPage.locator('.sidebar-link[href="/admin/usage"]').click();
+    await expect(reminderPage).toHaveURL(`${baseUrl}/__react/admin/usage`);
     await expect(reminderPage.locator('.plans-global-reminders')).toContainText(task.title);
-    await expect(reminderPage.locator('.plans-reminder-list')).toHaveCount(0, 'the global reminder must not be duplicated inside the Plans page');
     await reminderPage.getByRole('button', { name: '稍后', exact: true }).click();
     await expect.poll(() => actionBody?.action).toBe('snooze');
     await expect(reminderPage.locator('.plans-global-reminders')).toHaveCount(0);
     await reminderContext.close();
 
     console.log('Shared sidebar geometry and client navigation passed: desktop, iPad landscape/portrait, mobile');
-    console.log('Global plan reminders display once across admin pages and persist actions');
+    console.log('Global plan reminders follow the network console pages and persist actions');
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

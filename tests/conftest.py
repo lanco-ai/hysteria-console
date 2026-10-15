@@ -9,7 +9,6 @@ import importlib
 import os
 import sys
 import types
-from functools import partial
 from pathlib import Path
 
 import pytest
@@ -74,20 +73,3 @@ def xray_runtime_group(monkeypatch):
     import xray_config as xc
 
     monkeypatch.setattr(xc, 'CONFIG_GROUP', grp.getgrgid(os.getgid()).gr_name)
-
-
-@pytest.fixture(autouse=True)
-def isolated_default_video_stores(tmp_path, monkeypatch):
-    """Only route defaults are redirected; injected stores/runners stay real."""
-    import web_api.video_routes as routes
-    from web_api.video_service import AssetStore, RunService, VideoSettingsStore, WorkflowStore
-
-    root = tmp_path / 'default-video'
-    monkeypatch.setattr(
-        routes, 'VideoSettingsStore', partial(VideoSettingsStore, path=root / 'settings.json')
-    )
-    monkeypatch.setattr(
-        routes, 'WorkflowStore', partial(WorkflowStore, path=root / 'workflows.json')
-    )
-    monkeypatch.setattr(routes, 'AssetStore', partial(AssetStore, root=root / 'assets'))
-    monkeypatch.setattr(routes, 'RunService', partial(RunService, path=root / 'runs.json'))

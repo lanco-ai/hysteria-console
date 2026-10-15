@@ -6,8 +6,9 @@ const stylelint = require('stylelint');
 
 test('frontend release gate builds React assets before all React browser suites', () => {
   const scripts = JSON.parse(fs.readFileSync('package.json', 'utf8')).scripts;
-  assert.match(scripts['test:services-browser'], /tests\/run_services_browser\.py/);
-  assert.match(scripts['check:react'], /check:react-core.*test:react-browser.*test:services-browser/);
+  assert.match(scripts['test:react-browser'], /tests\/run_react_browser\.py/);
+  assert.match(scripts['check:react'], /check:react-core.*test:react-browser/);
+  assert.match(scripts['check:react-core'], /build:react.*test:react-assets.*test:react-unit/);
   assert.match(scripts['check:frontend'], /check:react/);
   assert.doesNotMatch(scripts['check:frontend'], /&&\s*npm run test:browser/);
 });
