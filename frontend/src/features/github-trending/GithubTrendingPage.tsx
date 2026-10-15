@@ -19,7 +19,7 @@ type Snapshot = {
 };
 
 const REFRESH_STARTED_MESSAGE = '刷新已开始，正在获取 GitHub 榜单。';
-const PERIODS: Array<[Period, string, string]> = [['weekly', '周榜', '/?view=trending'], ['daily', '日榜', '/?view=trending&period=daily']];
+const PERIODS: Array<[Period, string, string]> = [['weekly', '周榜', '/trending'], ['daily', '日榜', '/trending?period=daily']];
 
 function absoluteTime(value: string | null): string {
   const date = value ? new Date(value) : null;

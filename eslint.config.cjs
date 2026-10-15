@@ -2,7 +2,7 @@ const globals = require('globals');
 
 module.exports = [
   {
-    files: ['hysteria/**/*.js', 'tests/*.cjs', 'scripts/*.cjs'],
+    files: ['server/**/*.js', 'tests/*.cjs', 'scripts/*.cjs'],
     rules: {
       'no-undef': 'error',
       'no-unreachable': 'error',
@@ -12,7 +12,7 @@ module.exports = [
       'valid-typeof': 'error',
     },
   },
-  { files: ['hysteria/**/*.js'], languageOptions: { sourceType: 'script', globals: globals.browser } },
+  { files: ['server/**/*.js'], languageOptions: { sourceType: 'script', globals: globals.browser } },
   { files: ['tests/*.cjs', 'scripts/*.cjs'], languageOptions: { globals: globals.node } },
   // Playwright evaluate/wait callbacks execute in the browser, not Node.
   { files: ['tests/workspace_visual.cjs', 'tests/*_browser.cjs'], languageOptions: { globals: globals.browser } },
