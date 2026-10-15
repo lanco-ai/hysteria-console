@@ -73,6 +73,33 @@ body.page-portal {
 .shop-hero-text > p { margin-top: 6px; color: var(--text-secondary); font-size: 14px; }
 .shop-hero-text > .shop-store-stats { margin-top: 4px; }
 .shop-hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+/* The Plus referral offer is separate from the current purchase price. */
+.shop-referral-link { display: grid; align-items: center; gap: 10px; border: 1px solid #ead9b9; border-radius: 12px; background: linear-gradient(110deg, #fff9ed, #fffdf8); color: #765322; text-decoration: none; }
+.shop-referral-link:hover { border-color: #c7a56c; background: #fff6e5; }
+.shop-referral-link:focus-visible, .shop-referral-details:focus-visible { outline: 2px solid #a77a36; outline-offset: 4px; }
+.shop-referral-icon { display: grid; place-items: center; flex: 0 0 auto; width: 30px; height: 30px; border: 1px solid #efdfc3; border-radius: 9px; background: #fffaf1; }
+.shop-referral-icon svg { width: 18px; height: 18px; }
+.shop-referral-link-copy { display: grid; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.6; }
+.shop-referral-link-copy strong { font-size: 13px; font-weight: 650; }
+.shop-referral-link-action { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.shop-referral-banner { flex-basis: 100%; grid-template-columns: auto minmax(0, 1fr) auto; padding: 11px 14px; }
+.shop-referral-banner .shop-referral-link-copy { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 12px; }
+.shop-referral-teaser { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); gap: 5px 9px; padding: 11px; }
+.shop-referral-teaser .shop-referral-icon { align-self: start; }
+.shop-referral-teaser .shop-referral-link-action { grid-column: 2; }
+.shop-product-list:has(.shop-referral-teaser) { align-items: start; }
+.shop-referral-details { margin-top: 16px; padding: 18px; border: 1px solid #ead9b9; border-radius: 12px; background: #fffbf3; color: #654d2b; scroll-margin-top: 24px; }
+.shop-referral-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.shop-referral-heading p { color: #896735; font-size: 10px; letter-spacing: .04em; }
+.shop-referral-heading h2 { margin: 3px 0 0; font-size: 16px; font-weight: 650; }
+.shop-referral-base { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.shop-referral-details ul { display: grid; gap: 6px; margin: 14px 0; padding-left: 18px; font-size: 13px; line-height: 1.8; }
+.shop-referral-examples { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.shop-referral-examples > div { display: grid; gap: 4px; padding: 12px; border: 1px solid #eee2cc; border-radius: 9px; background: #fffefa; }
+.shop-referral-examples span { color: #80643c; font-size: 12px; }
+.shop-referral-examples strong { color: #624416; font-size: 23px; font-variant-numeric: tabular-nums; }
+.shop-referral-examples small { margin-left: 3px; font-size: 12px; font-weight: 400; }
+.shop-referral-note { margin-top: 12px; color: #80643c; font-size: 12px; line-height: 1.7; }
 .shop-filterbar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 16px; margin-bottom: 22px; }
 .shop-category-list { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .shop-category-list button { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 6px 7px 6px 14px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-surface); color: var(--text-primary); box-shadow: none; font: inherit; font-size: 14px; font-weight: 600; white-space: nowrap; cursor: pointer; }

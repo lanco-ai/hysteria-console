@@ -4,6 +4,7 @@ import { isNoticeProduct, ShopCopyText, ShopNotice } from '../shop/ShopNotice';
 import { hasContact, money, promoCents, promoName, type Catalog } from '../shop/catalog';
 import { ProductStats, PromoBadge, PromoPrice } from '../shop/ShopMerch';
 import { cartPromo, findSku, type CartItem } from '../shop/cart';
+import { PLUS_REFERRAL_ANCHOR, PlusReferralDetails, isPlusReferralVariant, plusReferralVariant } from '../shop/PlusReferral';
 
 function CatalogNotice({ catalog, error, onRetry }: { catalog: Catalog | null; error: boolean; onRetry: () => void }) {
   return error ? <p role="alert">商品暂时无法加载。<button type="button" className="btn btn-secondary" onClick={onRetry}>重试</button></p> : !catalog ? <p role="status">正在加载商品…</p> : catalog.status !== 'ready' ? <p role="status">商品信息正在等待更新，暂时无法购买，请稍后再试。</p> : null;
@@ -17,13 +18,15 @@ export function ProductDetail({ productId, catalog, error, onAdd, onBuy, onRetry
   const [selection, setSelection] = useState<string | null>(null);
   const [quantity, setQuantity] = useState('1');
   const title = useRef<HTMLHeadingElement>(null);
-  const variantId = selection ?? product?.variants.find(item => item.available)?.id ?? product?.variants[0]?.id;
+  const referral = useRef<HTMLElement>(null);
+  const fromReferral = window.location.hash === `#${PLUS_REFERRAL_ANCHOR}`;
+  const variantId = selection ?? (fromReferral ? plusReferralVariant(product)?.id : undefined) ?? product?.variants.find(item => item.available)?.id ?? product?.variants[0]?.id;
   const variant = product?.variants.find(item => item.id === variantId);
   const count = /^\d{1,2}$/.test(quantity) ? Number(quantity) : 0;
   const validCount = count >= 1 && count <= 99;
   const valid = catalog?.status === 'ready' && !!variant?.available && validCount;
   const promo = promoCents(variant);
-  useEffect(() => { if (product) title.current?.focus(); }, [product?.id]);
+  useEffect(() => { if (product) (fromReferral && referral.current ? referral.current : title.current)?.focus(); }, [product?.id, fromReferral]);
   return <>
     <nav className="shop-breadcrumb" aria-label="面包屑"><a href="/">首页</a><span>/</span><a href="/">商品目录</a><span>/</span><span>{product?.title ?? '商品详情'}</span></nav>
     <CatalogNotice catalog={catalog} error={error} onRetry={onRetry}/>
@@ -33,6 +36,7 @@ export function ProductDetail({ productId, catalog, error, onAdd, onBuy, onRetry
         <ProductStats product={product}/>
         {product.category === '短信接码' ? <p className="shop-note">已有激活码？<a href="/?view=sms">进入短信接码</a></p> : null}
         <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{variant ? <PromoPrice product={product} variant={variant}/> : null}</div>
+        {catalog?.status === 'ready' && isPlusReferralVariant(product, variant) ? <PlusReferralDetails sectionRef={referral}/> : null}
         <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <button key={item.id} type="button" aria-pressed={variantId === item.id} onClick={() => setSelection(item.id)}>{item.label}{!item.available ? ' · 暂不可购买' : ''}</button>)}</fieldset>
         <div className="shop-detail-quantity"><span>购买数量</span><Quantity value={quantity} onChange={setQuantity}/><small>每次 1–99 件</small></div>
         {!validCount ? <p role="alert">请输入 1–99 的整数数量。</p> : null}

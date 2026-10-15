@@ -6,6 +6,7 @@ import { ProductStats, PromoBadge, PromoPrice, WechatContact } from '../shop/Sho
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
 import { PurchaseDialog } from './ShopPurchase';
 import { ProductDetail, CartView } from './ShopProductDetail';
+import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 
 const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码'];
 
@@ -20,6 +21,7 @@ function ProductRow({ product, catalogReady, onAdd }: { product: Product; catalo
     <div className="shop-product-name"><span className="shop-product-thumbnail"><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title"><PromoBadge text={product.badge}/><h3><a href={`/?product=${product.id}`}>{product.title}</a></h3></div><div className="shop-product-tags">{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span><ProductStats product={product}/></div></div></div>
     <div className="shop-product-price"><strong>{money(minimum).slice(1)}{maximum !== minimum ? `–${money(maximum).slice(1)}` : ''} <span>CNY</span></strong><PromoPrice product={product}/></div>
     <div className="shop-product-action">{available && !single ? <a className="shop-product-cart" href={`/?product=${product.id}`} aria-label={`选择 ${product.title} 规格`}>{cartIcon}</a> : <button className="shop-product-cart" type="button" disabled={!available} aria-label={available ? `将 ${product.title} 加入购物车` : `${product.title} 暂不可购买`} onClick={() => { if (catalogReady && single?.available) onAdd({ id: single.id, quantity: 1 }); }}>{cartIcon}</button>}<a className="shop-product-detail-link" href={`/?product=${product.id}`} aria-label={`${product.title} 商品详情`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a></div>
+    {catalogReady && plusReferralVariant(product) ? <PlusReferralLink product={product}/> : null}
   </article>;
 }
 
@@ -64,6 +66,7 @@ export function ShopPage() {
     updateCart(existing ? cart.map(row => row.id === item.id ? { ...row, quantity: row.quantity + item.quantity } : row) : [...cart, item], '已加入购物车。');
   }
   const allProducts = catalog?.products ?? [];
+  const referralProduct = catalog?.status === 'ready' ? allProducts.find(product => plusReferralVariant(product)) : undefined;
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const categories = [...new Set(allProducts.map(product => product.category))].sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
   const products = allProducts.filter(product => (category === '全部商品' || product.category === category) && `${product.title} ${product.variants.map(item => item.label).join(' ')}`.toLowerCase().includes(search.trim().toLowerCase()));
@@ -76,6 +79,7 @@ export function ShopPage() {
         {catalog?.stats && (catalog.stats.views || catalog.stats.sold) ? <p className="shop-store-stats">{[catalog.stats.views ? `累计浏览 ${countText(catalog.stats.views)} 人次` : '', catalog.stats.sold ? `累计售出 ${countText(catalog.stats.sold)} 件` : ''].filter(Boolean).join(' · ')}</p> : null}
       </div>
       <div className="shop-hero-actions"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cartCount}）</a></div>
+      {referralProduct ? <PlusReferralLink product={referralProduct} banner/> : null}
     </header>}
     <p className="shop-feedback" role="status">{notice}</p>
     {isCart ? <CartView cart={cart} catalog={catalog} error={error} onChange={updateCart} onBuy={() => setSelected(cart)} onRetry={() => void load()}/> : productId ? <ProductDetail key={productId} productId={productId} catalog={catalog} error={error} onAdd={add} onBuy={item => setSelected([item])} onRetry={() => void load()}/> : <div className="shop-layout">
