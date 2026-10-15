@@ -44,3 +44,5 @@
 ## 测试与工具
 
 `tests/conftest.py`、`tests/preview_http_server.py`、`tsconfig.json`、`vite.config.ts`（资源前缀不同）、`eslint.config.cjs`、`stylelint.config.cjs`、`package.json`/`package-lock.json`（依赖版本保持一致）、`pyproject.toml`、`pytest.ini`、`.github/workflows/backend-quality.yml`。
+
+独立网站入口共享 `frontend/src/shared/serviceHref.ts`（商品 443、网络 8444、工作台 8445）；三个分支须同步。
