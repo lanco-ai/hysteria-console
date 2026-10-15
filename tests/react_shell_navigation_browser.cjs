@@ -61,7 +61,8 @@ async function main() {
       const baseline = await geometry(page);
       // This service's own console pages switch in the same document; 今日计划,
       // 商品管理 and the AI tools belong to the other services (full page loads).
-      for (const path of ['/admin/usage', '/admin/config', '/admin/health', '/admin']) {
+      // Not /admin/health: geometry() samples that link, which must stay inactive.
+      for (const path of ['/admin/usage', '/admin/config', '/admin']) {
         await page.locator(`.sidebar-link[href="${path}"]`).click();
         await expect(page).toHaveURL(`${baseUrl}/__react${path}`);
         await expect(page.locator(`.sidebar-link[href="${path}"]`)).toHaveAttribute('aria-current', 'page');
