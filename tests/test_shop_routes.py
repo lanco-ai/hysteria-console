@@ -8,7 +8,6 @@ from web_api import create_app
 from web_api.services import LoginRequired
 from web_api.shop_source import normalize_products
 from web_api.shop_store import ShopStore
-from web_api.video_service import AssetStore, VideoSettingsStore, WorkflowStore
 
 
 class Sessions:
@@ -119,9 +118,6 @@ def test_routes_auth_csrf_revision_allowlist(tmp_path):
     app = create_app(
         Sessions(),
         shop_store=store,
-        video_settings_store=VideoSettingsStore(tmp_path / 'video/settings.json'),
-        video_workflow_store=WorkflowStore(tmp_path / 'video/workflows.json'),
-        video_asset_store=AssetStore(tmp_path / 'video/assets'),
     )
     with TestClient(app) as client:
         assert client.get('/api/v1/shop/catalog').json()['products'] == []
@@ -206,9 +202,6 @@ def test_eight_product_copy_uses_compact_utf8_body_limit(tmp_path):
     app = create_app(
         Sessions(),
         shop_store=store,
-        video_settings_store=VideoSettingsStore(tmp_path / 'video/settings.json'),
-        video_workflow_store=WorkflowStore(tmp_path / 'video/workflows.json'),
-        video_asset_store=AssetStore(tmp_path / 'video/assets'),
     )
     with TestClient(app) as client:
         saved = client.put('/api/v1/shop/admin', headers=HEADERS, content=near_limit)
@@ -297,9 +290,6 @@ def test_two_sources_keep_admin_private_and_public_variant_freshness(tmp_path):
     app = create_app(
         Sessions(),
         shop_store=store,
-        video_settings_store=VideoSettingsStore(tmp_path / 'video/settings.json'),
-        video_workflow_store=WorkflowStore(tmp_path / 'video/workflows.json'),
-        video_asset_store=AssetStore(tmp_path / 'video/assets'),
     )
     with TestClient(app) as client:
         assert client.get('/api/v1/shop/catalog').json()['products'] == []
@@ -341,9 +331,6 @@ def shop_app(tmp_path, clock=None):
     app = create_app(
         Sessions(),
         shop_store=store,
-        video_settings_store=VideoSettingsStore(tmp_path / 'video/settings.json'),
-        video_workflow_store=WorkflowStore(tmp_path / 'video/workflows.json'),
-        video_asset_store=AssetStore(tmp_path / 'video/assets'),
     )
     return store, app
 

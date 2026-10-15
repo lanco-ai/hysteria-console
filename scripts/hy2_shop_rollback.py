@@ -18,7 +18,7 @@ import urllib.request
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'hysteria'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'server'))
 import hy2_panel_release as releases
 import state_store
 
@@ -58,14 +58,14 @@ def install_module(path, source, metadata):
 
 
 def service_control(action):
-    subprocess.run(['systemctl', action, 'hysteria-react.service'], check=True, capture_output=True)
+    subprocess.run(['systemctl', action, 'lancoai-shop.service'], check=True, capture_output=True)
 
 
 def check_health():
     for _ in range(20):
         try:
             with urllib.request.urlopen(
-                'http://127.0.0.1:8083/api/v1/shop/catalog', timeout=2
+                'http://127.0.0.1:8084/api/v1/shop/catalog', timeout=2
             ) as response:
                 if response.status == 200 and isinstance(json.load(response).get('products'), list):
                     return
@@ -86,9 +86,9 @@ def rollback_shop(
     health=check_health,
 ):
     runtime = Path(runtime).resolve()
-    if apply and service is service_control and runtime != Path('/root/hysteria').resolve():
+    if apply and service is service_control and runtime != Path('/opt/lancoai/shop').resolve():
         raise RollbackError(
-            'apply requires the live /root/hysteria runtime for hysteria-react.service'
+            'apply requires the live /opt/lancoai/shop runtime for lancoai-shop.service'
         )
     module = runtime / 'web_api/shop_store.py'
     settings = runtime / 'state/shop/source-merchant.json'

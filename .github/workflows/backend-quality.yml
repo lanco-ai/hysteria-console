@@ -1,4 +1,4 @@
-name: Backend quality
+name: Shop service quality
 
 on:
   push:
@@ -23,7 +23,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
-      - run: 'python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-tuic-stats.txt'
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run check:frontend
@@ -43,10 +42,6 @@ jobs:
           cache: npm
       - name: Install development dependencies
         run: python -m pip install -r requirements-dev.txt
-      - name: Install dedicated stats test dependency
-        run: 'python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-tuic-stats.txt'
-      - name: Install OCR tools on the disposable runner
-        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim poppler-utils
       - run: npm ci --ignore-scripts
       - run: npm run build:react
       - name: Check backend and run tests

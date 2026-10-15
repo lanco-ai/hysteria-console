@@ -24,7 +24,7 @@ def deployment(tmp_path):
     runtime = tmp_path / 'runtime'
     module = runtime / 'web_api/shop_store.py'
     module.parent.mkdir(parents=True)
-    module.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    module.write_bytes((ROOT / 'server/web_api/shop_store.py').read_bytes())
     module.chmod(0o640)
     settings = runtime / 'state/shop/source-merchant.json'
     settings.parent.mkdir(parents=True)
@@ -93,7 +93,7 @@ def test_local_names_block_pre_names_rollback_only_after_a_name_was_saved(deploy
         run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
     assert calls == [] and snapshot(runtime) == before
     # The new validator can itself run inside the rollback compatibility guard.
-    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    candidate.write_bytes((ROOT / 'server/web_api/shop_store.py').read_bytes())
     run_rollback(deployment)
     assert snapshot(runtime) == before
 
@@ -132,7 +132,7 @@ def test_disabled_sources_block_previous_schema_before_any_rollback_mutation(dep
     with pytest.raises(rollback.RollbackError, match='incompatible'):
         run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
     assert calls == [] and snapshot(runtime) == before
-    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    candidate.write_bytes((ROOT / 'server/web_api/shop_store.py').read_bytes())
     run_rollback(deployment)
     assert snapshot(runtime) == before
 
@@ -153,7 +153,7 @@ def test_bookmark_settings_block_pre_bookmark_rollback_before_service_or_files_c
     with pytest.raises(rollback.RollbackError, match='incompatible'):
         run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
     assert calls == [] and snapshot(runtime) == before
-    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    candidate.write_bytes((ROOT / 'server/web_api/shop_store.py').read_bytes())
     run_rollback(deployment)
     assert snapshot(runtime) == before
 
@@ -317,6 +317,6 @@ def test_lifecycle_blocks_pre_lifecycle_rollback_even_after_source_is_readded(de
     with pytest.raises(rollback.RollbackError, match='incompatible'):
         run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
     assert calls==[] and snapshot(runtime)==before
-    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    candidate.write_bytes((ROOT / 'server/web_api/shop_store.py').read_bytes())
     run_rollback(deployment)
     assert snapshot(runtime)==before

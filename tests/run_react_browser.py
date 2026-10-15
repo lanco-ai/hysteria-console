@@ -1,4 +1,4 @@
-"""Run React acceptance checks against a managed fictional preview."""
+"""Run the shop's React acceptance checks against a managed fictional preview."""
 
 import os
 import subprocess
@@ -7,70 +7,32 @@ from pathlib import Path
 
 from react_preview_server import preview_server
 
+BROWSER_TESTS = (
+    'react_shop_browser.cjs',
+    'react_shop_sources_browser.cjs',
+    'react_shop_admin_layout_browser.cjs',
+    'react_shop_promo_browser.cjs',
+    'react_shop_offer_browser.cjs',
+    'react_shop_gemini_browser.cjs',
+    'react_shop_sms_browser.cjs',
+)
+# Suites whose fixtures need their own runner.
+DEDICATED_RUNNERS = {
+    'react_shop_gemini_browser.cjs': 'tests/run_shop_gemini_browser.py',
+    'react_shop_sms_browser.cjs': 'tests/run_shop_sms_browser.py',
+}
+
 
 def main():
     root = Path(__file__).resolve().parents[1]
-    default_logs_screenshots = (
-        root / '.superpowers' / 'sdd' / '2026-09-12-react-logs-slice' / 'task-2-screenshots'
-    )
-    default_home_screenshots = (
-        root / '.superpowers' / 'sdd' / '2026-09-12-react-public-home' / 'task-1-screenshots'
-    )
-    default_login_screenshots = (
-        root / '.superpowers' / 'sdd' / '2026-09-12-react-login' / 'task-1-screenshots'
-    )
-    default_logout_screenshots = (
-        root / '.superpowers' / 'sdd' / '2026-09-12-react-logout' / 'task-1-screenshots'
-    )
-    default_password_screenshots = (
-        root / '.superpowers' / 'sdd' / '2026-09-12-react-password-pages' / 'task-1-screenshots'
-    )
-    browser_tests = (
-        'react_logs_browser.cjs',
-        'react_home_browser.cjs',
-        'react_shop_browser.cjs',
-        'react_login_browser.cjs',
-        'react_logout_browser.cjs',
-        'react_password_pages_browser.cjs',
-        'react_settings_browser.cjs',
-        'react_overview_browser.cjs',
-        'react_usage_browser.cjs',
-        'react_health_browser.cjs',
-        'react_incidents_browser.cjs',
-        'react_config_browser.cjs',
-        'react_rules_browser.cjs',
-        'react_chat_browser.cjs',
-        'react_chat_workspace_browser.cjs',
-        'react_chat_layout_browser.cjs',
-        'react_chat_settings_browser.cjs',
-        'react_plans_assistant_browser.cjs',
-        'react_plans_layout_browser.cjs',
-        'react_plans_schedule_browser.cjs',
-        'react_shop_sources_browser.cjs',
-        'react_shop_admin_layout_browser.cjs',
-        'react_shop_promo_browser.cjs',
-        'react_shop_offer_browser.cjs',
-        'react_shop_gemini_browser.cjs',
-        'react_shop_sms_browser.cjs',
-        'react_unified_daily_browser.cjs',
-        'react_journal_browser.cjs',
-        'react_journal_rework_browser.cjs',
-        'react_journal_markdown_browser.cjs',
-        'react_github_trending_browser.cjs',
-        'react_shell_navigation_browser.cjs',
-        'react_landing_browser.cjs',
-        'react_user_panel_browser.cjs',
-    )
     selected = os.environ.get('REACT_BROWSER_TEST')
-    if selected is not None and selected not in browser_tests:
+    if selected is not None and selected not in BROWSER_TESTS:
         print(f'unknown REACT_BROWSER_TEST: {selected}', file=sys.stderr)
         raise SystemExit(64)
     if selected is None:
-        # Keep each browser suite in a fresh Python process.  The preview
-        # server deliberately monkeypatches the shared legacy service module;
-        # process isolation prevents a late request/fixture thread from one
-        # suite delaying the next suite's teardown.
-        for browser_test in browser_tests:
+        # Keep each browser suite in a fresh Python process so one suite's
+        # fixtures and threads can never leak into the next.
+        for browser_test in BROWSER_TESTS:
             env = dict(os.environ, REACT_BROWSER_TEST=browser_test)
             subprocess.run(
                 [sys.executable, str(Path(__file__).resolve())],
@@ -80,70 +42,28 @@ def main():
                 timeout=180,
             )
         return
-    if selected == 'react_shop_gemini_browser.cjs':
+    runner = DEDICATED_RUNNERS.get(selected)
+    if runner is not None:
+        subprocess.run([sys.executable, str(root / runner)], cwd=root, check=True, timeout=180)
+        return
+    with preview_server() as server:
+        env = dict(
+            os.environ,
+            PREVIEW_BASE_URL=f'http://127.0.0.1:{server.server_port}',
+            REACT_PREVIEW_ADMIN_COOKIE=server.preview_admin_cookie,
+            REACT_PREVIEW_ADMIN_OTHER_COOKIE=server.preview_admin_other_cookie,
+            REACT_PREVIEW_LOGIN_PASSWORD=server.preview_login_password,
+            REACT_SCREENSHOT_DIR=os.environ.get(
+                'REACT_SCREENSHOT_DIR', str(root / 'test-results' / 'react-screenshots')
+            ),
+        )
         subprocess.run(
-            [sys.executable, str(root / 'tests/run_shop_gemini_browser.py')],
+            ['node', str(root / 'tests' / selected)],
             cwd=root,
+            env=env,
             check=True,
             timeout=180,
         )
-        return
-    if selected == 'react_shop_sms_browser.cjs':
-        subprocess.run(
-            [sys.executable, str(root / 'tests/run_shop_sms_browser.py')],
-            cwd=root,
-            check=True,
-            timeout=180,
-        )
-        return
-    for browser_test in browser_tests:
-        if selected != browser_test:
-            continue
-        with preview_server(
-            overview_fixture=browser_test
-            in {
-                'react_overview_browser.cjs',
-                'react_usage_browser.cjs',
-                'react_health_browser.cjs',
-                'react_incidents_browser.cjs',
-            }
-        ) as server:
-            env = dict(
-                os.environ,
-                PREVIEW_BASE_URL=f'http://127.0.0.1:{server.server_port}',
-                REACT_PREVIEW_ADMIN_COOKIE=server.preview_admin_cookie,
-                REACT_PREVIEW_ADMIN_OTHER_COOKIE=server.preview_admin_other_cookie,
-                REACT_PREVIEW_USER_COOKIE=server.preview_user_cookie,
-                REACT_PREVIEW_USER_OTHER_COOKIE=server.preview_user_other_cookie,
-                REACT_PREVIEW_PASSWORD_USER_COOKIE=server.preview_password_user_cookie,
-                REACT_PREVIEW_PASSWORD_USER_OTHER_COOKIE=server.preview_password_user_other_cookie,
-                REACT_PREVIEW_MUST_CHANGE_COOKIE=server.preview_must_change_cookie,
-                REACT_PREVIEW_LOGIN_PASSWORD=server.preview_login_password,
-                REACT_PREVIEW_USER_PASSWORD=server.preview_user_password,
-                REACT_PREVIEW_MUST_CHANGE_PASSWORD=server.preview_must_change_password,
-                REACT_SCREENSHOT_DIR=os.environ.get(
-                    'REACT_SCREENSHOT_DIR', str(default_logs_screenshots)
-                ),
-                REACT_HOME_SCREENSHOT_DIR=os.environ.get(
-                    'REACT_HOME_SCREENSHOT_DIR', str(default_home_screenshots)
-                ),
-                REACT_LOGIN_SCREENSHOT_DIR=os.environ.get(
-                    'REACT_LOGIN_SCREENSHOT_DIR', str(default_login_screenshots)
-                ),
-                REACT_LOGOUT_SCREENSHOT_DIR=os.environ.get(
-                    'REACT_LOGOUT_SCREENSHOT_DIR', str(default_logout_screenshots)
-                ),
-                REACT_PASSWORD_SCREENSHOT_DIR=os.environ.get(
-                    'REACT_PASSWORD_SCREENSHOT_DIR', str(default_password_screenshots)
-                ),
-            )
-            subprocess.run(
-                ['node', str(root / 'tests' / browser_test)],
-                cwd=root,
-                env=env,
-                check=True,
-                timeout=180,
-            )
 
 
 if __name__ == '__main__':

@@ -17,7 +17,8 @@ def test_react_entry_does_not_reference_legacy_assets():
 
 def test_built_react_document_contains_hashed_css_asset():
     html = (ROOT / 'frontend/dist/index.html').read_text(encoding='utf-8')
-    assert '/static/react/assets/' in html
+    assert '/static/shop/assets/' in html
+    assert '/static/react/' not in html
     assert '.css' in html
     assert '/static/style.css' not in html
     assert '/static/shell.js' not in html
