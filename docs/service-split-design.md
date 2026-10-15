@@ -1,10 +1,14 @@
 # LancoAI 拆分设计：网络管理 / 商品 / 工作台 + AI
 
-状态：设计已确认，按服务分支实施（2026-10-14）。基线：`main` `dd6be5a`。
+状态：三服务已上线。2026-10-15 用户进一步指定三个独立网站入口：商品 `https://lancoai.site/`，网络管理 `https://lancoai.site:8444/`，工作台 + AI `https://lancoai.site:8445/`。下述原“网址不变”方案由本段更新；后台回环端口仍为 8083/8084/8085。
+
+页面 GET/HEAD 会转到各自的 HTTPS 入口；网络入口根路径进入用户管理，工作台入口根路径进入今日计划。三个入口均在本 origin 提供登录、会话与跨服务组件所需的 API，使用已有的同主机 cookie；不放宽 CORS 或 CSRF 校验。原订阅地址和 API 继续兼容。三份 `frontend/src/shared/serviceHref.ts` 必须同步，侧栏和登录后导航使用它选择入口。外部业务端口 8444/8445 由 nginx 提供 TLS，Python 服务继续只绑定回环。
+
+拆分基线：`main` `dd6be5a`。
 
 ## 1. 背景
 
-现在 `lancoai.site` 由一个进程提供：`hysteria-react.service`（uvicorn，`127.0.0.1:8083`，入口 `hysteria/react_server.py`）。
+拆分前，`lancoai.site` 由一个进程提供：`hysteria-react.service`（uvicorn，`127.0.0.1:8083`，入口 `hysteria/react_server.py`）。
 `web_api.create_app()` 一次注册约 20 组路由，所有功能共用：
 
 - 一个管理员登录会话（`sid` cookie → `state/panel_sessions.json`）；
@@ -20,7 +24,7 @@
 | 拆分程度 | 三个独立服务：各自的进程、端口、systemd 单元，可单独部署和重启 |
 | 分支组织 | 每个服务一个长期分支，只保留本服务代码：`service/network`、`service/shop`、`service/workbench-ai` |
 | 开源发现（GitHub 热榜） | 归工作台 + AI 服务 |
-| 网址 | 保持现有网址不变，由 nginx 按路径分流（开源发现新增 `/trending`，旧地址跳转） |
+| 网址 | 商品使用主域名；网络管理使用 HTTPS 8444；工作台 + AI 使用 HTTPS 8445。旧页面地址跳转到对应入口，API 和订阅继续兼容 |
 | 登录 | 登录一次三处通用，网络服务是唯一的登录和会话中心 |
 
 ## 3. 三个服务
@@ -33,9 +37,9 @@
 
 `8083` 和单元名保持不变，是因为 Hysteria 的认证地址 `http://127.0.0.1:8083/auth`、健康检查、部署恢复脚本都依赖它们。
 
-## 4. 网址分流（nginx，9444 端口的 `lancoai.site` server）
+## 4. 网址分流（nginx：443 → 9444、8444、8445）
 
-规则按“精确匹配 / 前缀匹配”写，不用正则，避免顺序问题。现有的每客户端限速（10 r/s，突发 40）三个服务都保留。
+页面入口通过 server 层的 GET/HEAD 跳转选择网站；POST 和数据下载不跳转。下表的上游分流仍按 location 的“精确匹配 / 前缀匹配”处理。现有的每客户端限速（10 r/s，突发 40）三个入口都保留。
 
 | 转发到 | 路径 |
 |---|---|
