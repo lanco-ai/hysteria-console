@@ -1,0 +1,35 @@
+# 与其他服务共享的代码
+
+三个服务各在自己的分支（`service/network`、`service/shop`、`service/workbench-ai`），下面这些文件在各分支里各有一份，来源都是拆分前的 `main` `dd6be5a`。修改其中任何一个时，另外两个分支里的对应文件也要同步修改（`git cherry-pick` 或手动改）。
+
+## 后端
+
+| 本分支文件 | 说明 | 网络分支中的对应位置 |
+|---|---|---|
+| `server/http_utils.py` | 安全响应头、表单解析、同源校验 | `hysteria/http_utils.py` |
+| `server/state_store.py` | 原子写入与文件锁 | `hysteria/state_store.py` |
+| `server/timeutil.py` | `Asia/Shanghai` 时间桶 | `hysteria/timeutil.py` |
+| `server/web_api/requests.py` | 请求头与表单读取 | `hysteria/web_api/requests.py` |
+| `server/web_api/app.py` | 安全响应头中间件、并发池 `dispatch`/`dispatch_stream`、错误映射（只注册本服务路由） | `hysteria/web_api/app.py` |
+| `server/web_api/document_routes.py` | 页面文档渲染与登录守卫（只含本服务页面） | `hysteria/web_api/document_routes.py` |
+| `server/web_api/services.py` | `RemoteSessionServices`：向网络服务查询会话 | 商品分支同名文件；网络服务是会话的提供方 |
+| `server/workbench_server.py` | release 指针校验（`resolve_react_dist`） | `hysteria/react_server.py` |
+| `server/web_api/agent_intent.py` | LancoAgent 的意图解析（原 `agent_service.complete_agent_intent`） | 网络分支通过 `/internal/v1/agent-intent` 调用 |
+| `scripts/hy2_panel_release.py` | 前端 release 安装与切换 | 同名文件 |
+
+## 前端
+
+| 本分支文件 | 说明 |
+|---|---|
+| `frontend/index.html` | 页面模板（标题、`body` 类、`data-public-host` 标记） |
+| `frontend/src/shared/*` | 后台外壳、侧边栏导航、会话读取、请求工具、图标 |
+| `frontend/src/styles/*` | 全部样式（门户和后台共用类名，暂未按服务裁剪） |
+| `frontend/src/features/auth/LoginModal.tsx` 等 | 登录弹窗与登出（调用网络服务的 `/api/v1/login`、`/api/v1/logout`） |
+| `frontend/src/features/public/PortalShell.tsx` | 公开门户外壳（购物、短信接码链接到商品服务） |
+| `frontend/src/features/agent/*` | LancoAgent 浮动助手（调用网络服务的 `/api/v1/admin/rules`、`/api/v1/admin/agent/*`） |
+
+侧边栏菜单（`frontend/src/shared/navigation.ts`）三个分支保持一致；链接到其他服务的页面时是整页跳转。
+
+## 测试与工具
+
+`tests/conftest.py`、`tests/preview_http_server.py`、`tsconfig.json`、`vite.config.ts`（资源前缀不同）、`eslint.config.cjs`、`stylelint.config.cjs`、`package.json`/`package-lock.json`（依赖版本保持一致）、`pyproject.toml`、`pytest.ini`、`.github/workflows/backend-quality.yml`。

@@ -1,0 +1,41 @@
+[Unit]
+Description=LancoAI workbench + AI service (plans, AI chat and video, services center, trending)
+Wants=network-online.target
+After=network-online.target hysteria-react.service
+
+[Service]
+Type=simple
+# WORKBENCH_SCHEDULERS=1 turns on the AI video and GitHub trending schedulers; they
+# stay off until the monolith no longer runs them (see docs/service-split-design.md).
+EnvironmentFile=-/etc/lancoai/workbench.env
+ExecStart=/root/hysteria/.venv-web/bin/uvicorn workbench_server:app --host 127.0.0.1 --port 8085 --workers 1
+WorkingDirectory=/opt/lancoai/workbench
+User=root
+Group=hy2-xray
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Phase 1 keeps state paths; service-center.json and github-trending.json sit
+# directly in state/, so the whole directory stays writable until data moves.
+ReadWritePaths=/root/hysteria/state
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+TasksMax=32
+MemoryHigh=384M
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
