@@ -1,0 +1,40 @@
+[Unit]
+Description=LancoAI shop service (storefront, SMS codes, merchant admin)
+Wants=network-online.target
+After=network-online.target hysteria-react.service
+
+[Service]
+Type=simple
+# SHOP_SCHEDULER=1 turns on the product-source refresh; it stays off until the
+# monolith no longer refreshes the same state (see docs/service-split-design.md).
+EnvironmentFile=-/etc/lancoai/shop.env
+ExecStart=/root/hysteria/.venv-web/bin/uvicorn shop_server:app --host 127.0.0.1 --port 8084 --workers 1
+WorkingDirectory=/opt/lancoai/shop
+User=root
+Group=hy2-xray
+Restart=on-failure
+RestartSec=2s
+TimeoutStartSec=30s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# The shop only writes its own state directory.
+ReadWritePaths=/root/hysteria/state/shop
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+TasksMax=32
+MemoryHigh=192M
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

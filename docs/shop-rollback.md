@@ -20,13 +20,13 @@
 
 ```sh
 python3 scripts/hy2_shop_rollback.py \
-  --runtime-root /root/hysteria \
+  --runtime-root /opt/lancoai/shop \
   --store-file /path/to/trusted-release/web_api/shop_store.py \
   --release FRONTEND_RELEASE_ID
 ```
 
 默认仅检查：不换代码、不切前端、不重启服务。输出不包含设置或凭据。
-实际应用绑定 `/root/hysteria` 与 `hysteria-react.service`；对其他临时目录传 `--apply`
+实际应用绑定 `/opt/lancoai/shop` 与 `lancoai-shop.service`；对其他临时目录传 `--apply`
 会拒绝执行，防止用测试路径误重启线上服务。
 `--apply` 才会执行 stop → 原子替换模块 → 切换前端 → start → 目录健康检查。
 本次开发和测试没有对生产使用 `--apply`。
