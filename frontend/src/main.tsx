@@ -2,20 +2,15 @@ import { createRoot } from 'react-dom/client';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import './styles/index.css';
-// Kept in the entry stylesheet: the console pages are prefetched, and a chunk's
-// CSS is injected as soon as it loads, so it would otherwise appear on every page.
-import './features/services/services.css';
 import { LoginModal, resolveSameOriginReturnTo } from './features/auth/LoginModal';
-import { PortalSessionContext } from './features/public/PortalShell';
-import { ShopPage } from './features/public/ShopPage';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
-// The public shop page stays in the entry chunk. Everything behind a login or
-// on another view (admin console, AI chat with KaTeX, video, user panel) loads
-// on demand, so shoppers no longer download the whole console. Navigation
-// preloads the target page first (see preloadLocation), so a page normally
-// renders synchronously; the React.lazy path is only a fallback.
+// The network service serves the login pages, the network console and the user
+// panel. The portal (/) and 商品管理 belong to the shop service; 今日计划, AI 对话,
+// AI 视频, 服务中心 and 开源发现 to the workbench + AI service. Links to those are
+// ordinary full page loads. Pages load on demand; navigation preloads the target
+// page first (see preloadLocation), so a page normally renders synchronously.
 type LazyPage<P> = ComponentType<P> & { preload: () => Promise<void> };
 
 function lazyPage<P extends object>(load: () => Promise<ComponentType<P>>): LazyPage<P> {
@@ -39,13 +34,6 @@ const OperationsPage = lazyPage(() => import('./features/network-admin/operation
 const TemplateRulesPage = lazyPage(() => import('./features/network-admin/template-rules/TemplateRulesPage').then(module => module.TemplateRulesPage));
 const UserDetailPage = lazyPage(() => import('./features/network-admin/user-detail/UserDetailPage').then(module => module.UserDetailPage));
 const OverviewPage = lazyPage(() => import('./features/network-admin/overview/OverviewPage').then(module => module.OverviewPage));
-const ChatPage = lazyPage(() => import('./features/chat/ChatPage').then(module => module.ChatPage));
-const ServicesPage = lazyPage(() => import('./features/services/ServicesPage').then(module => module.ServicesPage));
-const VideoPage = lazyPage(() => import('./features/video/VideoPage').then(module => module.VideoPage));
-const PlansPage = lazyPage(() => import('./features/plans/PlansPage').then(module => module.PlansPage));
-const GithubTrendingPage = lazyPage(() => import('./features/github-trending/GithubTrendingPage').then(module => module.GithubTrendingPage));
-const SmsPage = lazyPage(() => import('./features/shop/SmsPage').then(module => module.SmsPage));
-const ShopAdminPage = lazyPage(() => import('./features/shop/ShopAdminPage').then(module => module.ShopAdminPage));
 
 const root = document.getElementById('root');
 if (!(root instanceof HTMLElement)) throw new Error('React root is missing');
@@ -53,27 +41,21 @@ const appRoot = root;
 const reactRoot = createRoot(appRoot);
 const REACT_PREVIEW_PREFIX = '/__react';
 
-const WORKBENCH_ROUTES = new Set(['/', '/auth', '/login', '/user/login']);
 const LOGIN_ROUTES = new Set(['/auth', '/login', '/user/login']);
 const ADMIN_ROUTES = new Set([
   '/admin', '/admin/logs', '/admin/settings', '/admin/usage', '/admin/health',
-  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses', '/admin/services',
-  '/admin/plans',
-  '/admin/shop',
-  '/admin/chat',
-  '/admin/video',
+  '/admin/incidents', '/admin/config', '/admin/rules', '/admin/landing-egresses',
 ]);
 const SAFE_LOGIN_QUERY_KEYS = new Set(['msg', 'tab', 'range', 'window', 'page', 'filter', 'view', 'conversation']);
 const REACT_DOCUMENT_ROUTES = new Set([
-  ...WORKBENCH_ROUTES, '/logout', '/user/logout', '/user/change-password', '/user/panel', ...ADMIN_ROUTES,
+  ...LOGIN_ROUTES, '/logout', '/user/logout', '/user/change-password', '/user/panel', ...ADMIN_ROUTES,
 ]);
 
 type RouteMetadata = { title: string; bodyClass: string; shell?: boolean };
 const ROUTE_METADATA: Record<string, RouteMetadata> = {
-  '/': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
-  '/auth': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
-  '/login': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
-  '/user/login': { title: '购物 · LancoAI', bodyClass: 'page-portal page-workbench' },
+  '/auth': { title: '登录 · LancoAI', bodyClass: 'page-portal page-workbench' },
+  '/login': { title: '登录 · LancoAI', bodyClass: 'page-portal page-workbench' },
+  '/user/login': { title: '登录 · LancoAI', bodyClass: 'page-portal page-workbench' },
   '/admin': { title: '用户', bodyClass: 'has-shell', shell: true },
   '/admin/logs': { title: '运维', bodyClass: 'has-shell', shell: true },
   '/admin/settings': { title: '设置', bodyClass: 'has-shell', shell: true },
@@ -83,11 +65,6 @@ const ROUTE_METADATA: Record<string, RouteMetadata> = {
   '/admin/config': { title: '路由与出口', bodyClass: 'has-shell', shell: true },
   '/admin/rules': { title: '路由与出口', bodyClass: 'has-shell', shell: true },
   '/admin/landing-egresses': { title: '路由与出口', bodyClass: 'has-shell', shell: true },
-  '/admin/chat': { title: 'AI 对话', bodyClass: 'has-shell page-workbench', shell: true },
-  '/admin/services': { title: '服务中心', bodyClass: 'has-shell', shell: true },
-  '/admin/video': { title: 'AI 视频', bodyClass: 'has-shell', shell: true },
-  '/admin/plans': { title: '今日计划', bodyClass: 'has-shell', shell: true },
-  '/admin/shop': { title: '商品管理', bodyClass: 'has-shell', shell: true },
   '/user/change-password': { title: '修改面板密码', bodyClass: 'page-auth' },
   '/user/panel': { title: '用户面板 · Hysteria', bodyClass: '' },
   '/logout': { title: '确认退出', bodyClass: '' },
@@ -241,8 +218,7 @@ function applyRouteDocument(route: string): void {
     ? { title: `${decodeRouteSegment(detail[1] || '')} · 用量画像`, bodyClass: 'has-shell', shell: true }
     : ROUTE_METADATA[route];
   if (!metadata) return;
-  const view = new URLSearchParams(window.location.search).get('view');
-  document.title = route === '/' && view === 'trending' ? 'GitHub 热榜 · LancoAI' : route === '/' && view === 'sms' ? '短信接码 · LancoAI' : metadata.title;
+  document.title = metadata.title;
   if (metadata.bodyClass) document.body.className = metadata.bodyClass;
   else document.body.removeAttribute('class');
   if (metadata.shell) applyInitialShellPreferences();
@@ -267,11 +243,6 @@ const ADMIN_ROUTE_DETAILS: Record<string, { active: string; title: string }> = {
   '/admin/config': { active: 'config', title: '路由与出口' },
   '/admin/rules': { active: 'config', title: '路由与出口' },
   '/admin/landing-egresses': { active: 'config', title: '路由与出口' },
-  '/admin/services': { active: 'services', title: '服务中心' },
-  '/admin/plans': { active: 'plans', title: '今日计划' },
-  '/admin/shop': { active: 'shop', title: '商品管理' },
-  '/admin/chat': { active: 'chat', title: 'AI 对话' },
-  '/admin/video': { active: 'video', title: 'AI 视频' },
 };
 
 function AdminPlaceholder({ route, status }: { route: string; status: 'loading' | 'anonymous' | 'unavailable' }) {
@@ -293,15 +264,10 @@ function AdminRoute({ route, locationKey, publicHost, authenticated, status }: {
   if (route === '/admin/settings') return <SettingsPage publicHost={publicHost}/>;
   if (route === '/admin/usage' || route === '/admin/incidents') return <UsagePage publicHost={publicHost}/>;
   if (route === '/admin/config' || route === '/admin/rules' || route === '/admin/landing-egresses') return <TemplateRulesPage locationKey={locationKey} publicHost={publicHost}/>;
-  if (route === '/admin/services') return <ServicesPage publicHost={publicHost}/>;
-  if (route === '/admin/plans') return <PlansPage/>;
-  if (route === '/admin/shop') return <ShopAdminPage/>;
-  if (route === '/admin/chat') return <ChatPage publicHost={publicHost} authenticated/>;
-  if (route === '/admin/video') return <VideoPage publicHost={publicHost}/>;
   return <OverviewPage publicHost={publicHost}/>;
 }
 
-// Mirrors WorkbenchRoute, AdminRoute and the user routes in App.
+// Mirrors AdminRoute and the user routes in App.
 const ADMIN_PAGE_BY_ROUTE: Record<string, { preload: () => Promise<void> }> = {
   '/admin': OverviewPage,
   '/admin/logs': OperationsPage,
@@ -312,34 +278,20 @@ const ADMIN_PAGE_BY_ROUTE: Record<string, { preload: () => Promise<void> }> = {
   '/admin/config': TemplateRulesPage,
   '/admin/rules': TemplateRulesPage,
   '/admin/landing-egresses': TemplateRulesPage,
-  '/admin/services': ServicesPage,
-  '/admin/plans': PlansPage,
-  '/admin/shop': ShopAdminPage,
 };
 
 // The console's own pages are small; once an admin page is up they are fetched
-// in the background so moving between admin pages stays instant. Chat and
-// video (KaTeX, canvas) stay on demand.
+// in the background so moving between admin pages stays instant.
 const ADMIN_CONSOLE_PAGES = [...new Set([...Object.values(ADMIN_PAGE_BY_ROUTE), UserDetailPage])];
-const ADMIN_TOOL_PAGES: Record<string, { preload: () => Promise<void> }> = { '/admin/chat': ChatPage, '/admin/video': VideoPage };
 
-// Old links follow moved pages: AI chat and video left the portal for the
-// console, and 事故处理 left 运维 for 流量分析.
+// Old links follow moved pages: 事故处理 left 运维 for 流量分析.
 function legacyToolLocation(url: URL): string | null {
   if (normalizeRoute(url.pathname) === '/admin/health' && url.searchParams.get('tab') === 'incidents') return previewPath('/admin/incidents');
-  const view = url.searchParams.get('view');
-  if (normalizeRoute(url.pathname) !== '/' || (view !== 'chat' && view !== 'video')) return null;
-  const query = new URLSearchParams(url.search);
-  query.delete('view');
-  const suffix = query.toString();
-  return previewPath(`/admin/${view}${suffix ? `?${suffix}` : ''}`);
+  return null;
 }
 
 function pagesForLocation(url: URL): Array<{ preload: () => Promise<void> }> {
   const route = normalizeRoute(url.pathname);
-  if (WORKBENCH_ROUTES.has(route)) return url.searchParams.get('view') === 'trending' ? [GithubTrendingPage] : url.searchParams.get('view') === 'sms' ? [SmsPage] : [];
-  const tool = ADMIN_TOOL_PAGES[route];
-  if (tool) return [tool];
   if (/^\/admin\/user\/[^/]+$/.test(route)) return [UserDetailPage];
   if (ADMIN_ROUTES.has(route)) return [ADMIN_PAGE_BY_ROUTE[route] ?? OverviewPage];
   if (route === '/user/change-password') return [UserPasswordPage];
@@ -352,18 +304,17 @@ function preloadLocation(href: string): Promise<void> {
   return Promise.all(pagesForLocation(new URL(href, window.location.origin)).map(page => page.preload())).then(() => undefined);
 }
 
-function WorkbenchRoute({ route, publicHost, authenticated, status, loginOpen, onAuthenticated, onUnauthenticated, onClose }: {
-  route: string; publicHost: string; authenticated: boolean; status: 'loading' | 'anonymous' | 'authenticated' | 'unavailable'; loginOpen: boolean; onAuthenticated: (returnTo?: string) => Promise<void>; onUnauthenticated: () => void; onClose: () => void;
+// Login pages: the modal over an empty page. The storefront that used to sit
+// behind it belongs to the shop service now.
+function LoginRoute({ route, loginOpen, onAuthenticated, onClose }: {
+  route: string; loginOpen: boolean; onAuthenticated: (returnTo?: string) => Promise<void>; onClose: () => void;
 }) {
   const location = new URL(window.location.href);
-  const view = location.searchParams.get('view');
-  const returnTo = sanitizeReturnTo(location.searchParams.get('next') || (!LOGIN_ROUTES.has(route) ? `${route}${location.search}` : undefined));
-  return <PortalSessionContext.Provider value={{ authenticated, status, onLogin: onUnauthenticated }}>
-    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}><Suspense fallback={null}>{view === 'trending'
-      ? <GithubTrendingPage period={location.searchParams.get('period') === 'daily' ? 'daily' : 'weekly'} authenticated={authenticated}/>
-      : view === 'sms' ? <SmsPage/> : <ShopPage key={location.search}/>}</Suspense></div>
+  const returnTo = sanitizeReturnTo(location.searchParams.get('next') || undefined);
+  return <>
+    <main className="portal-main" id="main-content" tabIndex={-1} inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}/>
     <LoginModal open={loginOpen} realm={route === '/user/login' ? 'user' : 'admin'} passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
-  </PortalSessionContext.Provider>;
+  </>;
 }
 
 function App() {
@@ -373,7 +324,7 @@ function App() {
   const route = normalizeRoute(location.pathname);
   const publicHost = appRoot.dataset.publicHost?.trim() || window.location.hostname;
   const isProtectedAdminRoute = ADMIN_ROUTES.has(route) || /^\/admin\/user\/[^/]+$/.test(route);
-  const needsSession = WORKBENCH_ROUTES.has(route) || isProtectedAdminRoute;
+  const needsSession = LOGIN_ROUTES.has(route) || isProtectedAdminRoute;
   const session = useSession(undefined, needsSession);
   const authenticated = session.status === 'authenticated' && session.role === 'admin';
   const sessionStatus = session.status === 'authenticated' ? 'anonymous' : session.status;
@@ -393,20 +344,18 @@ function App() {
       () => { if (currentLocationKey() === target) window.location.replace(target); },
     );
   }, []);
-  const navigate = useCallback((path: string) => {
-    const token = ++navigationSequence;
-    void preloadLocation(path).then(
-      () => { if (token !== navigationSequence) return; pushReactHistory(path); setLocationKey(currentLocationKey()); },
-      () => { if (token === navigationSequence) window.location.assign(path); },
-    );
-  }, []);
-  const closeLogin = useCallback(() => { setLoginRequested(false); if (LOGIN_ROUTES.has(route)) navigate(previewPath('/')); }, [navigate, route]);
-  const requestLogin = useCallback(() => { setLoginRequested(true); }, []);
+  // The portal at / is the shop service's page: a full page load.
+  const closeLogin = useCallback(() => { setLoginRequested(false); if (LOGIN_ROUTES.has(route)) window.location.assign(previewPath('/')); }, [route]);
   const handleAuthenticated = useCallback(async (candidate?: string) => {
     await session.refresh();
     setLoginRequested(false);
     const returnTo = sanitizeReturnTo(candidate) || (route === '/user/login' ? '/user/panel' : '/');
     const destination = previewPath(returnTo);
+    // Pages of the other services are separate documents.
+    if (!isReactDocumentPath(new URL(returnTo, window.location.origin).pathname)) {
+      window.location.assign(destination);
+      return;
+    }
     try {
       await preloadLocation(destination);
     } catch {
@@ -437,7 +386,7 @@ function App() {
   useLayoutEffect(() => { if (legacyTool) window.location.replace(legacyTool); }, [legacyTool]);
 
   if (legacyTool) return null;
-  if (WORKBENCH_ROUTES.has(route)) return <WorkbenchRoute route={route} publicHost={publicHost} authenticated={authenticated} status={authenticated ? 'authenticated' : sessionStatus} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
+  if (LOGIN_ROUTES.has(route)) return <LoginRoute route={route} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onClose={closeLogin}/>;
   if (isProtectedAdminRoute) return <><Suspense fallback={null}><AdminRoute route={route} locationKey={locationKey} publicHost={publicHost} authenticated={authenticated} status={sessionStatus}/></Suspense><LoginModal open={shouldOpenLogin} realm="admin" passwordMaxLength={passwordMaxLength()} {...(protectedReturnTo ? { returnTo: protectedReturnTo } : {})} onAuthenticated={handleAuthenticated} onClose={closeLogin}/></>;
   if (route === '/user/change-password') return <Suspense fallback={null}><UserPasswordPage publicHost={publicHost}/></Suspense>;
   if (route === '/user/panel') return <Suspense fallback={null}><UserPanelPage publicHost={publicHost}/></Suspense>;
