@@ -9,4 +9,4 @@ apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesse
 python3 -m venv "$learning_root/.venv-knowledge"
 "$learning_root/.venv-knowledge/bin/python" -m pip install --no-cache-dir -r "$repo_dir/requirements-knowledge.txt"
 HY2_EMBEDDING_MODEL_DIR="$learning_root/models/multilingual-e5-small" python3 "$repo_dir/scripts/prepare-learning-model.py"
-docker build --tag hy2-learning-python:1 "$repo_dir/hysteria/learning_sandbox"
+docker build --tag hy2-learning-python:1 "$repo_dir/server/learning_sandbox"

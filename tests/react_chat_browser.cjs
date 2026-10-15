@@ -27,8 +27,9 @@ async function main() {
     if (new URL(request.url()).pathname.startsWith('/api/chat/')) anonymousChatRequests += 1;
   });
   const anonymousSession = anonymousPage.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/session');
-  // Chat is an admin console tool: old portal links land on the login prompt, not on chat.
-  await anonymousPage.goto(`${baseUrl}/__react/?view=chat`);
+  // Chat is an admin console tool: anonymous visitors get the login prompt, not chat.
+  // (The old /?view=chat portal link is redirected by the shop service.)
+  await anonymousPage.goto(`${baseUrl}/__react/admin/chat`);
   assert.equal((await anonymousSession).status(), 401);
   await expect(anonymousPage).toHaveURL(`${baseUrl}/__react/admin/chat`);
   await expect(anonymousPage.getByRole('dialog')).toBeVisible();
@@ -51,7 +52,7 @@ async function main() {
   });
   page.on('response', response => {
     const path = new URL(response.url()).pathname;
-    if (path === '/__react/admin/chat' || path.startsWith('/api/chat/') || path.startsWith('/static/react/')) {
+    if (path === '/__react/admin/chat' || path.startsWith('/api/chat/') || path.startsWith('/static/workbench/')) {
       browserResponseBodies.push(response.text().catch(() => ''));
     }
   });

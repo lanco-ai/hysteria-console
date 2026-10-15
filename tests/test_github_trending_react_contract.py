@@ -1,30 +1,26 @@
-"""Discovery is a public portal view; the old admin document only redirects."""
+"""开源发现 is this service's public portal page at /trending."""
 
 from pathlib import Path
 
-from web_api.document_routes import MOVED_DOCUMENTS, REACT_DOCUMENTS
+from web_api.document_routes import LOGIN_DOCUMENTS, REACT_DOCUMENTS
 
 ROOT = Path(__file__).resolve().parents[1]
-ROUTE = '/admin/github-trending'
 
 
-def test_github_trending_moved_from_the_admin_console_to_the_portal():
-    assert ROUTE not in REACT_DOCUMENTS
-    assert MOVED_DOCUMENTS[ROUTE] == '/?view=trending'
-    assert '/admin/github-trending/unknown' not in REACT_DOCUMENTS
+def test_trending_is_a_public_portal_document_with_the_login_limit():
+    title, body_class, guard = REACT_DOCUMENTS['/trending']
+    assert guard is None
+    assert 'page-portal' in body_class
+    assert '/trending' in LOGIN_DOCUMENTS
+    assert '/admin/github-trending' not in REACT_DOCUMENTS
 
 
-def test_github_trending_has_portal_navigation_and_keeps_the_proxied_bookmark():
+def test_trending_has_portal_navigation_and_no_admin_console_entry():
     main = (ROOT / 'frontend/src/main.tsx').read_text()
     navigation = (ROOT / 'frontend/src/shared/navigation.ts').read_text()
     portal = (ROOT / 'frontend/src/features/public/PortalShell.tsx').read_text()
-    assert "view === 'trending'" in main and '<GithubTrendingPage' in main
-    assert ROUTE not in navigation and ROUTE not in main
-    assert 'href="/?view=trending"' in portal and '开源发现' in portal
-    for name in ('hysteria-panel-react.conf', 'hysteria-panel-react-https.conf'):
-        config = (ROOT / 'nginx' / name).read_text()
-        # The application answers the old bookmark with the redirect.
-        assert (
-            'location = /admin/github-trending {\n        proxy_pass http://127.0.0.1:8083;'
-            in config
-        )
+    assert '<GithubTrendingPage' in main and "'/trending'" in main
+    assert '/admin/github-trending' not in navigation and '/admin/github-trending' not in main
+    assert 'href="/trending"' in portal and '开源发现' in portal
+    # Shopping and SMS codes are the shop service's pages: full page loads.
+    assert 'href="/"' in portal and 'href="/?view=sms"' in portal

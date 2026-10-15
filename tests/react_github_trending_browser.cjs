@@ -66,7 +66,7 @@ function fixture() {
     const { state, handler } = fixture();
     await page.route('**/api/v1/github-trending**', handler);
     await page.clock.install();
-    await page.goto(`${base}/__react/?view=trending`);
+    await page.goto(`${base}/__react/trending`);
     await expect(page.getByRole('heading', { name: 'GitHub 热榜', level: 1 })).toBeVisible();
     await expect(page.locator('nav[aria-label="主导航"] a[aria-current="page"]')).toHaveText('开源发现');
     await expect(page.locator('.trending-period a[aria-current="page"]')).toHaveText('周榜');
@@ -105,7 +105,7 @@ function fixture() {
     await expect(page.getByText('没有符合筛选条件的项目')).toBeVisible();
     assert.equal(state.requests.length, beforeFilter, 'local filters must not issue API requests');
     await page.getByRole('link', { name: '日榜', exact: true }).click();
-    await expect(page).toHaveURL(`${base}/__react/?view=trending&period=daily`);
+    await expect(page).toHaveURL(`${base}/__react/trending?period=daily`);
     await expect(page.locator('.trending-period a[aria-current="page"]')).toHaveText('日榜');
     await expect(page.getByRole('searchbox', { name: '搜索仓库或简介' })).toHaveValue('today');
     await expect(page.locator('.trending-entry')).toHaveCount(1);
@@ -116,10 +116,10 @@ function fixture() {
     await page.getByRole('button', { name: '清除筛选' }).click();
     await expect(page.getByRole('searchbox', { name: '搜索仓库或简介' })).toHaveValue('');
     await expect(page.locator('.trending-entry')).toHaveCount(5);
-    await page.goto(`${base}/__react/?view=trending&period=daily`);
+    await page.goto(`${base}/__react/trending?period=daily`);
     await expect(page.locator('.trending-period a[aria-current="page"]')).toHaveText('日榜');
     await expect(page.locator('.trending-entry').first()).toContainText('daily/today');
-    await page.goto(`${base}/__react/?view=trending`);
+    await page.goto(`${base}/__react/trending`);
 
     // Operational details stay with administrators.
     state.weekly = snapshot('weekly', { error: 'rate_limited', retry_after_seconds: 30, cooldown_seconds: 10 });
@@ -184,7 +184,7 @@ function fixture() {
     // Responsive layout: no page overflow; the top three swipe sideways on phones.
     const screenshots = process.env.REACT_TRENDING_SCREENSHOT_DIR;
     if (screenshots) fs.mkdirSync(screenshots, { recursive: true });
-    await page.goto(`${base}/__react/?view=trending`);
+    await page.goto(`${base}/__react/trending`);
     for (const width of [390, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await expect(page.locator('.trending-featured .trending-entry')).toHaveCount(3);
@@ -208,7 +208,7 @@ function fixture() {
     await admin.route('**/api/v1/github-trending**', managed.handler);
     await admin.clock.install();
     managed.state.weekly = snapshot('weekly', { error: 'upstream_unavailable', is_stale: true });
-    await admin.goto(`${base}/__react/?view=trending`);
+    await admin.goto(`${base}/__react/trending`);
     const refreshButton = admin.getByRole('button', { name: '刷新榜单' });
     await expect(refreshButton).toBeEnabled();
     await expect(admin.getByText('GitHub 上游暂不可用')).toBeVisible();

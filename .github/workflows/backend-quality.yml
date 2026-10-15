@@ -1,4 +1,4 @@
-name: Backend quality
+name: Workbench + AI service quality
 
 on:
   push:
@@ -23,10 +23,17 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
-      - run: 'python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-tuic-stats.txt'
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
-      - run: npm run check:frontend
+      - name: Run frontend checks
+        run: |
+          set -o pipefail
+          npm run check:frontend 2>&1 | tee "$RUNNER_TEMP/step.log" || {
+            # Surface the failure in the public check annotations, not only the raw log.
+            tail -n 80 "$RUNNER_TEMP/step.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
+            echo "::error title=check:frontend failed::$(cat "$RUNNER_TEMP/tail.txt")"
+            exit 1
+          }
   backend-quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -43,8 +50,6 @@ jobs:
           cache: npm
       - name: Install development dependencies
         run: python -m pip install -r requirements-dev.txt
-      - name: Install dedicated stats test dependency
-        run: 'python -m pip install --no-deps --only-binary=:all: --require-hashes -r requirements-tuic-stats.txt'
       - name: Install OCR tools on the disposable runner
         run: sudo apt-get update && sudo apt-get install -y tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim poppler-utils
       - run: npm ci --ignore-scripts
@@ -52,4 +57,11 @@ jobs:
       - name: Check backend and run tests
         # Lock/deployment tests require root. Use only this disposable runner,
         # with no production credentials and no deployment step.
-        run: sudo env "PATH=$PATH" "PYTHON=$(command -v python)" bash scripts/check-quality.sh
+        run: |
+          set -o pipefail
+          sudo env "PATH=$PATH" "PYTHON=$(command -v python)" bash scripts/check-quality.sh 2>&1 | tee "$RUNNER_TEMP/step.log" || {
+            # Surface the failure in the public check annotations, not only the raw log.
+            tail -n 80 "$RUNNER_TEMP/step.log" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' | awk '{printf "%s%%0A", $0}' > "$RUNNER_TEMP/tail.txt"
+            echo "::error title=check-quality failed::$(cat "$RUNNER_TEMP/tail.txt")"
+            exit 1
+          }

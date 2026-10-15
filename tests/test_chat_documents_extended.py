@@ -86,7 +86,7 @@ def test_docx_rejects_entity_expansion():
     archive = io.BytesIO()
     with zipfile.ZipFile(archive, 'w') as z:
         z.writestr('word/document.xml', '<!DOCTYPE a [<!ENTITY a "attack">]><a>&a;</a>')
-    worker = Path(__file__).parents[1] / 'hysteria/web_api/chat_document_worker.py'
+    worker = Path(__file__).parents[1] / 'server/web_api/chat_document_worker.py'
     result = subprocess.run([sys.executable, str(worker), '.docx'], input=archive.getvalue(), capture_output=True)
     assert result.returncode == 1
     assert json.loads(result.stdout)['error'] == 'invalid_document'

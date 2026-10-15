@@ -248,29 +248,6 @@ def test_disconnect_finishes_partial_stream(env):
     assert saved['messages'][-1]['content'] == 'saved before disconnect'
 
 
-def test_backup_contains_consistent_database_and_original_documents(tmp_path):
-    import subprocess
-    import tarfile
-    from pathlib import Path
-    from test_runtime_scripts import isolated_backup_env, ROOT
-    hy_dir = tmp_path / 'hysteria'
-    store = WorkspaceStore(hy_dir / 'state/chat/workspace.sqlite3')
-    p = project(store)
-    doc = store.add_document(p['id'], 'paper.txt', b'original paper', ['original paper'], 'text/plain')
-    item = store.create(p['id'])
-    store.begin(item['id'], turn(item))
-    result = subprocess.run(['bash', str(ROOT / 'scripts/hy2-backup.sh')], env=isolated_backup_env(tmp_path, hy_dir), check=True, capture_output=True, text=True)
-    with tarfile.open(result.stdout.strip()) as archive:
-        member = next(m for m in archive.getmembers() if m.name.endswith('workspace.sqlite3'))
-        raw = archive.extractfile(member).read()
-        assert not any(m.name.endswith(('-wal', '-shm')) for m in archive.getmembers())
-    restore = tmp_path / 'restored' / 'workspace.sqlite3'
-    restore.parent.mkdir(); restore.write_bytes(raw)
-    recovered = WorkspaceStore(restore)
-    assert recovered.document(doc['id'])[1] == b'original paper'
-    assert recovered.get(item['id'])['messages'][0]['content'] == 'LSM write amplification?'
-
-
 def test_pdf_page_numbers_and_original_text():
     from pypdf.generic import DictionaryObject, NameObject, DecodedStreamObject
     writer = PdfWriter()

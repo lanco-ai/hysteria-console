@@ -1,20 +1,31 @@
-"""Loopback-only built React preview backed by the real FastAPI adapter."""
+"""Loopback-only built React preview backed by the real workbench + AI app.
 
-import asyncio
+The workbench + AI service delegates sessions to the network service, so this
+preview plays that service's small session surface itself (``/api/v1/session``,
+``/api/v1/login``, ``/api/v1/logout``) with in-memory fictional sessions.
+"""
+
+import builtins
 import html
+import io
 import json
 import mimetypes
+import os
+import secrets
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / 'hysteria'), str(ROOT), str(ROOT / 'tests')]
+sys.path[:0] = [str(ROOT / 'server'), str(ROOT), str(ROOT / 'tests')]
 
 import http_utils
 from fastapi.testclient import TestClient
@@ -29,53 +40,109 @@ from web_api.journal_service import JournalStore
 from web_api.plans_service import PlanStore
 from web_api.schedule_service import ScheduleStore
 from web_api.service_center import ServiceCenterStore
-from web_api.services import LegacyPanelServices
-from web_api.shop_source import normalize_products
-from web_api.shop_store import ShopStore
+from web_api.services import LoginRequired, session_cookies
 from web_api.video_service import AssetStore, VideoSettingsStore, WorkflowStore
 
-from tests import workspace_preview_server as legacy_preview
 
 DIST = ROOT / 'frontend' / 'dist'
 REACT_PAGES = {
-    '/__react/admin/shop': ('商品管理', 'has-shell'),
-    '/admin/shop': ('商品管理', 'has-shell'),
-    '/__react/admin/services': ('服务中心', 'has-shell'),
-    '/admin/services': ('服务中心', 'has-shell'),
-    '/__react/admin/plans': ('今日计划', 'has-shell'),
+    '/trending': ('GitHub 热榜 · LancoAI', 'page-portal page-workbench'),
+    '/__react/trending': ('GitHub 热榜 · LancoAI', 'page-portal page-workbench'),
     '/admin/plans': ('今日计划', 'has-shell'),
-    '/__react/admin': ('总览', 'has-shell'),
-    '/__react/': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/__react/auth': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/auth': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/__react/admin/logs': ('清零日志', 'has-shell'),
-    '/__react/admin/settings': ('设置', 'has-shell'),
-    '/__react/admin/usage': ('流量分析', 'has-shell'),
-    '/__react/admin/health': ('健康状态', 'has-shell'),
-    '/__react/admin/incidents': ('事故处理', 'has-shell'),
-    '/__react/admin/config': ('模板与路由', 'has-shell'),
-    '/__react/admin/rules': ('模板与路由', 'has-shell'),
-    '/__react/admin/landing-egresses': ('家宽出口', 'has-shell'),
-    '/__react/admin/user/demo_alex': ('demo_alex · 用量画像', 'has-shell'),
-    '/__react/login': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/login': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/__react/user/login': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/user/login': ('购物 · LancoAI', 'page-portal page-workbench'),
-    '/__react/logout': ('确认退出', ''),
-    '/__react/user/logout': ('确认退出', ''),
-    '/__react/user/change-password': ('修改面板密码', 'page-auth'),
-    '/__react/user/panel': ('用户面板 · Hysteria', ''),
-    '/__react/admin/chat': ('AI 对话', 'has-shell page-workbench'),
+    '/__react/admin/plans': ('今日计划', 'has-shell'),
     '/admin/chat': ('AI 对话', 'has-shell page-workbench'),
-    '/__react/admin/video': ('AI 视频', 'has-shell'),
+    '/__react/admin/chat': ('AI 对话', 'has-shell page-workbench'),
     '/admin/video': ('AI 视频', 'has-shell'),
+    '/__react/admin/video': ('AI 视频', 'has-shell'),
+    '/admin/services': ('服务中心', 'has-shell'),
+    '/__react/admin/services': ('服务中心', 'has-shell'),
 }
+LOGIN_PAGES = {'/trending', '/__react/trending'}
+ASSET_PREFIX = '/static/workbench/'
+PASSWORD_MAX_LENGTH = 256
 PUBLIC_HOST = 'preview.invalid'
 PREVIEW_LOGIN_PASSWORD = 'preview-only-password'
-PREVIEW_USER_PASSWORD = 'preview-user-password'
-PREVIEW_MUST_CHANGE_PASSWORD = 'preview-change-required-password'
 RECEIPT_TIMEOUT = 10
+PROTECTED_PATHS = (
+    '/root/hysteria',
+    '/usr/local/etc/xray',
+    '/etc/hysteria',
+    '/etc/lancoai',
+    '/run/hy2-locks',
+    '/var/lib/hysteria',
+)
+
+
+class PreviewSessions:
+    """In-memory stand-in for the network service's admin sessions."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._admin = set()
+
+    def create_admin(self):
+        sid = secrets.token_urlsafe(24)
+        with self._lock:
+            self._admin.add(sid)
+        return sid
+
+    def revoke(self, sid):
+        with self._lock:
+            self._admin.discard(sid)
+
+    def is_admin(self, sid):
+        with self._lock:
+            return bool(sid) and sid in self._admin
+
+    # Same contract as RemoteSessionServices.read_session.
+    def read_session(self, *, headers, path):
+        if self.is_admin(session_cookies(headers).get('sid')):
+            return {'role': 'admin'}
+        raise LoginRequired
+
+
+@contextmanager
+def isolated_preview(patch):
+    """Fail closed on outbound connections, service commands and production paths."""
+    allowed_ports = set()
+    connect = socket.socket.connect
+    popen = subprocess.Popen
+
+    def preview_connect(connection, address):
+        if (
+            not isinstance(address, tuple)
+            or address[0] != '127.0.0.1'
+            or address[1] not in allowed_ports
+        ):
+            raise PermissionError('Preview forbids external connection')
+        return connect(connection, address)
+
+    def preview_process(args, *rest, **kwargs):
+        if (
+            not isinstance(args, (list, tuple))
+            or not args
+            or Path(args[0]).name != 'node'
+            or kwargs.get('shell')
+        ):
+            raise PermissionError('Preview forbids service command')
+        return popen(args, *rest, **kwargs)
+
+    def guard(opener):
+        def checked(file, *args, **kwargs):
+            if isinstance(file, (str, bytes, os.PathLike)):
+                path = os.path.realpath(os.fsdecode(file))
+                if any(path == prefix or path.startswith(prefix + '/') for prefix in PROTECTED_PATHS):
+                    raise PermissionError('Preview cannot access production path')
+            return opener(file, *args, **kwargs)
+
+        return checked
+
+    patch.setattr(socket.socket, 'connect', preview_connect)
+    patch.setattr(subprocess, 'Popen', preview_process)
+    patch.setattr(builtins, 'open', guard(builtins.open))
+    patch.setattr(io, 'open', guard(io.open))
+    patch.setattr(os, 'open', guard(os.open))
+    yield allowed_ports
 
 
 class PreviewWorkspaceStore(WorkspaceStore):
@@ -252,10 +319,10 @@ def _manifest_assets(dist):
         file = item.get('file')
         if not isinstance(file, str):
             raise RuntimeError(f'React build manifest entry has no file: {key}')
-        selected.add('/static/react/' + file)
+        selected.add(ASSET_PREFIX + file)
         for css in item.get('css', []):
             if isinstance(css, str):
-                selected.add('/static/react/' + css)
+                selected.add(ASSET_PREFIX + css)
         for imported in item.get('imports', []):
             if isinstance(imported, str):
                 pending.append(imported)
@@ -267,12 +334,16 @@ def _manifest_assets(dist):
     if assets_root.is_dir():
         for file in assets_root.rglob('*'):
             if file.is_file() and file.is_relative_to(dist.resolve()):
-                selected.add('/static/react/' + file.relative_to(dist).as_posix())
+                selected.add(ASSET_PREFIX + file.relative_to(dist).as_posix())
     return selected
 
 
-def _handler(api_client, allowed_assets):
-    class ReactPreview(legacy_preview.Preview):
+def _handler(api_client, sessions, allowed_assets):
+    class ReactPreview(BaseHTTPRequestHandler):
+        def log_request(self, code='-', size='-'):
+            if str(code).isdigit() and int(code) >= 400:
+                super().log_request(code, size)
+
         def _write(self, status, payload, content_type, headers=()):
             self.send_response(status)
             self.send_header('Content-Type', content_type)
@@ -302,45 +373,49 @@ def _handler(api_client, allowed_assets):
             headers = [('Cache-Control', 'no-store'), *http_utils.SECURITY_HEADERS.items()]
             self._write(status, payload, 'application/json', headers)
 
-        def _form_api(self):
-            try:
-                content_length = http_utils.form_content_length(self.headers)
-            except http_utils.RequestTooLarge:
-                self._json_error(413, 'request_too_large')
-                return
-            except http_utils.BadRequest:
-                self._json_error(400, 'bad_request')
-                return
+        # --- network service stand-in ---------------------------------------
+        def _json(self, status, value, headers=()):
+            payload = json.dumps(value, separators=(',', ':')).encode()
+            base = [('Cache-Control', 'no-store'), *http_utils.SECURITY_HEADERS.items()]
+            self._write(status, payload, 'application/json', [*base, *headers])
 
+        def _sid(self):
+            return session_cookies(self.headers).get('sid')
+
+        def _session(self):
+            if sessions.is_admin(self._sid()):
+                self._json(200, {'role': 'admin'})
+            else:
+                self._json(401, {'error': 'login_required'})
+
+        def _form_body(self):
             try:
+                length = http_utils.form_content_length(self.headers)
                 payload = _read_request_body(
-                    self.rfile,
-                    self.connection,
-                    content_length,
-                    timeout=RECEIPT_TIMEOUT,
+                    self.rfile, self.connection, length, timeout=RECEIPT_TIMEOUT
                 )
-            except socket.timeout:
-                self._json_error(408, 'request_timeout')
-                return
-            if len(payload) != content_length:
+            except (http_utils.RequestTooLarge, http_utils.BadRequest, socket.timeout):
+                return None
+            return payload if len(payload) == length else None
+
+        def _login(self):
+            body = self._form_body()
+            if body is None:
                 self._json_error(400, 'bad_request')
                 return
+            form = parse_qs(body.decode('utf-8', 'replace'))
+            if (form.get('password') or [''])[0] != PREVIEW_LOGIN_PASSWORD:
+                self._json(200, {'ok': False, 'message': '密码错误'})
+                return
+            sid = sessions.create_admin()
+            cookie = f'sid={sid}; Path=/; HttpOnly; SameSite=Lax'
+            self._json(200, {'ok': True, 'redirect_to': '/admin/plans'}, [('Set-Cookie', cookie)])
 
-            headers = list(self.headers.raw_items())
-            if not any(name.lower() == 'cookie' for name, _ in headers):
-                headers.append(('Cookie', ''))
-            response = api_client.request(
-                'POST',
-                self.path,
-                headers=headers,
-                content=payload,
-            )
-            self._write(
-                response.status_code,
-                response.content,
-                response.headers.get('content-type', 'application/json'),
-                response.headers.multi_items(),
-            )
+        def _logout(self):
+            self._form_body()
+            sessions.revoke(self._sid())
+            cookie = 'sid=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax'
+            self._json(200, {'ok': True, 'redirect_to': '/login'}, [('Set-Cookie', cookie)])
 
         def _json_api(self):
             try:
@@ -385,9 +460,9 @@ def _handler(api_client, allowed_assets):
             if path not in allowed_assets:
                 self.send_error(404)
                 return
-            relative = path.removeprefix('/static/react/')
-            file = (DIST / relative).resolve()
-            if not file.is_relative_to(DIST.resolve()) or not file.is_file():
+            relative = path.removeprefix(ASSET_PREFIX)
+            file = (Path(DIST) / relative).resolve()
+            if not file.is_relative_to(Path(DIST).resolve()) or not file.is_file():
                 self.send_error(404)
                 return
             content_type = mimetypes.guess_type(file.name)[0] or 'application/octet-stream'
@@ -404,7 +479,7 @@ def _handler(api_client, allowed_assets):
             else:
                 self.send_error(404)
                 return
-            payload = (DIST / 'index.html').read_text(encoding='utf-8')
+            payload = (Path(DIST) / 'index.html').read_text(encoding='utf-8')
             escaped_public_host = html.escape(PUBLIC_HOST, quote=True)
             replacements = (
                 ('<title>清零日志</title>', f'<title>{title}</title>'),
@@ -418,18 +493,9 @@ def _handler(api_client, allowed_assets):
                 if payload.count(marker) != 1:
                     raise RuntimeError(f'React document marker is missing or ambiguous: {marker}')
                 payload = payload.replace(marker, replacement, 1)
-            if path in (
-                '/__react/',
-                '/__react/auth',
-                '/__react/login',
-                '/__react/user/login',
-                '/login',
-                '/user/login',
-            ):
+            if path in LOGIN_PAGES:
                 marker = f'data-public-host="{escaped_public_host}"'
-                replacement = (
-                    marker + f' data-password-max-length="{legacy_preview.ss.PASSWORD_MAX_LENGTH}"'
-                )
+                replacement = marker + f' data-password-max-length="{PASSWORD_MAX_LENGTH}"'
                 if payload.count(marker) != 1:
                     raise RuntimeError('React login bootstrap marker is missing or ambiguous')
                 payload = payload.replace(marker, replacement, 1)
@@ -437,62 +503,37 @@ def _handler(api_client, allowed_assets):
 
         def do_GET(self):
             path = urlsplit(self.path).path
-            if path in REACT_PAGES or (
-                path.startswith('/__react/admin/user/') and path.count('/') == 4
-            ):
+            if path in REACT_PAGES:
                 self._react_page(path)
+            elif path == '/api/v1/session':
+                self._session()
             elif path.startswith('/api/'):
                 self._api()
-            elif path.startswith('/static/react/'):
+            elif path.startswith(ASSET_PREFIX):
                 self._react_asset(path)
             else:
-                super().do_GET()
+                self.send_error(404)
 
         def do_HEAD(self):
             self.do_GET()
 
         def do_POST(self):
-            if urlsplit(self.path).path in {
-                '/api/v1/admin/users/create',
-                '/api/v1/admin/users/update',
-                '/api/v1/admin/operations/cycle',
-                '/api/v1/admin/operations/reset-usage',
-                '/api/v1/admin/operations/refresh-usage',
-                '/api/v1/admin/operations/reset-usage-all',
-                '/api/v1/admin/operations/pause-user',
-                '/api/v1/admin/operations/toggle-user',
-                '/api/v1/admin/operations/rotate-token',
-                '/api/v1/admin/operations/delete',
-                '/api/v1/admin/config/save',
-                '/api/v1/admin/rules/save',
-                '/api/v1/admin/health/update-check',
-                '/api/v1/admin/health/update-apply',
-                '/api/v1/admin/health/test-alert',
-                '/api/v1/admin/health/multiplier-apply',
-                '/api/v1/admin/health/multiplier-auto',
-                '/api/v1/login',
-                '/api/v1/logout',
-                '/api/v1/user/logout',
-                '/api/v1/admin/change-password',
-                '/api/v1/user/change-password',
-            }:
-                self._form_api()
+            path = urlsplit(self.path).path
+            if path == '/api/v1/login':
+                self._login()
+                return
+            if path in ('/api/v1/logout', '/api/v1/user/logout'):
+                self._logout()
                 return
             request_path = urlsplit(self.path).path
             if (
                 request_path
                 in {
                     '/api/chat/completions',
-                    '/api/v1/shop/refresh',
-                    '/api/v1/shop/visit',
-                    '/api/v1/shop/sms/verify',
-                    '/api/v1/shop/sms/acquire',
-                    '/api/v1/shop/sms/check',
-                    '/api/v1/shop/sms/cancel',
                     '/api/v1/admin/services/probe',
                     '/api/journal',
                 }
-                or request_path.startswith(('/api/chat/', '/api/v1/shop/admin/sources/'))
+                or request_path.startswith(('/api/chat/',))
                 or (
                     request_path.startswith('/api/ai/services/')
                     and request_path.endswith(('/test', '/test/generation', '/test/structured'))
@@ -500,13 +541,12 @@ def _handler(api_client, allowed_assets):
             ):
                 self._json_api()
                 return
-            super().do_POST()
+            self.send_error(405, 'Read-only preview')
 
         def do_PUT(self):
             request_path = urlsplit(self.path).path
             if request_path in {
                 '/api/chat/settings',
-                '/api/v1/shop/admin',
                 '/api/v1/admin/services',
                 '/api/ai/service-bindings',
             } or request_path.startswith(
@@ -514,7 +554,7 @@ def _handler(api_client, allowed_assets):
             ):
                 self._json_api()
                 return
-            super().do_PUT()
+            self.send_error(501)
 
         def do_PATCH(self):
             if urlsplit(self.path).path.startswith('/api/chat/'):
@@ -524,27 +564,29 @@ def _handler(api_client, allowed_assets):
 
         def do_DELETE(self):
             if urlsplit(self.path).path.startswith(
-                ('/api/journal/', '/api/chat/', '/api/v1/shop/admin/sources/')
+                ('/api/journal/', '/api/chat/')
             ):
                 self._json_api()
                 return
-            super().do_DELETE()
+            self.send_error(501)
 
     return ReactPreview
 
 
 @contextmanager
 def preview_server(port=0, *, overview_fixture=False):
-    """Serve built React, legacy pages, and fictional authenticated API state."""
-    if not (DIST / 'index.html').is_file() or not (DIST / 'manifest.json').is_file():
+    """Serve the built workbench + AI frontend and fictional state on loopback."""
+    del overview_fixture  # Accepted for runner compatibility; there is no network overview.
+    dist = Path(DIST)
+    if not (dist / 'index.html').is_file() or not (dist / 'manifest.json').is_file():
         raise RuntimeError('Build the React frontend before starting its preview')
-    allowed_assets = _manifest_assets(DIST)
+    allowed_assets = _manifest_assets(dist)
+    sessions = PreviewSessions()
     with (
-        tempfile.TemporaryDirectory(prefix='hy2-react-fixture-') as directory,
-        legacy_preview.isolated_preview(directory) as allowed_ports,
-        legacy_preview.pytest.MonkeyPatch.context() as patch,
+        tempfile.TemporaryDirectory(prefix='workbench-react-fixture-') as directory,
+        pytest.MonkeyPatch.context() as patch,
+        isolated_preview(patch) as allowed_ports,
     ):
-        service = legacy_preview.ss
         import base64
 
         import web_api.chat_tools as chat_tools
@@ -567,175 +609,46 @@ def preview_server(port=0, *, overview_fixture=False):
 
         patch.setattr(chat_tools, 'validate_arguments', preview_validate)
         patch.setattr(chat_tools, 'run_python', preview_python)
-        # Only the controlled React preview doubles external effects. Accounting,
-        # account state, session invalidation and revocation WAL still use real
-        # services in the temporary directory under the unchanged outer guards.
-        for module in (service.xray_config, service.tuic_config):
-            for name, value in vars(module).copy().items():
-                if isinstance(value, Path) and name.isupper():
-                    patch.setattr(module, name, Path(directory) / module.__name__ / value.name)
-            patch.setattr(module, 'reload_async', lambda: True)
-        patch.setattr(
-            service, '_sync_static_access_from_users', lambda *args, **kwargs: (True, True)
+        preview_ai_root = Path(directory) / 'ai'
+        trending_store = TrendingStore(
+            Path(directory) / 'github-trending.json',
+            fetcher=_offline_trending_fetcher,
         )
-        patch.setattr(
-            service,
-            'hy_kick',
-            lambda users: service.CredentialActionResult(
-                action='kick',
-                target=','.join(users),
-                attempted=False,
-                ok=True,
-                code='preview-confirmed',
-                retryable=False,
-            ),
-        )
-        meta = service.load_meta()
-        admin_hash = service.hash_secret(PREVIEW_LOGIN_PASSWORD)
-        meta['admin_pass_hash'] = admin_hash
-        service.save_json(service.META_FILE, meta)
-        users = service.load_json(service.USERS_FILE, {})
-        demo_hash = service.hash_secret(PREVIEW_USER_PASSWORD)
-        must_change_hash = service.hash_secret(PREVIEW_MUST_CHANGE_PASSWORD)
-        users['demo_alex']['panel_pass_hash'] = demo_hash
-        users['must_change'] = {
-            'sub_token': 'must-change-token',
-            'panel_pass_hash': must_change_hash,
-            'panel_password_must_change': True,
-            'monthly_quota_bytes': 10 * 1024**3,
-            'max_devices': 1,
-            'disabled': False,
-        }
-        if overview_fixture:
-            users['demo_alex'].update(note='预览套餐 · 主账户', metered=True, tuic_enabled=True)
-            users['unlimited'] = {
-                'sub_token': 'fictional-unlimited-token',
-                'monthly_quota_bytes': 0,
-                'max_devices': 0,
-                'disabled': True,
-                'expires_at': '2026-07-01',
-                'note': '预览 · 已停用且过期',
-            }
-            daily = {
-                '2026-07-17': {
-                    'demo_alex': {'tx': 2 * 1024**3, 'rx': 3 * 1024**3, 'total': 5 * 1024**3},
-                    'must_change': {'tx': 4 * 1024**3, 'rx': 5 * 1024**3, 'total': 9 * 1024**3},
-                },
-                '2026-07-18': {
-                    'demo_alex': {'tx': 1024**3, 'rx': 1024**3, 'total': 2 * 1024**3},
-                },
-            }
-            service.save_json(service.USAGE_DAILY_FILE, daily)
-            service.save_json(service.USAGE_FILE, {'2026-07': daily['2026-07-17']})
-            service.save_json(service.USAGE_HOURLY_FILE, {'2026-07-18T12': daily['2026-07-18']})
-            service.save_json(service.ONLINE_FILE, {'demo_alex': 2})
-        service.save_json(service.USERS_FILE, users)
-        with service._login_failures_lock:
-            login_trackers = (
-                service._login_failures,
-                service._user_login_failures,
-                service._login_attempts_inflight,
+        with managed_preview_http_server(('127.0.0.1', 0), PreviewOpenAIGateway) as gateway:
+            allowed_ports.add(gateway.server_port)
+            app = create_app(
+                sessions,
+                max_requests=4,
+                service_center_store=ServiceCenterStore(Path(directory) / 'services.json'),
+                ai_services_store=AIServiceStore(
+                    preview_ai_root / 'services.json',
+                    chat_legacy_path=preview_ai_root / 'missing-chat.json',
+                    video_legacy_path=preview_ai_root / 'missing-video.json',
+                    backup_dir=preview_ai_root / 'migration-backup',
+                ),
+                plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
+                schedule_store=ScheduleStore(Path(directory) / 'plans' / 'schedule.json'),
+                journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
+                chat_workspace_store=PreviewWorkspaceStore(
+                    Path(directory) / 'chat' / 'workspace.sqlite3'
+                ),
+                chat_workspace_settings=PreviewWorkspaceProvider(),
+                github_trending_store=trending_store,
+                video_settings_store=VideoSettingsStore(preview_ai_root / 'video-settings.json'),
+                video_workflow_store=WorkflowStore(preview_ai_root / 'video-workflows.json'),
+                video_asset_store=AssetStore(preview_ai_root / 'video-assets'),
+                internal_token_file=Path(directory) / 'internal-token',
             )
-            service._login_failures = {}
-            service._user_login_failures = {}
-            service._login_attempts_inflight = {}
-        try:
-            admin_cookie = service.create_session(
-                'admin', service._credential_generation(admin_hash)
-            )
-            admin_other_cookie = service.create_session(
-                'admin', service._credential_generation(admin_hash)
-            )
-            user_cookie = service.create_user_session(
-                'demo_alex',
-                service._credential_generation(legacy_preview.DEMO['sub_token']),
-                service.USER_SESSION_SUBSCRIPTION_TOKEN,
-            )
-            user_other_cookie = service.create_user_session(
-                'demo_alex',
-                service._credential_generation(legacy_preview.DEMO['sub_token']),
-                service.USER_SESSION_SUBSCRIPTION_TOKEN,
-            )
-            password_user_cookie = service.create_user_session(
-                'demo_alex',
-                service._credential_generation(demo_hash),
-                service.USER_SESSION_PANEL_PASSWORD,
-            )
-            password_user_other_cookie = service.create_user_session(
-                'demo_alex',
-                service._credential_generation(demo_hash),
-                service.USER_SESSION_PANEL_PASSWORD,
-            )
-            must_change_cookie = service.create_user_session(
-                'must_change',
-                service._credential_generation(must_change_hash),
-                service.USER_SESSION_PANEL_PASSWORD,
-            )
-            preview_ai_root = Path(directory) / 'ai'
-            trending_store = TrendingStore(
-                Path(directory) / 'github-trending.json',
-                fetcher=_offline_trending_fetcher,
-            )
-
-            async def shop_fetcher():
-                fixture = Path(__file__).parent / 'fixtures' / 'shop' / 'products.json'
-                return normalize_products(json.loads(fixture.read_text())['data'])
-
-            shop_store = ShopStore(Path(directory) / 'shop-source.json', fetcher=shop_fetcher)
-            asyncio.run(shop_store.refresh())
-            with managed_preview_http_server(('127.0.0.1', 0), PreviewOpenAIGateway) as gateway:
-                allowed_ports.add(gateway.server_port)
-                app = create_app(
-                    LegacyPanelServices(service),
-                    max_requests=4,
-                    service_center_store=ServiceCenterStore(Path(directory) / 'services.json'),
-                    ai_services_store=AIServiceStore(
-                        preview_ai_root / 'services.json',
-                        chat_legacy_path=preview_ai_root / 'missing-chat.json',
-                        video_legacy_path=preview_ai_root / 'missing-video.json',
-                        backup_dir=preview_ai_root / 'migration-backup',
-                    ),
-                    plans_store=PlanStore(Path(directory) / 'plans' / 'tasks.json'),
-                    schedule_store=ScheduleStore(Path(directory) / 'plans' / 'schedule.json'),
-                    journal_store=JournalStore(Path(directory) / 'journal' / 'entries.json'),
-                    chat_workspace_store=PreviewWorkspaceStore(
-                        Path(directory) / 'chat' / 'workspace.sqlite3'
-                    ),
-                    chat_workspace_settings=PreviewWorkspaceProvider(),
-                    github_trending_store=trending_store,
-                    shop_store=shop_store,
-                    video_settings_store=VideoSettingsStore(
-                        preview_ai_root / 'video-settings.json'
-                    ),
-                    video_workflow_store=WorkflowStore(preview_ai_root / 'video-workflows.json'),
-                    video_asset_store=AssetStore(preview_ai_root / 'video-assets'),
-                )
-                with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
-                    handler = _handler(api_client, allowed_assets)
-                    with managed_preview_http_server(('127.0.0.1', port), handler) as server:
-                        server.preview_admin_cookie = admin_cookie
-                        server.preview_openai_base_url = (
-                            f'http://127.0.0.1:{gateway.server_port}/v1'
-                        )
-                        server.preview_trending_store = trending_store
-                        server.preview_admin_other_cookie = admin_other_cookie
-                        server.preview_user_cookie = user_cookie
-                        server.preview_user_other_cookie = user_other_cookie
-                        server.preview_password_user_cookie = password_user_cookie
-                        server.preview_password_user_other_cookie = password_user_other_cookie
-                        server.preview_must_change_cookie = must_change_cookie
-                        server.preview_login_password = PREVIEW_LOGIN_PASSWORD
-                        server.preview_user_password = PREVIEW_USER_PASSWORD
-                        server.preview_must_change_password = PREVIEW_MUST_CHANGE_PASSWORD
-                        allowed_ports.add(server.server_port)
-                        yield server
-        finally:
-            with service._login_failures_lock:
-                (
-                    service._login_failures,
-                    service._user_login_failures,
-                    service._login_attempts_inflight,
-                ) = login_trackers
+            with TestClient(app, client=('127.0.0.1', 50000)) as api_client:
+                handler = _handler(api_client, sessions, allowed_assets)
+                with managed_preview_http_server(('127.0.0.1', port), handler) as server:
+                    server.preview_admin_cookie = sessions.create_admin()
+                    server.preview_admin_other_cookie = sessions.create_admin()
+                    server.preview_openai_base_url = f'http://127.0.0.1:{gateway.server_port}/v1'
+                    server.preview_trending_store = trending_store
+                    server.preview_login_password = PREVIEW_LOGIN_PASSWORD
+                    allowed_ports.add(server.server_port)
+                    yield server
 
 
 if __name__ == '__main__':

@@ -6,7 +6,6 @@ modules can be imported for testing.
 """
 
 import importlib
-import os
 import sys
 import types
 from functools import partial
@@ -15,7 +14,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-for p in (ROOT, ROOT / 'hysteria'):
+for p in (ROOT, ROOT / 'server'):
     s = str(p)
     if s not in sys.path:
         sys.path.insert(0, s)
@@ -42,38 +41,6 @@ def _install_fcntl_stub() -> None:
 
 
 _install_fcntl_stub()
-
-
-@pytest.fixture
-def isolated_panel_state(tmp_path, monkeypatch):
-    """Opt-in complete core state for positive render tests only."""
-    import subscription_service as ss
-
-    root = tmp_path / 'panel'
-    for name, value in vars(ss).copy().items():
-        if not name.isupper() or not isinstance(value, Path) or name == '_STATIC_DIR':
-            continue
-        try:
-            relative = value.relative_to('/root/hysteria')
-        except ValueError:
-            relative = Path('xray') / value.name
-        destination = root / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        monkeypatch.setattr(ss, name, destination)
-    monkeypatch.setattr(ss, 'HY_API_SECRET_FILE', str(root / 'api_secret'))
-    for name in ('USERS_FILE', 'META_FILE', 'USAGE_FILE', 'USAGE_DAILY_FILE'):
-        getattr(ss, name).write_text('{}', encoding='utf-8')
-    return root
-
-
-@pytest.fixture
-def xray_runtime_group(monkeypatch):
-    """Use a real existing group while retaining real ownership checks."""
-    import grp
-
-    import xray_config as xc
-
-    monkeypatch.setattr(xc, 'CONFIG_GROUP', grp.getgrgid(os.getgid()).gr_name)
 
 
 @pytest.fixture(autouse=True)
