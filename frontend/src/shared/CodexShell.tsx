@@ -3,7 +3,6 @@ import { useLogout } from '../features/auth/useLogout';
 import { Icon } from './icons';
 import { navigationGroups } from './navigation';
 import type { SessionStatus } from './session';
-import { LancoAgent } from '../features/agent/LancoAgent';
 import { PlanReminderCenter } from '../features/plans/PlanReminderCenter';
 
 export type CodexShellProps = {
@@ -16,7 +15,6 @@ export type CodexShellProps = {
   sidebarTop?: ReactNode;
   sidebarBottom?: ReactNode;
   authStatus?: SessionStatus;
-  agentEnabled?: boolean;
 };
 
 const MOBILE_BREAKPOINT = 880;
@@ -30,7 +28,7 @@ export function applyInitialShellPreferences(): void {
   if (storedPreference('hy2.sidebar-motion', 'enabled')) document.documentElement.classList.add('sidebar-motion-enabled');
 }
 
-export function CodexShell({ active, pageTitle, badge, children, subtitle, topbarExtra, sidebarTop, sidebarBottom, authStatus, agentEnabled = false }: CodexShellProps) {
+export function CodexShell({ active, pageTitle, badge, children, subtitle, topbarExtra, sidebarTop, sidebarBottom, authStatus }: CodexShellProps) {
   const [mobile, setMobile] = useState(() => window.innerWidth <= MOBILE_BREAKPOINT);
   const [open, setOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => storedPreference('hy2.sidebar', 'collapsed'));
@@ -148,6 +146,5 @@ export function CodexShell({ active, pageTitle, badge, children, subtitle, topba
       </div>
     </div>
     {authStatus === 'anonymous' || authStatus === 'unavailable' ? null : <PlanReminderCenter/>}
-    {agentEnabled ? <LancoAgent /> : null}
   </>;
 }
