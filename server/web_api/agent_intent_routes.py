@@ -19,11 +19,13 @@ from .chat_service import ChatSettingsStore
 INTERNAL_TOKEN_FILE = Path('/etc/lancoai/internal-token')
 INTERNAL_TOKEN_HEADER = 'x-lancoai-internal-token'
 MIN_TOKEN_LENGTH = 32
-MAX_REQUEST_BYTES = 32 * 1024
-MAX_MESSAGE_CHARS = 4000
+# The network service's planner accepts messages up to 16 KiB and sends each rule
+# list clipped to the 2800 characters the completion reads.
+MAX_REQUEST_BYTES = 128 * 1024
+MAX_MESSAGE_CHARS = 16 * 1024
 MAX_TARGET_CHARS = 128
-MAX_CONTEXT_ITEMS = 200
-MAX_CONTEXT_ITEM_CHARS = 1000
+MAX_CONTEXT_ITEMS = 1000
+MAX_CONTEXT_ITEM_CHARS = 4000
 _LOOPBACK = frozenset({'127.0.0.1', '::1'})
 _PROXY_HEADERS = ('x-forwarded-for', 'x-real-ip', 'forwarded')
 _STATUS = {

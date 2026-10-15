@@ -108,10 +108,10 @@ def test_a_missing_or_weak_token_file_fails_closed(tmp_path, stored):
         b'not json',
         json.dumps(['list']).encode(),
         json.dumps({**PAYLOAD, 'message': ''}).encode(),
-        json.dumps({**PAYLOAD, 'message': 'x' * 4001}).encode(),
+        json.dumps({**PAYLOAD, 'message': 'x' * (16 * 1024 + 1)}).encode(),
         json.dumps({**PAYLOAD, 'target_user': 7}).encode(),
         json.dumps({**PAYLOAD, 'context': {'packs': [1]}}).encode(),
-        json.dumps({**PAYLOAD, 'context': {'rules': ['r'] * 201}}).encode(),
+        json.dumps({**PAYLOAD, 'context': {'rules': ['r'] * 1001}}).encode(),
         b'{"message": "' + b'x' * MAX_REQUEST_BYTES + b'"}',
     ],
 )
