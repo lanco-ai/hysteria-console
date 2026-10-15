@@ -278,8 +278,12 @@ def test_entrypoint_keeps_schedulers_off_unless_enabled(tmp_path, monkeypatch, d
     spec.loader.exec_module(workbench_server)
 
     assert workbench_server.REACT_DIST == release.resolve()
-    assert captured['video_scheduler_enabled'] is False
-    assert captured['github_trending_scheduler_enabled'] is False
+    assert captured == {}
+    with TestClient(workbench_server.app) as client:
+        assert client.get('/healthz').json()['standby'] is True
+        assert client.get('/api/v1/github-trending').status_code == 503
+        assert client.get('/api/video/runs/example').status_code == 503
+        assert client.post('/internal/v1/agent-intent', json={}).status_code == 503
     assert workbench_server.schedulers_enabled({'WORKBENCH_SCHEDULERS': 'yes'}) is False
     workbench_server.build_app({'WORKBENCH_SCHEDULERS': '1', 'LANCOAI_SESSION_URL': SESSION_URL})
     assert captured['video_scheduler_enabled'] is True

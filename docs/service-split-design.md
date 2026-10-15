@@ -102,16 +102,18 @@
 - 三个服务都以 `root:hy2-xray` 运行，沿用现有文件权限。
 - 商品和工作台 + AI 的配置分别在 `/etc/lancoai/shop.env`、`/etc/lancoai/workbench.env`（公开域名、会话地址、定时任务开关），安装脚本只在文件不存在时创建。
 
+安装器先校验完整前端与 Python 文件，再在同一文件系统暂存候选目录。停止旧进程后统一切换后端、前端、环境和 systemd 单元；失败时恢复全部旧文件及原服务启用/运行状态，并检查旧服务健康。恢复失败则保留事务目录与 `.服务-install-pending` 标记，禁止盲目重试。`scripts/install_service.py` 和 `server/standby.py` 在商品、工作台分支保持同步。
+
 ## 10. 切换步骤（一次维护窗口，可回滚）
 
-1. 预先部署商品和工作台 + AI（`8084`/`8085`），**定时任务关闭**（`SHOP_SCHEDULER=0`、`WORKBENCH_SCHEDULERS=0`），nginx 暂不指向它们，在回环上验证 `/healthz` 和关键接口。这一步与线上单体并存，不会重复写数据。
+1. 预先部署商品和工作台 + AI（`8084`/`8085`），**待机模式**（两个服务均设置 `LANCOAI_STANDBY=1`，并保留 `SHOP_SCHEDULER=0`、`WORKBENCH_SCHEDULERS=0`）。此时只提供 `/healthz` 和静态资源，不创建业务存储、路由或后台任务；所有业务请求返回 503 `service_standby`。nginx 暂不指向它们，预装验证只检查待机探针、静态资源及业务请求被阻止。单独关闭 scheduler 不能保证无写入。
 2. 维护窗口内：
    1. 停止单体 `hysteria-react`；
    2. 用网络分支的代码替换 `8083`（不再包含商品和 AI 代码、不再跑那两个定时任务），启动；
-   3. 打开商品和工作台 + AI 的定时任务并重启它们；
+   3. 使用 `--enable-scheduler` / `--enable-schedulers` 同时设置 `LANCOAI_STANDBY=0`、开启定时任务并重启它们；
    4. 安装分流后的 nginx 配置，`nginx -t` 后重载；
    5. 逐项验证：首页、商品目录接口、商品管理、今日计划、AI 对话、开源发现、用户与流量页、订阅链接、Hysteria 认证、登录一次后三处都已登录。
-3. 回滚：恢复单体 release 和原 nginx 配置，停止两个新服务。第一阶段没有移动数据，不需要回滚数据。
+3. 回滚：分别停止并禁用两个新服务，核对两者均为 inactive/dead 且 MainPID、ControlPID 为 0。任一停止或核对失败时禁止启动旧单体，保留恢复材料并报错；确认停止后再恢复环境文件、单体和 nginx。第一阶段没有移动数据，不回滚业务数据。
 
 ## 11. 分支与代码同步
 

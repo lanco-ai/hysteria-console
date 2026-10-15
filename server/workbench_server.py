@@ -2,8 +2,8 @@
 
 今日计划/行程/日记, AI 对话与视频, 服务中心 and 开源发现.  Admin sessions are
 checked by the network service (``RemoteSessionServices``).  The AI video and
-GitHub trending schedulers only run with ``WORKBENCH_SCHEDULERS=1`` so a
-pre-cutover install never works on state the running monolith still owns.
+GitHub trending schedulers only run with ``WORKBENCH_SCHEDULERS=1`` and
+LANCOAI_STANDBY=0. Standby serves health/assets without constructing business routes.
 """
 
 import os
@@ -11,6 +11,7 @@ import re
 import stat
 from pathlib import Path
 
+from standby import create_standby_app, standby_enabled
 from web_api import create_app
 from web_api.ai.compat import ChatSettingsAdapter, VideoSettingsAdapter
 from web_api.ai.service_store import AIServiceStore
@@ -95,6 +96,8 @@ def schedulers_enabled(environ=None) -> bool:
 
 def build_app(environ=None):
     environ = environ if environ is not None else os.environ
+    if standby_enabled(environ, 'WORKBENCH_SCHEDULERS'):
+        return create_standby_app(REACT_DIST, '/static/workbench')
     enabled = schedulers_enabled(environ)
     ai_services = AIServiceStore()
     return create_app(
