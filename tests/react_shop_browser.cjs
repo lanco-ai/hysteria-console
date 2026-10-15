@@ -71,6 +71,7 @@ async function main() {
     await manager.getByLabel('售后条款 2').fill('本店售后请联系商家确认。');
     await manager.getByRole('button', { name: '保存商品设置' }).click();
     await expect(manager.getByRole('status')).toContainText('已保存');
+    await expect(manager.locator('.lanco-agent-launcher')).toHaveCount(0);
     for (const width of [390, 768, 1440]) {
       await manager.setViewportSize({ width, height: 900 });
       assert.equal(await manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
@@ -80,10 +81,9 @@ async function main() {
         const field = document.activeElement.getBoundingClientRect();
         const bar = document.querySelector('.shop-admin-savebar').getBoundingClientRect();
         const save = document.querySelector('.shop-admin-savebar button').getBoundingClientRect();
-        const launcher = document.querySelector('.lanco-agent-launcher').getBoundingClientRect();
-        return { fieldBottom: field.bottom, barTop: bar.top, saveRight: save.right, launcherLeft: launcher.left };
+        return { fieldBottom: field.bottom, barTop: bar.top, saveRight: save.right, viewportRight: window.innerWidth };
       });
-      assert.ok(clearance.fieldBottom <= clearance.barTop && clearance.saveRight <= clearance.launcherLeft, JSON.stringify({ width, clearance }));
+      assert.ok(clearance.fieldBottom <= clearance.barTop && clearance.saveRight <= clearance.viewportRight, JSON.stringify({ width, clearance }));
       await manager.evaluate(() => scrollTo(0, 0));
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${base}/`);
