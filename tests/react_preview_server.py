@@ -492,7 +492,7 @@ def _handler(api_client, allowed_assets):
                     '/api/v1/admin/services/probe',
                     '/api/journal',
                 }
-                or request_path.startswith('/api/chat/')
+                or request_path.startswith(('/api/chat/', '/api/v1/shop/admin/sources/'))
                 or (
                     request_path.startswith('/api/ai/services/')
                     and request_path.endswith(('/test', '/test/generation', '/test/structured'))
@@ -523,7 +523,9 @@ def _handler(api_client, allowed_assets):
             self.send_error(404)
 
         def do_DELETE(self):
-            if urlsplit(self.path).path.startswith(('/api/journal/', '/api/chat/')):
+            if urlsplit(self.path).path.startswith(
+                ('/api/journal/', '/api/chat/', '/api/v1/shop/admin/sources/')
+            ):
                 self._json_api()
                 return
             super().do_DELETE()

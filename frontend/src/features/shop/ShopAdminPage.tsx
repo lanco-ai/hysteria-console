@@ -14,7 +14,8 @@ type SourceItem = { key: string; product_id: string; title: string; public_title
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; site?: string; supplier?: string; covers?: string };
-type Merchant = { source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type RemovedSource = Pick<SourceStatus, 'supplier' | 'covers' | 'site'> & { can_add: boolean };
+type Merchant = { removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '短信接码';
@@ -142,7 +143,7 @@ export function ShopAdminPage() {
     setBrand(value); setQuery('');
     try { localStorage.setItem(BRAND_KEY, value); } catch { /* Storage unavailable: keep the choice for this visit. */ }
   }
-  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setSourceDraft(sourcesFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setDirty(false); }
+  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setSourceDraft(sourcesFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setOpenProducts(old => new Set([...old].filter(id => value.items.some(item => item.product_id === id)))); setDirty(false); }
   useEffect(() => {
     let active = true;
     void shopRequest<Merchant>('admin').then(value => { if (active) accept(value); }).catch(reason => { if (active) setError(String(reason.message)); });
@@ -196,12 +197,14 @@ export function ShopAdminPage() {
     setDirty(true); setNotice('');
   }
   async function reload() {
+    if (busy) return;
     if (dirty && !window.confirm('重新读取会丢弃尚未保存的输入，确定继续吗？')) return;
     setBusy(true); setError(''); setNotice('');
     try { accept(await shopRequest<Merchant>('admin')); } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
   async function refresh() {
+    if (busy) return;
     setBusy(true); setError(''); setNotice('');
     try {
       const value = await shopRequest<Merchant>('refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
@@ -217,7 +220,7 @@ export function ShopAdminPage() {
         });
         const sources = Object.fromEntries(Object.entries(value.sources ?? { gpt: value })
           .map(([provider, source]) => [provider, { ...source, enabled: sourceEnabled(old, provider) }]));
-        return { ...old, products: { ...value.products, ...old.products }, automatic_sold: value.automatic_sold ?? {}, sources, items: refreshedItems, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds };
+        return { ...old, products: { ...value.products, ...old.products }, automatic_sold: value.automatic_sold ?? {}, removed_sources: value.removed_sources ?? {}, sources, items: refreshedItems, last_success: value.last_success, error: value.error, is_stale: value.is_stale, cooldown_seconds: value.cooldown_seconds, retry_after_seconds: value.retry_after_seconds };
       });
       setDraft(old => { const next = { ...old }; for (const item of value.items) next[item.key] ??= { ...EMPTY_DRAFT }; return next; });
       // Newly discovered products receive effective defaults; existing dirty or
@@ -228,8 +231,24 @@ export function ShopAdminPage() {
     } catch (reason) { setError((reason as Error).message); }
     finally { setBusy(false); }
   }
+  async function changeSource(provider: string, deleted: boolean) {
+    if (!state || busy || dirty) return;
+    const source = deleted ? state.sources?.[provider] : state.removed_sources?.[provider];
+    const name = source?.supplier ?? provider;
+    if (deleted && !window.confirm(`永久删除来源「${name}」？\n\n将停止读取，移除前后台商品，并永久清除该来源的售价、优惠价、文案、标签、补录销量和上架设置，无法撤销。\n\n以后重新添加需要重新抓取并重新定价。浏览和实际订单历史会保留。`)) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const value = await shopRequest<Merchant>(`admin/sources/${encodeURIComponent(provider)}`, {
+        method: deleted ? 'DELETE' : 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ revision: state.revision, ...(deleted ? { confirm: 'delete-source-and-products' } : {}) }),
+      });
+      accept(value);
+      setNotice(deleted ? `来源「${name}」及其商品设置已永久删除。` : `来源「${name}」已重新添加，请刷新来源并重新定价后上架。`);
+    } catch (reason) { setError((reason as Error).message); }
+    finally { setBusy(false); }
+  }
   async function save() {
-    if (!state) return;
+    if (!state || busy) return;
     setError(''); setNotice('');
     const skus: Record<string, Setting> = {};
     for (const [key, value] of Object.entries(draft)) {
@@ -363,12 +382,21 @@ export function ShopAdminPage() {
           </div>
           {openSources ? <div className="shop-admin-source-settings" id="shop-admin-source-settings" role="group" aria-label="来源读取设置">
             <p>停用后停止读取并隐藏该来源的前台商品，已保存的价格、文案和上架设置会保留。本店商品独立管理。</p>
-            <div className="shop-admin-source-options">{Object.entries(state.sources ?? { gpt: state }).filter(([provider]) => provider !== 'local').map(([provider, source]) => <label key={provider} className={`shop-admin-source-option${sourceChanged(provider) ? ' is-changed' : ''}`}>
+            <div className="shop-admin-source-options">{Object.entries(state.sources ?? { gpt: state }).filter(([provider]) => provider !== 'local').map(([provider, source]) => <div key={provider} className={`shop-admin-source-option${sourceChanged(provider) ? ' is-changed' : ''}`}>
               <span><strong>{source.supplier ?? provider}</strong><small>{source.covers}</small></span>
               {sourceChanged(provider) ? <small className="shop-admin-source-pending">未保存</small> : null}
               <input type="checkbox" role="switch" className="shop-admin-switch" aria-label={`读取 ${source.supplier ?? provider}`} checked={sourceDraft[provider] ?? true} disabled={busy} onChange={event => editSource(provider, event.target.checked)}/>
-            </label>)}</div>
-            <small>修改后点击“保存商品设置”生效。</small>
+              <button type="button" className="shop-admin-source-delete" aria-label={`删除来源 ${source.supplier ?? provider}`} disabled={busy || dirty} onClick={() => void changeSource(provider, true)}>删除来源</button>
+            </div>)}</div>
+            <small>开关修改后点击“保存商品设置”生效。删除来源会永久清除其商品设置。</small>
+            {dirty ? <p className="shop-admin-source-draft-help">有未保存的输入，请先保存或重新读取，再删除或重新添加来源。</p> : null}
+            {Object.keys(state.removed_sources ?? {}).length ? <div className="shop-admin-source-removed" role="group" aria-label="已删除的来源">
+              <p>已删除的来源 · 重新添加后，商品需要重新定价并上架。</p>
+              <div className="shop-admin-source-options">{Object.entries(state.removed_sources ?? {}).map(([provider, source]) => <div key={provider} className="shop-admin-source-option">
+                <span><strong>{source.supplier ?? provider}</strong><small>{source.covers}</small></span>
+                <button type="button" className="btn btn-secondary btn-sm" aria-label={`重新添加 ${source.supplier ?? provider}`} disabled={busy || dirty || !source.can_add} onClick={() => void changeSource(provider, false)}>{source.can_add ? '重新添加' : '暂不可添加'}</button>
+              </div>)}</div>
+            </div> : null}
           </div> : null}
         </section>
         <div className="shop-admin-toolbar">

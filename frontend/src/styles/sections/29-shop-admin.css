@@ -46,11 +46,16 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-source-settings { display: grid; grid-column: 1 / -1; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-overlay); }
 .shop-admin-source-settings p { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
 .shop-admin-source-settings > small { color: var(--text-tertiary); font-size: 11px; }
-.shop-admin-source-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; min-width: 0; }
-.shop-admin-source-option { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg-surface); cursor: pointer; }
+.shop-admin-source-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 8px; min-width: 0; }
+.shop-admin-source-option { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--bg-surface); }
 .shop-admin-source-option > span { display: grid; flex: 1 1 auto; gap: 3px; min-width: 0; }
 .shop-admin-source-option strong { color: var(--text-primary); font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
 .shop-admin-source-option small { color: var(--text-tertiary); font-size: 11px; }
+.shop-admin-source-delete { flex: 0 0 auto; padding: 4px 0 4px 6px; border: 0; background: transparent; color: var(--text-tertiary); font: inherit; font-size: 11px; cursor: pointer; }
+.shop-admin-source-delete:hover:not(:disabled) { color: var(--danger, #c84a45); }
+.shop-admin-source-delete:disabled { opacity: .45; cursor: not-allowed; }
+.shop-admin-source-removed { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--hairline); }
+.shop-admin-source-settings .shop-admin-source-draft-help { color: var(--warn); }
 .shop-admin-source-option.is-changed { border-color: var(--warn); }
 .shop-admin-source-option .shop-admin-source-pending { flex: 0 0 auto; color: var(--warn); }
 

@@ -12,6 +12,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse, Response
 
 from .services import LoginRequired, StateUnavailable, UserAccessDenied
+from .shop16688_source import fetch_catalog as fetch_shop16688_catalog
 from .shop_anli_source import fetch_catalog as fetch_anli_catalog
 from .shop_fanai_source import fetch_catalog as fetch_fanai_catalog
 from .shop_lorry_source import configured as lorry_configured
@@ -37,6 +38,7 @@ def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabl
         # Store-only rollbacks restore an older constructor. The old store simply
         # ignores this attribute; injected stores retain their own configuration.
         store.local_products = True
+        store.shop16688_fetcher = fetch_shop16688_catalog
     # getattr also keeps routes usable after a store-only rollback.
     register_sms_routes(app, on_received=getattr(store, 'record_sms_received', None))
 
@@ -143,6 +145,26 @@ def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabl
         if isinstance(payload, JSONResponse):
             return payload
         return await reply(lambda: store.update(payload))
+
+    @app.delete('/api/v1/shop/admin/sources/{provider}')
+    async def delete_source(provider: str, request: Request):
+        denied = await guard(request)
+        if denied is not None:
+            return denied
+        payload = await body(request)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return await reply(lambda: store.delete_source(provider, payload))
+
+    @app.post('/api/v1/shop/admin/sources/{provider}')
+    async def add_source(provider: str, request: Request):
+        denied = await guard(request)
+        if denied is not None:
+            return denied
+        payload = await body(request)
+        if isinstance(payload, JSONResponse):
+            return payload
+        return await reply(lambda: store.add_source(provider, payload))
 
     @app.post('/api/v1/shop/refresh')
     async def refresh(request: Request):

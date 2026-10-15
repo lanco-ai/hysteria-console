@@ -281,3 +281,21 @@ def test_unreadable_settings_cannot_trigger_a_rollback(deployment, contents):
         run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
     assert calls == []
     assert snapshot(runtime) == before
+
+
+@pytest.mark.parametrize('deleted', [True, False])
+def test_lifecycle_blocks_pre_lifecycle_rollback_even_after_source_is_readded(deployment, deleted):
+    runtime, candidate, _, _ = deployment
+    candidate.write_bytes((ROOT / 'tests/fixtures/shop/legacy_settings_b0017f5.py').read_bytes())
+    run_rollback(deployment)
+    settings=runtime / 'state/shop/source-merchant.json'
+    saved=json.loads(settings.read_text())
+    saved['source_lifecycle']={'gpt': {'generation': 1 if deleted else 2, 'deleted': deleted}}
+    settings.write_text(json.dumps(saved))
+    before, calls=snapshot(runtime), []
+    with pytest.raises(rollback.RollbackError, match='incompatible'):
+        run_rollback(deployment, apply=True, service=calls.append, health=lambda: None)
+    assert calls==[] and snapshot(runtime)==before
+    candidate.write_bytes((ROOT / 'hysteria/web_api/shop_store.py').read_bytes())
+    run_rollback(deployment)
+    assert snapshot(runtime)==before

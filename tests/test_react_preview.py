@@ -775,3 +775,39 @@ def test_react_browser_selector_rejects_unknown_file():
     )
     assert result.returncode != 0
     assert 'unknown REACT_BROWSER_TEST' in result.stderr
+
+
+def test_react_preview_forwards_source_lifecycle_to_guarded_real_api(running_preview):
+    server, base_url = running_preview
+    endpoint = base_url + '/api/v1/shop/admin/sources/gpt'
+    cookie = f'sid={server.preview_admin_cookie}'
+    _, before = _json(base_url + '/api/v1/shop/admin', cookie=cookie)
+
+    def change(method, payload, *, authenticated=True, site='same-origin'):
+        headers = {'Content-Type': 'application/json', 'Sec-Fetch-Site': site}
+        if authenticated:
+            headers['Cookie'] = cookie
+        request = Request(
+            endpoint, data=json.dumps(payload).encode(), headers=headers, method=method
+        )
+        try:
+            response = urlopen(request, timeout=5)
+        except HTTPError as error:
+            response = error
+        with response:
+            return response.status, json.load(response)
+
+    deletion = {'revision': before['revision'], 'confirm': 'delete-source-and-products'}
+    for method, payload in (('DELETE', deletion), ('POST', {'revision': before['revision']})):
+        assert change(method, payload, authenticated=False)[0] == 401
+        assert change(method, payload, site='cross-site')[0] == 403
+    assert change('DELETE', {**deletion, 'confirm': 'wrong'})[0] == 422
+    status, removed = change('DELETE', deletion)
+    assert status == 200
+    assert 'gpt' not in removed['sources'] and removed['items'] == []
+    assert removed['source_lifecycle']['gpt'] == {'generation': 1, 'deleted': True}
+    assert change('POST', {'revision': before['revision']})[0] == 409
+    status, added = change('POST', {'revision': removed['revision']})
+    assert status == 200
+    assert 'gpt' in added['sources'] and added['items'] == [] and added['skus'] == {}
+    assert added['source_lifecycle']['gpt'] == {'generation': 2, 'deleted': False}

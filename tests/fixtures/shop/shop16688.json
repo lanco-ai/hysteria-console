@@ -1,0 +1,214 @@
+{
+  "shop": {
+    "code": 1,
+    "data": {
+      "shop_no": "S162540",
+      "shop_alias": "S162540",
+      "name": "全X平台最低价！ 无效全额退款",
+      "params": {
+        "show_all_category": 1
+      }
+    }
+  },
+  "categories": {
+    "code": 1,
+    "data": [
+      {
+        "goods_category_no": "C990703",
+        "name": "muse成品号全网最低"
+      },
+      {
+        "goods_category_no": "C855396",
+        "name": "Open代冲全网最低"
+      },
+      {
+        "goods_category_no": "C922212",
+        "name": "AI与效率"
+      }
+    ]
+  },
+  "catalog": {
+    "code": 1,
+    "data": {
+      "list": [
+        {
+          "goods_no": "G38977219",
+          "goods_category_no": "C990703",
+          "name": "muse成品号",
+          "price": 15.9,
+          "stock_available_status": "low",
+          "stock_available_quantity": 1,
+          "delivery_method": 1,
+          "limit_quantity": 1
+        },
+        {
+          "goods_no": "G62234820",
+          "goods_category_no": "C990703",
+          "name": "Muse AI成品号 带10亿token（对标SuperGro-k）bot",
+          "price": 18.9,
+          "stock_available_status": "high",
+          "stock_available_quantity": 29,
+          "delivery_method": 1,
+          "limit_quantity": 1
+        },
+        {
+          "goods_no": "G90025522",
+          "goods_category_no": "C990703",
+          "name": "muse成品号",
+          "price": 15.99,
+          "stock_available_status": "normal",
+          "stock_available_quantity": 10,
+          "delivery_method": 1,
+          "limit_quantity": 1
+        },
+        {
+          "goods_no": "G19269255",
+          "goods_category_no": "C855396",
+          "name": "Plus 学生认证+一个月正价绑卡 （共5个月Plus）",
+          "price": 272.8,
+          "stock_available_status": "",
+          "stock_available_quantity": -1,
+          "delivery_method": 3,
+          "limit_quantity": 1
+        },
+        {
+          "goods_no": "G78946482",
+          "goods_category_no": "C855396",
+          "name": "顶自营👑｜Plus｜双质保25天起｜越南实卡｜苹果Pay订阅｜稳如老狗｜Codex｜成品号",
+          "price": 98,
+          "stock_available_status": "low",
+          "stock_available_quantity": 3,
+          "delivery_method": 1,
+          "limit_quantity": 1
+        },
+        {
+          "goods_no": "G68673204",
+          "goods_category_no": "C855396",
+          "name": "Claude 成品账号 Free版【微软邮箱登录】",
+          "price": 6.3,
+          "stock_available_status": "high",
+          "stock_available_quantity": 41,
+          "delivery_method": 1,
+          "limit_quantity": 1
+        },
+        {
+          "goods_no": "G64936444",
+          "goods_category_no": "",
+          "name": "gemini 18个月激活链接",
+          "price": 3.3,
+          "stock_available_status": "high",
+          "stock_available_quantity": 28,
+          "delivery_method": 1,
+          "limit_quantity": 1
+        }
+      ]
+    }
+  },
+  "details": {
+    "G38977219": {
+      "code": 1,
+      "data": {
+        "goods_no": "G38977219",
+        "shop_no": "S162540",
+        "goods_category_no": "C990703",
+        "name": "muse成品号",
+        "price": 15.9,
+        "stock_available_status": "low",
+        "stock_available_quantity": 1,
+        "delivery_method": 1,
+        "limit_quantity": 1,
+        "description": "临时邮箱。只保证首次登录Muse。"
+      }
+    },
+    "G62234820": {
+      "code": 1,
+      "data": {
+        "goods_no": "G62234820",
+        "shop_no": "S162540",
+        "goods_category_no": "C990703",
+        "name": "Muse AI成品号 带10亿token（对标SuperGro-k）bot",
+        "price": 18.9,
+        "stock_available_status": "high",
+        "stock_available_quantity": 29,
+        "delivery_method": 1,
+        "limit_quantity": 1,
+        "description": "临时邮箱。只保证首次登录Muse。只质保首登。"
+      }
+    },
+    "G90025522": {
+      "code": 1,
+      "data": {
+        "goods_no": "G90025522",
+        "shop_no": "S162540",
+        "goods_category_no": "C990703",
+        "name": "muse成品号",
+        "price": 15.99,
+        "stock_available_status": "normal",
+        "stock_available_quantity": 10,
+        "delivery_method": 1,
+        "limit_quantity": 1,
+        "description": "带10 亿 Muse Token。微软邮箱/账号。质保24小时。"
+      }
+    },
+    "G19269255": {
+      "code": 1,
+      "data": {
+        "goods_no": "G19269255",
+        "shop_no": "S162540",
+        "goods_category_no": "C855396",
+        "name": "Plus 学生认证+一个月正价绑卡 （共5个月Plus）",
+        "price": 272.8,
+        "stock_available_status": "",
+        "stock_available_quantity": -1,
+        "delivery_method": 3,
+        "limit_quantity": 1,
+        "description": "包学生认证以及一个月菲区Plus绑卡。"
+      }
+    },
+    "G78946482": {
+      "code": 1,
+      "data": {
+        "goods_no": "G78946482",
+        "shop_no": "S162540",
+        "goods_category_no": "C855396",
+        "name": "顶自营👑｜Plus｜双质保25天起｜越南实卡｜苹果Pay订阅｜稳如老狗｜Codex｜成品号",
+        "price": 98,
+        "stock_available_status": "low",
+        "stock_available_quantity": 3,
+        "delivery_method": 1,
+        "limit_quantity": 1,
+        "description": "标准Plus会员独享账号，官方28-30天有效使用权限。"
+      }
+    },
+    "G68673204": {
+      "code": 1,
+      "data": {
+        "goods_no": "G68673204",
+        "shop_no": "S162540",
+        "goods_category_no": "C855396",
+        "name": "Claude 成品账号 Free版【微软邮箱登录】",
+        "price": 6.3,
+        "stock_available_status": "high",
+        "stock_available_quantity": 41,
+        "delivery_method": 1,
+        "limit_quantity": 1,
+        "description": "Free 版（无套餐）。不是 Pro / Max。微软邮箱。"
+      }
+    },
+    "G64936444": {
+      "code": 1,
+      "data": {
+        "goods_no": "G64936444",
+        "shop_no": "S162540",
+        "goods_category_no": "",
+        "name": "gemini 18个月激活链接",
+        "price": 3.3,
+        "stock_available_status": "high",
+        "stock_available_quantity": 28,
+        "delivery_method": 1,
+        "limit_quantity": 1,
+        "description": "不是成品号。激活链接。"
+      }
+    }
+  }
+}

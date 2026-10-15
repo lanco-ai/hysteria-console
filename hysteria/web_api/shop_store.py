@@ -14,6 +14,11 @@ from zoneinfo import ZoneInfo
 
 import state_store
 
+from .shop16688_source import ORIGIN as SHOP16688_ORIGIN
+from .shop16688_source import PRODUCT_BASE as SHOP16688_BASE
+from .shop16688_source import SELECTED as SHOP16688_SELECTED
+from .shop16688_source import SHOP_NO as SHOP16688_SHOP
+from .shop16688_source import label_for as shop16688_label
 from .shop_anli_source import ORIGIN as ANLI_ORIGIN
 from .shop_anli_source import PRODUCT_BASE, SELECTED
 from .shop_fanai_source import ORIGIN as FANAI_ORIGIN
@@ -52,7 +57,7 @@ from .shop_sms_source import TITLE as SMS_TITLE
 TTL = 900
 BACKOFF = 900
 MANUAL_COOLDOWN = 60
-REMOTE_SOURCES = frozenset({'gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms'})
+REMOTE_SOURCES = frozenset({'gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms', 'shop16688'})
 PRODSELLER_BY_NUMBER = {
     number: (supplier_id, title) for supplier_id, (number, title) in PRODSELLER_SELECTED.items()
 }
@@ -65,6 +70,7 @@ SOURCE_SITES = {
     'lorry': LORRY_ORIGIN + '/',
     'fanai': FANAI_ORIGIN + '/',
     'sms': SMS_ORIGIN + '/',
+    'shop16688': f'{SHOP16688_ORIGIN}/shop/{SHOP16688_SHOP}',
     'local': '',
 }
 # Who each feed is, and what it supplies, for the administrator's view. Kept here rather than in
@@ -76,6 +82,7 @@ SOURCE_LABELS = {
     'lorry': ('Lorry', 'X / Muse AI'),
     'fanai': ('Fanai', 'GPT / Claude / Grok'),
     'sms': ('Zephyr', '短信接码'),
+    'shop16688': ('16688', 'GPT / Claude / Gemini / Muse AI'),
     'local': ('本店', '开通指导'),
 }
 
@@ -89,6 +96,8 @@ def buy_url(row):
 
 def provider_of(product_id):
     number = int(product_id)
+    if number >= SHOP16688_BASE:
+        return 'shop16688'
     if number >= LOCAL_BASE:
         return 'local'
     if number >= SMS_BASE:
@@ -103,6 +112,8 @@ def provider_of(product_id):
 
 
 def category_of(provider, public_title):
+    if provider == 'shop16688':
+        return 'GPT' if public_title.startswith('ChatGPT ') else ('Muse AI' if public_title.startswith('Muse AI ') else public_title.split(' ', 1)[0])
     if provider == 'local':
         return 'Claude'
     if provider == 'sms':
@@ -207,15 +218,36 @@ def source_enabled(value):
     return {provider: False for provider, enabled in value.items() if not enabled}
 
 
+def source_lifecycle(value):
+    """Persisted generations fence requests started before deletion or re-addition."""
+    if not isinstance(value, dict) or set(value) - REMOTE_SOURCES:
+        raise ValueError('invalid source lifecycle')
+    for entry in value.values():
+        if (not isinstance(entry, dict) or set(entry) != {'generation', 'deleted'}
+                or not _integer(entry['generation'], 1, 2**53 - 2)
+                or type(entry['deleted']) is not bool):
+            raise ValueError('invalid source lifecycle')
+    return value
+
+
+def source_generation(settings, provider):
+    return settings.get('source_lifecycle', {}).get(provider, {}).get('generation', 0)
+
+
+def is_source_deleted(settings, provider):
+    return settings.get('source_lifecycle', {}).get(provider, {}).get('deleted', False)
+
+
 def is_source_enabled(settings, provider):
-    return provider == 'local' or settings.get('source_enabled', {}).get(provider, True)
+    return provider == 'local' or (not is_source_deleted(settings, provider)
+                                 and settings.get('source_enabled', {}).get(provider, True))
 
 
 def validate_settings(value):
     if (
         not isinstance(value, dict)
         or not {'revision', 'telegram', 'skus'} <= set(value)
-        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client', 'local_names', 'source_enabled'}
+        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client', 'local_names', 'source_enabled', 'source_lifecycle'}
         or (value.get('client', CLIENT_VERSION) != CLIENT_VERSION and value.get('client') not in OLDER_CLIENTS)
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
@@ -232,6 +264,8 @@ def validate_settings(value):
         local_names(value['local_names'])
     if 'source_enabled' in value:
         source_enabled(value['source_enabled'])
+    if 'source_lifecycle' in value:
+        source_lifecycle(value['source_lifecycle'])
     for key, item in value['skus'].items():
         if (
             not isinstance(key, str)
@@ -351,6 +385,13 @@ def validate_items(items, provider='gpt'):
                 or not isinstance(row['source_url'], str)
                 or not row['source_url'].startswith(LORRY_ORIGIN + '/products/')
             ):
+                raise ValueError('invalid secondary source identity')
+        elif provider == 'shop16688':
+            goods_no = f'G{product_number - SHOP16688_BASE}'
+            selected = SHOP16688_SELECTED.get(goods_no)
+            if (selected is None or key != f'{product_number}:1'
+                    or row['source_url'] != f'{SHOP16688_ORIGIN}/goods/{goods_no}'
+                    or row['public_title'] != selected[0] or row['label'] != shop16688_label(goods_no)):
                 raise ValueError('invalid secondary source identity')
         elif provider == 'prodseller':
             selected = PRODSELLER_BY_NUMBER.get(product_number - PRODSELLER_BASE)
@@ -515,6 +556,7 @@ class ShopStore:
         lorry_fetcher=None,
         fanai_fetcher=None,
         sms_fetcher=None,
+        shop16688_fetcher=None,
         local_products=False,
         clock=time.time,
     ):
@@ -531,6 +573,8 @@ class ShopStore:
         self.fanai_path = self.path.with_name(self.path.stem + '-fanai.json')
         self.sms_fetcher = sms_fetcher
         self.sms_path = self.path.with_name(self.path.stem + '-sms.json')
+        self.shop16688_fetcher = shop16688_fetcher
+        self.shop16688_path = self.path.with_name(self.path.stem + '-shop16688.json')
         self.local_products = local_products
         self.stats = ShopStats(self.path.with_name('stats.json'), clock)
         self.sms_sales = ShopSmsSales(self.path.with_name('sms-sales.json'))
@@ -538,7 +582,7 @@ class ShopStore:
     def _feed_ids(self):
         return tuple(
             provider
-            for provider in ('gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms')
+            for provider in ('gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms', 'shop16688')
             if self._fetcher(provider)
         )
 
@@ -550,6 +594,7 @@ class ShopStore:
             'lorry': self.lorry_fetcher,
             'fanai': self.fanai_fetcher,
             'sms': self.sms_fetcher,
+            'shop16688': self.shop16688_fetcher,
         }[provider]
 
     def _path(self, provider):
@@ -560,6 +605,7 @@ class ShopStore:
             'lorry': self.lorry_path,
             'fanai': self.fanai_path,
             'sms': self.sms_path,
+            'shop16688': self.shop16688_path,
         }[provider]
 
     @staticmethod
@@ -608,6 +654,8 @@ class ShopStore:
         settings = self._settings() if settings is None else settings
         sources = {}
         for provider in self._feed_ids():
+            if is_source_deleted(settings, provider):
+                continue
             try:
                 sources[provider] = self._source(provider)
             except state_store.InvalidJsonState:
@@ -705,6 +753,12 @@ class ShopStore:
                 for row in items
             ],
             'sources': statuses,
+            'removed_sources': {
+                provider: {'supplier': SOURCE_LABELS[provider][0],
+                           'covers': SOURCE_LABELS[provider][1], 'site': SOURCE_SITES[provider],
+                           'can_add': self._fetcher(provider) is not None}
+                for provider in sorted(REMOTE_SOURCES) if is_source_deleted(settings, provider)
+            },
             'last_success': max(successes, default=None),
             'error': 'source_unavailable'
             if any(source['error'] for source in effective.values())
@@ -789,6 +843,8 @@ class ShopStore:
 
     def _update(self, payload):
         validate_settings(payload)
+        if 'source_lifecycle' in payload:
+            raise ValueError('source lifecycle is managed separately')
         with state_store.file_lock(str(self.settings_path) + '.lock', timeout=2):
             current = self._settings()
             if payload['revision'] != current['revision']:
@@ -805,8 +861,16 @@ class ShopStore:
                        if key not in {'client', 'local_names', 'source_enabled'}}
             if names:
                 payload['local_names'] = names
+            if current.get('source_lifecycle'):
+                payload['source_lifecycle'] = current['source_lifecycle']
+            controls = {provider: enabled for provider, enabled in controls.items()
+                        if not is_source_deleted(current, provider)}
             if controls:
                 payload['source_enabled'] = controls
+            for field in ('skus', 'products', 'display'):
+                if any(is_source_deleted(current, provider_of(key.split(':')[0]))
+                       for key in payload.get(field, {})):
+                    raise ValueError('source has been deleted')
             known = {
                 row['key'] for source in self._sources(payload).values() for row in source['items']
             } | set(current['skus'])
@@ -822,6 +886,51 @@ class ShopStore:
             validate_settings(saved)
             state_store.save_json(self.settings_path, saved)
         return self._admin()
+
+    def _change_source(self, provider, payload, deleted):
+        expected = {'revision', 'confirm'} if deleted else {'revision'}
+        if (provider not in REMOTE_SOURCES or not isinstance(payload, dict)
+                or set(payload) != expected or not _integer(payload['revision'], 0, 2**53 - 2)
+                or (deleted and payload['confirm'] != 'delete-source-and-products')):
+            raise ValueError('invalid source operation')
+        with state_store.file_lock(str(self.settings_path) + '.lock', timeout=2):
+            current = self._settings()
+            if payload['revision'] != current['revision']:
+                raise Conflict('settings changed; reload before changing source')
+            if not deleted and self._fetcher(provider) is None:
+                raise ValueError('source is not configured')
+            if is_source_deleted(current, provider) != deleted:
+                saved = {**current, 'revision': current['revision'] + 1}
+                for field in ('skus', 'products', 'display'):
+                    if field in saved:
+                        # Scan all persisted identities, including products absent from the cache.
+                        saved[field] = {key: value for key, value in saved[field].items()
+                                        if provider_of(key.split(':')[0]) != provider}
+                controls = {key: value for key, value in current.get('source_enabled', {}).items()
+                            if key != provider}
+                saved.pop('source_enabled', None)
+                if controls:
+                    saved['source_enabled'] = controls
+                saved['source_lifecycle'] = {
+                    **current.get('source_lifecycle', {}),
+                    provider: {'generation': source_generation(current, provider) + 1,
+                               'deleted': deleted},
+                }
+                validate_settings(saved)
+                # A failed second write may lose a rebuildable cache, never restore retail
+                # data. Do not roll back an atomic replacement with uncertain durability.
+                path = self._path(provider)
+                path.unlink(missing_ok=True)
+                state_store._fsync_dir(path.parent)
+                state_store.save_json(self.settings_path, saved)
+        # Readers intentionally do not take the merchant lock: release verification holds it.
+        return self._admin()
+
+    async def delete_source(self, provider, payload):
+        return await self._finish_thread(self._change_source, provider, payload, True)
+
+    async def add_source(self, provider, payload):
+        return await self._finish_thread(self._change_source, provider, payload, False)
 
     async def visit(self, address, product_id=None):
         """Count a storefront visit, and a view of ``product_id`` when it is a product on sale."""
@@ -870,7 +979,15 @@ class ShopStore:
             # Persist before acquisition so cancellation cannot busy-loop.
             source['retry_after'] = self.clock() + BACKOFF
             state_store.save_json(self._path(provider), source)
-            return source
+            return source, source_generation(settings, provider)
+
+    def _commit_refresh(self, provider, generation, source):
+        with state_store.file_lock(str(self.settings_path) + '.lock', timeout=2):
+            settings = self._settings()
+            if (is_source_deleted(settings, provider)
+                    or source_generation(settings, provider) != generation):
+                return
+            state_store.save_json(self._path(provider), source)
 
     async def refresh(self, *, manual=False):
         acquiring = asyncio.create_task(asyncio.to_thread(self._acquire))
@@ -885,10 +1002,11 @@ class ShopStore:
             return await self.admin()
         try:
             for provider in self._feed_ids():
-                source = await self._finish_thread(self._prepare_refresh, provider, manual)
-                if source is None:
+                prepared = await self._finish_thread(self._prepare_refresh, provider, manual)
+                if prepared is None:
                     continue
-                path, fetcher = self._path(provider), self._fetcher(provider)
+                source, generation = prepared
+                fetcher = self._fetcher(provider)
                 try:
                     async with asyncio.timeout(30):
                         items = await fetcher()
@@ -896,7 +1014,7 @@ class ShopStore:
                     source.update(items=items, last_success=self.clock(), error=None, retry_after=0)
                 except Exception:
                     source.update(error='source_unavailable', retry_after=self.clock() + BACKOFF)
-                await self._finish_thread(state_store.save_json, path, source)
+                await self._finish_thread(self._commit_refresh, provider, generation, source)
             return await self.admin()
         finally:
             lock.__exit__(None, None, None)
