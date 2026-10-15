@@ -6,6 +6,7 @@ import './styles/index.css';
 import { LoginModal, resolveSameOriginReturnTo } from './features/auth/LoginModal';
 import { PortalSessionContext } from './features/public/PortalShell';
 import { ShopPage } from './features/public/ShopPage';
+import { CLOSE_PRODUCT_EVENT, SHOP_RETURN_INDEX } from './shared/shopNavigation';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
@@ -85,8 +86,16 @@ let scrollToTopFor: string | null = null;
 
 function pushReactHistory(path: string): void {
   const leaving = window.location.pathname;
+  const previous = new URL(window.location.href);
+  const next = new URL(path, window.location.href);
+  const state = withReactHistoryIndex(window.history.state, reactHistoryIndex + 1);
+  if (normalizeRoute(next.pathname) === PORTAL_ROUTE && next.searchParams.has('product')) {
+    if (normalizeRoute(previous.pathname) === PORTAL_ROUTE && !previous.searchParams.has('product') && previous.searchParams.get('view') !== 'sms') {
+      state[SHOP_RETURN_INDEX] = reactHistoryIndex;
+    }
+  } else delete state[SHOP_RETURN_INDEX];
   reactHistoryIndex += 1;
-  window.history.pushState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
+  window.history.pushState(state, '', path);
   reactHistoryLocation = window.location.href;
   scrollToTopFor = window.location.pathname !== leaving && !window.location.hash ? window.location.href : null;
 }
@@ -124,7 +133,22 @@ function sanitizeReturnTo(value?: string): string | undefined {
 let navigationSequence = 0;
 
 function installClientNavigation(onNavigate: () => void): () => void {
+  let closingProduct = false;
+  const onCloseProduct = () => {
+    if (closingProduct || normalizeRoute(window.location.pathname) !== PORTAL_ROUTE || !new URLSearchParams(window.location.search).has('product')) return;
+    navigationSequence += 1;
+    const returnIndex: unknown = window.history.state?.[SHOP_RETURN_INDEX];
+    if (typeof returnIndex === 'number' && Number.isSafeInteger(returnIndex) && returnIndex >= 0 && returnIndex < reactHistoryIndex) {
+      closingProduct = true;
+      window.history.go(returnIndex - reactHistoryIndex);
+    } else {
+      // A shared product link has no catalog entry behind it. Stay on this site.
+      replaceReactHistory(previewPath('/'));
+      onNavigate();
+    }
+  };
   const onPopState = (event: PopStateEvent) => {
+    closingProduct = false;
     const previous = new URL(reactHistoryLocation);
     const nextLocation = window.location.href;
     const next = new URL(nextLocation);
@@ -182,8 +206,9 @@ function installClientNavigation(onNavigate: () => void): () => void {
     );
   };
   window.addEventListener('popstate', onPopState);
+  window.addEventListener(CLOSE_PRODUCT_EVENT, onCloseProduct);
   document.addEventListener('click', onClick);
-  return () => { window.removeEventListener('popstate', onPopState); document.removeEventListener('click', onClick); };
+  return () => { window.removeEventListener('popstate', onPopState); window.removeEventListener(CLOSE_PRODUCT_EVENT, onCloseProduct); document.removeEventListener('click', onClick); };
 }
 
 function applyRouteDocument(route: string): void {
@@ -228,7 +253,7 @@ function PortalRoute({ authenticated, status, loginOpen, onAuthenticated, onUnau
   const view = location.searchParams.get('view');
   const returnTo = sanitizeReturnTo(location.searchParams.get('next') || `${PORTAL_ROUTE}${location.search}`);
   return <PortalSessionContext.Provider value={{ authenticated, status, onLogin: onUnauthenticated }}>
-    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}><Suspense fallback={null}>{view === 'sms' ? <SmsPage/> : <ShopPage key={location.search}/>}</Suspense></div>
+    <div inert={loginOpen ? true : undefined} aria-hidden={loginOpen ? true : undefined}><Suspense fallback={null}>{view === 'sms' ? <SmsPage/> : <ShopPage/>}</Suspense></div>
     <LoginModal open={loginOpen} realm="admin" passwordMaxLength={passwordMaxLength()} {...(returnTo ? { returnTo } : {})} onAuthenticated={onAuthenticated} onClose={onClose}/>
   </PortalSessionContext.Provider>;
 }

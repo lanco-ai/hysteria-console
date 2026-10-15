@@ -116,11 +116,11 @@ async function main() {
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       const detailLayout = await page.evaluate(() => {
         const image = document.querySelector('.shop-detail-image').getBoundingClientRect();
-        const info = document.querySelector('.shop-detail-info').getBoundingClientRect();
-        return { imageRight: image.right, imageBottom: image.bottom, infoLeft: info.left, infoTop: info.top };
+        const heading = document.querySelector('.shop-detail-heading').getBoundingClientRect();
+        return { imageRight: image.right, imageWidth: image.width, headingLeft: heading.left };
       });
-      if (width >= 1000) assert.ok(detailLayout.imageRight <= detailLayout.infoLeft, JSON.stringify(detailLayout));
-      if (width < 720) assert.ok(detailLayout.imageBottom <= detailLayout.infoTop, JSON.stringify(detailLayout));
+      assert.ok(detailLayout.imageRight <= detailLayout.headingLeft && detailLayout.imageWidth <= 64, JSON.stringify(detailLayout));
+      await expect(page.getByRole('button', { name: '立即购买', exact: true })).toBeInViewport();
       const shots = process.env.REACT_SHOP_SCREENSHOT_DIR;
       if (shots) {
         fs.mkdirSync(shots, { recursive: true });

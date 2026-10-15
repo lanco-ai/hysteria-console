@@ -6,6 +6,7 @@ import { ProductStats, PromoBadge, PromoPrice, WarrantyBadge, WechatContact } fr
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
 import { PurchaseDialog } from './ShopPurchase';
 import { ProductDetail, CartView } from './ShopProductDetail';
+import { ProductSheet } from './ShopProductSheet';
 import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 
 const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码'];
@@ -33,9 +34,12 @@ export function ShopPage() {
   const [selected, setSelected] = useState<CartItem[] | null>(null);
   const [cart, setCart] = useState<CartItem[]>(readCart);
   const [notice, setNotice] = useState('');
+  const [detailsVisible, setDetailsVisible] = useState(false);
   const query = new URLSearchParams(window.location.search);
   const productId = query.get('product');
   const isCart = query.get('view') === 'cart';
+  const routeKey = window.location.search;
+  useEffect(() => { setSelected(null); setNotice(''); }, [routeKey]);
   const requestId = useRef(0);
   const load = useCallback(async () => {
     const id = ++requestId.current;
@@ -71,8 +75,9 @@ export function ShopPage() {
   const categories = [...new Set(allProducts.map(product => product.category))].sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
   const products = allProducts.filter(product => (category === '全部商品' || product.category === category) && `${product.title} ${product.variants.map(item => item.label).join(' ')}`.toLowerCase().includes(search.trim().toLowerCase()));
   return <PortalShell active="shop" pageTitle="购物">
+    <div className="shop-storefront" aria-hidden={detailsVisible || undefined}>
     {/* The catalog leads with the shop in one band; product and cart pages keep a slim toolbar. */}
-    {isCart || productId ? <div className="shop-toolbar"><a href="/">商品目录</a><div className="shop-toolbar-end"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cartCount}）</a></div></div> : <header className="shop-hero">
+    {isCart ? <div className="shop-toolbar"><a href="/">商品目录</a><div className="shop-toolbar-end"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cartCount}）</a></div></div> : <header className="shop-hero">
       <div className="shop-hero-text">
         <h1 id="shop-catalog-title">商品目录</h1>
         <p>AI 会员订阅 · 商家人工交付 · 确认后再付款</p>
@@ -82,7 +87,7 @@ export function ShopPage() {
       {referralProduct ? <PlusReferralLink product={referralProduct} banner/> : null}
     </header>}
     <p className="shop-feedback" role="status">{notice}</p>
-    {isCart ? <CartView cart={cart} catalog={catalog} error={error} onChange={updateCart} onBuy={() => setSelected(cart)} onRetry={() => void load()}/> : productId ? <ProductDetail key={productId} productId={productId} catalog={catalog} error={error} onAdd={add} onBuy={item => setSelected([item])} onRetry={() => void load()}/> : <div className="shop-layout">
+    {isCart ? <CartView cart={cart} catalog={catalog} error={error} onChange={updateCart} onBuy={() => setSelected(cart)} onRetry={() => void load()}/> : <div className="shop-layout">
       <section className="shop-catalog" aria-labelledby="shop-catalog-title">
         <div className="shop-filterbar">
           <div className="shop-category-list" role="group" aria-label="商品分类">{['全部商品', ...categories].map(name => <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(name)}><span>{name === '全部商品' ? '全部' : name}</span><span className="shop-count">{name === '全部商品' ? allProducts.length : allProducts.filter(product => product.category === name).length}</span></button>)}</div>
@@ -99,6 +104,8 @@ export function ShopPage() {
         </div>
       </section>
     </div>}
+    </div>
+    <ProductSheet productId={isCart ? null : productId} cartCount={cartCount} onVisibilityChange={setDetailsVisible}>{id => <ProductDetail key={id} productId={id} catalog={catalog} error={error} notice={notice} onAdd={add} onBuy={item => setSelected([item])} onRetry={() => void load()}/>}</ProductSheet>
     {selected ? <PurchaseDialog catalogVersion={catalog} items={selected} onClose={() => setSelected(null)}/> : null}
   </PortalShell>;
 }
