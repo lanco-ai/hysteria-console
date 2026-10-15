@@ -27,7 +27,7 @@
 | `frontend/src/features/plans/PlanReminderCenter.tsx` | 今日计划提醒（调用工作台 + AI 的 `/api/plans/reminders`） |
 | `frontend/src/features/agent/*` | LancoAgent 浮动助手（调用网络服务的 `/api/v1/admin/rules`、`/api/v1/admin/agent/*`） |
 
-侧边栏菜单（`frontend/src/shared/navigation.ts`）三个分支保持一致；链接到其他服务的页面时是整页跳转。
+侧边栏菜单（`frontend/src/shared/navigation.ts`）按服务独立维护，不能再同步成全站菜单。各站只展示自己的页面；商品门户的后台按钮进入商品管理，开源发现属于工作台。`CodexShell.tsx` / `PortalShell.tsx` 的菜单和组件挂载同样按服务裁剪，计划提醒只在工作台挂载。
 
 ## 测试与工具
 
@@ -35,4 +35,4 @@
 
 商品和工作台分支另共享 `scripts/install_service.py`（事务安装器）、`server/standby.py`（无业务处理器的预装待机入口），修改时须同步。
 
-独立网站入口共享 `frontend/src/shared/serviceHref.ts`（商品 443、网络 8444、工作台 8445）；三个分支须同步。
+独立网站入口共享 `frontend/src/shared/serviceHref.ts`（商品 443、网络 8444、工作台 8445），保留旧链接和登录返回地址兼容；侧边栏使用本服务相对路径，不提供跨站菜单。

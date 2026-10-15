@@ -6,9 +6,7 @@ const { expect } = require('@playwright/test');
 
 const baseUrl = process.env.PREVIEW_BASE_URL;
 
-// The public portal of the shop service. 开源发现 (/trending), the AI tools and the
-// login pages belong to the other services: their links are full page loads, and
-// each service's own suites cover them.
+// Shop navigation must stay inside the shop, for visitors and administrators.
 async function main() {
   const browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   try {
@@ -17,7 +15,7 @@ async function main() {
     let privateRequests = 0;
     anonymous.on('request', request => {
       const pathname = new URL(request.url()).pathname;
-      if (pathname.startsWith('/api/chat/') || pathname.startsWith('/api/video/')) privateRequests += 1;
+      if (pathname.startsWith('/api/chat/') || pathname.startsWith('/api/video/') || pathname.startsWith('/api/plans')) privateRequests += 1;
     });
     const sessionResponse = anonymous.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/session');
     await anonymous.goto(`${baseUrl}/__react/`);
@@ -25,8 +23,8 @@ async function main() {
     await expect(anonymous).toHaveTitle('购物 · LancoAI');
     await expect(anonymous.locator('.sidebar')).toHaveCount(0);
     // AI tools stay in the console; the portal also lets customers redeem their SMS codes.
-    await expect(anonymous.locator('nav[aria-label="主导航"] a')).toHaveText(['购物', '短信接码', '开源发现']);
-    await expect(anonymous.getByRole('link', { name: '开源发现', exact: true })).toHaveAttribute('href', '/trending');
+    await expect(anonymous.locator('nav[aria-label="主导航"] a')).toHaveText(['购物', '短信接码']);
+    await expect(anonymous.getByRole('link', { name: '开源发现', exact: true })).toHaveCount(0);
     await expect(anonymous.getByRole('dialog')).toHaveCount(0);
     await expect(anonymous.getByRole('heading', { name: '暂无商品' })).toBeVisible();
     await anonymous.evaluate(() => { window.__portalMarker = 'same-document'; });
@@ -59,7 +57,23 @@ async function main() {
     }
     assert.equal(privateRequests, 0, 'the public portal must not call private chat or video APIs');
     await anonymousContext.close();
-    console.log('PASS: public portal shopping, SMS codes and cross-service navigation');
+    const adminContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await adminContext.addCookies([{ name: 'sid', value: process.env.REACT_PREVIEW_ADMIN_COOKIE, url: baseUrl }]);
+    const admin = await adminContext.newPage();
+    const foreignRequests = [];
+    admin.on('request', request => {
+      if (/^\/api\/(plans|chat|video)(\/|$)/.test(new URL(request.url()).pathname)) foreignRequests.push(request.url());
+    });
+    await admin.goto(`${baseUrl}/__react/`);
+    await expect(admin.locator('.portal-account')).toHaveAttribute('href', '/admin/shop');
+    await admin.locator('.portal-account').click();
+    await expect(admin).toHaveURL(`${baseUrl}/__react/admin/shop`);
+    await expect(admin.locator('.sidebar-nav .sidebar-link')).toHaveText(['商品管理', '短信接码']);
+    await expect(admin.locator('.sidebar-footer a')).toHaveText(['商城首页']);
+    await expect(admin.locator('.plans-global-reminders')).toHaveCount(0);
+    assert.deepEqual(foreignRequests, [], 'the shop must not poll workbench features');
+    await adminContext.close();
+    console.log('PASS: shop-only portal, merchant navigation and no workbench polling');
   } finally {
     await browser.close();
   }
