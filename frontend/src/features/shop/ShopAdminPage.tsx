@@ -291,9 +291,11 @@ export function ShopAdminPage() {
     finally { setBusy(false); }
   }
 
-  const items = state?.items ?? [];
+  const allItems = state?.items ?? [];
   const saved = state?.skus ?? {};
   const isEnabled = (provider: string) => sourceEnabled(state, provider);
+  // Hide disabled feeds from browsing, while retaining their complete save drafts.
+  const items = allItems.filter(item => isEnabled(providerOf(item)));
   const sourceChanged = (provider: string) => (sourceDraft[provider] ?? true) !== isEnabled(provider);
   const sourceChanges = Object.keys(sourceDraft).filter(sourceChanged).length;
   const savedNames = state ? namesFor(state) : { products: {}, variants: {} };
@@ -337,7 +339,7 @@ export function ShopAdminPage() {
   if (state && wechat !== (state.wechat ?? '')) pending.push('微信号');
   const shownCount = items.filter(visible).length;
   const brandDirty = (name: Brand) => items.some(item => brandOf(item) === name && (changed(item.key) || productNamesChanged(item.product_id) || copyChanged(item.product_id) || displayChanged(item.product_id)));
-  const providerCount = (provider: string) => items.filter(item => providerOf(item) === provider).length;
+  const providerCount = (provider: string) => allItems.filter(item => providerOf(item) === provider).length;
   const supplierOf = (provider: string) => state?.sources?.[provider]?.supplier ?? provider;
   const sourceName = (provider: string, source: SourceStatus) => [source.covers, source.supplier].filter(Boolean).join(' · ') || provider;
   const isStale = (provider: string) => state?.sources?.[provider]?.is_stale === true;
@@ -381,7 +383,7 @@ export function ShopAdminPage() {
             <button type="button" className="shop-admin-source-toggle" aria-expanded={openSources} aria-controls="shop-admin-source-settings" onClick={() => setOpenSources(value => !value)}>来源设置{sourceChanges ? <span aria-hidden="true" className="shop-admin-source-dirty"/> : null}</button>
           </div>
           {openSources ? <div className="shop-admin-source-settings" id="shop-admin-source-settings" role="group" aria-label="来源读取设置">
-            <p>停用后停止读取并隐藏该来源的前台商品，已保存的价格、文案和上架设置会保留。本店商品独立管理。</p>
+            <p>停用并保存后停止读取，该来源商品会从前台和下方管理列表隐藏，已保存的价格、文案和上架设置会保留。本店商品独立管理。</p>
             <div className="shop-admin-source-options">{Object.entries(state.sources ?? { gpt: state }).filter(([provider]) => provider !== 'local').map(([provider, source]) => <div key={provider} className={`shop-admin-source-option${sourceChanged(provider) ? ' is-changed' : ''}`}>
               <span><strong>{source.supplier ?? provider}</strong><small>{source.covers}</small></span>
               {sourceChanged(provider) ? <small className="shop-admin-source-pending">未保存</small> : null}
@@ -418,7 +420,7 @@ export function ShopAdminPage() {
             <input type="search" className="user-filter-input shop-admin-search" aria-label="搜索商品或规格" placeholder="搜索商品或规格" autoComplete="off" value={query} onChange={event => setQuery(event.target.value)}/>
           </div> : null}
         </div>
-        {!items.length ? <p className="shop-admin-empty">尚无来源商品，请刷新来源。获取到的商品会先保存为草稿。</p> : null}
+        {!items.length ? <p className="shop-admin-empty">{allItems.length ? '暂无已启用来源的商品，可在来源设置中重新启用。' : '尚无来源商品，请刷新来源。获取到的商品会先保存为草稿。'}</p> : null}
         {items.length && !shownCount ? <div className="shop-admin-empty"><p>没有符合条件的规格。</p><button type="button" className="btn btn-secondary btn-sm" onClick={() => { setFilter('all'); setQuery(''); }}>清除筛选</button></div> : null}
         <div className="shop-admin-products">{BRANDS.filter(name => byBrand.has(name)).map(brandName => {
           const brandItems = byBrand.get(brandName) ?? [];
