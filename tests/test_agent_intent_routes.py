@@ -151,3 +151,35 @@ def test_missing_model_settings_surface_as_settings_unavailable(tmp_path):
         response = post(client)
     assert response.status_code == 503
     assert response.json() == {'ok': False, 'error': 'settings_unavailable'}
+
+
+def test_completion_reads_the_chat_settings_store_and_uses_the_agent_model(tmp_path, monkeypatch):
+    import web_api.agent_intent as agent_intent
+
+    settings_path = tmp_path / 'chat-settings.json'
+    settings_path.write_text(
+        json.dumps(
+            {'base_url': 'https://chat.example.test/v1', 'api_key': 'test-key', 'temperature': 0.2}
+        ),
+        encoding='utf-8',
+    )
+    seen = {}
+
+    def fake_forward(settings, messages, **kwargs):
+        seen['messages'] = messages
+        seen['kwargs'] = kwargs
+        assert settings.api_key == 'test-key'
+        return {
+            'choices': [{'message': {'content': '{"action":"inspect","explanation":"已读取"}'}}]
+        }
+
+    monkeypatch.setattr(agent_intent, 'forward_chat', fake_forward)
+    result = agent_intent.complete_agent_intent(
+        ChatSettingsStore(settings_path),
+        message='查看当前用户规则',
+        target_user='alice',
+        context={'packs': (), 'rules': []},
+    )
+    assert result['action'] == 'inspect'
+    assert seen['kwargs']['model'] == 'gemini-3.8-flash-high'
+    assert 'alice' in seen['messages'][0]['content']
