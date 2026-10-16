@@ -1,4 +1,5 @@
 import { serviceHref } from './shared/serviceHref';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import type { ComponentType } from 'react';
@@ -6,7 +7,8 @@ import './styles/index.css';
 import { LoginModal, resolveSameOriginReturnTo } from './features/auth/LoginModal';
 import { PortalSessionContext } from './features/public/PortalShell';
 import { ShopPage } from './features/public/ShopPage';
-import { CLOSE_PRODUCT_EVENT, SHOP_RETURN_INDEX } from './shared/shopNavigation';
+import { CLOSE_PRODUCT_EVENT, hasPendingScrollRestore, queueScrollRestore, readScroll, restoreScrollPosition, retargetScrollRestore, SCROLL_KEY, SHOP_RETURN_INDEX } from './shared/shopNavigation';
+import { catalogCard, fullyOnScreen, onScreen, productHero, runShopTransition, type ShopTransition } from './shared/shopTransition';
 import { applyInitialShellPreferences, CodexShell } from './shared/CodexShell';
 import { useSession } from './shared/session';
 
@@ -80,30 +82,98 @@ if (readReactHistoryIndex(window.history.state) === null) {
   window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', window.location.href);
 }
 
-// Opening another page starts at its top, as a full page load would; back and
-// forward keep the browser's scroll restoration, and #fragments their target.
-let scrollToTopFor: string | null = null;
+// This router restores scroll positions, not the browser: going back from a
+// product page animates out of a snapshot of that page, which the browser
+// would first have scrolled to the catalog's old position.
+window.history.scrollRestoration = 'manual';
+const scrollPositions = new Map<number, number>();
+let scrollSaveTimer = 0;
+// The entry itself keeps the position too, once scrolling settles, for a
+// reload (browsers ignore history changes made while a page unloads).
+function persistScroll(): void {
+  if (hasPendingScrollRestore()) return;
+  if (readScroll(window.history.state) === window.scrollY) return;
+  const state = withReactHistoryIndex(window.history.state, reactHistoryIndex);
+  state[SCROLL_KEY] = window.scrollY;
+  window.history.replaceState(state, '');
+}
+function rememberScroll(): void {
+  if (hasPendingScrollRestore()) return;
+  scrollPositions.set(reactHistoryIndex, window.scrollY);
+  window.clearTimeout(scrollSaveTimer);
+  scrollSaveTimer = window.setTimeout(persistScroll, 250);
+}
+window.addEventListener('scroll', rememberScroll, { passive: true });
+function savedScroll(index: number, state: unknown): number {
+  return scrollPositions.get(index) ?? readScroll(state) ?? 0;
+}
 
 function pushReactHistory(path: string): void {
-  const leaving = window.location.pathname;
   const previous = new URL(window.location.href);
   const next = new URL(path, window.location.href);
   const state = withReactHistoryIndex(window.history.state, reactHistoryIndex + 1);
-  if (normalizeRoute(next.pathname) === PORTAL_ROUTE && next.searchParams.has('product')) {
-    if (normalizeRoute(previous.pathname) === PORTAL_ROUTE && !previous.searchParams.has('product') && previous.searchParams.get('view') !== 'sms') {
-      state[SHOP_RETURN_INDEX] = reactHistoryIndex;
-    }
-  } else delete state[SHOP_RETURN_INDEX];
+  delete state[SCROLL_KEY];
+  // Leaving a product page for the catalog it came from goes back to it.
+  if (shopProductOf(next) && shopProductOf(previous) === null) state[SHOP_RETURN_INDEX] = reactHistoryIndex;
+  else if (!shopProductOf(previous) || shopProductOf(previous) !== shopProductOf(next)) delete state[SHOP_RETURN_INDEX];
+  scrollPositions.set(reactHistoryIndex, window.scrollY);
+  persistScroll();
+  // A new branch of history discards all old forward positions.
+  for (const index of scrollPositions.keys()) if (index > reactHistoryIndex) scrollPositions.delete(index);
   reactHistoryIndex += 1;
   window.history.pushState(state, '', path);
   reactHistoryLocation = window.location.href;
-  scrollToTopFor = window.location.pathname !== leaving && !window.location.hash ? window.location.href : null;
+  queueScrollRestore(window.location.hash ? null : 0);
 }
 
 function replaceReactHistory(path: string): void {
   window.history.replaceState(withReactHistoryIndex(window.history.state, reactHistoryIndex), '', path);
   reactHistoryLocation = window.location.href;
-  if (scrollToTopFor !== null) scrollToTopFor = window.location.href;
+  retargetScrollRestore();
+}
+
+// Match PortalRoute and ShopPage: unknown view values still render the shop.
+// null for the catalog, the product ID for a product page, undefined otherwise.
+function shopProductOf(url: URL): string | null | undefined {
+  const view = url.searchParams.get('view') || '';
+  if (normalizeRoute(url.pathname) !== PORTAL_ROUTE || view === 'sms' || view === 'cart' || MOVED_PORTAL_VIEWS.has(view)) return undefined;
+  return url.searchParams.get('product') || null;
+}
+
+function shopTransitionBetween(from: URL, to: URL, backward: boolean): ShopTransition | null {
+  const leaving = shopProductOf(from), entering = shopProductOf(to);
+  if (leaving === undefined || entering === undefined || leaving === entering) return null;
+  if (leaving === null) return 'open';
+  if (entering === null) return 'close';
+  return backward ? 'previous' : 'next';
+}
+
+// Render the shop view the URL now names and return the element the morph
+// lands on. A product page starts at the top (or where its entry was left);
+// the catalog returns to its position and brings the product's card into view.
+function enterShopView(kind: ShopTransition, leaving: string | null, top: number | null, commit: () => void): Element | null {
+  const previousY = window.scrollY;
+  commit();
+  if (kind === 'next' || kind === 'previous') {
+    const page = document.querySelector('.shop-product-page');
+    const pageTop = page ? page.getBoundingClientRect().top + window.scrollY : 0;
+    window.scrollTo({ top: top ?? Math.min(previousY, pageTop), left: 0, behavior: 'instant' });
+    return null;
+  }
+  // A #fragment (the referral rules) is scrolled to by the page itself.
+  if (!window.location.hash) window.scrollTo({ top: top ?? 0, left: 0, behavior: 'instant' });
+  if (kind === 'open') {
+    const hero = productHero();
+    return onScreen(hero) ? hero : null;
+  }
+  const card = catalogCard(leaving);
+  if (!card) {
+    document.getElementById('shop-catalog-title')?.focus({ preventScroll: true });
+    return null;
+  }
+  if (!fullyOnScreen(card)) card.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+  card.querySelector<HTMLElement>('.shop-product-title a')?.focus({ preventScroll: true });
+  return card;
 }
 
 // True only for locations this service renders itself.
@@ -132,20 +202,27 @@ function sanitizeReturnTo(value?: string): string | undefined {
 
 let navigationSequence = 0;
 
-function installClientNavigation(onNavigate: () => void): () => void {
+// onNavigate renders the current URL once its page code has loaded; commit
+// renders it synchronously, for shop views that animate between snapshots.
+function installClientNavigation(onNavigate: () => void, commit: () => void): () => void {
   let closingProduct = false;
   const onCloseProduct = () => {
-    if (closingProduct || normalizeRoute(window.location.pathname) !== PORTAL_ROUTE || !new URLSearchParams(window.location.search).has('product')) return;
-    navigationSequence += 1;
+    const leaving = shopProductOf(new URL(window.location.href));
+    if (closingProduct || !leaving) return;
+    const token = ++navigationSequence;
     const returnIndex: unknown = window.history.state?.[SHOP_RETURN_INDEX];
     if (typeof returnIndex === 'number' && Number.isSafeInteger(returnIndex) && returnIndex >= 0 && returnIndex < reactHistoryIndex) {
       closingProduct = true;
       window.history.go(returnIndex - reactHistoryIndex);
-    } else {
-      // A shared product link has no catalog entry behind it. Stay on this site.
-      replaceReactHistory(previewPath('/'));
-      onNavigate();
+      return;
     }
+    // A shared product link has no catalog entry behind it. Stay on this site.
+    const hero = productHero();
+    runShopTransition('close', onScreen(hero) ? hero : null, () => {
+      if (token !== navigationSequence) return null;
+      replaceReactHistory(previewPath('/'));
+      return enterShopView('close', leaving, 0, commit);
+    });
   };
   const onPopState = (event: PopStateEvent) => {
     closingProduct = false;
@@ -159,10 +236,24 @@ function installClientNavigation(onNavigate: () => void): () => void {
     window.dispatchEvent(guardEvent);
     if (guardEvent.defaultPrevented) return;
     const nextIndex = readReactHistoryIndex(event.state);
+    const backward = nextIndex !== null && nextIndex < reactHistoryIndex;
     if (nextIndex !== null) reactHistoryIndex = nextIndex;
     reactHistoryLocation = nextLocation;
-    scrollToTopFor = null;
-    navigationSequence += 1;
+    window.clearTimeout(scrollSaveTimer);
+    queueScrollRestore(null);
+    const token = ++navigationSequence;
+    const top = savedScroll(reactHistoryIndex, event.state);
+    const kind = shopTransitionBetween(previous, next, backward);
+    if (kind) {
+      const from = kind === 'open' ? catalogCard(shopProductOf(next) ?? null) : kind === 'close' ? productHero() : null;
+      // After a back swipe the browser has already shown its own animation.
+      runShopTransition(event.hasUAVisualTransition ? null : kind, onScreen(from) ? from : null, () => (
+        token === navigationSequence ? enterShopView(kind, shopProductOf(previous) ?? null, top, commit) : null
+      ));
+      return;
+    }
+    if (nextLocation === previous.href) window.scrollTo({ top, left: 0, behavior: 'instant' });
+    else queueScrollRestore(top);
     onNavigate();
   };
   const onClick = (event: MouseEvent) => {
@@ -197,6 +288,29 @@ function installClientNavigation(onNavigate: () => void): () => void {
     event.preventDefault();
     const next = `${previewPath(normalizeRoute(url.pathname))}${url.search}${url.hash}`;
     if (next === `${window.location.pathname}${window.location.search}${window.location.hash}`) return;
+    const current = new URL(window.location.href);
+    // Clicking the selected plan only removes its optional referral fragment.
+    // It must not add history entries or lose the original catalog return point.
+    if (anchor.hasAttribute('data-shop-step') && shopProductOf(current) === shopProductOf(url)) {
+      navigationSequence += 1;
+      replaceReactHistory(next);
+      commit();
+      return;
+    }
+    const kind = shopTransitionBetween(current, url, anchor.dataset.shopStep === 'previous');
+    if (kind) {
+      // The catalog and its products share one page: switch in place, and
+      // swap a brand's plans without stacking history entries.
+      const token = ++navigationSequence;
+      const from = kind === 'open' ? anchor.closest('[data-shop-card]') : kind === 'close' ? productHero() : null;
+      runShopTransition(kind, onScreen(from) ? from : null, () => {
+        if (token !== navigationSequence) return null;
+        if (kind === 'next' || kind === 'previous') replaceReactHistory(next);
+        else pushReactHistory(next);
+        return enterShopView(kind, shopProductOf(current) ?? null, null, commit);
+      });
+      return;
+    }
     // Change the URL only once the target page can render, so the address bar
     // and the content switch together. Only the latest click wins.
     const token = ++navigationSequence;
@@ -309,13 +423,15 @@ function App() {
     setLocationKey(currentLocationKey());
   }, [session]);
 
+  // Shop views animate between snapshots, so they render inside the transition.
+  const commitLocation = useCallback(() => { flushSync(() => { setLocationKey(currentLocationKey()); }); }, []);
+
   useLayoutEffect(() => { applyRouteDocument(route); }, [route, location.search]);
   useLayoutEffect(() => {
-    if (scrollToTopFor === null || scrollToTopFor !== locationKey) return;
-    scrollToTopFor = null;
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [locationKey]);
-  useEffect(() => installClientNavigation(() => { void syncLocation(); }), [syncLocation]);
+    // The shop restores after the catalog fetch, when its page has a height.
+    if (route !== PORTAL_ROUTE || location.searchParams.get('view') === 'sms') restoreScrollPosition();
+  }, [locationKey, route, location.search]);
+  useEffect(() => installClientNavigation(() => { void syncLocation(); }, commitLocation), [syncLocation, commitLocation]);
 
   if (route === PORTAL_ROUTE) return <PortalRoute authenticated={authenticated} status={authenticated ? 'authenticated' : sessionStatus} loginOpen={shouldOpenLogin} onAuthenticated={handleAuthenticated} onUnauthenticated={requestLogin} onClose={closeLogin}/>;
   if (isAdminRoute) {

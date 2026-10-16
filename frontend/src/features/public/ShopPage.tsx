@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { PortalShell, ShopIcon } from './PortalShell';
 import { countText, money, reportVisit, shopRequest, type Catalog, type Product } from '../shop/catalog';
 import { ProductStats, PromoBadge, PromoPrice, WarrantyBadge, WechatContact } from '../shop/ShopMerch';
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
+import { restoreScrollPosition } from '../../shared/shopNavigation';
 import { PurchaseDialog } from './ShopPurchase';
-import { ProductDetail, CartView } from './ShopProductDetail';
-import { ProductSheet } from './ShopProductSheet';
+import { ProductPage, CartView } from './ShopProductDetail';
 import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 
 const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码'];
@@ -18,8 +18,9 @@ function ProductRow({ product, catalogReady, onAdd }: { product: Product; catalo
   const single = product.variants.length === 1 ? product.variants[0] : null;
   const cartIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 3h2l2.5 12h11l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>;
   // A card: the brand, the title with its promotion label, then the price and its 优惠价 below it.
-  return <article className="shop-product-row">
-    <div className="shop-product-name"><span className="shop-product-thumbnail"><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title"><PromoBadge text={product.badge}/><h3><a href={`/?product=${product.id}`}>{product.title}</a></h3><WarrantyBadge product={product}/></div><div className="shop-product-tags">{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span><ProductStats product={product}/></div></div></div>
+  // The title link covers the whole card; the card grows into the product page's header.
+  return <article className="shop-product-row" data-shop-card={product.id}>
+    <div className="shop-product-name"><span className="shop-product-thumbnail" data-shop-logo><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title" data-shop-title><PromoBadge text={product.badge}/><h3><a href={`/?product=${product.id}`}>{product.title}</a></h3><WarrantyBadge product={product}/></div><div className="shop-product-tags">{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? '可咨询购买' : '暂不可购买'}</span><ProductStats product={product}/></div></div></div>
     <div className="shop-product-price"><strong>{money(minimum).slice(1)}{maximum !== minimum ? `–${money(maximum).slice(1)}` : ''} <span>CNY</span></strong><PromoPrice product={product}/></div>
     <div className="shop-product-action">{available && !single ? <a className="shop-product-cart" href={`/?product=${product.id}`} aria-label={`选择 ${product.title} 规格`}>{cartIcon}</a> : <button className="shop-product-cart" type="button" disabled={!available} aria-label={available ? `将 ${product.title} 加入购物车` : `${product.title} 暂不可购买`} onClick={() => { if (catalogReady && single?.available) onAdd({ id: single.id, quantity: 1 }); }}>{cartIcon}</button>}<a className="shop-product-detail-link" href={`/?product=${product.id}`} aria-label={`${product.title} 商品详情`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a></div>
     {catalogReady && plusReferralVariant(product) ? <PlusReferralLink product={product}/> : null}
@@ -34,10 +35,9 @@ export function ShopPage() {
   const [selected, setSelected] = useState<CartItem[] | null>(null);
   const [cart, setCart] = useState<CartItem[]>(readCart);
   const [notice, setNotice] = useState('');
-  const [detailsVisible, setDetailsVisible] = useState(false);
   const query = new URLSearchParams(window.location.search);
-  const productId = query.get('product');
   const isCart = query.get('view') === 'cart';
+  const productId = isCart ? null : query.get('product') || null;
   const routeKey = window.location.search;
   useEffect(() => { setSelected(null); setNotice(''); }, [routeKey]);
   const requestId = useRef(0);
@@ -59,6 +59,10 @@ export function ShopPage() {
   }, [load]);
   // One page view for the shop, and for the product when one is open.
   useEffect(() => { reportVisit(productId); }, [productId]);
+  // Reloads and history returns from SMS wait until products give the page height.
+  useLayoutEffect(() => {
+    if (catalog || error) restoreScrollPosition();
+  }, [catalog, error, routeKey]);
   function updateCart(next: CartItem[], success = '购物车已更新。') {
     setCart(next); setSelected(null);
     try { localStorage.setItem(CART_KEY, JSON.stringify(next)); setNotice(success); }
@@ -75,19 +79,25 @@ export function ShopPage() {
   const categories = [...new Set(allProducts.map(product => product.category))].sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
   const products = allProducts.filter(product => (category === '全部商品' || product.category === category) && `${product.title} ${product.variants.map(item => item.label).join(' ')}`.toLowerCase().includes(search.trim().toLowerCase()));
   return <PortalShell active="shop" pageTitle="购物">
-    <div className="shop-storefront" aria-hidden={detailsVisible || undefined}>
-    {/* The catalog leads with the shop in one band; product and cart pages keep a slim toolbar. */}
-    {isCart ? <div className="shop-toolbar"><a href="/">商品目录</a><div className="shop-toolbar-end"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cartCount}）</a></div></div> : <header className="shop-hero">
+    {isCart ? <>
+      <div className="shop-toolbar"><a href="/">商品目录</a><div className="shop-toolbar-end"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cartCount}）</a></div></div>
+      <p className="shop-feedback" role="status">{notice}</p>
+      <CartView cart={cart} catalog={catalog} error={error} onChange={updateCart} onBuy={() => setSelected(cart)} onRetry={() => void load()}/>
+    </> : null}
+    {productId !== null ? <ProductPage productId={productId} catalog={catalog} error={error} notice={notice} cartCount={cartCount} onAdd={add} onBuy={item => setSelected([item])} onRetry={() => void load()}/> : null}
+    {/* The catalog stays mounted under product and cart pages, so it comes back exactly as it was left. */}
+    <div className="shop-storefront" hidden={isCart || productId !== null}>
+    <header className="shop-hero">
       <div className="shop-hero-text">
-        <h1 id="shop-catalog-title">商品目录</h1>
+        <h1 id="shop-catalog-title" tabIndex={-1}>商品目录</h1>
         <p>AI 会员订阅 · 商家人工交付 · 确认后再付款</p>
         {catalog?.stats && (catalog.stats.views || catalog.stats.sold) ? <p className="shop-store-stats">{[catalog.stats.views ? `累计浏览 ${countText(catalog.stats.views)} 人次` : '', catalog.stats.sold ? `累计售出 ${countText(catalog.stats.sold)} 件` : ''].filter(Boolean).join(' · ')}</p> : null}
       </div>
       <div className="shop-hero-actions"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cartCount}）</a></div>
       {referralProduct ? <PlusReferralLink product={referralProduct} banner/> : null}
-    </header>}
+    </header>
     <p className="shop-feedback" role="status">{notice}</p>
-    {isCart ? <CartView cart={cart} catalog={catalog} error={error} onChange={updateCart} onBuy={() => setSelected(cart)} onRetry={() => void load()}/> : <div className="shop-layout">
+    <div className="shop-layout">
       <section className="shop-catalog" aria-labelledby="shop-catalog-title">
         <div className="shop-filterbar">
           <div className="shop-category-list" role="group" aria-label="商品分类">{['全部商品', ...categories].map(name => <button key={name} type="button" aria-pressed={category === name} onClick={() => setCategory(name)}><span>{name === '全部商品' ? '全部' : name}</span><span className="shop-count">{name === '全部商品' ? allProducts.length : allProducts.filter(product => product.category === name).length}</span></button>)}</div>
@@ -103,9 +113,8 @@ export function ShopPage() {
           {products.length ? <>{categories.map(name => { const group = products.filter(product => product.category === name); return group.length ? <section className="shop-category-group" key={name}>{category === '全部商品' ? <h2 className="shop-group-heading">{name} 商品<span>（{group.length}）</span></h2> : null}<div className="shop-product-list">{group.map(product => <ProductRow key={product.id} product={product} catalogReady={catalog?.status === 'ready'} onAdd={add}/>)}</div></section> : null; })}</> : <div className="shop-empty" role="status"><span className="shop-empty-icon"><ShopIcon/></span><h2>{!catalog && !error ? '正在加载商品' : search.trim() ? '没有匹配的商品' : '暂无商品'}</h2><p>{search.trim() ? '试试其他关键词，或清除搜索。' : '商品上架后会显示在这里。'}</p>{search.trim() ? <button className="btn btn-secondary" type="button" onClick={() => setSearch('')}>清除搜索</button> : null}</div>}
         </div>
       </section>
-    </div>}
     </div>
-    <ProductSheet productId={isCart ? null : productId} cartCount={cartCount} onVisibilityChange={setDetailsVisible}>{id => <ProductDetail key={id} productId={id} catalog={catalog} error={error} notice={notice} onAdd={add} onBuy={item => setSelected([item])} onRetry={() => void load()}/>}</ProductSheet>
+    </div>
     {selected ? <PurchaseDialog catalogVersion={catalog} items={selected} onClose={() => setSelected(null)}/> : null}
   </PortalShell>;
 }
