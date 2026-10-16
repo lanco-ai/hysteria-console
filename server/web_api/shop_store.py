@@ -27,10 +27,11 @@ from .shop_fanai_source import valid_public_title as fanai_title
 from .shop_lorry_source import ORIGIN as LORRY_ORIGIN
 from .shop_lorry_source import PRODUCT_BASE as LORRY_BASE
 from .shop_lorry_source import PUBLIC_TITLES as LORRY_TITLES
-from .shop_local_products import NOTICE as LOCAL_NOTICE
+from .shop_local_products import BY_ID as LOCAL_PRODUCTS
 from .shop_local_products import PRODUCT_BASE as LOCAL_BASE
-from .shop_local_products import PRODUCT_ID as LOCAL_PRODUCT_ID
 from .shop_local_products import catalog as local_catalog
+from .shop_local_products import category as local_category
+from .shop_local_products import ends_at as local_ends_at
 from .shop_notices import (
     CLAUDE_NOTICE,
     CLAUDE_PRODUCT_IDS,
@@ -88,7 +89,7 @@ SOURCE_LABELS = {
     'sms': ('Zephyr', '短信接码'),
     'shop16688': ('16688', 'GPT / Claude / Gemini / Muse AI'),
     'wzyp': ('WZYP', '待接入'),
-    'local': ('本店', '开通指导'),
+    'local': ('本店', '指导服务'),
 }
 
 
@@ -116,11 +117,12 @@ def provider_of(product_id):
     )
 
 
-def category_of(provider, public_title):
+def category_of(provider, public_title, product_id=''):
     if provider == 'shop16688':
         return 'GPT' if public_title.startswith('ChatGPT ') else ('Muse AI' if public_title.startswith('Muse AI ') else public_title.split(' ', 1)[0])
     if provider == 'local':
-        return 'Claude'
+        # Store-owned products keep their category when the merchant renames them.
+        return local_category(product_id)
     if provider == 'sms':
         return '短信接码'
     if provider == 'fanai':
@@ -678,7 +680,7 @@ class ShopStore:
                 sources[provider] = {**self._empty_source(), 'error': 'source_unavailable'}
         if self.local_products:
             sources['local'] = {
-                **self._empty_source(), 'items': local_catalog(), 'last_success': self.clock(),
+                **self._empty_source(), 'items': local_catalog(self.clock()), 'last_success': self.clock(),
             }
         if self.bookmarked_sources:
             for provider in BOOKMARKED_SOURCES:
@@ -714,8 +716,8 @@ class ShopStore:
         products = dict(settings.get('products', {}))
         if any(row['product_id'] == SMS_PRODUCT_ID for row in items):
             products.setdefault(SMS_PRODUCT_ID, dict(SMS_NOTICE))
-        if any(row['product_id'] == LOCAL_PRODUCT_ID for row in items):
-            products.setdefault(LOCAL_PRODUCT_ID, dict(LOCAL_NOTICE))
+        for product_id in {row['product_id'] for row in items} & set(LOCAL_PRODUCTS):
+            products.setdefault(product_id, dict(LOCAL_PRODUCTS[product_id]['notice']))
         for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
             # A saved custom or explicitly empty copy always wins. Defaults only
             # belong to this read projection, never the persisted merchant state.
@@ -765,7 +767,7 @@ class ShopStore:
                     **row,
                     'buy_url': buy_url(row),
                     'provider': provider_of(row['product_id']),
-                    'category': category_of(provider_of(row['product_id']), row['public_title']),
+                    'category': category_of(provider_of(row['product_id']), row['public_title'], row['product_id']),
                 }
                 for row in items
             ],
@@ -813,7 +815,7 @@ class ShopStore:
                 {
                     'id': row['product_id'],
                     'title': row['public_title'],
-                    'category': category_of(provider, row['public_title']),
+                    'category': category_of(provider, row['public_title'], row['product_id']),
                     'description': state['products']
                     .get(row['product_id'], {})
                     .get('description', ''),
@@ -825,6 +827,9 @@ class ShopStore:
                     'sold': (display.get(row['product_id'], {}).get('sold', 0)
                              + automatic_sold.get(row['product_id'], 0)),
                     'views': stats['products'].get(row['product_id'], 0),
+                    # A limited-time service shows when it leaves the shop.
+                    **({'ends_at': local_ends_at(row['product_id'])}
+                       if provider == 'local' and local_ends_at(row['product_id']) else {}),
                     'variants': [],
                 },
             )

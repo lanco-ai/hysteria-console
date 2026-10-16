@@ -399,3 +399,6 @@ h1 > .shop-promo-badge { margin-right: 10px; vertical-align: 4px; }
   .shop-toolbar { flex-wrap: wrap; }
   .shop-contact { font-size: 12px; }
 }
+/* A limited-time service's last day, beside its title. */
+.shop-ends-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #f3c9bf; border-radius: 5px; background: #fff3ef; color: #b23c22; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.shop-detail-heading .shop-ends-badge { padding: 4px 9px; font-size: 13px; }

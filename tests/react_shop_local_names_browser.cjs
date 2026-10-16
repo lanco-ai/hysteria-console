@@ -112,7 +112,7 @@ const SECOND = `${ID}:2`;
     });
     assert.deepEqual(persisted.items.filter(row => row.provider !== 'local'), baseline.items.filter(row => row.provider !== 'local'));
     assert.deepEqual(persisted.products[ID], baseline.products[ID]);
-    assert.deepEqual(persisted.items.filter(row => row.provider === 'local').map(row => [row.key, row.cost_cents]), [[FIRST, 8500], [SECOND, 10500]]);
+    assert.deepEqual(persisted.items.filter(row => row.product_id === ID).map(row => [row.key, row.cost_cents]), [[FIRST, 8500], [SECOND, 10500]]);
     assert.equal(saves.at(-1).client, 3);
     await expect(toggle).not.toContainText('已修改');
 

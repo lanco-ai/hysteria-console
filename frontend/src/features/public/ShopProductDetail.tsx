@@ -3,7 +3,7 @@ import { closeShopProduct } from '../../shared/shopNavigation';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { isNoticeProduct, ShopCopyText, ShopNotice } from '../shop/ShopNotice';
 import { hasContact, money, promoCents, promoName, type Catalog, type Product } from '../shop/catalog';
-import { ProductStats, PromoBadge, PromoPrice, WarrantyBadge } from '../shop/ShopMerch';
+import { EndsBadge, ProductStats, PromoBadge, PromoPrice, WarrantyBadge } from '../shop/ShopMerch';
 import { cartPromo, findSku, type CartItem } from '../shop/cart';
 import { PLUS_REFERRAL_ANCHOR, PlusReferralDetails, isPlusReferralVariant, plusReferralVariant } from '../shop/PlusReferral';
 
@@ -72,7 +72,7 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
         <div className="shop-detail-image" data-shop-logo><ShopBrandImage category={product.category}/></div>
         <div className="shop-detail-intro">
           <p className="portal-eyebrow">{product.category} · 人工交付</p>
-          <div className="shop-detail-heading" data-shop-title><h1 id="shop-detail-title" ref={title} tabIndex={-1}><PromoBadge text={product.badge}/>{product.title}</h1><WarrantyBadge product={product}/></div>
+          <div className="shop-detail-heading" data-shop-title><h1 id="shop-detail-title" ref={title} tabIndex={-1}><PromoBadge text={product.badge}/>{product.title}</h1><WarrantyBadge product={product}/><EndsBadge product={product}/></div>
           <ProductStats product={product}/>
           {product.category === '短信接码' ? <p className="shop-note">已有激活码？<a href="/?view=sms">进入短信接码</a></p> : null}
         </div>

@@ -9,6 +9,13 @@ export function WarrantyBadge({ product }: { product: Product }) {
     ? <span className="shop-warranty-badge">质保30天</span> : null;
 }
 
+/** A limited-time service's last day, in the shop's (Beijing) time: "10月31日截止". */
+export function EndsBadge({ product }: { product: Product }) {
+  if (!product.ends_at) return null;
+  const day = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric' }).format(new Date(product.ends_at * 1000));
+  return <span className="shop-ends-badge">{day}截止</span>;
+}
+
 /** A promotion label such as 学生价, shown before the title. */
 export function PromoBadge({ text }: { text?: string | undefined }) {
   return text ? <span className="shop-promo-badge">{text}</span> : null;
