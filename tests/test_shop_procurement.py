@@ -18,6 +18,7 @@ from web_api.shop_store import Conflict, ShopStore
 from test_shop_routes import HEADERS, Sessions
 
 PRODUCT = next(iter(SELECTED))
+MUSE = list(SELECTED)[1]
 ORDER = 'a' * 24
 SECRET = 'fictional-delivery-only-never-public'
 
@@ -40,6 +41,11 @@ def setup(tmp_path):
             return httpx.Response(200, json={'balance': controls['balance']})
         if request.url.path == '/v1/products/' + PRODUCT:
             return httpx.Response(200, json=detail)
+        if request.url.path == '/v1/products/' + MUSE:
+            if controls.get('muse_down'):
+                return httpx.Response(503)
+            return httpx.Response(200, json={'id': MUSE, 'name': 'Muse AI', 'stock': 0, 'price': 1.00,
+                                             'requiresEmailActivation': False, 'delivery': {'type': 'instant'}})
         if request.url.path == '/v1/orders':
             assert request.method == 'POST'
             assert json.loads(request.content) == {'productId': PRODUCT, 'quantity': 2}
@@ -337,3 +343,69 @@ def test_balance_refresh_is_explicit_and_source_disable_blocks_it(setup):
 def test_supplier_amount_validation(value):
     from web_api.shop_procurement_api import cents
     with pytest.raises(SupplierError): cents(value)
+
+
+def seeded_store(tmp_path, *, in_stock=False):
+    """A store whose ProdSeller catalog cache already holds both products' quotes."""
+    from web_api.shop_prodseller_source import normalize_products
+    rows = normalize_products({'products': [
+        {'id': PRODUCT, 'name': 'Gemini Pro 18Months (link)', 'price': Decimal('0.85'), 'inStock': in_stock,
+         'requiresEmailActivation': False, 'delivery': {'type': 'instant'}},
+        {'id': MUSE, 'name': 'Muse AI', 'price': Decimal('1.00'), 'inStock': False,
+         'requiresEmailActivation': False, 'delivery': {'type': 'instant'}},
+    ]})
+
+    async def empty():
+        return []
+
+    async def prodseller():
+        return rows
+
+    store = ShopStore(tmp_path / 'source.json', fetcher=empty, prodseller_fetcher=prodseller, clock=lambda: 1800000000)
+    import asyncio
+    asyncio.run(store.refresh(manual=True))
+    return store
+
+
+def test_overview_shows_cached_prices_even_out_of_stock_without_contacting_supplier(setup, tmp_path):
+    manager, _, calls, *_ = setup
+    manager.store = seeded_store(tmp_path / 'seeded')
+    quotes = {item['id']: item['quote'] for item in manager.view()['products']}
+    # The cache keeps CNY at the fixed rate; the page shows the supplier's USDT quote.
+    assert quotes[PRODUCT] == {'price_cents': 85, 'stock': None, 'in_stock': False, 'quoted_at': 1800000000}
+    assert quotes[MUSE] == {'price_cents': 100, 'stock': None, 'in_stock': False, 'quoted_at': 1800000000}
+    assert calls == []
+
+
+def test_overview_without_catalog_has_no_quotes(setup):
+    manager, *_ = setup
+    assert [item['quote'] for item in manager.view()['products']] == [None, None]
+
+
+def test_explicit_refresh_reads_live_price_and_stock_in_memory_only(setup, tmp_path):
+    manager, _, calls, controls, detail, now = setup
+    manager.store = seeded_store(tmp_path / 'seeded')
+    now[0] = 1800000300
+    detail.update(stock=3, price=0.90)
+    controls['muse_down'] = True
+    value = manager.balance()
+    quotes = {item['id']: item['quote'] for item in value['products']}
+    assert quotes[PRODUCT] == {'price_cents': 90, 'stock': 3, 'in_stock': True, 'quoted_at': 1800000300}
+    # A product the supplier could not quote keeps the catalog's price.
+    assert quotes[MUSE] == {'price_cents': 100, 'stock': None, 'in_stock': False, 'quoted_at': 1800000000}
+    assert value['balance_cents'] == 2000
+    assert [path for method, path, _ in calls if method == 'GET'] == [
+        '/v1/products/' + PRODUCT, '/v1/products/' + MUSE, '/v1/balance']
+    assert not [call for call in calls if call[0] != 'GET']
+    # The procurement file keeps its format, so an older release can still read it.
+    saved = json.loads(manager.path.read_text())
+    assert set(saved) == {'schema', 'revision', 'jobs', 'balance_cents', 'balance_at', 'balance_error'}
+    assert manager.view()['products'][0]['quote']['stock'] == 3
+
+
+def test_disabled_source_refresh_reads_no_quotes(setup, tmp_path):
+    manager, _, calls, *_ = setup
+    state_store.save_json(manager.store.settings_path, {'revision': 1, 'telegram': '', 'skus': {},
+                                                      'source_enabled': {'prodseller': False}})
+    manager.balance()
+    assert calls == []

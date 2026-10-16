@@ -68,7 +68,7 @@ async function main() {
     await expect(admin.locator('.portal-account')).toHaveAttribute('href', '/admin/shop');
     await admin.locator('.portal-account').click();
     await expect(admin).toHaveURL(`${baseUrl}/__react/admin/shop`);
-    await expect(admin.locator('.sidebar-nav .sidebar-link')).toHaveText(['商品管理']);
+    await expect(admin.locator('.sidebar-nav .sidebar-link')).toHaveText(['商品管理', '采购预订']);
     await expect(admin.locator('.sidebar-footer a')).toHaveText(['商城首页']);
     await expect(admin.locator('.plans-global-reminders')).toHaveCount(0);
     assert.deepEqual(foreignRequests, [], 'the shop must not poll workbench features');

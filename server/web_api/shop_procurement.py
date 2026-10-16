@@ -3,12 +3,14 @@
 import copy
 import re
 import time
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import state_store
 
 from .shop_procurement_api import ProcurementAPI, SupplierError, receipt
-from .shop_prodseller_source import SELECTED
+from .shop_prodseller_source import PRODUCT_BASE as SOURCE_BASE
+from .shop_prodseller_source import SELECTED, USD_CNY
 from .shop_store import Conflict, is_source_enabled, source_generation
 
 STATUSES = {'draft', 'waiting', 'paused', 'submitting', 'uncertain', 'pending', 'paid',
@@ -29,6 +31,9 @@ class Procurement:
         self.scheduler_enabled = scheduler_enabled
         self.path = Path(store.path).with_name('procurement.json')
         self.lock = self.path.with_suffix('.lock')
+        # Prices read on the administrator's explicit refresh; memory only, so the
+        # procurement file keeps its format and an older release can still read it.
+        self._live_quotes = {}
 
     def _load(self):
         value = state_store.load_json_strict(self.path, {
@@ -83,14 +88,42 @@ class Procurement:
     def _enabled(self):
         return is_source_enabled(self.store._settings(), 'prodseller') and self.store.prodseller_fetcher is not None
 
+    def _catalog_quotes(self):
+        # The catalog refresh already reads both prices, out of stock or not. Its cost is
+        # the USD quote at the fixed rate, so dividing recovers the quote to the cent.
+        try:
+            source = self.store._source('prodseller')
+        except (state_store.StateStoreError, OSError, ValueError):
+            return {}
+        if source['last_success'] is None:
+            return {}
+        rows = {row['product_id']: row for row in source['items']}
+        quotes = {}
+        for supplier_id, (number, _) in SELECTED.items():
+            row = rows.get(str(SOURCE_BASE + number))
+            if row is not None:
+                usd = (Decimal(row['cost_cents']) / USD_CNY).quantize(Decimal(1), rounding=ROUND_HALF_UP)
+                quotes[supplier_id] = {'price_cents': int(usd), 'stock': None, 'in_stock': row['available'],
+                                       'quoted_at': int(source['last_success'])}
+        return quotes
+
+    def _quotes(self):
+        quotes = self._catalog_quotes()
+        for supplier_id, live in dict(self._live_quotes).items():
+            if supplier_id not in quotes or live['quoted_at'] >= quotes[supplier_id]['quoted_at']:
+                quotes[supplier_id] = live
+        return quotes
+
     def view(self):
         state = self._load()
+        quotes = self._quotes()
         jobs = [{k: v for k, v in job.items() if k != 'keys'} | {
             'title': SELECTED[job['product_id']][1], 'delivered_count': len(job['keys']),
         } for job in reversed(state['jobs'])]
         return {**state, 'jobs': jobs, 'enabled': self._enabled(),
                 'scheduler_enabled': self.scheduler_enabled,
-                'products': [{'id': key, 'title': item[1]} for key, item in SELECTED.items()]}
+                'products': [{'id': key, 'title': item[1], 'quote': quotes.get(key)}
+                             for key, item in SELECTED.items()]}
 
     @staticmethod
     def _revision(payload, state):
@@ -161,7 +194,18 @@ class Procurement:
         return self.view()
 
     def balance(self):
-        # Explicit admin refresh; state-only GET never contacts a supplier.
+        # Explicit admin refresh of the balance and both products' price and stock (GET only).
+        # The state-only GET never contacts a supplier.
+        if self._enabled():
+            now, quotes = int(self.clock()), {}
+            for supplier_id in SELECTED:
+                try:
+                    product = self.api.product(supplier_id)
+                except SupplierError:
+                    continue  # The catalog's price stays shown.
+                quotes[supplier_id] = {'price_cents': product['price_cents'], 'stock': product['stock'],
+                                       'in_stock': product['stock'] > 0, 'quoted_at': now}
+            self._live_quotes = quotes
         with state_store.file_lock(self.lock, timeout=2):
             state = self._load()
             if not self._enabled():
