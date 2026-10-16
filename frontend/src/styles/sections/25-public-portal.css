@@ -113,11 +113,13 @@ body.page-portal {
 .shop-search input { flex: 1 1 auto; width: 100%; min-width: 0; padding-block: 6px; border: 0; outline: 0; background: transparent; font: inherit; }
 .shop-search input::placeholder { color: var(--text-tertiary); }
 .shop-catalog { min-width: 0; }
-.shop-catalog-body { margin: 0; }
+.shop-catalog-body { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 26px 14px; margin: 0; }
+.shop-category-group { display: flex; flex-direction: column; grid-column: 1 / -1; min-width: 0; }
+.shop-category-group:has(> .shop-product-list > .shop-product-row:only-child) { grid-column: auto; }
 .shop-group-heading { display: flex; align-items: center; gap: 6px; margin: 0 0 12px; padding-left: 10px; border-left: 3px solid #1675dc; font-size: 16px; line-height: 1.4; }
 .shop-group-heading span { color: var(--text-tertiary); font-size: 13px; font-weight: 400; }
-.shop-product-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; }
-.shop-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; min-height: 330px; padding: 36px 20px; text-align: center; }
+.shop-product-list { display: grid; flex: 1; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.shop-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; grid-column: 1 / -1; gap: 12px; min-height: 330px; padding: 36px 20px; text-align: center; }
 .shop-empty-icon { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 20px; background: var(--bg-overlay); color: var(--text-tertiary); }
 .shop-empty-icon svg { width: 30px; height: 30px; }
 .shop-empty h2 { font-size: 19px; }
@@ -371,7 +373,6 @@ html[data-shop-transition="previous"]::view-transition-new(shop-detail) { animat
   html[data-shop-transition] .shop-detail-buybar { view-transition-name: shop-buybar; }
 }
 
-.shop-category-group + .shop-category-group { margin-top: 26px; }
 .shop-product-thumbnail img.shop-brand-square { width: 100%; height: 100%; object-fit: cover; }
 .shop-detail-image img.shop-brand-square { width: 100%; height: 100%; object-fit: cover; }
 
