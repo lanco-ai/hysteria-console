@@ -2,7 +2,7 @@
 
 import json
 import re
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 import httpx
 
@@ -22,10 +22,14 @@ def cents(value, *, zero=False):
     if type(value) not in (int, Decimal):
         raise SupplierError('invalid_response')
     amount = Decimal(value)
-    if (not amount.is_finite() or amount < (0 if zero else Decimal('.01'))
-            or amount > 10000000 or amount * 100 != (amount * 100).to_integral_value()):
+    if not amount.is_finite() or amount < 0 or amount > 10000000:
         raise SupplierError('invalid_response')
-    return int(amount * 100)
+    rounded = amount.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+    # The API can serialize binary floating-point residue (e.g. 0.3699999999999994).
+    # Accept only negligible noise around a cent, never a genuine sub-cent quote.
+    if abs(amount - rounded) > Decimal('0.00000001') or rounded < (0 if zero else Decimal('.01')):
+        raise SupplierError('invalid_response')
+    return int(rounded * 100)
 
 
 class ProcurementAPI:

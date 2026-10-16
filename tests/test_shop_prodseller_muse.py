@@ -141,7 +141,7 @@ def test_muse_starts_unpriced_hidden_with_own_copy_and_publishes_without_supplie
         muse, = [row for row in admin['items'] if row['product_id'] == MUSE_ID]
         assert muse['provider'] == 'prodseller' and muse['category'] == 'Muse AI'
         assert muse['buy_url'] == 'https://prodseller.com/' and muse['cost_cents'] == 792
-        assert admin['sources']['prodseller']['covers'] == 'Gemini / Muse AI'
+        assert admin['sources']['prodseller']['covers'] == 'Gemini / Muse AI / 多邻国'
         assert admin['revision'] == 0 and admin['skus'] == {}
         assert not store.settings_path.exists()
         assert (await store.public())['products'] == []

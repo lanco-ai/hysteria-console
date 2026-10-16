@@ -22,7 +22,7 @@ const MUSE = 'fictional-muse';
       last_success: 1, error: null, is_stale: false, cooldown_seconds: 0, retry_after_seconds: 0 };
     const quotedAt = Math.floor(Date.now() / 1000) - 600;
     // Both out of stock: the catalog still knows their prices.
-    const data = { revision: 0, enabled: true, scheduler_enabled: true, balance_cents: null, balance_at: null, balance_error: '',
+    const data = { revision: 0, enabled: true, scheduler_enabled: true, balance_cents: 400, balance_at: quotedAt, balance_error: 'invalid_response',
       products: [
         { id: GEMINI, title: 'Gemini Pro 18 个月', quote: { price_cents: 85, stock: null, in_stock: false, quoted_at: quotedAt } },
         { id: MUSE, title: 'Muse AI', quote: { price_cents: 100, stock: null, in_stock: false, quoted_at: quotedAt } },
@@ -36,7 +36,7 @@ const MUSE = 'fictional-muse';
       if (request.method() === 'GET') return route.fulfill({ json: data });
       const payload = request.postDataJSON();
       if (suffix === '/balance') {
-        data.balance_cents = 500; data.balance_at = Math.floor(Date.now() / 1000);
+        data.balance_error = ''; data.balance_cents = 500; data.balance_at = Math.floor(Date.now() / 1000);
         data.products[0].quote = { price_cents: 85, stock: 3, in_stock: true, quoted_at: data.balance_at };
       } else if (suffix === '/preorders') data.jobs.unshift({ ...payload, title: payload.product_id === MUSE ? 'Muse AI' : 'Gemini Pro 18 个月', status: 'draft', reason: '', checked_at: 0, order_id: null, amount_cents: null, delivered_count: 0 });
       else {
@@ -72,7 +72,10 @@ const MUSE = 'fictional-muse';
     await expect(muse).toContainText('1.00 USDT');
     await expect(muse).toContainText('缺货');
     await expect(panel).toContainText('缺货时同样显示供应商价格');
+    await expect(panel.locator('.shop-procurement-balance')).toContainText('上次成功查询于');
+    await expect(panel.locator('.shop-procurement-balance')).toContainText('供应商余额格式异常，显示上次余额');
     await panel.getByRole('button', { name: '刷新余额和报价', exact: true }).click();
+    await expect(panel.locator('.shop-procurement-balance')).not.toContainText('上次余额');
     await expect(panel.locator('.shop-procurement-balance')).toContainText('5.00 USDT');
     await expect(gemini).toContainText('库存 3');
 

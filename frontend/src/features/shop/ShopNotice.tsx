@@ -8,6 +8,7 @@ const claudeProductIds = new Set(['1000000000005', '1000000000007', '10000000000
 const grokProductIds = new Set(['1000000000011']);
 const geminiProductIds = new Set(['2000000000001']);
 const museProductIds = new Set(['2000000000002']);
+const duolingoProductIds = new Set(['2000000000003']);
 const noticeImages = [
   { alias: '/shop-notices/claude/active-subscription', src: activeSubscription, width: 1280, height: 957 },
   { alias: '/shop-notices/claude/message-restriction', src: messageRestriction, width: 2672, height: 1466 },
@@ -39,7 +40,7 @@ export function ShopCopyText({ text }: { text: string }) {
 }
 
 export function isClaudeNoticeProduct(productId: string) { return claudeProductIds.has(productId); }
-export function isNoticeProduct(productId: string) { return isClaudeNoticeProduct(productId) || grokProductIds.has(productId) || geminiProductIds.has(productId) || museProductIds.has(productId); }
+export function isNoticeProduct(productId: string) { return isClaudeNoticeProduct(productId) || grokProductIds.has(productId) || geminiProductIds.has(productId) || museProductIds.has(productId) || duolingoProductIds.has(productId); }
 
 export function ShopNotice({ text }: { text: string }) {
   return <div className="shop-notice"><ReactMarkdown skipHtml unwrapDisallowed allowedElements={['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'strong', 'em', 'br', 'img', 'a']} components={{

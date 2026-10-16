@@ -6,6 +6,22 @@ CLAUDE_PRODUCT_IDS = frozenset({"1000000000005", "1000000000007", "1000000000008
 GROK_PRODUCT_IDS = frozenset({"1000000000011"})
 GEMINI_PRODUCT_IDS = frozenset({"2000000000001"})
 MUSE_PRODUCT_IDS = frozenset({"2000000000002"})
+DUOLINGO_PRODUCT_IDS = frozenset({"2000000000003"})
+
+DUOLINGO_NOTICE = {
+    "description": """## Duolingo Super 12 个月
+
+多邻国 Super 订阅兑换链接，使用自己的多邻国账号领取。
+
+### 使用方法
+
+1. 在浏览器登录自己的多邻国账号。
+2. 打开本店交付的兑换链接，按页面提示点击「Claim Offer」领取。
+3. 领取后核对账号内的订阅权益及有效期。
+
+购买前请向本店确认账号及地区是否符合领取条件。订阅期限和具体权益以官方兑换页面为准。""",
+    "after_sales": "",
+}
 
 CLAUDE_NOTICE = {
     "description": """# ⚠️ 充值前重要须知

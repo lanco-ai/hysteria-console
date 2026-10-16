@@ -33,6 +33,8 @@ from .shop_local_products import catalog as local_catalog
 from .shop_local_products import category as local_category
 from .shop_local_products import ends_at as local_ends_at
 from .shop_notices import (
+    DUOLINGO_NOTICE,
+    DUOLINGO_PRODUCT_IDS,
     CLAUDE_NOTICE,
     CLAUDE_PRODUCT_IDS,
     GEMINI_NOTICE,
@@ -83,7 +85,7 @@ SOURCE_SITES = {
 SOURCE_LABELS = {
     'gpt': ('强云', 'GPT'),
     'anli': ('Anli', 'Claude / Grok'),
-    'prodseller': ('ProdSeller', 'Gemini / Muse AI'),
+    'prodseller': ('ProdSeller', 'Gemini / Muse AI / 多邻国'),
     'lorry': ('Lorry', 'X / Muse AI'),
     'fanai': ('Fanai', 'GPT / Claude / Grok'),
     'sms': ('Zephyr', '短信接码'),
@@ -130,6 +132,8 @@ def category_of(provider, public_title, product_id=''):
     if provider == 'lorry':
         return 'X' if public_title.startswith('X ') else 'Muse AI'
     if provider == 'prodseller':
+        if public_title == 'Duolingo Super 12 个月':
+            return '多邻国'
         return 'Muse AI' if public_title == 'Muse AI' else 'Gemini'
     if provider == 'anli':
         return 'Claude' if public_title.startswith('Claude ') else 'Grok'
@@ -739,6 +743,8 @@ class ShopStore:
             products.setdefault(product_id, dict(GEMINI_NOTICE))
         for product_id in {row['product_id'] for row in items} & MUSE_PRODUCT_IDS:
             products.setdefault(product_id, dict(MUSE_NOTICE))
+        for product_id in {row['product_id'] for row in items} & DUOLINGO_PRODUCT_IDS:
+            products.setdefault(product_id, dict(DUOLINGO_NOTICE))
         for product_id in {row['product_id'] for row in items if row['public_title'].startswith('X Premium ')}:
             products.setdefault(product_id, dict(X_PREMIUM_NOTICE))
         # Older saved copy may still carry supplier links; never project them.

@@ -1,4 +1,4 @@
-"""Bounded ProdSeller reseller-API acquisition for selected Gemini and Muse products.
+"""Bounded ProdSeller reseller-API acquisition for selected products.
 
 Read-only by construction: only ``GET /v1/products`` is ever requested. Orders
 spend the reseller balance and are never created here.
@@ -26,11 +26,13 @@ MAX_USD = Decimal(10000)
 SELECTED = {
     '6a31035939dc014325da2c66': (1, 'Gemini Pro 18 个月'),
     '6ac65a53d07e0053469f477d': (2, 'Muse AI'),
+    '6aa5bafb77c587d75cbe2a8e': (3, 'Duolingo Super 12 个月'),
 }
 # An ID changing plans must not silently change a merchant's existing SKU.
 PLANS = {
     1: re.compile(r'Gemini\s*Pro\s*18\s*Months?\b', re.I),
     2: re.compile(r'\s*Muse\s+AI\s*\Z', re.I),
+    3: re.compile(r'\s*Duolingo\s+Super\s+12M\s*\Z', re.I),
 }
 
 
@@ -84,7 +86,7 @@ def normalize_products(value):
         if (not isinstance(name, str) or not 0 < len(name) <= 300
                 or not PLANS[number].match(name)):
             raise SourceError('unrecognised product plan')
-        if number == 2:
+        if number in (2, 3):
             name = name.strip()
         price = _usd(item.get('price'))  # The unit price charged to this API key.
         delivery = item.get('delivery')

@@ -24,6 +24,8 @@ function localInput(time: number) {
 }
 const inDays = (days: number) => localInput(Date.now() + days * 86400000);
 
+const BALANCE_REASON: Record<string, string> = { invalid_response: '供应商余额格式异常', credentials_unavailable: '供应商凭据不可用', rate_limited: '供应商限制请求频率', source_disabled: '来源已关闭', supplier_unavailable: '供应商暂不可用' };
+
 // 商品管理 → 采购预订: the balance and a new preorder beside the preorders so far.
 export function ShopProcurement({ unsavedProducts = false }: { unsavedProducts?: boolean }) {
   const [data, setData] = useState<Overview | null>(null);
@@ -117,7 +119,7 @@ export function ShopProcurement({ unsavedProducts = false }: { unsavedProducts?:
         <div className="shop-procurement-side">
           <section className="shop-procurement-card shop-procurement-balance" aria-label="供应商余额">
             <div><span>{data.supplier?.name ?? '供应商'} 余额</span><strong>{data.balance_cents == null ? '—' : usd(data.balance_cents)}</strong>
-              <small>{data.balance_at ? `查询于 ${when(data.balance_at)}` : '尚未查询'}{data.balance_error ? ' · 查询未成功，显示上次余额' : ''}</small></div>
+              <small>{data.balance_at ? `${data.balance_error ? '上次成功查询于' : '查询于'} ${when(data.balance_at)}` : '尚未成功查询'}{data.balance_error ? ` · ${BALANCE_REASON[data.balance_error] ?? '余额查询未成功'}${data.balance_cents == null ? '' : '，显示上次余额'}` : ''}</small></div>
             <button className="btn btn-secondary" type="button" disabled={busy || !data.enabled} onClick={() => void request('balance', {})}>刷新余额和报价</button>
           </section>
           <form className="shop-procurement-card shop-procurement-form" aria-labelledby="shop-procurement-new" onSubmit={event => { event.preventDefault(); void create(); }}>

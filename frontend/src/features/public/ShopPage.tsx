@@ -9,7 +9,7 @@ import { PurchaseDialog } from './ShopPurchase';
 import { ProductPage, CartView } from './ShopProductDetail';
 import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 
-const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '短信接码', 'VPN'];
+const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多邻国', '短信接码', 'VPN'];
 
 function ProductRow({ product, catalogReady, onAdd }: { product: Product; catalogReady: boolean; onAdd: (item: CartItem) => void }) {
   const prices = product.variants.map(item => item.price_cents);

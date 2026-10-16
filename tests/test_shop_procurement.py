@@ -19,6 +19,7 @@ from test_shop_routes import HEADERS, Sessions
 
 PRODUCT = next(iter(SELECTED))
 MUSE = list(SELECTED)[1]
+DUOLINGO = list(SELECTED)[2]
 ORDER = 'a' * 24
 SECRET = 'fictional-delivery-only-never-public'
 
@@ -46,6 +47,10 @@ def setup(tmp_path):
                 return httpx.Response(503)
             return httpx.Response(200, json={'id': MUSE, 'name': 'Muse AI', 'stock': 0, 'price': 1.00,
                                              'requiresEmailActivation': False, 'delivery': {'type': 'instant'}})
+        if request.url.path == '/v1/products/' + DUOLINGO:
+            return httpx.Response(200, json={'id': DUOLINGO, 'name': 'Duolingo Super 12M ',
+                                            'stock': 6, 'price': .29, 'requiresEmailActivation': False,
+                                            'delivery': {'type': 'instant'}})
         if request.url.path == '/v1/orders':
             assert request.method == 'POST'
             assert json.loads(request.content) == {'productId': PRODUCT, 'quantity': 2}
@@ -379,7 +384,7 @@ def test_overview_shows_cached_prices_even_out_of_stock_without_contacting_suppl
 
 def test_overview_without_catalog_has_no_quotes(setup):
     manager, *_ = setup
-    assert [item['quote'] for item in manager.view()['products']] == [None, None]
+    assert [item['quote'] for item in manager.view()['products']] == [None] * len(SELECTED)
 
 
 def test_explicit_refresh_reads_live_price_and_stock_in_memory_only(setup, tmp_path):
@@ -395,7 +400,7 @@ def test_explicit_refresh_reads_live_price_and_stock_in_memory_only(setup, tmp_p
     assert quotes[MUSE] == {'price_cents': 100, 'stock': None, 'in_stock': False, 'quoted_at': 1800000000}
     assert value['balance_cents'] == 2000
     assert [path for method, path, _ in calls if method == 'GET'] == [
-        '/v1/products/' + PRODUCT, '/v1/products/' + MUSE, '/v1/balance']
+        '/v1/products/' + PRODUCT, '/v1/products/' + MUSE, '/v1/products/' + DUOLINGO, '/v1/balance']
     assert not [call for call in calls if call[0] != 'GET']
     # The procurement file keeps its format, so an older release can still read it.
     saved = json.loads(manager.path.read_text())
@@ -409,3 +414,33 @@ def test_disabled_source_refresh_reads_no_quotes(setup, tmp_path):
                                                       'source_enabled': {'prodseller': False}})
     manager.balance()
     assert calls == []
+
+
+@pytest.mark.parametrize('amount,expected', [
+    (0.3699999999999994, 37), (0.3700000000000006, 37),
+    (0.0099999999999994, 1), (0.0000000000000006, 0), (0, 0),
+])
+def test_balance_float_residue_rounds_to_cent_without_purchasing(setup, amount, expected):
+    manager, _, calls, controls, _, _ = setup
+    controls['balance'] = amount
+    value = manager.balance()
+    assert value['balance_cents'] == expected
+    assert value['balance_error'] == ''
+    assert value['jobs'] == []
+    assert all(method == 'GET' for method, _, _ in calls)
+
+
+def test_invalid_balance_keeps_last_success_then_valid_refresh_recovers(setup):
+    manager, _, calls, controls, _, now = setup
+    first = manager.balance()
+    now[0] += 60
+    controls['balance'] = 1.001  # Meaningful sub-cent amount is still rejected.
+    failed = manager.balance()
+    assert failed['balance_error'] == 'invalid_response'
+    assert failed['balance_cents'] == first['balance_cents']
+    assert failed['balance_at'] == first['balance_at']
+    controls['balance'] = 0.3699999999999994
+    recovered = manager.balance()
+    assert recovered['balance_error'] == '' and recovered['balance_cents'] == 37
+    assert recovered['balance_at'] == now[0] and recovered['jobs'] == []
+    assert all(method == 'GET' for method, _, _ in calls)

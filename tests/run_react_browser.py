@@ -20,10 +20,12 @@ BROWSER_TESTS = (
     'react_shop_navigation_browser.cjs',
     'react_shop_services_browser.cjs',
     'react_shop_gemini_browser.cjs',
+    'react_shop_duolingo_browser.cjs',
     'react_shop_sms_browser.cjs',
 )
 # Suites whose fixtures need their own runner.
 DEDICATED_RUNNERS = {
+    'react_shop_duolingo_browser.cjs': 'tests/run_shop_duolingo_browser.py',
     'react_shop_gemini_browser.cjs': 'tests/run_shop_gemini_browser.py',
     'react_shop_sms_browser.cjs': 'tests/run_shop_sms_browser.py',
 }

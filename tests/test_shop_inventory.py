@@ -15,7 +15,7 @@ from web_api.shop_prodseller_source import SELECTED, normalize_products
 from web_api.shop_routes import register_shop_routes
 from web_api.shop_store import Conflict, ShopStore
 
-GEMINI, MUSE = list(SELECTED)
+GEMINI, MUSE = list(SELECTED)[:2]
 GEMINI_KEY, MUSE_KEY = '2000000000001:1', '2000000000002:1'
 SECRET = 'fictional-muse@example.invalid | fictional-password'
 
