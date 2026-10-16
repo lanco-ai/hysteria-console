@@ -142,7 +142,6 @@ export function ShopProcurement({ unsavedProducts = false }: { unsavedProducts?:
             <p className="shop-procurement-estimate">{estimate === null ? '填写数量和触发单价后显示条件金额。' : <>条件金额 <strong>{usd(estimate)}</strong>{count > 1 && trigger !== null ? `（${count} × ${amount(trigger)}）` : ''}
               {data.balance_cents != null && estimate > data.balance_cents ? <span className="is-warn">高于当前余额，启用后会因余额不足暂停。</span> : null}</>}</p>
             <button type="submit" className="btn btn-primary" disabled={busy}>保存预订草稿</button>
-            <p className="shop-procurement-help">草稿不会采购。在预订记录里启用并确认后，约每分钟检查一次，库存够时整单购买，买满即停。触发单价用于提交前检查；供应商不支持锁价，最终扣款以供应商为准。</p>
           </form>
         </div>
         <section className="shop-procurement-records" aria-labelledby="shop-procurement-records">

@@ -51,7 +51,7 @@ def test_import_is_unpriced_unpublished_and_category_copy_stay_private_until_pub
         assert not store.settings_path.exists()
         assert (await store.public())['products'] == []
         assert 'Claim Offer' in admin['products'][PRODUCT_ID]['description']
-        assert admin['products'][PRODUCT_ID]['after_sales'] == ''
+        assert '激活成功后不提供额外质保' in admin['products'][PRODUCT_ID]['after_sales']
         # Publishing remains an explicit merchant action, exercised only in isolated fixtures.
         await store.update({'revision': 0, 'client': 3, 'telegram': 'demo_shop',
                             'skus': {SKU: {'price_cents': 1500, 'published': True}}})

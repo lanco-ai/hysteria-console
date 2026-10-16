@@ -41,8 +41,9 @@ const { expect } = require('@playwright/test');
     assert.equal(JSON.stringify(publicProduct).toLowerCase().includes('prodseller'), false);
     await page.goto(`${base}/?product=${id}`);
     await expect(page.getByRole('img', { name: '多邻国', exact: true }).first()).toBeVisible();
-    await expect(page.locator('.shop-notice')).toContainText('Claim Offer');
-    await expect(page.locator('.shop-notice').getByRole('heading', { name: 'Duolingo Super 12 个月', exact: true })).toBeVisible();
+    await expect(page.locator('.shop-notice').first()).toContainText('Claim Offer');
+    await expect(page.locator('.shop-notice').first().getByRole('heading', { name: 'Duolingo Super｜12 个月订阅', exact: true })).toBeVisible();
+    await expect(page.locator('.shop-notice').last()).toContainText('激活成功后不提供额外质保');
     assert.deepEqual(errors, []);
     console.log('PASS: Duolingo unpriced/unpublished admin, category, cost, mobile layout and fixture-only storefront publication');
   } finally { await browser.close(); }
