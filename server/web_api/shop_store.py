@@ -709,6 +709,14 @@ class ShopStore:
         settings = self._settings()
         sources = self._sources(settings)
         items = [row for source in sources.values() for row in source['items']]
+        stock = self.inventory.counts() if self.inventory is not None else {}
+        metadata = self.inventory.catalog() if self.inventory is not None else {}
+        current = {row['key']: row for row in items}
+        for key in stock:
+            if key not in current and key in metadata and provider_of(metadata[key]['product_id']) in sources:
+                # A vanished supplier SKU has no live quote/availability. Own stock may
+                # still be sold at the merchant's saved price; source controls still apply.
+                items.append({**metadata[key], 'available': False, 'archived': True})
         names = local_names(settings.get('local_names', {}))
         # Names are merchant metadata, never supplier/source identities or cached source rows.
         for row in items:
@@ -757,12 +765,21 @@ class ShopStore:
             for source in effective.values()
             if source['last_success'] is not None
         ]
-        stock = self.inventory.counts() if self.inventory is not None else {}
         automatic_sold = {SMS_PRODUCT_ID: self.sms_sales.read()}
         for key, count in stock.items():
             if count['delivered']:
                 product_id = key.split(':')[0]
                 automatic_sold[product_id] = automatic_sold.get(product_id, 0) + count['delivered']
+        stock_items = []
+        for key in stock:
+            row = current.get(key) or metadata.get(key)
+            stock_items.append({
+                **(row or {'key': key, 'product_id': key.split(':')[0], 'title': f'库存商品 {key}',
+                           'public_title': f'库存商品 {key}', 'label': key, 'cost_cents': 0}),
+                'provider': provider_of(key.split(':')[0]),
+                'category': category_of(provider_of(row['product_id']), row['public_title'], row['product_id']) if row else '库存',
+                'available': bool(current.get(key, {}).get('available')),
+            })
         return {
             **settings,
             # Visit counts, for the merchant as for the storefront.
@@ -772,6 +789,9 @@ class ShopStore:
             'automatic_sold': automatic_sold,
             # Units in the merchant's own stock per SKU: counts only, never the lines.
             'inventory': {key: count['stock'] for key, count in stock.items() if count['stock']},
+            # Inventory management remains reachable even after an intentional source
+            # deletion. No supplier setting or publication is resurrected by this view.
+            'inventory_items': stock_items,
             'products': products,
             # The feed and storefront category of each item, so the admin page needs no list of feeds.
             'items': [
@@ -862,7 +882,9 @@ class ShopStore:
             status for provider, status in state['sources'].items()
             if status['enabled'] and (not applicable or provider in applicable)
         ]
-        ready = any(not status['is_stale'] for status in relevant)
+        ready = any(not status['is_stale'] for status in relevant) or any(
+            variant['quantity'] for group in groups.values() for variant in group['variants']
+        )
         successes = [
             status['last_success'] for status in relevant if status['last_success'] is not None
         ]
@@ -1016,6 +1038,10 @@ class ShopStore:
                     or (not manual and not status['is_stale'])):
                 return None
             source['manual_after'] = self.clock() + MANUAL_COOLDOWN
+            if self.inventory is not None:
+                stocked = self.inventory.counts()
+                self.inventory.remember([row for row in source['items'] if row['key'] in stocked
+                                         and category_of(provider, row['public_title'], row['product_id']) in {'Gemini', 'Muse AI'}])
             # Persist before acquisition so cancellation cannot busy-loop.
             source['retry_after'] = self.clock() + BACKOFF
             state_store.save_json(self._path(provider), source)

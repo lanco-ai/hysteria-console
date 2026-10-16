@@ -19,6 +19,12 @@ def register_inventory_routes(app, store, guard, body, reply, *, inventory=None)
     def stocked():
         return {row['key'] for row in store._admin()['items'] if row['category'] in STOCKED_CATEGORIES}
 
+    def add_stock(payload):
+        rows = [row for row in store._admin()['items'] if row['category'] in STOCKED_CATEGORIES]
+        if isinstance(payload, dict):
+            inventory.remember([row for row in rows if row['key'] == payload.get('sku')])
+        return inventory.add(payload, {row['key'] for row in rows})
+
     async def call(fn):
         return await reply(lambda: asyncio.to_thread(fn))
 
@@ -36,11 +42,11 @@ def register_inventory_routes(app, store, guard, body, reply, *, inventory=None)
 
     @app.post('/api/v1/shop/admin/inventory/add')
     async def add(request: Request):
-        return await post(request, lambda payload: inventory.add(payload, stocked()))
+        return await post(request, add_stock)
 
     @app.post('/api/v1/shop/admin/inventory/deliver')
     async def deliver(request: Request):
-        return await post(request, lambda payload: inventory.deliver(payload, stocked()))
+        return await post(request, lambda payload: inventory.deliver(payload, stocked() | inventory.counts().keys()))
 
     @app.post('/api/v1/shop/admin/inventory/items/{item_id}/{action}')
     async def item(item_id: str, action: str, request: Request):

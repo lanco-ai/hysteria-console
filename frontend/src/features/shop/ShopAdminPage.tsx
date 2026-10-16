@@ -3,7 +3,7 @@ import { AdminShell } from '../../shared/AdminShell';
 import { money, priceCents, shopRequest } from './catalog';
 import { isNoticeProduct } from './ShopNotice';
 import { ShopProcurement } from './ShopProcurement';
-import { ShopInventory, type StockedProduct } from './ShopInventory';
+import { ShopInventory, useInventorySession, type StockedProduct } from './ShopInventory';
 
 // promo_price_cents: the 优惠价 (学生价, 限时价…) under the selling price, for the buyers it applies to.
 type Setting = { price_cents: number | null; published: boolean; promo_price_cents?: number | null };
@@ -17,7 +17,7 @@ type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; can_read?: boolean; site?: string; supplier?: string; covers?: string };
 type RemovedSource = Pick<SourceStatus, 'supplier' | 'covers' | 'site' | 'can_read'> & { can_add: boolean };
-type Merchant = { inventory?: Record<string, number>; removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type Merchant = { inventory_items?: SourceItem[]; inventory?: Record<string, number>; removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '短信接码' | 'VPN';
@@ -123,6 +123,7 @@ function updatedAt(timestamp: number | null) {
 }
 
 export function ShopAdminPage() {
+  const inventorySession = useInventorySession();
   const [state, setState] = useState<Merchant | null>(null);
   const [telegram, setTelegram] = useState('');
   const [wechat, setWechat] = useState('');
@@ -366,14 +367,16 @@ export function ShopAdminPage() {
   // 本店库存 and 采购预订 are their own pages; product edits stay in this component while they show.
   const page = new URLSearchParams(window.location.search).get('view');
   if (page === 'inventory') {
-    const stocked: StockedProduct[] = items.filter(item => STOCKED.has(brandOf(item))).map(item => ({
-      key: item.key, productId: item.product_id, title: item.public_title ?? item.title, label: item.label, category: brandOf(item),
-      priceCents: saved[item.key]?.price_cents ?? null, published: Boolean(saved[item.key]?.published), supplierAvailable: item.available,
+    const inventoryItems = new Map(items.filter(item => STOCKED.has(brandOf(item))).map(item => [item.key, item]));
+    for (const item of state?.inventory_items ?? []) inventoryItems.set(item.key, item);
+    const stocked: StockedProduct[] = [...inventoryItems.values()].map(item => ({
+      key: item.key, productId: item.product_id, title: item.public_title ?? item.title, label: item.label, category: item.category ?? brandOf(item),
+      priceCents: saved[item.key]?.price_cents ?? null, published: Boolean(saved[item.key]?.published) && Boolean(state?.sources?.[providerOf(item)]?.enabled ?? !state?.removed_sources?.[providerOf(item)]), supplierAvailable: item.available,
     }));
-    return <AdminShell active="inventory" pageTitle="本店库存" subtitle="自有账号与链接 · 有现货即可下单"><ShopInventory products={stocked} loading={!state} unsavedProducts={dirty} onCounts={updateStock}/></AdminShell>;
+    return <AdminShell active="inventory" pageTitle="本店库存" subtitle="自有账号与链接 · 有现货即可下单"><ShopInventory session={inventorySession} products={stocked} loading={!state} unsavedProducts={dirty} onCounts={updateStock}/></AdminShell>;
   }
   if (page === 'procurement') {
-    return <AdminShell active="procurement" pageTitle="采购预订" subtitle="ProdSeller 余额采购 · 买满即停"><ShopProcurement unsavedProducts={dirty}/></AdminShell>;
+    return <AdminShell active="procurement" pageTitle="采购预订" subtitle="供应商余额采购 · 买满即停"><ShopProcurement unsavedProducts={dirty}/></AdminShell>;
   }
   return <AdminShell active="shop" pageTitle="商品管理" topbarExtra={<div className="shop-admin-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void refresh()}>刷新来源</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void reload()}>重新读取</button></div>}>
     <section className="shop-admin-panel">

@@ -30,3 +30,11 @@ def test_react_css_entry_lists_every_manifest_section_in_order():
     entry = (ROOT / 'frontend/src/styles/index.css').read_text(encoding='utf-8')
     positions = [entry.index(f'./sections/{name}') for name in names]
     assert positions == sorted(positions)
+
+
+def test_public_javascript_contains_no_private_supplier_identity():
+    assets = list((ROOT / 'frontend/dist/assets').glob('*.js'))
+    assert assets
+    for path in assets:
+        text = path.read_text().lower()
+        assert 'prodseller' not in text, path.name

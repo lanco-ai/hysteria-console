@@ -11,7 +11,7 @@ import state_store
 from .shop_procurement_api import ProcurementAPI, SupplierError, receipt
 from .shop_prodseller_source import PRODUCT_BASE as SOURCE_BASE
 from .shop_prodseller_source import SELECTED, USD_CNY
-from .shop_store import Conflict, is_source_enabled, source_generation
+from .shop_store import SOURCE_LABELS, SOURCE_SITES, Conflict, is_source_enabled, source_generation
 
 STATUSES = {'draft', 'waiting', 'paused', 'submitting', 'uncertain', 'pending', 'paid',
             'delivered', 'failed', 'cancelled', 'expired'}
@@ -121,6 +121,7 @@ class Procurement:
             'title': SELECTED[job['product_id']][1], 'delivered_count': len(job['keys']),
         } for job in reversed(state['jobs'])]
         return {**state, 'jobs': jobs, 'enabled': self._enabled(),
+                'supplier': {'name': SOURCE_LABELS['prodseller'][0], 'site': SOURCE_SITES['prodseller']},
                 'scheduler_enabled': self.scheduler_enabled,
                 'products': [{'id': key, 'title': item[1], 'quote': quotes.get(key)}
                              for key, item in SELECTED.items()]}

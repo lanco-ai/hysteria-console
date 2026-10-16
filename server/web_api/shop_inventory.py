@@ -12,7 +12,7 @@ from pathlib import Path
 
 import state_store
 
-from .shop_store import Conflict
+from .shop_store import Conflict, category_of, provider_of, validate_items
 
 MAX_ITEMS = 2000
 MAX_ADD = 500
@@ -21,6 +21,8 @@ MAX_NOTE = 60
 SKU = re.compile(r'[1-9]\d{0,15}:[1-9]\d{0,15}')
 TOKEN = re.compile(r'[0-9a-f]{32}')
 FIELDS = {'id', 'sku', 'line', 'added_at', 'delivered_at', 'delivery', 'note'}
+CATALOG_FIELDS = {'key', 'product_id', 'title', 'public_title', 'label', 'source_url',
+                  'cost_cents', 'available', 'quantity', 'sales'}
 
 
 def _integer(value, lo, hi):
@@ -37,7 +39,45 @@ class ShopInventory:
     def __init__(self, path, clock=time.time):
         self.path = Path(path)
         self.lock = str(self.path) + '.lock'
+        # Separate, non-secret metadata keeps inventory.json readable by older releases.
+        self.catalog_path = self.path.with_name(self.path.stem + '-catalog.json')
         self.clock = clock
+
+    def catalog(self):
+        value = state_store.load_json_strict(self.catalog_path, {})
+        try:
+            if not isinstance(value, dict) or len(value) > MAX_ITEMS:
+                raise ValueError
+            for key, row in value.items():
+                validate_items([row], provider_of(row['product_id']))
+                if key != row['key'] or category_of(provider_of(row['product_id']), row['public_title'], row['product_id']) not in {'Gemini', 'Muse AI'}:
+                    raise ValueError
+        except (ValueError, TypeError, KeyError) as exc:
+            raise state_store.InvalidJsonState('invalid stock catalog') from exc
+        return value
+
+    def remember(self, rows):
+        """Snapshot validated SKU metadata before import or replacing a supplier catalog.
+
+        Never called by GET. Old inventory without metadata can still be managed by SKU.
+        Keep identities independently of stock counts: a concurrent import may
+        already have saved its metadata but not yet committed its first unit.
+        """
+        rows = [{key: row[key] for key in CATALOG_FIELDS} for row in rows]
+        if not rows:
+            return
+        for row in rows:
+            validate_items([row], provider_of(row['product_id']))
+            if category_of(provider_of(row['product_id']), row['public_title'], row['product_id']) not in {'Gemini', 'Muse AI'}:
+                raise ValueError('invalid stock category')
+        with state_store.file_lock(self.lock, timeout=2):
+            old = self.catalog()
+            saved = dict(old)
+            saved.update({row['key']: row for row in rows})
+            if len(saved) > MAX_ITEMS:
+                raise ValueError('too much stock metadata')
+            if saved != old:
+                state_store.save_json(self.catalog_path, saved)
 
     @staticmethod
     def _empty():

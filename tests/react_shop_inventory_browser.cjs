@@ -25,7 +25,7 @@ const MUSE = '2000000000002:1';
         { key: MUSE, product_id: '2000000000002', title: 'Muse AI · $1.00', public_title: 'Muse AI', label: '标准规格', cost_cents: 720, available: false, provider: 'prodseller', category: 'Muse AI' },
       ] };
     // A fictional stand-in for the private inventory API: lines only ever leave on reveal or delivery.
-    let revision = 0, nextId = 0;
+    let revision = 0, nextId = 0, failAdd = 0, addRequests = 0;
     const units = [];
     const requests = [];
     const view = () => {
@@ -44,6 +44,10 @@ const MUSE = '2000000000002:1';
       requests.push([request.method(), suffix, payload]);
       if (request.method() === 'GET') return route.fulfill({ json: view() });
       if (suffix === '/add') {
+        addRequests += 1;
+        assert.ok(Buffer.byteLength(request.postData(), 'utf8') <= 65536, 'import respects the server byte limit');
+        if (failAdd && addRequests === failAdd) return route.fulfill({ status: 503, json: { error: 'unavailable' } });
+        if (payload.revision !== revision) return route.fulfill({ status: 409, json: { error: 'conflict' } });
         const known = new Set(units.filter(unit => unit.sku === payload.sku).map(unit => unit.line));
         let added = 0;
         for (const line of payload.lines) if (!known.has(line)) { known.add(line); added += 1; units.push({ id: String(++nextId).padStart(32, '0'), sku: payload.sku, line, added_at: 1800000000 + nextId, delivered_at: 0, note: '' }); }
@@ -76,6 +80,22 @@ const MUSE = '2000000000002:1';
     await expect(muse).toContainText('已上架 · ¥18.88');
     await expect(gemini).toContainText('未上架');
     await expect(muse.getByRole('button', { name: '发货一件', exact: true })).toBeDisabled();
+
+    // Drafts and delivery notes survive sidebar navigation, but never enter browser storage.
+    const secretDraft = 'draft-only@example.invalid | keep-this';
+    await muse.getByLabel('添加库存').fill(secretDraft);
+    await muse.getByLabel('发货备注').fill('草稿备注');
+    await page.getByRole('link', { name: '商品管理', exact: true }).click();
+    await page.getByRole('link', { name: '采购预订', exact: true }).click();
+    await page.getByRole('link', { name: '本店库存', exact: true }).click();
+    await expect(muse.getByLabel('添加库存')).toHaveValue(secretDraft);
+    await expect(muse.getByLabel('发货备注')).toHaveValue('草稿备注');
+    assert.equal(await page.evaluate(() => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event); return event.defaultPrevented;
+    }), true, 'leaving the admin session warns about unsaved private input');
+    assert.equal(await page.evaluate(text => JSON.stringify([localStorage, sessionStorage]).includes(text), secretDraft), false);
+    await muse.getByLabel('发货备注').fill('');
 
     // Paste a batch; an exact repeat is skipped.
     await muse.getByLabel('添加库存').fill('first@example.invalid | pw1\n\nsecond@example.invalid | pw2\nfirst@example.invalid | pw1\n');
@@ -140,6 +160,25 @@ const MUSE = '2000000000002:1';
     await expect(chip).toHaveText('现货 1');
     await chip.click();
     await expect(page).toHaveURL(`${base}/admin/shop?view=inventory`);
+
+    // Byte-bounded imports: a failed later batch preserves only the pending lines.
+    const bulk = Array.from({ length: 400 }, (_, index) => `https://example.invalid/redeem/${index}?token=${'测试"\\'.repeat(40)}`);
+    await muse.getByLabel('添加库存').fill(bulk.join('\n'));
+    const before = units.filter(unit => unit.sku === MUSE).length;
+    failAdd = addRequests + 2;
+    await muse.getByRole('button', { name: '添加 400 件到库存', exact: true }).click();
+    await expect(panel.getByRole('alert')).toContainText('剩余输入已保留');
+    const remaining = (await muse.getByLabel('添加库存').inputValue()).split('\n');
+    assert.ok(remaining.length > 0 && remaining.length < 400);
+    assert.equal(units.filter(unit => unit.sku === MUSE).length, before + 400 - remaining.length);
+    await page.getByRole('link', { name: '商品管理', exact: true }).click();
+    await page.getByRole('link', { name: '本店库存', exact: true }).click();
+    await expect(muse.getByLabel('添加库存')).toHaveValue(remaining.join('\n'));
+    failAdd = 0;
+    await muse.getByRole('button', { name: `添加 ${remaining.length} 件到库存`, exact: true }).click();
+    await expect(muse.getByLabel('添加库存')).toHaveValue('');
+    assert.equal(units.filter(unit => unit.sku === MUSE).length, before + 400);
+    assert.equal(new Set(units.filter(unit => unit.sku === MUSE).map(unit => unit.line)).size, before + 400);
 
     // The storefront sells own stock and shows how much there is.
     const shopper = await browser.newPage({ viewport: { width: 390, height: 844 } });

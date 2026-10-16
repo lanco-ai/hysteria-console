@@ -6,7 +6,7 @@ import { priceCents, shopRequest } from './catalog';
 type Quote = { price_cents: number; stock: number | null; in_stock: boolean; quoted_at: number };
 type Product = { id: string; title: string; quote?: Quote | null };
 type Job = { id: string; title: string; quantity: number; trigger_price_cents: number; expires_at: number; status: string; reason: string; order_id: string | null; amount_cents: number | null; delivered_count: number; checked_at: number };
-type Overview = { revision: number; enabled: boolean; scheduler_enabled: boolean; balance_cents: number | null; balance_at: number | null; balance_error: string; products: Product[]; jobs: Job[] };
+type Overview = { supplier?: { name: string; site: string }; revision: number; enabled: boolean; scheduler_enabled: boolean; balance_cents: number | null; balance_at: number | null; balance_error: string; products: Product[]; jobs: Job[] };
 const STATUS: Record<string, string> = { draft: '草稿', waiting: '等待到货', paused: '已暂停', submitting: '提交中', uncertain: '结果待核实', pending: '等待交付', paid: '已付款 · 等待交付', delivered: '采购完成', failed: '供应商订单失败', cancelled: '已取消', expired: '已到期' };
 const REASON: Record<string, string> = { stock_low: '库存不足，等待数量齐全后一次购买。', price_high: '当前价格高于触发单价，已暂停。', balance_low: '供应商余额不足，已暂停。', source_disabled: '来源已关闭；开启来源后仍需手动启用预订。', source_changed: '来源已删除或重新添加，请重新创建预订。', supplier_unavailable: '供应商暂不可用，稍后重新检查。', credentials_unavailable: '供应商凭据不可用，请检查来源设置。', product_changed: '商品或交付方式发生变化，已暂停。', invalid_response: '供应商返回内容异常，尚未确认交付。', rate_limited: '供应商限制请求频率，稍后重新检查。', stock_changed: '供应商库存发生变化。', result_uncertain: '可能已扣款，请到供应商核对订单。系统不会再次下单，请勿重复创建相同预订。', price_changed: '实际扣款高于提交前的价格条件，请核对供应商订单。', manual: '' };
 // Still owned by the scheduler or awaiting the merchant; the rest is history.
@@ -116,7 +116,7 @@ export function ShopProcurement({ unsavedProducts = false }: { unsavedProducts?:
       <div className="shop-procurement-layout">
         <div className="shop-procurement-side">
           <section className="shop-procurement-card shop-procurement-balance" aria-label="供应商余额">
-            <div><span>ProdSeller 余额</span><strong>{data.balance_cents == null ? '—' : usd(data.balance_cents)}</strong>
+            <div><span>{data.supplier?.name ?? '供应商'} 余额</span><strong>{data.balance_cents == null ? '—' : usd(data.balance_cents)}</strong>
               <small>{data.balance_at ? `查询于 ${when(data.balance_at)}` : '尚未查询'}{data.balance_error ? ' · 查询未成功，显示上次余额' : ''}</small></div>
             <button className="btn btn-secondary" type="button" disabled={busy || !data.enabled} onClick={() => void request('balance', {})}>刷新余额和报价</button>
           </section>
@@ -161,7 +161,7 @@ export function ShopProcurement({ unsavedProducts = false }: { unsavedProducts?:
               {job.status === 'waiting' ? <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(job, 'pause')}>暂停</button> : null}
               {['draft', 'waiting', 'paused'].includes(job.status) ? <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(job, 'cancel')}>取消预订</button> : null}
               {job.status === 'delivered' ? <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => revealed[job.id] ? setRevealed(old => { const next = { ...old }; delete next[job.id]; return next; }) : void act(job, 'reveal')}>{revealed[job.id] ? '隐藏交付内容' : `查看交付内容（${job.delivered_count} 件）`}</button> : null}
-              {['uncertain', 'failed'].includes(job.status) ? <a className="btn btn-secondary" href="https://prodseller.com/" target="_blank" rel="noopener noreferrer">前往供应商核对 ↗</a> : null}
+              {['uncertain', 'failed'].includes(job.status) && data.supplier?.site ? <a className="btn btn-secondary" href={data.supplier.site} target="_blank" rel="noopener noreferrer">前往供应商核对 ↗</a> : null}
             </div>
             {confirming?.id === job.id ? <div className="shop-procurement-confirm" ref={confirmationRef} tabIndex={-1} role="group" aria-label="确认启用预订">
               <h3>启用 {confirming.title} · {confirming.quantity} 件</h3>

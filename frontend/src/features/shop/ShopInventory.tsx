@@ -13,6 +13,36 @@ const when = (timestamp: number) => new Date(timestamp * 1000).toLocaleString('z
 const token = () => crypto.randomUUID().replaceAll('-', '');
 const linesOf = (text: string) => text.split('\n').map(line => line.trim()).filter(Boolean);
 
+// Owned by the common admin page: navigation preserves drafts and pending request
+// tokens in memory only. Revealed accounts stay in the inventory view and are discarded.
+export function useInventorySession() {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const locked = useRef(false);
+  const pending = useRef<Record<string, string>>({});
+  const dirty = busy || [...Object.values(drafts), ...Object.values(notes)].some(value => value.trim());
+  useEffect(() => {
+    if (!dirty) return;
+    const unload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', unload);
+    return () => window.removeEventListener('beforeunload', unload);
+  }, [dirty]);
+  return { drafts, setDrafts, notes, setNotes, busy, setBusy, locked, pending };
+}
+
+function nextBatch(sku: string, revision: number, lines: string[]) {
+  const batch: string[] = [];
+  const encoder = new TextEncoder();
+  for (const line of lines) {
+    const candidate = [...batch, line];
+    if (encoder.encode(JSON.stringify({ revision, sku, lines: candidate })).length > 65536) break;
+    batch.push(line);
+  }
+  if (!batch.length) throw new Error('单条库存内容过长，请缩短后重试。');
+  return batch;
+}
+
 // What a buyer receives with a unit: the line itself and how to take the account over.
 const MUSE_TAKEOVER = [
   '到账后请立即修改：',
@@ -27,16 +57,11 @@ export function deliveryText(product: StockedProduct, line: string): string {
 }
 
 // 商品管理 → 本店库存: the merchant's own accounts and links for Gemini and Muse AI.
-export function ShopInventory({ products, loading = false, unsavedProducts = false, onCounts }: { products: StockedProduct[]; loading?: boolean; unsavedProducts?: boolean; onCounts?: (stock: Record<string, number>) => void }) {
+export function ShopInventory({ session, products, loading = false, unsavedProducts = false, onCounts }: { session: ReturnType<typeof useInventorySession>; products: StockedProduct[]; loading?: boolean; unsavedProducts?: boolean; onCounts?: (stock: Record<string, number>) => void }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [busy, setBusy] = useState(false);
-  const locked = useRef(false);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [notes, setNotes] = useState<Record<string, string>>({});
-  // One token per pending delivery: a retried request returns the same unit.
-  const pending = useRef<Record<string, string>>({});
+  const { busy, setBusy, locked, drafts, setDrafts, notes, setNotes, pending } = session;
   const [delivered, setDelivered] = useState<{ key: string; item: Delivered } | null>(null);
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -49,7 +74,7 @@ export function ShopInventory({ products, loading = false, unsavedProducts = fal
     load();
     const timer = window.setInterval(load, 30000);
     return () => { active = false; window.clearInterval(timer); };
-  }, []);
+  }, [busy, locked]);
   // 商品管理 shows the same counts beside each SKU without reading everything again.
   useEffect(() => {
     if (data && onCounts) onCounts(Object.fromEntries(Object.entries(data.skus).flatMap(([key, entry]) => entry?.stock.length ? [[key, entry.stock.length]] : [])));
@@ -71,16 +96,34 @@ export function ShopInventory({ products, loading = false, unsavedProducts = fal
     finally { locked.current = false; setBusy(false); }
   }
   async function add(product: StockedProduct) {
-    if (!data) return;
+    if (!data || locked.current) return;
     const lines = linesOf(drafts[product.key] ?? '');
     if (!lines.length) { setError('请先粘贴要添加的账号或链接，每行一件。'); return; }
     if (lines.length > 500) { setError('每次最多添加 500 件，请分批添加。'); return; }
-    const result = await post<AddResult>('add', { revision: data.revision, sku: product.key, lines });
-    if (result) {
-      setData(result);
-      setDrafts(old => ({ ...old, [product.key]: '' }));
-      setNotice(`${product.title}：已添加 ${result.added} 件${result.skipped ? `，跳过 ${result.skipped} 件重复` : ''}。`);
-    }
+    if (lines.some(line => [...line].length > 2000 || /[\p{Cc}\p{Cf}\p{Cs}\p{Zl}\p{Zp}]/u.test(line))) { setError('每行最多 2000 个字，且不能包含控制字符。'); return; }
+    locked.current = true; setBusy(true); setError(''); setNotice('');
+    let added = 0, skipped = 0, done = 0;
+    try {
+      // Fetch the current revision on every attempt, including a retry after a
+      // lost response. The server skips identical lines rather than importing twice.
+      let current = await shopRequest<Overview>('admin/inventory');
+      while (done < lines.length) {
+        const batch = nextBatch(product.key, current.revision, lines.slice(done));
+        const result = await shopRequest<AddResult>('admin/inventory/add', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ revision: current.revision, sku: product.key, lines: batch }),
+        });
+        current = result; added += result.added; skipped += result.skipped; done += batch.length;
+        setData(result);
+        // A partial failure keeps only the unacknowledged lines, including the
+        // uncertain batch, so retrying is safe and never loses the remaining draft.
+        setDrafts(old => ({ ...old, [product.key]: lines.slice(done).join('\n') }));
+        setNotice(`已处理 ${done} / ${lines.length} 件…`);
+      }
+      setNotice(`${product.title}：已添加 ${added} 件${skipped ? `，跳过 ${skipped} 件重复` : ''}。`);
+    } catch (reason) {
+      setError(`已确认处理 ${done} 件，剩余输入已保留。${(reason as Error).message}`);
+    } finally { locked.current = false; setBusy(false); }
   }
   async function deliver(product: StockedProduct) {
     const request = pending.current[product.key] ?? token();
