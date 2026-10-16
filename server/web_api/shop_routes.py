@@ -23,6 +23,7 @@ from .shop_store import Conflict, ShopStore
 from .shop_sms_source import fetch_catalog as fetch_sms_catalog
 from .shop_sms_gateway import register_sms_routes
 from .shop_procurement_routes import register_procurement_routes
+from .shop_inventory_routes import register_inventory_routes
 
 
 def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabled=False):
@@ -183,3 +184,4 @@ def register_shop_routes(app, services, dispatch, *, store=None, scheduler_enabl
     # Legacy store-only rollbacks do not expose the state-path contract.
     if hasattr(store, 'settings_path') and hasattr(store, 'prodseller_fetcher'):
         register_procurement_routes(app, store, guard, body, reply, scheduler_enabled=scheduler_enabled)
+        register_inventory_routes(app, store, guard, body, reply)

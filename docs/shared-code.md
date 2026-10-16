@@ -27,7 +27,7 @@
 | `frontend/src/features/plans/PlanReminderCenter.tsx` | 今日计划提醒（调用工作台 + AI 的 `/api/plans/reminders`） |
 | `frontend/src/features/agent/*` | LancoAgent 浮动助手（调用网络服务的 `/api/v1/admin/rules`、`/api/v1/admin/agent/*`） |
 
-侧边栏菜单（`frontend/src/shared/navigation.ts`）按服务独立维护，不能再同步成全站菜单。各站只展示自己的页面；商品后台侧栏仅提供商品管理、采购预订和商城首页，短信接码保留在公开门户；商品门户的后台按钮进入商品管理，开源发现属于工作台。`CodexShell.tsx` / `PortalShell.tsx` 的菜单和组件挂载同样按服务裁剪，计划提醒只在工作台挂载。
+侧边栏菜单（`frontend/src/shared/navigation.ts`）按服务独立维护，不能再同步成全站菜单。各站只展示自己的页面；商品后台侧栏仅提供商品管理、本店库存、采购预订和商城首页，短信接码保留在公开门户；商品门户的后台按钮进入商品管理，开源发现属于工作台。`CodexShell.tsx` / `PortalShell.tsx` 的菜单和组件挂载同样按服务裁剪，计划提醒只在工作台挂载。
 
 ## 测试与工具
 

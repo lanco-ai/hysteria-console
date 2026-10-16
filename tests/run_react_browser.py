@@ -12,6 +12,7 @@ BROWSER_TESTS = (
     'react_shop_browser.cjs',
     'react_shop_sources_browser.cjs',
     'react_shop_admin_layout_browser.cjs',
+    'react_shop_inventory_browser.cjs',
     'react_shop_procurement_browser.cjs',
     'react_shop_promo_browser.cjs',
     'react_shop_offer_browser.cjs',

@@ -79,7 +79,7 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
       </header>
       {plans.length > 1 ? <nav className="shop-plans" aria-label={`${product.category} 其他商品`}>{plans.map((item, index) => <a key={item.id} href={`/?product=${encodeURIComponent(item.id)}`} aria-current={item.id === product.id ? 'page' : undefined} data-shop-step={index < position ? 'previous' : 'next'}>{names.get(item.id)}</a>)}</nav> : null}
       <section className="shop-detail-buy" aria-label="购买选项">
-        <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{variant ? <PromoPrice product={product} variant={variant}/> : null}</div>
+        <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{variant ? <PromoPrice product={product} variant={variant}/> : null}{variant?.available && variant.quantity ? <span className="shop-detail-stock">现货 {variant.quantity} 件</span> : null}</div>
         <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <button key={item.id} type="button" aria-pressed={variantId === item.id} onClick={() => setSelection(item.id)}>{item.label}{!item.available ? ' · 暂不可购买' : ''}</button>)}</fieldset>
         <div className="shop-detail-quantity"><span>购买数量</span><Quantity value={quantity} onChange={setQuantity}/><small>每次 1–99 件</small></div>
         {!validCount ? <p role="alert">请输入 1–99 的整数数量。</p> : null}

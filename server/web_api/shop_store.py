@@ -589,6 +589,9 @@ class ShopStore:
         self.bookmarked_sources = bookmarked_sources
         self.stats = ShopStats(self.path.with_name('stats.json'), clock)
         self.sms_sales = ShopSmsSales(self.path.with_name('sms-sales.json'))
+        # The merchant's own stock (shop_inventory.ShopInventory), attached by the routes;
+        # without it every product's availability is its supplier's.
+        self.inventory = None
 
     def _feed_ids(self):
         return tuple(
@@ -754,12 +757,21 @@ class ShopStore:
             for source in effective.values()
             if source['last_success'] is not None
         ]
+        stock = self.inventory.counts() if self.inventory is not None else {}
+        automatic_sold = {SMS_PRODUCT_ID: self.sms_sales.read()}
+        for key, count in stock.items():
+            if count['delivered']:
+                product_id = key.split(':')[0]
+                automatic_sold[product_id] = automatic_sold.get(product_id, 0) + count['delivered']
         return {
             **settings,
             # Visit counts, for the merchant as for the storefront.
             'stats': self.stats.read(),
-            # Read-only automatic counts are independent from revisioned manual settings.
-            'automatic_sold': {SMS_PRODUCT_ID: self.sms_sales.read()},
+            # Read-only automatic counts are independent from revisioned manual settings;
+            # units delivered from the merchant's own stock count as sold.
+            'automatic_sold': automatic_sold,
+            # Units in the merchant's own stock per SKU: counts only, never the lines.
+            'inventory': {key: count['stock'] for key, count in stock.items() if count['stock']},
             'products': products,
             # The feed and storefront category of each item, so the admin page needs no list of feeds.
             'items': [
@@ -839,8 +851,10 @@ class ShopStore:
                     'label': row['label'],
                     'price_cents': merchant['price_cents'],
                     'promo_price_cents': merchant.get('promo_price_cents'),
-                    'available': row['available'] and not state['sources'][provider]['is_stale'],
-                    'quantity': None,
+                    # Units in the merchant's own stock sell whatever the supplier has.
+                    'available': bool(state['inventory'].get(row['key']))
+                    or (row['available'] and not state['sources'][provider]['is_stale']),
+                    'quantity': state['inventory'].get(row['key']) or None,
                     'sales': None,
                 }
             )

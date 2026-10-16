@@ -1,5 +1,6 @@
 // promo_price_cents: an 优惠价 below the price, for buyers it applies to; badge: its name (学生价…), also shown before the title.
-export type Variant = { id: string; label: string; price_cents: number; promo_price_cents?: number | null; available: boolean; quantity: null; sales: null };
+// quantity: units in the merchant's own stock (本店库存), when there are any.
+export type Variant = { id: string; label: string; price_cents: number; promo_price_cents?: number | null; available: boolean; quantity: number | null; sales: null };
 // ends_at: when a limited-time service leaves the shop (seconds).
 export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; badge?: string; sold?: number; views?: number; ends_at?: number; variants: Variant[] };
 export type Catalog = { currency: 'CNY'; telegram: string; wechat?: string; stats?: { views: number; sold: number }; products: Product[]; status: 'ready' | 'stale' | 'unavailable'; updated_at: number | null };

@@ -402,3 +402,5 @@ h1 > .shop-promo-badge { margin-right: 10px; vertical-align: 4px; }
 /* A limited-time service's last day, beside its title. */
 .shop-ends-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #f3c9bf; border-radius: 5px; background: #fff3ef; color: #b23c22; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
 .shop-detail-heading .shop-ends-badge { padding: 4px 9px; font-size: 13px; }
+/* Units in the merchant's own stock, under the price. */
+.shop-detail-stock { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 9px; border: 1px solid #b7ddd0; border-radius: var(--radius-pill); background: #edf8f3; color: #218364; font-size: 13px; font-weight: 600; }

@@ -19,6 +19,7 @@ export const navigationGroups: NavigationGroup[] = [
     label: '商城',
     items: [
       { key: 'shop', href: '/admin/shop', label: '商品管理', icon: 'shop' },
+      { key: 'inventory', href: '/admin/shop?view=inventory', label: '本店库存', icon: 'logs' },
       { key: 'procurement', href: '/admin/shop?view=procurement', label: '采购预订', icon: 'calendar' },
     ],
   },

@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { AdminShell } from '../../shared/AdminShell';
 import { money, priceCents, shopRequest } from './catalog';
 import { isNoticeProduct } from './ShopNotice';
 import { ShopProcurement } from './ShopProcurement';
+import { ShopInventory, type StockedProduct } from './ShopInventory';
 
 // promo_price_cents: the 优惠价 (学生价, 限时价…) under the selling price, for the buyers it applies to.
 type Setting = { price_cents: number | null; published: boolean; promo_price_cents?: number | null };
@@ -16,7 +17,7 @@ type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; can_read?: boolean; site?: string; supplier?: string; covers?: string };
 type RemovedSource = Pick<SourceStatus, 'supplier' | 'covers' | 'site' | 'can_read'> & { can_add: boolean };
-type Merchant = { removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type Merchant = { inventory?: Record<string, number>; removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '短信接码' | 'VPN';
@@ -33,6 +34,8 @@ const EMPTY_DISPLAY = { badge: '', sold: '' };
 const BADGES = ['学生价', '限时价', '推广价', '新人价'];
 const CUSTOM_BADGE = '__custom';
 const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
+// Brands the merchant also stocks with own accounts and links (本店库存).
+const STOCKED = new Set<Brand>(['Gemini', 'Muse AI']);
 
 // The feed and category come from the server, which knows its feeds; this page does not.
 function providerOf(item: SourceItem | undefined) { return item?.provider ?? 'gpt'; }
@@ -144,6 +147,8 @@ export function ShopAdminPage() {
     setBrand(value); setQuery('');
     try { localStorage.setItem(BRAND_KEY, value); } catch { /* Storage unavailable: keep the choice for this visit. */ }
   }
+  // 本店库存 reports its counts; only the per-SKU numbers change, unsaved inputs stay.
+  const updateStock = useCallback((stock: Record<string, number>) => { setState(old => old && { ...old, inventory: stock }); }, []);
   function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setSourceDraft(sourcesFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setOpenProducts(old => new Set([...old].filter(id => value.items.some(item => item.product_id === id)))); setDirty(false); }
   useEffect(() => {
     let active = true;
@@ -358,8 +363,16 @@ export function ShopAdminPage() {
     <p role="status" className="shop-admin-feedback">{notice}</p>
   </>;
 
-  // 采购预订 is its own page; product edits stay in this component while it shows.
-  if (new URLSearchParams(window.location.search).get('view') === 'procurement') {
+  // 本店库存 and 采购预订 are their own pages; product edits stay in this component while they show.
+  const page = new URLSearchParams(window.location.search).get('view');
+  if (page === 'inventory') {
+    const stocked: StockedProduct[] = items.filter(item => STOCKED.has(brandOf(item))).map(item => ({
+      key: item.key, productId: item.product_id, title: item.public_title ?? item.title, label: item.label, category: brandOf(item),
+      priceCents: saved[item.key]?.price_cents ?? null, published: Boolean(saved[item.key]?.published), supplierAvailable: item.available,
+    }));
+    return <AdminShell active="inventory" pageTitle="本店库存" subtitle="自有账号与链接 · 有现货即可下单"><ShopInventory products={stocked} loading={!state} unsavedProducts={dirty} onCounts={updateStock}/></AdminShell>;
+  }
+  if (page === 'procurement') {
     return <AdminShell active="procurement" pageTitle="采购预订" subtitle="ProdSeller 余额采购 · 买满即停"><ShopProcurement unsavedProducts={dirty}/></AdminShell>;
   }
   return <AdminShell active="shop" pageTitle="商品管理" topbarExtra={<div className="shop-admin-actions"><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void refresh()}>刷新来源</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void reload()}>重新读取</button></div>}>
@@ -501,6 +514,7 @@ export function ShopAdminPage() {
                         return <article key={item.key} className={`shop-admin-row${changed(item.key) ? ' is-changed' : ''}${item.available ? '' : ' is-soldout'}`} hidden={!visible(item)}>
                           <div className="shop-admin-spec">
                             <strong>{item.label}</strong>
+                            {state.inventory?.[item.key] ? <a className="badge shop-admin-stock" href="/admin/shop?view=inventory" title="本店库存的现货件数">现货 {state.inventory[item.key]}</a> : null}
                             {(item.available || !product.enabled) && !changed(item.key) ? null : <small>{product.enabled && !item.available ? <span className="badge warn">来源售罄</span> : null}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
                           </div>
                           <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
