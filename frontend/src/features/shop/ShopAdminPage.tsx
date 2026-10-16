@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState } from 'react';
 import { AdminShell } from '../../shared/AdminShell';
 import { money, priceCents, shopRequest } from './catalog';
 import { isNoticeProduct } from './ShopNotice';
+import { ShopProcurement } from './ShopProcurement';
 
 // promo_price_cents: the 优惠价 (学生价, 限时价…) under the selling price, for the buyers it applies to.
 type Setting = { price_cents: number | null; published: boolean; promo_price_cents?: number | null };
@@ -127,6 +128,7 @@ export function ShopAdminPage() {
   const [names, setNames] = useState<LocalNames>({ products: {}, variants: {} });
   const [sourceDraft, setSourceDraft] = useState<Record<string, boolean>>({});
   const [openSources, setOpenSources] = useState(false);
+  const [openProcurement, setOpenProcurement] = useState(false);
   // Products whose label is being written by hand rather than picked from BADGES.
   const [customBadges, setCustomBadges] = useState<Set<string>>(() => new Set());
   // Products whose settings (label, sold count, description) are open.
@@ -387,7 +389,9 @@ export function ShopAdminPage() {
                 : <span key={provider} className={chipClass} title={status}>{body}</span>;
             })}
             <button type="button" className="shop-admin-source-toggle" aria-expanded={openSources} aria-controls="shop-admin-source-settings" onClick={() => setOpenSources(value => !value)}>来源设置{sourceChanges ? <span aria-hidden="true" className="shop-admin-source-dirty"/> : null}</button>
+            <button type="button" className="shop-admin-source-toggle" aria-expanded={openProcurement} aria-controls="shop-admin-procurement" onClick={() => setOpenProcurement(value => !value)}>采购预订</button>
           </div>
+          {openProcurement ? <div id="shop-admin-procurement"><ShopProcurement/></div> : null}
           {openSources ? <div className="shop-admin-source-settings" id="shop-admin-source-settings" role="group" aria-label="来源读取设置">
             <p>停用并保存后停止读取，该来源商品会从前台和下方管理列表隐藏，已保存的价格、文案和上架设置会保留。本店商品独立管理。</p>
             <div className="shop-admin-source-options">{Object.entries(state.sources ?? { gpt: state }).filter(([provider]) => provider !== 'local').map(([provider, source]) => <div key={provider} className={`shop-admin-source-option${sourceChanged(provider) ? ' is-changed' : ''}`}>
@@ -536,7 +540,7 @@ export function ShopAdminPage() {
             })}
           </section>;
         })}</div>
-        <div className={`shop-admin-savebar${error ? ' is-error' : dirty ? ' is-dirty' : ''}`}>
+        <div className={`shop-admin-savebar${error ? ' is-error' : dirty ? ' is-dirty' : ''}${openProcurement && !dirty && !error ? ' is-procurement' : ''}`}>
           <div className="shop-admin-savebar-text">
             {feedback}
             {error || notice ? null : <span className="shop-note">{dirty ? `有尚未保存的修改${pending.length ? `：${pending.join('、')}` : ''}。` : '设置已与服务器同步。'}</span>}
