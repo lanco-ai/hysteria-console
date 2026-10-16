@@ -7,6 +7,8 @@ import tarfile
 import time
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -125,6 +127,7 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
         'shop/lorry.json': '{"api_key":"k","api_secret":"s"}',
         'shop/stats.json': '{"schema_version":1}',
         'shop/sms-sales.json': '{"schema_version":1,"sold":0,"orders":[]}',
+        'shop/procurement.json': '{"schema":1,"revision":3,"jobs":[{"status":"delivered","keys":["fictional-private-delivery"]}]}',
         'shop/source.json': '{"items":[]}',
         'video/settings.json': '{}',
         'video/workflows.json': '{"workflows":[]}',
@@ -148,7 +151,7 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
 
     names, _ = backed_up()
     # Settings, the merchant's prices and copy, the reseller key and the user's video work are kept.
-    for name in ('ai/services.json', 'shop/source-merchant.json', 'shop/prodseller.key', 'shop/lorry.json', 'shop/stats.json', 'shop/sms-sales.json', 'video/settings.json',
+    for name in ('ai/services.json', 'shop/source-merchant.json', 'shop/prodseller.key', 'shop/lorry.json', 'shop/stats.json', 'shop/sms-sales.json', 'shop/procurement.json', 'video/settings.json',
                  'video/workflows.json', 'video/runs.json', 'video/assets/upload-1.png', 'chat/settings.json'):
         assert name in names, name
     # Supplier caches are re-fetched, and migration leftovers and locks are not state.
@@ -161,10 +164,11 @@ def test_backup_includes_ai_shop_video_and_chat_settings(tmp_path):
     assert 'HY2_BACKUP_ASSETS_MAX_BYTES' in warning
 
 
-def test_backup_restores_shop_sms_sales_exactly(tmp_path):
+@pytest.mark.parametrize('filename', ['sms-sales.json', 'procurement.json'])
+def test_backup_restores_shop_private_state_exactly(tmp_path, filename):
     # The shop service owns the file's meaning; the backup must keep it byte for byte.
     hy_dir = tmp_path / 'hysteria'
-    path = hy_dir / 'state/shop/sms-sales.json'
+    path = hy_dir / 'state/shop' / filename
     path.parent.mkdir(parents=True)
     content = json.dumps({'orders': {'123': 1, '124': 1}, 'count': 2}).encode()
     path.write_bytes(content)
@@ -176,7 +180,7 @@ def test_backup_restores_shop_sms_sales_exactly(tmp_path):
         capture_output=True, text=True, env=isolated_backup_env(tmp_path, hy_dir),
     )
     with tarfile.open(result.stdout.strip(), 'r:gz') as archive:
-        member, = [entry for entry in archive.getmembers() if entry.name.endswith('/state/shop/sms-sales.json')]
+        member, = [entry for entry in archive.getmembers() if entry.name.endswith('/state/shop/' + filename)]
         assert archive.extractfile(member).read() == content
         assert member.mode & 0o777 == 0o600
 
