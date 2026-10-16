@@ -217,6 +217,7 @@ for p in \
   "$HY_DIR/state/shop/stats.json" \
   "$HY_DIR/state/shop/sms-sales.json" \
   "$HY_DIR/state/shop/procurement.json" \
+  "$HY_DIR/state/shop/inventory.json" \
   "$HY_DIR/state/video/settings.json" \
   "$HY_DIR/state/video/workflows.json" \
   "$HY_DIR/state/video/runs.json" \
