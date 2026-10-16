@@ -17,12 +17,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class Echo(BaseHTTPRequestHandler):
     def do_GET(self):
+        length = int(self.headers.get('Content-Length', '0'))
+        received = self.rfile.read(length) if length else b''
         body = json.dumps({'upstream': self.server.owner, 'method': self.command,
                            'port': self.headers.get('X-Forwarded-Port'),
-                           'origin': self.headers.get('Origin')}).encode()
-        length = int(self.headers.get('Content-Length', '0'))
-        if length:
-            self.rfile.read(length)
+                           'origin': self.headers.get('Origin'),
+                           'received_bytes': len(received)}).encode()
         self.send_response(200)
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
@@ -30,17 +30,18 @@ class Echo(BaseHTTPRequestHandler):
             self.wfile.write(body)
 
     do_POST = do_GET
+    do_PUT = do_GET
     do_HEAD = do_GET
 
     def log_message(self, *args):
         pass
 
 
-def request(port, path, method='GET'):
+def request(port, path, method='GET', payload=None):
     conn = http.client.HTTPSConnection('127.0.0.1', port,
                                       context=ssl._create_unverified_context(), timeout=3)
     origin = 'https://ports.test' + (f':{port}' if port != 19444 else '')
-    conn.request(method, path, headers={'Host': origin.removeprefix('https://'), 'Origin': origin})
+    conn.request(method, path, body=payload, headers={'Host': origin.removeprefix('https://'), 'Origin': origin})
     response = conn.getresponse()
     data = response.read()
     result = response.status, response.getheader('Location'), json.loads(data) if response.status == 200 and data else None
@@ -73,6 +74,15 @@ def test_three_https_sites_preserve_login_api_and_download_boundaries(tmp_path, 
         config = tmp_path / 'nginx.conf'
         config.write_text(f'''daemon off; master_process off; pid {tmp_path}/pid;
 error_log {tmp_path}/nginx.log; events {{}} http {{
+# -p does not override nginx's compiled absolute temporary paths. Keep every
+# cache here so a root test cannot chown the live server's directories.
+client_body_temp_path {tmp_path}/body;
+proxy_temp_path {tmp_path}/proxy;
+fastcgi_temp_path {tmp_path}/fastcgi;
+uwsgi_temp_path {tmp_path}/uwsgi;
+scgi_temp_path {tmp_path}/scgi;
+client_body_buffer_size 1k;
+client_body_in_file_only clean;
 log_format hy2_no_args "$request_method $uri $status";
 limit_conn_zone $binary_remote_addr zone=hy2_panel_conn:1m;
 limit_req_zone $binary_remote_addr zone=hy2_panel_req:1m rate=10000r/s;
@@ -107,6 +117,11 @@ limit_req_zone $binary_remote_addr zone=hy2_panel_req:1m rate=10000r/s;
                     assert (status,location) == (302,expected)
                     assert request(target,urlsplit(location).path+'?'+urlsplit(location).query)[2]['upstream'] == owner
                 assert request(port,path,'POST')[0] == 200, 'do not redirect legacy write requests'
+        # Exercise disk buffering too: small GETs missed the live permission failure.
+        payload = b'x' * 32768
+        status, _, body = request(19444, '/api/v1/shop/admin', 'PUT', payload)
+        assert status == 200 and body['upstream'] == 8084
+        assert body['received_bytes'] == len(payload)
         assert request(19444,'/')[2]['upstream'] == 8084
         assert request(8444,'/')[:2] == (302,'https://ports.test:8444/admin')
         assert request(8445,'/')[:2] == (302,'https://ports.test:8445/admin/plans')
