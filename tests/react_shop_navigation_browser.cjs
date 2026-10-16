@@ -10,7 +10,7 @@ function fixture() {
   return { currency: 'CNY', telegram: '', wechat: 'demo_shop', status: 'ready', updated_at: 1000,
     products: plans.map((plan, i) => ({ id: String(i + 1), title: `ChatGPT ${plan}`, category: 'GPT', badge: '限时价',
       description: '使用自己的账号兑换。\n\n' + '商品说明，请在购买前确认适用条件。\n\n'.repeat(12), after_sales: '质保30天，请联系本店。',
-      variants: [{ id: `${i + 1}:1`, label: '一个月', price_cents: 12800, promo_price_cents: 11800, available: true },
+      variants: [{ id: `${i + 1}:1`, label: '一个月', price_cents: 12800, promo_price_cents: 12300, available: true },
         { id: `${i + 1}:2`, label: '其他规格', price_cents: 12900, available: true }],
     })).concat([{ id: '9', title: 'Claude Pro', category: 'Claude', badge: '', description: '', after_sales: '',
       variants: [{ id: '9:1', label: '标准规格', price_cents: 15300, available: true }] }]),

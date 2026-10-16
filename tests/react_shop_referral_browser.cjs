@@ -9,7 +9,7 @@ function fixture() {
     products: [
       { id: '1', title: 'ChatGPT Plus', category: 'GPT', badge: '限时价', variants: [
         { id: '1:4', label: '其他规格', price_cents: 12900, available: true },
-        { id: '1:1', label: '一个月', price_cents: 12800, promo_price_cents: 11800, available: true },
+        { id: '1:1', label: '一个月', price_cents: 12800, promo_price_cents: 12300, available: true },
       ] },
       { id: '2', title: 'ChatGPT Pro 200', category: 'GPT', variants: [
         { id: '2:1', label: '一个月', price_cents: 120000, available: true },
@@ -37,8 +37,9 @@ function fixture() {
       await page.goto(base);
       const banner = page.locator('.shop-referral-banner');
       const teaser = page.locator('.shop-referral-teaser');
-      await expect(banner).toContainText('每推荐 1 人购买，续费减 ¥1，最低 ¥113/月');
+      await expect(banner).toContainText('每推荐 1 人购买，续费减 ¥1，最低 ¥118/月');
       await expect(teaser).toHaveCount(1);
+      await expect(page.locator('body')).not.toContainText('¥113');
       await expect(teaser).toContainText('每推荐 1 人购买，后续每月续费减 ¥1');
       const card = page.locator('.shop-product-row').filter({ has: teaser });
       await page.evaluate(() => document.fonts.ready);
@@ -56,25 +57,33 @@ function fixture() {
       await expect(rules).toBeVisible();
       await expect(rules).toBeFocused();
       await expect(page.getByRole('button', { name: '一个月', exact: true })).toHaveAttribute('aria-pressed', 'true');
-      await expect(rules).toContainText('后续每月续费价格累计降低 ¥1，最低 ¥113/月');
+      await expect(rules).toContainText('后续每月续费价格累计降低 ¥1，最低 ¥118/月');
       await expect(page.locator('body')).not.toContainText('返利');
+      await expect(rules.locator('.shop-referral-base')).toHaveText('月订阅 ¥123');
+      await expect(rules.locator('.shop-referral-examples > div')).toHaveText(['推荐 1 人¥122/月', '推荐 5 人及以上¥118/月']);
       await expect(rules).toContainText('续费优惠由商家确认');
       await expect(page.getByTestId('purchase-total')).toHaveText('¥128.00');
-      await expect(page.locator('.shop-detail-price .shop-promo-price')).toHaveText('限时价：¥118.00');
+      await expect(page.locator('.shop-detail-price .shop-promo-price')).toHaveText('限时价：¥123.00');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `detail fits ${width}px`);
       if (width === 390 || width === 1440) await screenshot(`referral-detail-${width}.png`);
+      await page.getByRole('button', { name: '立即购买', exact: true }).click();
+      const summary = page.getByRole('dialog', { name: '购买信息', exact: true }).getByLabel('可复制的购买信息');
+      await expect(summary).toHaveValue(/限时价.*¥123\.00/);
+      await expect(summary).not.toHaveValue(/¥118\.00/);
+      await page.keyboard.press('Escape');
       await page.getByRole('button', { name: '其他规格', exact: true }).click();
       await expect(rules).toHaveCount(0);
       await page.getByRole('button', { name: '一个月', exact: true }).click();
       await expect(rules).toBeVisible();
     }
 
-    // A stale, withdrawn, sold-out or repriced offer must not advertise ¥118
+    // A stale, withdrawn, sold-out or repriced offer must not advertise ¥123
     // or imply that all Plus products participate in this specific campaign.
     const cases = [
       value => { value.status = 'stale'; },
       value => { value.products[0].variants[1].available = false; },
-      value => { value.products[0].variants[1].promo_price_cents = 11900; },
+      value => { value.products[0].variants[1].promo_price_cents = 11800; },
+      value => { value.products[0].variants[1].promo_price_cents = 12400; },
       value => { value.products[0].variants[1].promo_price_cents = null; },
       value => { value.products[0].title = 'ChatGPT Pro 100'; },
       value => { value.products[0].id = '9'; },
@@ -89,11 +98,11 @@ function fixture() {
       await expect(page.locator('.shop-detail, .shop-empty')).toBeVisible();
       await expect(page.locator('#plus-referral')).toHaveCount(0);
     }
-    // The same confirmed ¥118 offer may later become the regular selling price.
+    // The same confirmed ¥123 offer may later become the regular selling price.
     data = fixture();
-    Object.assign(data.products[0].variants[1], { price_cents: 11800, promo_price_cents: null });
+    Object.assign(data.products[0].variants[1], { price_cents: 12300, promo_price_cents: null });
     await page.goto(base);
     await expect(page.locator('.shop-referral-banner')).toBeVisible();
-    console.log('PASS: Plus referral banner/card/detail, correct SKU and anchor, unchanged purchase pricing, unavailable/repriced/other-plan exclusions, four responsive layouts');
+    console.log('PASS: Plus referral banner/card/detail, correct SKU and anchor, ¥123 purchase price and ¥118 referral floor, unavailable/repriced/other-plan exclusions, four responsive layouts');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
