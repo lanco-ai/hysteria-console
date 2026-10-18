@@ -19,6 +19,8 @@ VPN_ID, VPN_KEY = '6000000000002', '6000000000002:1'
 STUDENT_ID, STUDENT_KEY = '6000000000003', '6000000000003:1'
 GROK_ID = '6000000000004'
 GROK_MONTH_KEY, GROK_QUARTER_KEY = f'{GROK_ID}:1', f'{GROK_ID}:2'
+BUSINESS_ID, BUSINESS_KEY = '6000000000005', '6000000000005:1'
+DISCOUNT_ID, DISCOUNT_KEY = '6000000000006', '6000000000006:1'
 
 
 async def empty_supplier():
@@ -29,7 +31,8 @@ def local_keys(now=None):
     """Store-owned rows on sale now; the student service leaves after its last day."""
     import time
     keys = [MICROSOFT_KEY, GOOGLE_KEY, VPN_KEY]
-    return keys + ([STUDENT_KEY] if (time.time() if now is None else now) <= STUDENT_ENDS_AT else []) + [GROK_MONTH_KEY, GROK_QUARTER_KEY]
+    return keys + ([STUDENT_KEY] if (time.time() if now is None else now) <= STUDENT_ENDS_AT else []) + [
+        GROK_MONTH_KEY, GROK_QUARTER_KEY, BUSINESS_KEY, DISCOUNT_KEY]
 
 
 def local_store(tmp_path, **kwargs):
@@ -48,6 +51,8 @@ def test_claude_guidance_draft_has_private_costs_and_own_copy_without_writes(tmp
             (STUDENT_KEY, '标准规格', 0),
             (GROK_MONTH_KEY, '1 个月（月卡）', 13500),
             (GROK_QUARTER_KEY, '3 个月（季卡）', 25800),
+            (BUSINESS_KEY, '标准规格', 0),
+            (DISCOUNT_KEY, '标准规格', 0),
         ]
         for row in admin['items'][:2]:
             assert row['product_id'] == PRODUCT_ID
@@ -353,7 +358,8 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
                             'local_names': {'products': {STUDENT_ID: 'GPT 学生认证'}}})
         admin = await store.admin()
         categories = {row['product_id']: row['category'] for row in admin['items']}
-        assert categories == {PRODUCT_ID: 'Claude', VPN_ID: 'VPN', STUDENT_ID: 'GPT', GROK_ID: 'Grok'}
+        assert categories == {PRODUCT_ID: 'Claude', VPN_ID: 'VPN', STUDENT_ID: 'GPT', GROK_ID: 'Grok',
+                              BUSINESS_ID: 'GPT', DISCOUNT_ID: 'GPT'}
         assert '> **服务器与域名：本店指导选购。**' in admin['products'][VPN_ID]['description']
         assert '不提供 VPN' not in admin['products'][VPN_ID]['description']
         assert '流量额度' in admin['products'][VPN_ID]['description']
@@ -427,3 +433,23 @@ def test_saved_vpn_copy_swaps_only_the_retired_line_for_the_guide_line():
     for description in ('', '本店自己的说明。', old.replace('费用自付', '费用另计')):
         saved = {'description': description, 'after_sales': ''}
         assert current_vpn_copy(saved) is saved
+
+
+def test_business_and_discount_plans_are_official_gpt_drafts_that_ask_for_eligibility(tmp_path):
+    async def run():
+        store = local_store(tmp_path, clock=lambda: 1000)
+        admin = await store.admin()
+        titles = {row['product_id']: row['public_title'] for row in admin['items']}
+        assert (titles[BUSINESS_ID], titles[DISCOUNT_ID]) == ('ChatGPT Business', 'ChatGPT 8折充值｜菲律宾区')
+        # Nothing is on sale until the merchant prices and publishes it.
+        assert (await store.public())['products'] == []
+        assert '官方' in admin['products'][BUSINESS_ID]['description']
+        assert '> **需先确认账号资格：**' in admin['products'][DISCOUNT_ID]['description']
+        skus = {key: {'price_cents': 9900, 'published': True} for key in (BUSINESS_KEY, DISCOUNT_KEY)}
+        await store.update({'revision': 0, 'telegram': 'my_shop', 'client': 3, 'skus': skus})
+        products = {item['id']: item for item in (await store.public())['products']}
+        assert {products[BUSINESS_ID]['category'], products[DISCOUNT_ID]['category']} == {'GPT'}
+        assert products[DISCOUNT_ID]['tags'] == [{'text': '官方直充'}, {'text': '8折', 'hot': True}, {'text': '需先确认资格'}]
+        assert products[BUSINESS_ID]['tags'] == [{'text': '官方渠道'}]
+
+    asyncio.run(run())

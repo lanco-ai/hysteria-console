@@ -15,7 +15,7 @@ const geminiProductIds = new Set(['2000000000001']);
 const museProductIds = new Set(['2000000000002']);
 const duolingoProductIds = new Set(['2000000000003']);
 const vpnProductIds = new Set(['6000000000002']);
-const textProductIds = new Set(['1', '2', '3', '4', '5', '6', '5000000000001', '6000000000001', '6000000000003']);
+const textProductIds = new Set(['1', '2', '3', '4', '5', '6', '5000000000001', '6000000000001', '6000000000003', '6000000000005', '6000000000006']);
 const noticeImages = [
   { alias: '/shop-notices/claude/active-subscription', src: activeSubscription, width: 1280, height: 957 },
   { alias: '/shop-notices/claude/message-restriction', src: messageRestriction, width: 2672, height: 1466 },

@@ -160,6 +160,35 @@ User ID 填错可能消耗充值凭证，无法退款。遇到延迟、失败或
 收到后请尽快使用，不支持囤货，不承诺未使用卡密永久有效。人工发货与售后处理请通过本店联系方式联系店主。''',
 }
 
+BUSINESS_PRODUCT_ID = str(PRODUCT_BASE + 5)
+BUSINESS_NOTICE = {
+    'description': '''## ChatGPT Business
+
+**OpenAI 官方 ChatGPT Business 方案，本店人工代办开通。**
+
+### 下单前请确认
+
+- 席位数量、订阅周期和开通方式，以下单前与本店确认的为准。
+- 开通所需的账号信息由本店告知；请只在本店确认后提供，不要发给其他人。
+- 开通后，请在 ChatGPT 设置中核对方案和到期时间。''',
+    'after_sales': '''开通异常或方案与确认内容不符时，请保留订单信息和截图联系本店核查。截图请遮挡邮箱等敏感信息。''',
+}
+
+DISCOUNT_PRODUCT_ID = str(PRODUCT_BASE + 6)
+DISCOUNT_NOTICE = {
+    'description': '''## ChatGPT 8 折充值｜菲律宾区
+
+**OpenAI 官方渠道直充，8 折价格，充值到你自己的账号。**
+
+> **需先确认账号资格：** 8 折只适用于符合条件的账号。购买前请先联系本店，确认你的账号有资格后再下单。
+
+### 下单前请确认
+
+- 账号资格、充值方案和到期时间，以本店确认的为准。
+- 充值完成后，请在 ChatGPT 设置中核对订阅状态和到期时间。''',
+    'after_sales': '''账号不符合资格时请勿下单；已下单的请联系本店处理。充值异常时，请保留订单信息和截图联系本店核查，截图请遮挡邮箱等敏感信息。''',
+}
+
 # Every store-owned product: storefront category, variants (label, administrator-only cost),
 # default copy, and the moment it leaves the shop, if any. Zero is the local cost default.
 PRODUCTS = (
@@ -172,6 +201,10 @@ PRODUCTS = (
     {'id': GROK_IOS_PRODUCT_ID, 'title': 'SuperGrok 充值（旧版 · iOS）', 'category': 'Grok',
      'variants': (('1', '1 个月（月卡）', 13500), ('2', '3 个月（季卡）', 25800)),
      'notice': GROK_IOS_NOTICE, 'ends_at': None},
+    {'id': BUSINESS_PRODUCT_ID, 'title': 'ChatGPT Business', 'category': 'GPT',
+     'variants': (('1', '标准规格', 0),), 'notice': BUSINESS_NOTICE, 'ends_at': None},
+    {'id': DISCOUNT_PRODUCT_ID, 'title': 'ChatGPT 8折充值｜菲律宾区', 'category': 'GPT',
+     'variants': (('1', '标准规格', 0),), 'notice': DISCOUNT_NOTICE, 'ends_at': None},
 )
 BY_ID = {product['id']: product for product in PRODUCTS}
 
