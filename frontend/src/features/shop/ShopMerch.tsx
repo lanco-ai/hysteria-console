@@ -15,7 +15,7 @@ export function ProductLabels({ product, children }: { product: Product; childre
   const warranty = product.category === 'GPT' && WARRANTY_PRODUCTS.has(productHeading(product));
   const tags = product.tags ?? [];
   if (!region && !warranty && !tags.length && !product.ends_at && !children) return null;
-  return <div className="shop-product-labels">{region ? <span className="shop-region-badge">{region}</span> : null}<WarrantyBadge product={product}/>{tags.map(tag => <span key={tag.text} className={`shop-tag-badge${tag.hot ? ' is-hot' : ''}`}>{tag.text}</span>)}<EndsBadge product={product}/>{children}</div>;
+  return <div className="shop-product-labels">{region ? <span className="shop-region-badge">{region}</span> : null}<WarrantyBadge product={product}/>{tags.map(tag => <span key={tag} className={`shop-tag-badge${product.hot_tags?.includes(tag) ? ' is-hot' : ''}`}>{tag}</span>)}<EndsBadge product={product}/>{children}</div>;
 }
 
 /** The merchant's 30-day warranty applies to these five GPT subscription plans. */

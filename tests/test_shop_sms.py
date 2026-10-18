@@ -113,7 +113,8 @@ def test_sms_copy_follows_the_default_until_edited_and_carries_its_tag(tmp_path)
         for revision, old in enumerate([*PREVIOUS_DESCRIPTIONS, PREVIOUS_DESCRIPTIONS[-1].replace('\n\n', '\n')]):
             product = await published(store, revision, old)
             assert (product['description'], product['after_sales']) == (NOTICE['description'], '本店售后')
-            assert product['tags'] == [{'text': '支持二验三验'}, {'text': '支持Codex', 'hot': True}]
+            assert product['tags'] == ['支持二验三验', '支持Codex']
+            assert product['hot_tags'] == ['支持Codex']
             assert (await store.admin())['products']['5000000000001']['description'] == NOTICE['description']
         # The merchant's own words always win.
         product = await published(store, len(PREVIOUS_DESCRIPTIONS) + 1, '本店自己的接码说明')

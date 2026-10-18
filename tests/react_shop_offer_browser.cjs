@@ -125,3 +125,16 @@ test('a brand\'s plans show short names and all stay in view', async () => previ
     }
   }
 }));
+
+test('text tags remain readable with or without optional highlight metadata', async () => preview(async (page, data) => {
+  data.products[0].tags = ['支持二验三验', '支持Codex'];
+  await page.goto(process.env.PREVIEW_BASE_URL);
+  await expect(page.locator('.shop-product-row .shop-tag-badge')).toHaveText(data.products[0].tags);
+  await expect(page.locator('.shop-product-row .shop-tag-badge.is-hot')).toHaveCount(0);
+  data.products[0].hot_tags = ['支持Codex'];
+  await page.reload();
+  await expect(page.locator('.shop-product-row .shop-tag-badge.is-hot')).toHaveText('支持Codex');
+  await page.locator('[data-shop-card="2"] h3 a').click();
+  await expect(page.locator('.shop-detail-heading .shop-tag-badge')).toHaveText(data.products[0].tags);
+  await expect(page.locator('.shop-detail-heading .shop-tag-badge.is-hot')).toHaveText('支持Codex');
+}));

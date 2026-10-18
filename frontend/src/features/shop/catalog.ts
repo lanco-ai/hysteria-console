@@ -2,9 +2,8 @@
 // quantity: units in the merchant's own stock (本店库存), when there are any.
 export type Variant = { id: string; label: string; price_cents: number; promo_price_cents?: number | null; available: boolean; quantity: number | null; sales: null };
 // ends_at: when a limited-time service leaves the shop (seconds); new_until: while the merchant's 新品 mark lasts.
-// tags: short merchant-approved labels beside the title, such as 支持二验三验; a hot one is set in red.
-export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; badge?: string; sold?: number; views?: number; ends_at?: number; new_until?: number; tags?: ProductTag[]; variants: Variant[] };
-export type ProductTag = { text: string; hot?: boolean };
+// Keep tags as text for open storefront tabs; hot_tags names the labels to highlight in red.
+export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; badge?: string; sold?: number; views?: number; ends_at?: number; new_until?: number; tags?: string[]; hot_tags?: string[]; variants: Variant[] };
 // announcement: the merchant's note to buyers and the unlisted products they can ask for.
 export type Announcement = { text: string; items: string[] };
 export type Catalog = { currency: 'CNY'; telegram: string; wechat?: string; announcement?: Announcement; stats?: { views: number; sold: number }; products: Product[]; status: 'ready' | 'stale' | 'unavailable'; updated_at: number | null };

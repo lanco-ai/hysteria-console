@@ -920,8 +920,9 @@ class ShopStore:
                     'sold': (display.get(row['product_id'], {}).get('sold', 0)
                              + automatic_sold.get(row['product_id'], 0)),
                     'views': stats['products'].get(row['product_id'], 0),
-                    # Short labels beside the title, e.g. 支持二验三验.
-                    **({'tags': [dict(tag) for tag in tags]} if (tags := SMS_TAGS if row['product_id'] == SMS_PRODUCT_ID
+                    # Keep text tags compatible with storefront tabs loaded before deployment.
+                    **({'tags': [tag['text'] for tag in tags],
+                        'hot_tags': [tag['text'] for tag in tags if tag.get('hot')]} if (tags := SMS_TAGS if row['product_id'] == SMS_PRODUCT_ID
                                                 else PRODUCT_TAGS.get(row['product_id'])) else {}),
                     # A product the merchant marked 新品, while the mark lasts.
                     **({'new_until': new_until} if (new_until := display.get(row['product_id'], {})

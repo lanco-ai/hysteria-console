@@ -370,7 +370,8 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
         assert products[STUDENT_ID]['title'] == 'GPT 学生认证' and products[STUDENT_ID]['category'] == 'GPT'
         assert products[STUDENT_ID]['ends_at'] == STUDENT_ENDS_AT
         assert products[VPN_ID]['category'] == 'VPN' and 'ends_at' not in products[VPN_ID]
-        assert [tag['text'] for tag in products[VPN_ID]['tags']] == ['固定IP', '支持各大 AI 软件', 'Claude 不封号']
+        assert products[VPN_ID]['tags'] == ['固定IP', '支持各大 AI 软件', 'Claude 不封号']
+        assert products[VPN_ID]['hot_tags'] == []
         now[0] = STUDENT_ENDS_AT + 1
         assert [item['id'] for item in (await store.public())['products']] == [VPN_ID]
         assert STUDENT_KEY not in [row['key'] for row in (await store.admin())['items']]
@@ -449,7 +450,9 @@ def test_business_and_discount_plans_are_official_gpt_drafts_that_ask_for_eligib
         await store.update({'revision': 0, 'telegram': 'my_shop', 'client': 3, 'skus': skus})
         products = {item['id']: item for item in (await store.public())['products']}
         assert {products[BUSINESS_ID]['category'], products[DISCOUNT_ID]['category']} == {'GPT'}
-        assert products[DISCOUNT_ID]['tags'] == [{'text': '官方直充'}, {'text': '8折', 'hot': True}, {'text': '需先确认资格'}]
-        assert products[BUSINESS_ID]['tags'] == [{'text': '官方渠道'}]
+        assert products[DISCOUNT_ID]['tags'] == ['官方直充', '8折', '需先确认资格']
+        assert products[DISCOUNT_ID]['hot_tags'] == ['8折']
+        assert products[BUSINESS_ID]['tags'] == ['官方渠道']
+        assert products[BUSINESS_ID]['hot_tags'] == []
 
     asyncio.run(run())
