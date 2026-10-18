@@ -43,6 +43,7 @@ from .shop_notices import (
     GROK_PRODUCT_IDS,
     MUSE_NOTICE,
     MUSE_PRODUCT_IDS,
+    PRODUCT_TAGS,
     PRODUCT_TITLES,
     X_PREMIUM_NOTICE,
     sanitize_product_copy,
@@ -56,7 +57,9 @@ from .shop_sms_source import NOTICE as SMS_NOTICE
 from .shop_sms_source import ORIGIN as SMS_ORIGIN
 from .shop_sms_source import PRODUCT_BASE as SMS_BASE
 from .shop_sms_source import PRODUCT_ID as SMS_PRODUCT_ID
+from .shop_sms_source import TAGS as SMS_TAGS
 from .shop_sms_source import TITLE as SMS_TITLE
+from .shop_sms_source import current_copy as current_sms_copy
 
 TTL = 900
 BACKOFF = 900
@@ -775,7 +778,7 @@ class ShopStore:
                            label=names.get('variants', {}).get(row['key'], row['label']))
         products = dict(settings.get('products', {}))
         if any(row['product_id'] == SMS_PRODUCT_ID for row in items):
-            products.setdefault(SMS_PRODUCT_ID, dict(SMS_NOTICE))
+            products[SMS_PRODUCT_ID] = current_sms_copy(dict(products.get(SMS_PRODUCT_ID, SMS_NOTICE)))
         for product_id in {row['product_id'] for row in items} & set(LOCAL_PRODUCTS):
             products.setdefault(product_id, dict(LOCAL_PRODUCTS[product_id]['notice']))
         for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
@@ -913,6 +916,9 @@ class ShopStore:
                     'sold': (display.get(row['product_id'], {}).get('sold', 0)
                              + automatic_sold.get(row['product_id'], 0)),
                     'views': stats['products'].get(row['product_id'], 0),
+                    # Short labels beside the title, e.g. 支持二验三验.
+                    **({'tags': list(tags)} if (tags := SMS_TAGS if row['product_id'] == SMS_PRODUCT_ID
+                                                else PRODUCT_TAGS.get(row['product_id'])) else {}),
                     # A product the merchant marked 新品, while the mark lasts.
                     **({'new_until': new_until} if (new_until := display.get(row['product_id'], {})
                                                     .get('new_until', 0)) > now else {}),

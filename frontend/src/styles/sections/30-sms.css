@@ -2,8 +2,6 @@
    Once a number is issued the card leads with it: its country, calling code and copy actions. */
 .sms-page { max-width: 1120px; margin: 0 auto; padding: 20px 0 64px; color: var(--text-primary); }
 .sms-heading { margin-bottom: 24px; }
-.sms-back { display: inline-block; margin-bottom: 18px; color: var(--text-secondary); font-size: 13px; text-decoration: none; }
-.sms-back:hover { color: var(--text-primary); }
 .sms-heading-row { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .sms-heading-row > div { flex: 1; min-width: 0; }
 .sms-heading h1 { margin: 0; font-size: 26px; font-weight: 650; line-height: 1.3; letter-spacing: -.02em; }
@@ -29,14 +27,9 @@
 .sms-steps .is-done > span { border-color: #397758; background: #397758; color: #fff; }
 .sms-content { padding: 28px 32px 32px; }
 .sms-field { display: grid; gap: 10px; font-size: 13px; font-weight: 600; }
-.sms-field input { width: 100%; min-width: 0; height: 52px; padding: 0 16px; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-surface); color: var(--text-primary); font-size: 16px; }
+.sms-field input { width: 100%; min-width: 0; height: 52px; padding: 0 16px; font-family: inherit; letter-spacing: .02em; border: 1px solid var(--hairline); border-radius: 10px; background: var(--bg-surface); color: var(--text-primary); font-size: 16px; }
 .sms-field input:focus { border-color: #719582; outline: 3px solid rgb(75 128 99 / 10%); }
 .sms-field input:disabled { background: #f7f8f5; color: var(--text-secondary); }
-.sms-code-field { position: relative; min-width: 0; }
-.sms-code-field input { padding-right: 70px; }
-.sms-code-visibility { position: absolute; top: 4px; right: 4px; display: grid; min-width: 52px; min-height: 44px; place-items: center; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; color: #47765b; font-size: 12px; font-weight: 500; cursor: pointer; }
-.sms-code-visibility:hover { background: #eef5f1; }
-.sms-code-visibility:focus-visible { outline: 2px solid #719582; outline-offset: -2px; }
 .sms-field-hint { margin: 10px 0 20px; color: var(--text-secondary); font-size: 12px; line-height: 1.65; }
 .sms-specific { margin-bottom: 20px; padding: 14px 16px; border: 1px solid var(--hairline); border-radius: 12px; background: #fafbf9; }
 .sms-specific.is-enabled { border-color: #cbded1; background: #f5f9f5; }
@@ -133,7 +126,6 @@
 
 @media (max-width: 540px) {
   .sms-page { padding-top: 4px; }
-  .sms-back { margin-bottom: 12px; }
   .sms-heading { margin-bottom: 16px; }
   .sms-heading-row { flex-wrap: wrap; gap: 10px 12px; }
   .sms-symbol { width: 40px; height: 40px; border-radius: 12px; }

@@ -212,10 +212,10 @@ const SECOND = `${ID}:2`;
     await expect(title).toHaveValue('Claude 本人账号开通指导');
     assert.equal((await readAdmin()).display[ID].badge, '指导优惠');
     // A merchant-owned product remains its own plan even when a source plan has the same name.
-    await title.fill('Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保');
+    await title.fill('Claude Pro 直充');
     await save.click();
     await expect(manager.getByRole('status')).toContainText('已保存');
-    const matchingPlans = manager.getByRole('article', { name: 'Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保', exact: true });
+    const matchingPlans = manager.getByRole('article', { name: 'Claude Pro 直充', exact: true });
     await expect(matchingPlans).toHaveCount(2);
     const localPlan = matchingPlans.filter({ has: manager.getByRole('button', { name: `商品设置 ${ID}`, exact: true }) });
     await expect(localPlan.locator('.shop-admin-product')).toHaveCount(1);

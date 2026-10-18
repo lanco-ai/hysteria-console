@@ -303,9 +303,9 @@ body.page-portal {
 .shop-detail-intro > .shop-note { margin-top: 4px; }
 .shop-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
 .shop-detail-heading h1 { margin: 0; font-size: clamp(21px, 2.4vw, 27px); line-height: 1.35; overflow-wrap: anywhere; }
-.shop-region-badge, .shop-warranty-badge, .shop-variants-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #d7e6f4; border-radius: 5px; background: #f1f7fc; color: #3b6085; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.shop-region-badge, .shop-warranty-badge, .shop-variants-badge, .shop-tag-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #d7e6f4; border-radius: 5px; background: #f1f7fc; color: #3b6085; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
 .shop-detail-heading .shop-product-labels { flex-basis: 100%; }
-.shop-detail-heading .shop-region-badge, .shop-detail-heading .shop-warranty-badge { padding: 4px 9px; font-size: 13px; }
+.shop-detail-heading .shop-region-badge, .shop-detail-heading .shop-warranty-badge, .shop-detail-heading .shop-tag-badge { padding: 4px 9px; font-size: 13px; }
 .shop-plans { display: flex; gap: 8px; margin-top: 14px; overflow-x: auto; scrollbar-width: none; }
 .shop-plans a { display: inline-flex; align-items: center; flex: 0 0 auto; min-height: 38px; padding: 6px 16px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-surface); color: var(--text-secondary); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .shop-plans a:hover { border-color: var(--border-strong); color: var(--text-primary); }

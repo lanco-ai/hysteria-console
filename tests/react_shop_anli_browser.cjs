@@ -95,7 +95,9 @@ async function main() {
       await page.getByRole('link', { name: 'Claude Max 20x', exact: true }).click();
       await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeDisabled();
       await page.goto(`${base}/?product=1000000000005`);
-      await expect(page.locator('.shop-detail h1')).toHaveText('Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保');
+      await expect(page.locator('.shop-detail h1')).toHaveText('Claude Pro 直充');
+      // The plan's details sit beside the title as labels.
+      await expect(page.locator('.shop-detail-heading .shop-tag-badge')).toHaveText(['美区官方 iOS 充值', '掉订阅全程质保']);
       await expect(page.locator('.shop-detail-image img')).toHaveAttribute('alt', 'Claude');
       await expect(page.getByText('本店 Claude 说明', { exact: true })).toBeVisible();
       await expect(page.getByText('本店 Claude 售后', { exact: true })).toBeVisible();
@@ -132,7 +134,7 @@ async function main() {
     await expect(sourceChips.last()).toContainText('暂不可用');
     if (screenshots) { await manager.setViewportSize({ width: 390, height: 900 }); await manager.screenshot({ path: path.join(screenshots, 'admin-partial-390.jpg'), type: 'jpeg', quality: 65, fullPage: false }); }
     await page.goto(base);
-    await expect(page.getByRole('button', { name: 'Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保 暂不可购买', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Claude Pro 直充 暂不可购买', exact: true })).toBeDisabled();
     await expect(page.getByRole('link', { name: '选择 ChatGPT Pro 200｜菲律宾区 规格', exact: true })).toBeVisible();
     const partial = await (await page.request.get(`${base}/api/v1/shop/catalog`)).json();
     assert.equal(partial.status, 'ready');

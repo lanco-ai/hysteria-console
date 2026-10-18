@@ -68,7 +68,6 @@ function SmsMark() {
 
 export function SmsPage() {
   const [code, setCode] = useState('');
-  const [showCode, setShowCode] = useState(false);
   const [verified, setVerified] = useState<Verified | null>(null);
   const [useSpecific, setUseSpecific] = useState(false);
   const [specificPhone, setSpecificPhone] = useState('');
@@ -175,7 +174,7 @@ export function SmsPage() {
 
   function reset(keepPhone = false) {
     generation.current += 1; controller.current?.abort(); lock.current = false; failures.current = 0;
-    setBusy(null); setOrder(null); setVerified(null); setCode(''); setShowCode(false); setError(''); setNotice(''); setPaused(false); setConfirmCancel(false);
+    setBusy(null); setOrder(null); setVerified(null); setCode(''); setError(''); setNotice(''); setPaused(false); setConfirmCancel(false);
     if (!keepPhone) { setUseSpecific(false); setSpecificPhone(''); }
   }
   function reusePhone() {
@@ -200,7 +199,6 @@ export function SmsPage() {
   return <PortalShell active="sms" pageTitle="短信接码">
     <div className="sms-page">
       <header className="sms-heading">
-        <a href="/" className="sms-back">← 返回商店</a>
         <div className="sms-heading-row">
           <span className="sms-symbol"><SmsMark/></span>
           <div><h1>短信接码</h1><p>用已购买的激活码取一个号码，在这里接收验证码。</p></div>
@@ -212,7 +210,7 @@ export function SmsPage() {
           <ol className="sms-steps" aria-label="接码步骤">{['验证激活码', '获取号码', '接收验证码'].map((label, index) => <li key={label} className={step > index ? 'is-done' : step === index ? 'is-current' : ''} aria-current={step === index ? 'step' : undefined}><span>{step > index ? '✓' : index + 1}</span><b>{label}</b></li>)}</ol>
           {!order ? <div className="sms-content">
             <form onSubmit={event => { event.preventDefault(); if (!verified && !blocked && !invalidPhone && code.trim().length >= 8) void perform('verify'); }}>
-              <div className="sms-field"><label htmlFor="sms-code">激活码</label><div className="sms-code-field"><input id="sms-code" type={showCode ? 'text' : 'password'} autoComplete="off" spellCheck={false} maxLength={128} placeholder="输入商家交付的激活码" value={code} disabled={busy !== null || verified !== null} onChange={event => { setCode(event.target.value); setError(''); }}/><button className="sms-code-visibility" type="button" aria-label={showCode ? '隐藏激活码' : '显示激活码'} aria-controls="sms-code" aria-pressed={showCode} onClick={() => setShowCode(value => !value)}>{showCode ? '隐藏' : '显示'}</button></div></div>
+              <div className="sms-field"><label htmlFor="sms-code">激活码</label><input id="sms-code" type="text" autoComplete="off" autoCapitalize="off" spellCheck={false} maxLength={128} placeholder="输入商家交付的激活码" value={code} disabled={busy !== null || verified !== null} onChange={event => { setCode(event.target.value); setError(''); }}/></div>
               <p className="sms-field-hint">激活码仅用于本次接码，请勿分享给他人。</p>
               {!verified?.has_pending_order ? <div className={`sms-specific${useSpecific ? ' is-enabled' : ''}`}>
                 <label className="sms-specific-toggle"><input type="checkbox" role="switch" aria-label="指定手机号" checked={useSpecific} disabled={busy !== null || verified !== null} onChange={event => { setUseSpecific(event.target.checked); setError(''); }}/><span className="sms-toggle-track" aria-hidden="true"/><span><strong>指定手机号</strong><small>再次使用原号码时开启（仅美国号码）</small></span></label>

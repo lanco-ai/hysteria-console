@@ -86,6 +86,40 @@ def test_sms_is_draft_by_default_and_public_projection_hides_source(tmp_path):
     asyncio.run(run())
 
 
+def test_sms_copy_follows_the_default_until_edited_and_carries_its_tag(tmp_path):
+    from web_api.shop_sms_source import NOTICE, PREVIOUS_DESCRIPTIONS, normalize_config
+    from web_api.shop_store import ShopStore
+
+    async def empty():
+        return []
+
+    async def sms():
+        return normalize_config(CONFIG)
+
+    async def published(store, revision, description):
+        await store.update({'revision': revision, 'telegram': 'test_merchant', 'client': 3,
+                            'skus': {'5000000000001:1': {'price_cents': 250, 'published': True}},
+                            'products': {'5000000000001': {'description': description, 'after_sales': '本店售后'}}})
+        product, = (await store.public())['products']
+        return product
+
+    async def run():
+        store = ShopStore(tmp_path / 'source.json', fetcher=empty, sms_fetcher=sms)
+        await store.refresh()
+        assert '二验、三验' in NOTICE['description'] and 'ChatGPT Codex' in NOTICE['description']
+        # A saved earlier default, even with different spacing, shows today's default; after-sales copy stays.
+        for revision, old in enumerate([*PREVIOUS_DESCRIPTIONS, PREVIOUS_DESCRIPTIONS[-1].replace('\n\n', '\n')]):
+            product = await published(store, revision, old)
+            assert (product['description'], product['after_sales']) == (NOTICE['description'], '本店售后')
+            assert product['tags'] == ['支持二验三验']
+            assert (await store.admin())['products']['5000000000001']['description'] == NOTICE['description']
+        # The merchant's own words always win.
+        product = await published(store, len(PREVIOUS_DESCRIPTIONS) + 1, '本店自己的接码说明')
+        assert product['description'] == '本店自己的接码说明'
+
+    asyncio.run(run())
+
+
 def gateway(handler):
     from web_api.shop_sms_gateway import SmsGateway, register_sms_routes
 

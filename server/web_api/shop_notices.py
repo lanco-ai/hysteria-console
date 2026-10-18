@@ -11,7 +11,11 @@ DUOLINGO_PRODUCT_IDS = frozenset({"2000000000003"})
 # Merchant-approved display copy; supplier plan names stay unchanged in source snapshots.
 PRODUCT_TITLES = {
     "6": "codex额度充值",
-    "1000000000005": "Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保",
+    "1000000000005": "Claude Pro 直充",
+}
+# Short merchant-approved labels shown beside a product's title.
+PRODUCT_TAGS = {
+    "1000000000005": ("美区官方 iOS 充值", "掉订阅全程质保"),
 }
 
 DUOLINGO_NOTICE = {

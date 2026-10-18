@@ -481,13 +481,15 @@ def test_claude_defaults_only_fill_source_present_absent_copy_without_persisting
         admin = await store.admin()
         ids = {'1000000000005', '1000000000007', '1000000000008'}
         titled = next(row for row in admin['items'] if row['product_id'] == '1000000000005')
-        assert titled['public_title'] == 'Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保'
+        assert titled['public_title'] == 'Claude Pro 直充'
         assert json.loads(store.secondary_path.read_text())['items'] == anli_rows()
         assert set(admin['products']) == ids | set(original['products'])
         from web_api.shop_notices import CLAUDE_NOTICE
         assert all(admin['products'][key] == CLAUDE_NOTICE for key in ids)
         public = await store.public()
         assert next(p for p in public['products'] if p['id'] == '1000000000005')['title'] == titled['public_title']
+        # The plan's details are short labels beside the shorter title.
+        assert next(p for p in public['products'] if p['id'] == '1000000000005')['tags'] == ['美区官方 iOS 充值', '掉订阅全程质保']
         for product in public['products']:
             if product['id'] in ids:
                 assert {field: product[field] for field in CLAUDE_NOTICE} == CLAUDE_NOTICE
