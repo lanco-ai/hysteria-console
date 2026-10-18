@@ -3,7 +3,7 @@ import { closeShopProduct } from '../../shared/shopNavigation';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { isNoticeProduct, ShopCopyText, ShopNotice } from '../shop/ShopNotice';
 import { hasContact, money, promoCents, promoName, type Catalog, type Product } from '../shop/catalog';
-import { EndsBadge, ProductStats, PromoBadge, PromoPrice, WarrantyBadge } from '../shop/ShopMerch';
+import { ProductLabels, ProductStats, PromoBadge, PromoPrice, productHeading } from '../shop/ShopMerch';
 import { cartPromo, findSku, type CartItem } from '../shop/cart';
 import { PLUS_REFERRAL_ANCHOR, PlusReferralDetails, isPlusReferralVariant, plusReferralVariant } from '../shop/PlusReferral';
 
@@ -72,7 +72,7 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
         <div className="shop-detail-image" data-shop-logo><ShopBrandImage category={product.category}/></div>
         <div className="shop-detail-intro">
           <p className="portal-eyebrow">{product.category} · 人工交付</p>
-          <div className="shop-detail-heading" data-shop-title><h1 id="shop-detail-title" ref={title} tabIndex={-1}><PromoBadge text={product.badge}/>{product.title}</h1><WarrantyBadge product={product}/><EndsBadge product={product}/></div>
+          <div className="shop-detail-heading" data-shop-title><h1 id="shop-detail-title" ref={title} tabIndex={-1} aria-label={product.title}><PromoBadge text={product.badge}/>{productHeading(product)}</h1><ProductLabels product={product}/></div>
           <ProductStats product={product}/>
           {product.category === '短信接码' ? <p className="shop-note">已有激活码？<a href="/?view=sms">进入短信接码</a></p> : null}
         </div>
@@ -92,7 +92,7 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
         <p className="shop-note">购买信息需由商家人工确认。请在付款前确认账号条件、价格和交付方式。</p>
       </section>
       {catalog?.status === 'ready' && isPlusReferralVariant(product, variant) ? <PlusReferralDetails sectionRef={referral}/> : null}
-      <section className="shop-detail-copy"><h2>商品说明</h2>{product.description && isNoticeProduct(product.id) ? <ShopNotice text={product.description} /> : (product.description ? <ShopCopyText text={product.description} /> : <p>商家暂未填写商品说明，请联系商家了解详情。</p>)}<h2>售后条款</h2>{product.after_sales && isNoticeProduct(product.id) ? <ShopNotice text={product.after_sales} /> : (product.after_sales ? <ShopCopyText text={product.after_sales} /> : <p>商家暂未填写售后条款，请在购买前与商家确认。</p>)}</section>
+      <section className="shop-detail-copy" data-product={product.id}><h2>商品说明</h2>{product.description && isNoticeProduct(product.id) ? <ShopNotice text={product.description} /> : (product.description ? <ShopCopyText text={product.description} /> : <p>商家暂未填写商品说明，请联系商家了解详情。</p>)}<h2>售后条款</h2>{product.after_sales && isNoticeProduct(product.id) ? <ShopNotice text={product.after_sales} /> : (product.after_sales ? <ShopCopyText text={product.after_sales} /> : <p>商家暂未填写售后条款，请在购买前与商家确认。</p>)}</section>
     </article> : catalog ? <section className="shop-empty portal-card"><h1>商品不存在或已下架</h1><p>可以返回商品目录查看其他商品。</p><button className="btn btn-primary" type="button" onClick={closeShopProduct}>返回商品目录</button></section> : null}
   </div>;
 }

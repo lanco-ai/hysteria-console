@@ -1,4 +1,4 @@
-"""Private, store-owned services; no supplier fetch or persisted source cache."""
+"""Private, store-owned products; no supplier fetch or persisted source cache."""
 
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -19,16 +19,58 @@ NOTICE = {
 
 VPN_PRODUCT_ID = str(PRODUCT_BASE + 2)
 VPN_NOTICE = {
-    'description': 'VPN 自建搭建指导服务：本店指导你在自己的境外服务器上搭建私人网络服务。'
-                   '本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。\n\n'
-                   '指导内容：\n'
-                   '1. 服务器选购建议与系统初始化。\n'
-                   '2. 部署 Hysteria2、Xray（VLESS Reality）、TUIC 等协议的服务端。\n'
-                   '3. 搭建管理面板（参考本店自用的网络管理项目）：添加使用者，'
-                   '为每位使用者单独设置流量额度和设备数，超出额度自动停用、按周期自动重置，'
-                   '并生成订阅链接、查看实时流量。\n'
-                   '4. 各平台客户端的导入配置与常见问题排查。\n\n'
-                   '服务方式为远程分步指导。请遵守所在地法律法规使用。',
+    'description': '''## VPN 自建搭建指导
+
+本店指导你在自己的境外服务器上搭建私人网络服务，并配置便于日常管理的可视化面板。
+
+**本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。** 服务方式为远程分步指导。
+
+### 指导内容
+
+1. 服务器选购建议与系统初始化。
+2. 部署 Hysteria2、Xray（VLESS Reality）、TUIC 等协议的服务端。
+3. 搭建管理面板，设置使用者、流量额度、设备数、订阅与周期规则。
+4. 各平台客户端的导入配置与常见问题排查。
+
+### 管理面板功能展示
+
+以下为本店自用网络管理面板的脱敏界面示例，域名、用户名及配置地址等关键信息已遮挡。点击图片可查看大图。图中流量、用户数和运行状态仅为截图时的示例，具体部署功能与配置以双方确认的指导范围为准。
+
+#### 1. 用户管理与流量额度
+
+- 为每位使用者单独设置流量额度和设备数，查看在线状态、已用流量与使用趋势。
+- 按周期管理用量，超出额度自动停用、按周期自动重置。
+- 管理订阅链接与专属面板入口，支持暂停使用、重置订阅和导出用量记录。
+
+![用户管理与流量额度界面，域名和用户名已打码](/shop-notices/vpn/users)
+
+#### 2. 流量分析与异常定位
+
+- 汇总当小时、今日、近 7 天和本周期的用量。
+- 通过逐小时趋势图、7 天 × 24 小时热图和用户排行，了解流量使用分布。
+- 查看峰值小时、异常告警及历史明细，辅助排查异常用量。
+
+![流量分析与用量热图，域名和用户标识已打码](/shop-notices/vpn/traffic)
+
+#### 3. 订阅模板与路由配置
+
+- 编辑和校验订阅模板 JSON，实时预览运行模式、节点和策略组。
+- 集中查看规则集与规则数量，按实际需求配置分流规则。
+- 了解订阅模板、路由规则和出口配置之间的关系，便于后续维护。
+
+![订阅模板与路由配置界面，域名和配置地址已打码](/shop-notices/vpn/routing)
+
+#### 4. 运维监控与线路状态
+
+- 查看核心服务、证书、磁盘空间、定时任务和备份状态。
+- 按协议查看线路用量和运行状态，辅助定位服务异常。
+- 了解流量成本倍率的统计与校准方式，按实际配置管理计量策略。
+
+![运维健康状态与线路用量界面，域名和系统账号已打码](/shop-notices/vpn/operations)
+
+### 预约与使用
+
+请先联系本店说明服务器情况、使用设备及希望实现的功能，确认指导范围后预约时间。请遵守所在地法律法规使用。''',
     'after_sales': '请通过本店联系方式预约指导时间；部署中遇到问题时，请联系本店说明服务器情况，'
                    '以便核对和继续指导。服务器、域名等第三方费用由买家自行承担。',
 }
@@ -46,8 +88,66 @@ STUDENT_NOTICE = {
                    '以便核对和继续指导。',
 }
 
+GROK_IOS_PRODUCT_ID = str(PRODUCT_BASE + 4)
+GROK_IOS_NOTICE = {
+    'description': '''## SuperGrok 充值｜旧版 · iOS 渠道
+
+**本人账号充值 · 人工发货 · 1 个月 / 3 个月可选**
+
+本商品采用 iOS 印度区充值渠道。下单后请联系本店，由店主人工发放卡密或充值订单号，并确认对应的充值方式。无需提供账号密码，按充值页面要求填写本人账号的 User ID。
+
+### 套餐规格
+
+- **月卡：** 1 个月 SuperGrok 订阅。
+- **季卡：** 一次到账 3 个月 SuperGrok 订阅，订阅质保 90 天。
+- 充值成功后，使用同一账号在网页、Android 或 iOS 端查看权益；具体权益以账号订阅页面显示为准。
+
+### 充值前请确认
+
+- **不可囤货，收到后请尽快使用，不承诺未使用卡密永久有效。**
+- **不支持覆盖已有订阅，请等待当前会员到期后再充值。** 新号、老号均请先核对当前订阅状态。
+- 请确认登录的是需要充值的 Grok 账号，并在提交前再次核对 User ID。填错 ID 也可能消耗充值凭证，无法退款。
+- 通常在提交后 **3–15 分钟**内完成，高峰期或个别订单可能延迟，以实际处理结果为准。
+- 若已提交后发现会员有效期暂未更新，请先联系本店核查；部分账号需要等待原订阅到期或状态同步，**不要重复充值**。
+
+### 充值步骤
+
+1. 选择月卡或季卡，联系本店确认后下单。
+2. 联系店主人工发货，领取卡密或充值订单号。
+3. 确认账号与 User ID 无误后，按店主说明前往[充值页面](https://6661231.xyz/)提交。
+4. 等待处理完成，再进入本人账号检查订阅状态和有效期；异常时保留订单号联系本店。
+
+### 如何获取 User ID
+
+1. 在浏览器登录 **需要充值的 Grok 账号**，确认没有登录错账号。
+2. 在同一浏览器打开[账号信息页面](https://grok.com/api/auth/session)。
+3. 找到 **userId** 字段，仅复制它对应的值，并在提交充值前再次核对。
+4. 如页面无法打开或未显示该字段，请联系本店获取指导。
+
+**只提供 User ID，不要发送整段页面内容、邮箱、密码、Cookie、Token 或其他登录会话信息。**
+
+![Grok User ID 获取示意图，仅展示虚构 ID，可点击放大](/shop-notices/grok/userid-guide)
+
+### 账号使用提醒
+
+请妥善保管账号，避免多人共享或频繁切换登录环境，并按平台规则使用。账号风控与封禁由平台决定，本商品不承诺账号免封。''',
+    'after_sales': '''### 订阅质保
+
+- 月卡按所购 1 个月订阅周期提供订阅质保；季卡提供 90 天订阅质保。
+- 质保期内掉订阅，请提供订单信息和订阅状态截图联系本店核查，按剩余未使用天数退还差价。
+- **账号封禁不在质保范围内。** 本商品保障订阅，不保障账号免于平台风控。
+
+### 充值异常
+
+User ID 填错可能消耗充值凭证，无法退款。遇到延迟、失败或有效期未更新时，请保留订单号联系本店核查，不要重复提交充值。提供截图时请遮挡邮箱及登录会话等敏感信息。
+
+### 卡密使用
+
+收到后请尽快使用，不支持囤货，不承诺未使用卡密永久有效。人工发货与售后处理请通过本店联系方式联系店主。''',
+}
+
 # Every store-owned product: storefront category, variants (label, administrator-only cost),
-# default copy, and the moment it leaves the shop, if any. Self-run services cost nothing.
+# default copy, and the moment it leaves the shop, if any. Zero is the local cost default.
 PRODUCTS = (
     {'id': PRODUCT_ID, 'title': TITLE, 'category': 'Claude', 'variants': VARIANTS,
      'notice': NOTICE, 'ends_at': None},
@@ -55,6 +155,9 @@ PRODUCTS = (
      'variants': (('1', '远程搭建指导', 0),), 'notice': VPN_NOTICE, 'ends_at': None},
     {'id': STUDENT_PRODUCT_ID, 'title': 'ChatGPT 学生认证', 'category': 'GPT',
      'variants': (('1', '标准规格', 0),), 'notice': STUDENT_NOTICE, 'ends_at': STUDENT_ENDS_AT},
+    {'id': GROK_IOS_PRODUCT_ID, 'title': 'SuperGrok 充值（旧版 · iOS）', 'category': 'Grok',
+     'variants': (('1', '1 个月（月卡）', 13500), ('2', '3 个月（季卡）', 25800)),
+     'notice': GROK_IOS_NOTICE, 'ends_at': None},
 )
 BY_ID = {product['id']: product for product in PRODUCTS}
 

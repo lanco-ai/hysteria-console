@@ -49,7 +49,9 @@ def test_default_shop_routes_enable_private_local_claude_guidance(tmp_path, monk
         rows = [(row['key'], row['cost_cents']) for row in admin.json()['items']]
         assert rows[:3] == [('6000000000001:1', 8500), ('6000000000001:2', 10500), ('6000000000002:1', 0)]
         from web_api.shop_local_products import STUDENT_ENDS_AT
-        assert rows[3:] == ([('6000000000003:1', 0)] if time.time() <= STUDENT_ENDS_AT else [])
+        assert rows[3:] == ([('6000000000003:1', 0)] if time.time() <= STUDENT_ENDS_AT else []) + [
+            ('6000000000004:1', 13500), ('6000000000004:2', 25800),
+        ]
         public = client.get('/api/v1/shop/catalog')
         assert public.status_code == 200 and public.json()['products'] == []
         for private in ('6000000000001', 'cost_cents', 'sources', 'source_url', 'wzyp', 'LHCdeAiPuzi'):

@@ -7,7 +7,7 @@ const { expect } = require('@playwright/test');
 function fixture() {
   return { currency: 'CNY', telegram: '', wechat: 'demo_shop', status: 'ready', updated_at: 1000,
     products: [
-      { id: '1', title: 'ChatGPT Plus', category: 'GPT', badge: '限时价', variants: [
+      { id: '1', title: 'ChatGPT Plus｜菲律宾区', category: 'GPT', badge: '限时价', variants: [
         { id: '1:4', label: '其他规格', price_cents: 12900, available: true },
         { id: '1:1', label: '一个月', price_cents: 12800, promo_price_cents: 12300, available: true },
       ] },

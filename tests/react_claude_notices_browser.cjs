@@ -59,19 +59,13 @@ async function main() {
       }
       evidence.assertions.push(`${width}px three exact Claude notices/headings/lists/local lazy images/natural ratios/no overflow`);
     }
-    for (const [id, description] of [['5', originals['5'].description], ['1000000000011', originals['1000000000011'].description]]) {
+    for (const [id, name] of [['5', 'GPT'], ['1000000000011', 'Grok']]) {
       await page.goto(`${base}/?product=${id}`);
-      if (id === '1000000000011') {
-        await expect(page.getByText('原 Grok 纯文本', { exact: true })).toBeVisible();
-        await expect(page.locator('.shop-notice')).toHaveCount(2);
-        await expect(page.locator('.shop-detail-copy strong')).toHaveText('纯文本');
-      } else {
-        await expect(page.getByText(description, { exact: true })).toBeVisible();
-        await expect(page.locator('.shop-notice')).toHaveCount(0);
-        await expect(page.locator('.shop-detail-copy strong')).toHaveCount(0);
-      }
+      await expect(page.getByText(`原 ${name} 纯文本`, { exact: true })).toBeVisible();
+      await expect(page.locator('.shop-notice')).toHaveCount(2);
+      await expect(page.locator('.shop-detail-copy strong')).toHaveText('纯文本');
     }
-    evidence.assertions.push('GPT saved copy stays plain text; Grok saved copy supports Markdown');
+    evidence.assertions.push('GPT and Grok saved copy both support Markdown without changing stored content');
     await manager.getByRole('button', { name: '保存商品设置', exact: true }).click();
     await expect(manager.getByRole('status')).toContainText('已保存');
     let merchant = await (await admin.request.get(`${base}/api/v1/shop/admin`)).json();

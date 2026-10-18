@@ -34,7 +34,7 @@ const { expect } = require('@playwright/test');
     const fanai = page.getByRole('switch', { name: '读取 Fanai', exact: true });
     const sms = page.getByRole('switch', { name: '读取 Zephyr', exact: true });
     const chip = page.locator('.shop-source-chip').filter({ hasText: '强云' });
-    const pro = page.getByRole('article', { name: 'ChatGPT Pro 200', exact: true });
+    const pro = page.getByRole('article', { name: 'ChatGPT Pro 200｜菲律宾区', exact: true });
     const sourceProduct = page.locator('section[aria-labelledby="shop-admin-product-2"]');
     const onSale = page.locator('.shop-admin-kpis > div').filter({ has: page.getByText('在售商品', { exact: true }) }).locator('dd');
     const unpriced = page.locator('.shop-admin-kpis > div').filter({ has: page.getByText('待定价规格', { exact: true }) }).locator('dd');

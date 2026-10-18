@@ -134,7 +134,7 @@ export function ShopAdminPage() {
   const [openSources, setOpenSources] = useState(false);
   // Products whose label is being written by hand rather than picked from BADGES.
   const [customBadges, setCustomBadges] = useState<Set<string>>(() => new Set());
-  // Products whose settings (label, sold count, description) are open.
+  // Products whose settings (label, names, description) are open.
   const [openProducts, setOpenProducts] = useState<Set<string>>(() => new Set());
   const [copy, setCopy] = useState<ProductCopy>({});
   const [dirty, setDirty] = useState(false);
@@ -532,6 +532,11 @@ export function ShopAdminPage() {
                         </article>;
                       })}
                     </div>
+                    <div className="shop-admin-sales" role="group" aria-label={`商品销量 ${productId}`}>
+                      <label>已售件数<input className="shop-admin-display-sold" aria-label={`已售件数 ${productId}`} aria-describedby={`shop-admin-sales-help-${productId}`} inputMode="numeric" autoComplete="off" placeholder="0" value={shown.sold} disabled={busy} onChange={event => editDisplay(productId, { sold: event.target.value.trim() })}/>件</label>
+                      <span>自动记录 {automaticSold.toLocaleString('zh-CN')} 件 · 合计 {sold.toLocaleString('zh-CN')} 件</span>
+                      <p id={`shop-admin-sales-help-${productId}`}>填写需要补录的历史销量，自动记录的件数无需重复填写。保存后显示在商品卡片和详情页。</p>
+                    </div>
                     {open ? <div className="shop-admin-product-settings" id={`shop-admin-settings-${productId}`}>
                       {product.provider === 'local' ? <div className="shop-admin-names">
                         <label className="shop-admin-product-name">商品名称<input aria-label={`商品名称 ${productId}`} aria-invalid={!validName(names.products[productId] ?? '', 120) || undefined} maxLength={120} value={names.products[productId] ?? ''} disabled={busy} onChange={event => editName('products', productId, event.target.value)}/></label>
@@ -542,8 +547,6 @@ export function ShopAdminPage() {
                           <option value="">不显示</option>{BADGES.map(name => <option key={name} value={name}>{name}</option>)}<option value={CUSTOM_BADGE}>自定义…</option>
                         </select></label>
                         {custom ? <input className="shop-admin-display-text" aria-label={`自定义标签 ${productId}`} maxLength={8} placeholder="最多 8 个字" value={shown.badge} disabled={busy} onChange={event => editDisplay(productId, { badge: event.target.value })}/> : null}
-                        <label>{product.provider === 'sms' ? '补录销量' : '已售'}<input className="shop-admin-display-sold" aria-label={`已售件数 ${productId}`} inputMode="numeric" placeholder="0" value={shown.sold} disabled={busy} onChange={event => editDisplay(productId, { sold: event.target.value.trim() })}/>件</label>
-                        {product.provider === 'sms' ? <span>自动记录 {automaticSold.toLocaleString('zh-CN')} 次，合计 {sold.toLocaleString('zh-CN')} 件</span> : null}
                         <p className="shop-note">标签显示在前台标题前，并作为优惠价的名称，例如「学生价 ¥118.00」。优惠价在各规格行里填写。</p>
                       </div>
                       {isNoticeProduct(productId) && <p className="shop-note">商品说明支持 Markdown 标题、列表和强调。清空并保存后，客户将看到未填写提示。</p>}

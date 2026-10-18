@@ -25,6 +25,13 @@ class FixtureStore(ShopStore):
         super().__init__(*args, **kwargs, local_products=True, fanai_fetcher=fanai_feed,
                          sms_fetcher=empty_feed, clock=lambda: self.fixture_now)
 
+    def _sources(self, settings=None):
+        sources = super()._sources(settings)
+        # This scenario compares two external sources and one merchant-owned product.
+        sources['local']['items'] = [row for row in sources['local']['items']
+                                     if row['product_id'] == '6000000000001']
+        return sources
+
     async def refresh(self, *, manual=False):
         if manual:
             self.fixture_now += 61

@@ -2,10 +2,23 @@ import { useState } from 'react';
 import { countText, money, promoCents, promoName, type Product, type Variant } from './catalog';
 
 const WARRANTY_PRODUCTS = new Set(['ChatGPT Plus', 'ChatGPT Go', 'ChatGPT Pro 100', 'ChatGPT Pro 200', 'ChatGPT Pro 500']);
+const REGION_SUFFIX = /｜(菲律宾区|埃及区|智利区|卡付充值)$/;
+
+/** Show the source region as a separate label while retaining it in purchase information. */
+export function productHeading(product: Product): string {
+  return product.category === 'GPT' ? product.title.replace(REGION_SUFFIX, '') : product.title;
+}
+
+export function ProductLabels({ product }: { product: Product }) {
+  const region = product.category === 'GPT' ? product.title.match(REGION_SUFFIX)?.[1] : undefined;
+  const warranty = product.category === 'GPT' && WARRANTY_PRODUCTS.has(productHeading(product));
+  if (!region && !warranty && !product.ends_at) return null;
+  return <div className="shop-product-labels">{region ? <span className="shop-region-badge">{region}</span> : null}<WarrantyBadge product={product}/><EndsBadge product={product}/></div>;
+}
 
 /** The merchant's 30-day warranty applies to these five GPT subscription plans. */
 export function WarrantyBadge({ product }: { product: Product }) {
-  return product.category === 'GPT' && WARRANTY_PRODUCTS.has(product.title)
+  return product.category === 'GPT' && WARRANTY_PRODUCTS.has(product.title.replace(/｜.*$/, ''))
     ? <span className="shop-warranty-badge">质保30天</span> : null;
 }
 
@@ -30,8 +43,9 @@ export function PromoPrice({ product, variant }: { product: Product; variant?: V
 
 /** "128 人看过 · 已售 36 件", leaving out what is still zero. */
 export function ProductStats({ product }: { product: Product }) {
-  const parts = [product.views ? `${countText(product.views)} 人看过` : '', product.sold ? `已售 ${countText(product.sold)} 件` : ''].filter(Boolean);
-  return parts.length ? <span className="shop-product-stats">{parts.join(' · ')}</span> : null;
+  const views = product.views ? `${countText(product.views)} 人看过` : '';
+  const sold = product.sold ? `已售 ${countText(product.sold)} 件` : '';
+  return views || sold ? <span className="shop-product-stats">{views ? <span>{views}</span> : null}{views && sold ? <span className="shop-product-stats-separator"> · </span> : null}{sold ? <span className="shop-product-sold">{sold}</span> : null}</span> : null;
 }
 
 /** The merchant's WeChat ID with a copy button. */

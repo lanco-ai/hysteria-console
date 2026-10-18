@@ -33,6 +33,10 @@ const { expect } = require('@playwright/test');
     await expect(manager.locator('.shop-admin-row').filter({ has: manager.getByLabel('售价 2:7') }).locator('.shop-admin-margin')).toContainText('优惠 ¥188.00');
     const settings = manager.getByRole('button', { name: '商品设置 2', exact: true });
     await expect(settings).toHaveAttribute('aria-expanded', 'false');
+    // Sales can be entered without opening the unrelated product settings.
+    await expect(manager.getByLabel('已售件数 2', { exact: true })).toBeVisible();
+    await manager.getByLabel('已售件数 2', { exact: true }).fill('36');
+    await expect(manager.getByRole('group', { name: '商品销量 2', exact: true })).toContainText('自动记录 0 件 · 合计 36 件');
     await settings.click();
     await expect(settings).toHaveAttribute('aria-expanded', 'true');
     await manager.getByLabel('优惠标签 2').selectOption('学生价');
@@ -40,7 +44,6 @@ const { expect } = require('@playwright/test');
     await expect(product2.locator('.shop-admin-product-flags .shop-promo-badge')).toHaveText('学生价');
     // The label also names the 优惠价 column of the product's rows on a phone.
     await expect(product2.locator('.shop-admin-promo .shop-admin-mobile-label').first()).toHaveText('学生价');
-    await manager.getByLabel('已售件数 2').fill('36');
     // An 优惠价 that is not below the price is refused before anything is saved.
     await manager.getByLabel('售价 1:4').fill('150');
     await manager.getByLabel('优惠价 1:4').fill('160');
@@ -68,6 +71,7 @@ const { expect } = require('@playwright/test');
     await expect(manager.getByLabel('售价 2:7')).toHaveValue('1288.00');
     await expect(manager.getByLabel('优惠价 2:7')).toHaveValue('1188.00');
     await expect(manager.locator('#shop-admin-settings-2')).toHaveCount(0);
+    await expect(manager.getByLabel('已售件数 2', { exact: true })).toHaveValue('36');
     await manager.getByRole('button', { name: '商品设置 1', exact: true }).click();
     await expect(manager.getByLabel('自定义标签 1')).toHaveValue('开学特惠');
     await manager.getByRole('button', { name: '商品设置 2', exact: true }).click();
@@ -96,7 +100,7 @@ const { expect } = require('@playwright/test');
     await shot(page, 'shop-storefront-promo.png');
 
     // Opening the product counts one view of it; the shop counts the visitor once a day.
-    await row.getByRole('link', { name: 'ChatGPT Pro 200', exact: true }).click();
+    await row.getByRole('link', { name: 'ChatGPT Pro 200｜菲律宾区', exact: true }).click();
     await expect(page.locator('.shop-detail h1 .shop-promo-badge')).toHaveText('学生价');
     await expect(page.locator('.shop-detail-price')).toContainText('售价¥1288.00');
     await expect(page.locator('.shop-detail-price .shop-promo-price')).toHaveText('学生价：¥1188.00');

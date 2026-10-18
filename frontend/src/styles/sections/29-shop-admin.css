@@ -186,7 +186,11 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-display select,
 .shop-admin-display input { height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-size: 12px; }
 .shop-admin-display-text { width: 120px; }
-.shop-admin-display-sold { width: 84px; font-variant-numeric: tabular-nums; }
+.shop-admin-sales { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-width: 0; margin: 8px 24px 4px; padding-top: 12px; border-top: 1px solid var(--hairline); color: var(--text-secondary); font-size: 12px; }
+.shop-admin-sales label { display: inline-flex; align-items: center; gap: 8px; color: var(--text-primary); }
+.shop-admin-display-sold { width: 100px; min-height: 36px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); font: inherit; font-variant-numeric: tabular-nums; scroll-margin-block: 190px 120px; }
+.shop-admin-display-sold:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 3px var(--accent-soft); }
+.shop-admin-sales p { flex-basis: 100%; margin: 0; color: var(--text-tertiary); line-height: 1.6; }
 .shop-admin-display .shop-note { flex-basis: 100%; }
 .shop-copy-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .shop-copy-fields label { display: grid; gap: 6px; min-width: 0; font-size: 13px; }
@@ -227,6 +231,7 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
   .shop-admin-promo .shop-admin-mobile-label { display: block; margin-bottom: 4px; }
   .shop-admin-row .shop-admin-affix input { min-height: 40px; }
   .shop-admin-product-settings { margin-inline: 12px; padding: 14px 12px; }
+  .shop-admin-sales { margin-inline: 16px; }
   .shop-copy-fields, .shop-admin-names { grid-template-columns: minmax(0, 1fr); }
 }
 
@@ -245,7 +250,7 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
   /* Only the brand tabs stay on screen: filters and search would take too much of a phone. */
   .shop-admin-toolbar { display: contents; }
   .shop-admin-brands { position: sticky; z-index: 3; top: 68px; background: var(--bg-page); }
-  .shop-admin-product, .shop-admin-product-header h4, .shop-admin-row input, .shop-admin-names input, .shop-copy-fields textarea { scroll-margin-top: 130px; }
+  .shop-admin-product, .shop-admin-product-header h4, .shop-admin-row input, .shop-admin-names input, .shop-admin-display-sold, .shop-copy-fields textarea { scroll-margin-top: 130px; }
   .shop-admin-toolbar-row { align-items: stretch; flex-direction: column; }
   .shop-admin-search.user-filter-input { width: 100%; height: 40px; }
   .shop-admin-savebar { bottom: 8px; padding: 10px 60px 10px 12px; }

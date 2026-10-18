@@ -43,6 +43,7 @@ from .shop_notices import (
     GROK_PRODUCT_IDS,
     MUSE_NOTICE,
     MUSE_PRODUCT_IDS,
+    PRODUCT_TITLES,
     X_PREMIUM_NOTICE,
     sanitize_product_copy,
 )
@@ -91,7 +92,7 @@ SOURCE_LABELS = {
     'sms': ('Zephyr', '短信接码'),
     'shop16688': ('16688', 'GPT / Claude / Gemini / Muse AI'),
     'wzyp': ('WZYP', '待接入'),
-    'local': ('本店', '指导服务'),
+    'local': ('本店', '本店商品'),
 }
 
 
@@ -138,6 +139,17 @@ def category_of(provider, public_title, product_id=''):
     if provider == 'anli':
         return 'Claude' if public_title.startswith('Claude ') else 'Grok'
     return 'GPT'
+
+
+def storefront_title(row):
+    title = PRODUCT_TITLES.get(row['product_id'], row['public_title'])
+    if provider_of(row['product_id']) in {'gpt', 'fanai', 'shop16688'} and title.startswith('ChatGPT '):
+        # Only reviewed region/payment prefixes are public, never arbitrary supplier copy.
+        prefix = re.match(r'^(菲律宾|埃及|智利|卡付)\s*chat\s*gpt\s', row['title'], re.I)
+        if prefix:
+            label = '卡付充值' if prefix[1] == '卡付' else prefix[1] + '区'
+            return f'{title}｜{label}'
+    return title
 
 
 class Conflict(ValueError):
@@ -803,6 +815,7 @@ class ShopStore:
             'items': [
                 {
                     **row,
+                    'public_title': storefront_title(row),
                     'buy_url': buy_url(row),
                     'provider': provider_of(row['product_id']),
                     'category': category_of(provider_of(row['product_id']), row['public_title'], row['product_id']),

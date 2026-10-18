@@ -17,6 +17,8 @@ MICROSOFT_KEY = '6000000000001:1'
 GOOGLE_KEY = '6000000000001:2'
 VPN_ID, VPN_KEY = '6000000000002', '6000000000002:1'
 STUDENT_ID, STUDENT_KEY = '6000000000003', '6000000000003:1'
+GROK_ID = '6000000000004'
+GROK_MONTH_KEY, GROK_QUARTER_KEY = f'{GROK_ID}:1', f'{GROK_ID}:2'
 
 
 async def empty_supplier():
@@ -27,7 +29,7 @@ def local_keys(now=None):
     """Store-owned rows on sale now; the student service leaves after its last day."""
     import time
     keys = [MICROSOFT_KEY, GOOGLE_KEY, VPN_KEY]
-    return keys + ([STUDENT_KEY] if (time.time() if now is None else now) <= STUDENT_ENDS_AT else [])
+    return keys + ([STUDENT_KEY] if (time.time() if now is None else now) <= STUDENT_ENDS_AT else []) + [GROK_MONTH_KEY, GROK_QUARTER_KEY]
 
 
 def local_store(tmp_path, **kwargs):
@@ -44,6 +46,8 @@ def test_claude_guidance_draft_has_private_costs_and_own_copy_without_writes(tmp
             (GOOGLE_KEY, '谷歌邮箱', 10500),
             (VPN_KEY, '远程搭建指导', 0),
             (STUDENT_KEY, '标准规格', 0),
+            (GROK_MONTH_KEY, '1 个月（月卡）', 13500),
+            (GROK_QUARTER_KEY, '3 个月（季卡）', 25800),
         ]
         for row in admin['items'][:2]:
             assert row['product_id'] == PRODUCT_ID
@@ -51,7 +55,7 @@ def test_claude_guidance_draft_has_private_costs_and_own_copy_without_writes(tmp
             assert row['category'] == 'Claude' and row['provider'] == 'local'
             assert row['buy_url'] == '' and row['source_url'] == ''
         assert admin['sources']['local']['supplier'] == '本店'
-        assert admin['sources']['local']['covers'] == '指导服务'
+        assert admin['sources']['local']['covers'] == '本店商品'
         assert admin['sources']['local']['site'] == ''
         assert admin['revision'] == 0 and admin['skus'] == {}
         assert (await store.public())['products'] == []
@@ -349,7 +353,7 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
                             'local_names': {'products': {STUDENT_ID: 'GPT 学生认证'}}})
         admin = await store.admin()
         categories = {row['product_id']: row['category'] for row in admin['items']}
-        assert categories == {PRODUCT_ID: 'Claude', VPN_ID: 'VPN', STUDENT_ID: 'GPT'}
+        assert categories == {PRODUCT_ID: 'Claude', VPN_ID: 'VPN', STUDENT_ID: 'GPT', GROK_ID: 'Grok'}
         assert '不提供 VPN' in admin['products'][VPN_ID]['description']
         assert '流量额度' in admin['products'][VPN_ID]['description']
         assert '10 月 31 日' in admin['products'][STUDENT_ID]['description']
@@ -367,5 +371,44 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
         await store.update({'revision': later['revision'], 'telegram': 'my_shop', 'client': 3, 'skus': skus,
                             'local_names': later['local_names']})
         assert (await store.admin())['local_names'] == {'products': {STUDENT_ID: 'GPT 学生认证'}}
+
+    asyncio.run(run())
+
+
+def test_local_grok_two_plans_publish_at_merchant_prices_without_supplier_or_credentials(tmp_path):
+    async def run():
+        store = local_store(tmp_path, fetcher=None)
+        assert (await store.public())['products'] == []
+        admin = await store.admin()
+        rows = [row for row in admin['items'] if row['product_id'] == GROK_ID]
+        assert [(row['key'], row['label'], row['category'], row['provider']) for row in rows] == [
+            (GROK_MONTH_KEY, '1 个月（月卡）', 'Grok', 'local'),
+            (GROK_QUARTER_KEY, '3 个月（季卡）', 'Grok', 'local'),
+        ]
+        assert all(row['source_url'] == '' and row['buy_url'] == '' for row in rows)
+        assert [row['cost_cents'] for row in rows] == [13500, 25800]
+        await store.update({
+            'revision': 0, 'client': 3, 'telegram': 'my_shop',
+            'skus': {
+                GROK_MONTH_KEY: {'price_cents': 14500, 'published': True},
+                GROK_QUARTER_KEY: {'price_cents': 26800, 'published': True},
+            },
+        })
+        reopened = local_store(tmp_path, fetcher=None)
+        catalog = await reopened.public()
+        product, = catalog['products']
+        assert catalog['status'] == 'ready'
+        assert product['id'] == GROK_ID and product['category'] == 'Grok'
+        assert [(v['id'], v['price_cents'], v['available']) for v in product['variants']] == [
+            (GROK_MONTH_KEY, 14500, True), (GROK_QUARTER_KEY, 26800, True),
+        ]
+        for clause in ('不可囤货', '尽快使用', '不承诺', '不支持覆盖', '人工发货',
+                       'https://6661231.xyz/', 'https://grok.com/api/auth/session',
+                       '只提供 User ID', '不要发送整段页面内容'):
+            assert clause in product['description']
+        assert '90 天' in product['after_sales'] and '账号封禁不在质保范围' in product['after_sales']
+        wire = json.dumps(product)
+        assert all(private not in wire for private in ('cost_cents', 'source_url', 'provider', '13500', '25800'))
+        assert not store.path.exists() and not list(tmp_path.glob('*local*'))
 
     asyncio.run(run())

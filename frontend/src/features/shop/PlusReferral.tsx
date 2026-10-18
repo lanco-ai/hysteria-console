@@ -6,7 +6,7 @@ export const PLUS_REFERRAL_ANCHOR = 'plus-referral';
 // This campaign belongs to the merchant's ¥123 monthly Plus SKU. Do not
 // advertise it for other plans, unavailable offers, or a later changed price.
 export function isPlusReferralVariant(product: Product | undefined, variant: Variant | undefined): boolean {
-  return product?.id === '1' && product.title === 'ChatGPT Plus' && variant?.id === '1:1'
+  return product?.id === '1' && product.title.replace(/｜.*$/, '') === 'ChatGPT Plus' && variant?.id === '1:1'
     && variant.available && (promoCents(variant) ?? variant.price_cents) === 12300;
 }
 

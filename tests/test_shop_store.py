@@ -28,6 +28,12 @@ def test_draft_then_publish_private_cost_and_refresh_preserves_retail(tmp_path):
         assert (await store.public())['products'] == []
         admin = await store.admin()
         assert admin['revision'] == 0 and len(admin['items']) == 7
+        assert {row['product_id']: row['public_title'] for row in admin['items']} == {
+            '1': 'ChatGPT Plus｜菲律宾区', '2': 'ChatGPT Pro 200｜菲律宾区',
+            '3': 'ChatGPT Pro 100｜智利区', '4': 'ChatGPT Go｜菲律宾区',
+            '5': 'ChatGPT Pro 500｜卡付充值',
+        }
+        assert json.loads(store.path.read_text())['items'] == normalize_products(products())
         await store.update(
             {
                 'revision': 0,
@@ -36,6 +42,7 @@ def test_draft_then_publish_private_cost_and_refresh_preserves_retail(tmp_path):
             }
         )
         public = await store.public()
+        assert public['products'][0]['title'] == 'ChatGPT Pro 200｜菲律宾区'
         assert public['products'][0]['variants'][0]['price_cents'] == 110001
         assert public['telegram'] == 'merchant_shop'
         text = json.dumps(public)
@@ -473,10 +480,14 @@ def test_claude_defaults_only_fill_source_present_absent_copy_without_persisting
         before = store.settings_path.read_bytes()
         admin = await store.admin()
         ids = {'1000000000005', '1000000000007', '1000000000008'}
+        titled = next(row for row in admin['items'] if row['product_id'] == '1000000000005')
+        assert titled['public_title'] == 'Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保'
+        assert json.loads(store.secondary_path.read_text())['items'] == anli_rows()
         assert set(admin['products']) == ids | set(original['products'])
         from web_api.shop_notices import CLAUDE_NOTICE
         assert all(admin['products'][key] == CLAUDE_NOTICE for key in ids)
         public = await store.public()
+        assert next(p for p in public['products'] if p['id'] == '1000000000005')['title'] == titled['public_title']
         for product in public['products']:
             if product['id'] in ids:
                 assert {field: product[field] for field in CLAUDE_NOTICE} == CLAUDE_NOTICE

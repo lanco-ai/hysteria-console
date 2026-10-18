@@ -22,7 +22,7 @@ async function main() {
     await expect(manager.locator('.shop-admin-product')).toHaveCount(5);
     await expect(manager.locator('.shop-admin-product h4')).toHaveCount(5);
     // One storefront plan per title, in title order.
-    await expect(manager.locator('.shop-plan h3')).toHaveText(['ChatGPT Go', 'ChatGPT Plus', 'ChatGPT Pro 100', 'ChatGPT Pro 200', 'ChatGPT Pro 500']);
+    await expect(manager.locator('.shop-plan h3')).toHaveText(['ChatGPT Go｜菲律宾区', 'ChatGPT Plus｜菲律宾区', 'ChatGPT Pro 100｜智利区', 'ChatGPT Pro 200｜菲律宾区', 'ChatGPT Pro 500｜卡付充值']);
     await expect(manager.locator('.shop-admin-row')).toHaveCount(7);
     await expect(manager.locator('.shop-admin-product').filter({ has: manager.getByLabel('售价 2:7') }).locator('.shop-admin-row')).toHaveCount(2);
     await expect(manager.locator('.topbar-right').getByRole('button', { name: '刷新来源' })).toBeVisible();
@@ -87,7 +87,7 @@ async function main() {
       await manager.evaluate(() => scrollTo(0, 0));
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${base}/`);
-      await page.getByRole('link', { name: 'ChatGPT Pro 200', exact: true }).click();
+      await page.getByRole('link', { name: 'ChatGPT Pro 200｜菲律宾区', exact: true }).click();
       await expect(page).toHaveURL(/product=2/);
       await expect(page.getByRole('heading', { name: '商品说明', exact: true })).toBeVisible();
       await expect(page.getByText('<img src=x onerror=alert(1)>', { exact: false })).toBeVisible();
