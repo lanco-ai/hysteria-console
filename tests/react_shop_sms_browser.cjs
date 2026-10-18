@@ -46,7 +46,7 @@ const path = require('node:path');
     for (const width of [1440, 1024, 390, 320]) {
       await page.setViewportSize({ width, height: 950 });
       await page.goto(`${base}/?view=sms`);
-      await expect(page.getByRole('heading', { name: '一个号码，接收你的验证码。' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '短信接码', exact: true })).toBeVisible();
       await expect(page.getByRole('switch', { name: '指定手机号' })).not.toBeChecked();
       const codeInput = page.getByLabel('激活码', { exact: true });
       await codeInput.fill('VISIBILITY-TEST-FAKE-CDK');
@@ -80,6 +80,9 @@ const path = require('node:path');
       await screenshot(`sms-specific-${width}.png`);
       await open(`DISPLAY-${width}-FAKE-CDK`);
       await expect(page.getByText('美国 · USA', { exact: true })).toBeVisible();
+      // The country sits with the number: its flag, name and calling code, and the platform hint names it.
+      await expect(page.locator('.sms-country')).toHaveText('美国 · USA+1');
+      await expect(page.locator('.sms-waiting')).toContainText('选择「美国 +1」');
       const number = page.locator('.sms-number strong');
       const box = await number.boundingBox();
       assert.ok(box && box.x >= 0 && box.x + box.width <= width, `phone bounds at ${width}`);
@@ -87,6 +90,9 @@ const path = require('node:path');
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `number overflow at ${width}`);
       await page.getByRole('button', { name: '复制号码', exact: true }).click();
       assert.equal(await page.evaluate(() => window.__smsClipboard), '+12025550123');
+      // Platforms that pick the country first take the number without +1.
+      await page.getByRole('button', { name: '复制不含 +1', exact: true }).click();
+      assert.equal(await page.evaluate(() => window.__smsClipboard), '2025550123');
       await screenshot(`sms-number-${width}.png`);
       await page.clock.runFor(10_500);
       await expect(page.getByText('246810', { exact: true })).toBeVisible();
@@ -296,15 +302,17 @@ const path = require('node:path');
     await page.unroute('**/shop/sms/check');
 
     // Country labels do not confuse Canada/foreign numbers with US reuse.
-    for (const [code, phone, country] of [
-      ['FOREIGN-TEST-FAKE-CDK', '+447700900123', '英国 · UK'],
-      ['CANADA-TEST-FAKE-CDK', '+1 (416) 555-0123', '加拿大 · Canada'],
-      ['UNKNOWN-TEST-FAKE-CDK', '2025550123', '国家/地区未确认'],
-      ['LEGACY-TEST-FAKE-CDK', '+1 (202) 555-0123', '国家/地区未确认'],
+    for (const [code, phone, country, national] of [
+      ['FOREIGN-TEST-FAKE-CDK', '+44 7700 900123', '英国 · UK', '复制不含 +44'],
+      ['CANADA-TEST-FAKE-CDK', '+1 (416) 555-0123', '加拿大 · Canada', '复制不含 +1'],
+      ['UNKNOWN-TEST-FAKE-CDK', '2025550123', '国家/地区未确认', null],
+      ['LEGACY-TEST-FAKE-CDK', '+1 (202) 555-0123', '国家/地区未确认', null],
     ]) {
       await open(code, phone);
       await expect(page.getByText(country, { exact: true })).toBeVisible();
       await expect(page.getByText('美国 · USA', { exact: true })).toHaveCount(0);
+      // Without a confirmed country there is no calling code to leave out.
+      await expect(page.getByRole('button', { name: /^复制不含/ })).toHaveText(national ? [national] : []);
       await page.clock.runFor(10_500);
       await expect(page.getByText('246810', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: '再次使用此号码' })).toHaveCount(0);
@@ -390,6 +398,6 @@ const path = require('node:path');
     await expect(adminPage.getByText('自动记录 0 件 · 合计 9 件', { exact: true })).toBeVisible();
     assert.deepEqual(errors, []);
     assert.deepEqual(external, []);
-    console.log('PASS: SMS country/full number/canonical copy, accessible credential visibility and reset, Canada/foreign/unknown labels, draft/private cost, specified phone, three separate reuse orders, automatic sold totals, repeated poll/copy dedup, old manual draft save/refresh, old backend compatibility, remaining credit, unavailable/no fallback, pending recovery, mismatch race, 10s polling, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');
+    console.log('PASS: SMS country with flag and calling code, full and national number copy, accessible credential visibility and reset, Canada/foreign/unknown labels, draft/private cost, specified phone, three separate reuse orders, automatic sold totals, repeated poll/copy dedup, old manual draft save/refresh, old backend compatibility, remaining credit, unavailable/no fallback, pending recovery, mismatch race, 10s polling, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
