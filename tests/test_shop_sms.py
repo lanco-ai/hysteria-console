@@ -100,7 +100,9 @@ def test_sms_copy_follows_the_default_until_edited_and_carries_its_tag(tmp_path)
         await store.update({'revision': revision, 'telegram': 'test_merchant', 'client': 3,
                             'skus': {'5000000000001:1': {'price_cents': 250, 'published': True}},
                             'products': {'5000000000001': {'description': description, 'after_sales': '本店售后'}}})
+        saved = store.settings_path.read_bytes()
         product, = (await store.public())['products']
+        assert store.settings_path.read_bytes() == saved, 'Reading upgraded copy must not rewrite merchant settings'
         return product
 
     async def run():
@@ -118,6 +120,27 @@ def test_sms_copy_follows_the_default_until_edited_and_carries_its_tag(tmp_path)
         assert product['description'] == '本店自己的接码说明'
 
     asyncio.run(run())
+
+
+def test_sms_formatted_historical_copy_upgrades_without_matching_custom_edits():
+    from web_api.shop_sms_source import NOTICE, current_copy
+
+    # The store's previously approved formatting of the old default is also historical copy.
+    historical = (
+        '**一次性短信接码激活码。** 交付后，在**本店“短信接码”页面**输入激活码，验证后获取号码并查看验证码。\n\n'
+        '**当前默认服务为 ChatGPT**；适用平台和领取条件请先向本店确认，不保证所有平台或账号均可使用。\n\n'
+        '> **号码有时效，取号后请及时使用，不是长期持有的手机号。** 请妥善保管激活码，勿转发他人。'
+    )
+    saved = {'description': historical, 'after_sales': '**本店自己的售后条款**'}
+    upgraded = current_copy(saved)
+    assert upgraded == {**saved, 'description': NOTICE['description']}
+    assert '**支持二验、三验' in upgraded['description']
+    assert '> **号码有时效' in upgraded['description']
+    assert saved['description'] == historical
+    assert current_copy(upgraded) == upgraded
+    for description in ['', historical + '\n本店另有约定。', historical.replace('ChatGPT', '其他平台')]:
+        custom = {**saved, 'description': description}
+        assert current_copy(custom) == custom
 
 
 def gateway(handler):
