@@ -4,7 +4,7 @@ const path = require('node:path');
 const { chromium } = require('playwright');
 const { expect } = require('@playwright/test');
 
-// 优惠价 (学生价, 限时价…) under the regular price, sold counts, views and the WeChat contact:
+// 优惠价 (学生价, 限时价…) leading a card's price, under the regular price on the product page, sold counts, views and the WeChat contact:
 // set in 商品管理, shown on the storefront, the product page, the cart and the purchase message.
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -84,15 +84,18 @@ const { expect } = require('@playwright/test');
     const page = await shopper.newPage();
     await page.goto(`${base}/`);
     const row = page.locator('.shop-product-row').filter({ hasText: 'ChatGPT Pro 200' });
-    // The label leads the title; the regular price stays, with the 学生价 in red under it.
-    await expect(row.locator('.shop-product-title > *').first()).toHaveClass('shop-promo-badge');
+    // The label leads the price; the 学生价 is the price shown, in red, with the regular price struck after it.
+    await expect(row.locator('.shop-product-title .shop-promo-badge')).toHaveCount(0);
+    await expect(row.locator('.shop-product-price > *').first()).toHaveClass('shop-promo-badge');
     await expect(row.locator('.shop-promo-badge')).toHaveText('学生价');
-    await expect(row.locator('.shop-product-price strong').first()).toHaveText('1288.00–1388.00 CNY');
-    await expect(row.locator('.shop-promo-price')).toHaveText('学生价：¥1188.00');
+    await expect(row.locator('.shop-product-price strong')).toHaveText('¥1188.00');
+    await expect(row.locator('.shop-product-price strong')).toHaveClass('is-promo');
+    await expect(row.locator('.shop-product-from')).toHaveText('起');
+    await expect(row.locator('.shop-product-price s')).toHaveText('原价 ¥1288.00');
     await expect(row.locator('.shop-product-stats')).toHaveText('已售 36 件');
     const plus = page.locator('.shop-product-row').filter({ hasText: 'ChatGPT Plus' });
     await expect(plus.locator('.shop-promo-badge')).toHaveText('开学特惠');
-    await expect(plus.locator('.shop-promo-price')).toHaveCount(0);
+    await expect(plus.locator('.shop-product-price s')).toHaveCount(0);
     await expect(page.locator('.shop-hero .shop-contact')).toContainText('upc-bh');
     await page.locator('.shop-contact').getByRole('button', { name: '复制' }).click();
     await expect(page.locator('.shop-contact').getByRole('button', { name: '已复制' })).toBeVisible();
@@ -152,12 +155,12 @@ const { expect } = require('@playwright/test');
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`${base}/`);
       await expect(row.locator('.shop-promo-badge')).toBeVisible();
-      await expect(row.locator('.shop-promo-price')).toBeVisible();
+      await expect(row.locator('.shop-product-price s')).toBeVisible();
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `storefront fits ${width}px`);
       await manager.setViewportSize({ width, height: 900 });
       assert.ok(await manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `商品管理 fits ${width}px`);
     }
     await shot(page, 'shop-storefront-promo-390.png');
-    console.log('PASS: 优惠价 under the regular price on cards, the product page, cart and message; labels, sold counts, views and WeChat');
+    console.log('PASS: 优惠价 leading card prices and under the regular price on the product page, cart and message; labels, sold counts, views and WeChat');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

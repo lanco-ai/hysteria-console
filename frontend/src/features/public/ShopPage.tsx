@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { PortalShell, ShopIcon } from './PortalShell';
-import { countText, money, reportVisit, shopRequest, type Catalog, type Product } from '../shop/catalog';
-import { ProductLabels, ProductStats, PromoBadge, PromoPrice, WechatContact, productHeading } from '../shop/ShopMerch';
+import { countText, money, promoCents, reportVisit, shopRequest, type Catalog, type Product, type Variant } from '../shop/catalog';
+import { ProductLabels, ProductStats, PromoBadge, WechatContact, productHeading } from '../shop/ShopMerch';
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
 import { restoreScrollPosition } from '../../shared/shopNavigation';
 import { PurchaseDialog } from './ShopPurchase';
@@ -11,20 +11,41 @@ import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 
 const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多邻国', '短信接码', 'VPN'];
 
+/** The lowest price a buyer can pay now, with its regular price struck through when an 优惠价 lowers it. */
+function CardPrice({ product }: { product: Product }) {
+  const offered = product.variants.filter(item => item.available);
+  const pool = offered.length ? offered : product.variants;
+  const pay = (item: Variant) => (offered.length ? promoCents(item) : null) ?? item.price_cents;
+  if (!pool.length) return null;
+  const cheapest = pool.reduce((best, item) => pay(item) < pay(best) ? item : best);
+  const cents = pay(cheapest);
+  const regular = cents < cheapest.price_cents ? cheapest.price_cents : null;
+  return <div className="shop-product-price">
+    <PromoBadge text={product.badge}/>
+    <strong className={regular ? 'is-promo' : undefined}><small>¥</small>{Math.floor(cents / 100)}<small>.{String(cents % 100).padStart(2, '0')}</small></strong>
+    {new Set(pool.map(pay)).size > 1 ? <span className="shop-product-from">起</span> : null}
+    {regular ? <s><span className="sr-only">原价 </span>{money(regular)}</s> : null}
+  </div>;
+}
+
 function ProductRow({ product, catalogReady, onAdd }: { product: Product; catalogReady: boolean; onAdd: (item: CartItem) => void }) {
-  const prices = product.variants.map(item => item.price_cents);
-  const minimum = Math.min(...prices), maximum = Math.max(...prices);
   const available = catalogReady && product.variants.some(item => item.available);
   const single = product.variants.length === 1 ? product.variants[0] : null;
   const stock = product.variants.reduce((sum, item) => sum + (item.quantity ?? 0), 0);
   const cartIcon = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="M3 3h2l2.5 12h11l2-8H6"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/></svg>;
-  // A card: the brand, the title with its promotion label, then the price and its 优惠价 below it.
+  // A card: the brand, the title (up to two lines) and its labels on top; the price with its promotion
+  // label, then availability, sales and the cart at the foot, so every card in a row lines up.
   // The title link covers the whole card; the card grows into the product page's header.
-  return <article className="shop-product-row" data-shop-card={product.id}>
-    <div className="shop-product-name"><span className="shop-product-thumbnail" data-shop-logo><ShopBrandImage category={product.category}/></span><div><div className="shop-product-title" data-shop-title><PromoBadge text={product.badge}/><h3><a href={`/?product=${product.id}`} aria-label={product.title}>{productHeading(product)}</a></h3><ProductLabels product={product}/></div><div className="shop-product-meta"><div className="shop-product-tags">{product.variants.length > 1 ? <span className="shop-product-variants">{product.variants.length} 种规格</span> : null}<span className={`shop-product-availability${available ? ' is-available' : ''}`}>{available ? stock ? `现货 ${stock} 件` : '可咨询购买' : '暂不可购买'}</span></div><ProductStats product={product}/></div></div></div>
-    <div className="shop-product-price"><strong>{money(minimum).slice(1)}{maximum !== minimum ? `–${money(maximum).slice(1)}` : ''} <span>CNY</span></strong><PromoPrice product={product}/></div>
-    <div className="shop-product-action">{available && !single ? <a className="shop-product-cart" href={`/?product=${product.id}`} aria-label={`选择 ${product.title} 规格`}>{cartIcon}</a> : <button className="shop-product-cart" type="button" disabled={!available} aria-label={available ? `将 ${product.title} 加入购物车` : `${product.title} 暂不可购买`} onClick={() => { if (catalogReady && single?.available) onAdd({ id: single.id, quantity: 1 }); }}>{cartIcon}</button>}<a className="shop-product-detail-link" href={`/?product=${product.id}`} aria-label={`${product.title} 商品详情`}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a></div>
+  return <article className={`shop-product-row${available ? '' : ' is-unavailable'}`} data-shop-card={product.id}>
+    <div className="shop-product-name"><span className="shop-product-thumbnail" data-shop-logo><ShopBrandImage category={product.category}/></span><div className="shop-product-title" data-shop-title><h3><a href={`/?product=${product.id}`} aria-label={product.title}>{productHeading(product)}</a></h3><ProductLabels product={product}>{product.variants.length > 1 ? <span className="shop-variants-badge">{product.variants.length} 种规格</span> : null}</ProductLabels></div></div>
     {catalogReady && plusReferralVariant(product) ? <PlusReferralLink product={product}/> : null}
+    <div className="shop-product-buy">
+      <CardPrice product={product}/>
+      <div className="shop-product-foot">
+        <div className="shop-product-status"><span className={`shop-product-availability${available ? stock ? ' is-available is-stock' : ' is-available' : ''}`}>{available ? stock ? `现货 ${stock} 件` : '可咨询购买' : '暂不可购买'}</span><ProductStats product={product}/></div>
+        {available && !single ? <a className="shop-product-cart" href={`/?product=${product.id}`} aria-label={`选择 ${product.title} 规格`}>{cartIcon}</a> : <button className="shop-product-cart" type="button" disabled={!available} aria-label={available ? `将 ${product.title} 加入购物车` : `${product.title} 暂不可购买`} onClick={() => { if (catalogReady && single?.available) onAdd({ id: single.id, quantity: 1 }); }}>{cartIcon}</button>}
+      </div>
+    </div>
   </article>;
 }
 

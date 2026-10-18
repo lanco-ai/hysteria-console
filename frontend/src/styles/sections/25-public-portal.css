@@ -159,56 +159,55 @@ body.page-portal {
   .portal *, .portal *::before, .portal *::after { scroll-behavior: auto; transition: none; animation: none; }
 }
 
-/* A product card: brand, title and tags on top; the price, its 优惠价 and the actions at the foot. */
-.shop-product-row { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 1fr auto; gap: 14px 12px; padding: 16px; border: 1px solid #e1e3e7; border-radius: 16px; background: #fff; box-shadow: 0 6px 14px -12px rgb(28 35 45 / 30%); transition: border-color .15s, box-shadow .15s, transform .16s cubic-bezier(.2, .8, .2, 1); }
+/* A product card: brand, title and labels on top; the price, availability, sales and the cart at the foot.
+   Cards in a row share a height, so the foot is pushed down and every price sits on the same line. */
+.shop-product-row { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 16px; border: 1px solid #e1e3e7; border-radius: 16px; background: #fff; box-shadow: 0 6px 14px -12px rgb(28 35 45 / 30%); transition: border-color .15s, box-shadow .15s, transform .16s cubic-bezier(.2, .8, .2, 1); }
 .shop-product-row:hover, .shop-product-row:focus-within { border-color: #9cc8fc; box-shadow: 0 8px 18px -12px rgb(22 117 220 / 30%); }
-/* The title's link covers the card, so a tap anywhere opens the product; the cart actions stay on top. */
+/* The title's link covers the card, so a tap anywhere opens the product; the cart and referral link stay on top. */
 .shop-product-name h3 a::after { content: ""; position: absolute; inset: 0; z-index: 1; border-radius: 16px; }
-.shop-product-action, .shop-product-row .shop-referral-teaser { position: relative; z-index: 2; }
+.shop-product-cart, .shop-product-row .shop-referral-teaser { position: relative; z-index: 2; }
 .shop-product-row:has(h3 a:active) { transform: scale(.985); }
 .shop-product-name h3 a:focus-visible { outline: none; }
 .shop-product-row:has(h3 a:focus-visible) { outline: 2px solid #1675dc; outline-offset: 3px; }
-.shop-product-name { display: flex; align-items: flex-start; grid-column: 1 / -1; gap: 14px; min-width: 0; }
-.shop-product-name > div { flex: 1; min-width: 0; }
+.shop-product-name { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
 .shop-product-thumbnail { position: relative; flex: 0 0 56px; width: 56px; height: 56px; overflow: hidden; border-radius: 12px; background: #fff; }
 .shop-product-thumbnail img { position: absolute; top: 50%; left: 50%; width: 98px; max-width: none; height: auto; transform: translate(-50%, -50%); }
-.shop-product-title { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 8px; }
-.shop-product-labels { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.shop-product-title > .shop-product-labels { flex-basis: 100%; }
-/* Consistent GPT card rows: heading and labels, price and actions, compact referral link. */
-.shop-category-group[data-category="GPT"] > .shop-product-list { grid-auto-rows: 1fr; }
-.shop-category-group[data-category="GPT"] .shop-product-row { min-height: 268px; grid-template-rows: minmax(min-content, 1fr) 72px 32px; }
-.shop-category-group[data-category="GPT"] .shop-product-title > h3 { flex-basis: 100%; }
-.shop-category-group[data-category="GPT"] .shop-product-price { align-self: start; }
-.shop-category-group[data-category="GPT"] .shop-referral-teaser { display: flex; gap: 6px; padding: 5px 8px; border-radius: 8px; }
-.shop-category-group[data-category="GPT"] .shop-referral-teaser .shop-referral-icon { align-self: center; flex-basis: 18px; width: 18px; height: 18px; border: 0; border-radius: 0; background: transparent; }
-.shop-category-group[data-category="GPT"] .shop-referral-teaser .shop-referral-icon svg { width: 16px; height: 16px; }
-.shop-category-group[data-category="GPT"] .shop-referral-teaser .shop-referral-link-copy strong { font-size: 11px; line-height: 1.4; }
-.shop-category-group[data-category="GPT"] .shop-referral-teaser .shop-referral-link-copy > span,
-.shop-category-group[data-category="GPT"] .shop-referral-teaser .shop-referral-link-action { display: none; }
-.shop-product-name h3 { min-width: 0; font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
+.shop-product-title { display: flex; flex: 1; flex-direction: column; align-items: flex-start; gap: 7px; min-width: 0; padding-top: 2px; }
+/* Long titles stop at two lines; the product page shows them in full. */
+.shop-product-name h3 { display: -webkit-box; max-width: 100%; overflow: hidden; color: #1f2329; font-size: 16px; font-weight: 650; line-height: 1.4; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .shop-product-name h3 a { border-radius: 3px; }
-.shop-product-meta { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.shop-product-meta > .shop-product-tags { flex: 1; min-width: 0; }
-.shop-product-meta > .shop-product-stats { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 3px; padding-block: 1px; color: #8a8d95; font-size: 11px; font-variant-numeric: tabular-nums; line-height: 1.5; white-space: nowrap; }
-.shop-product-meta .shop-product-stats-separator { display: none; }
-.shop-product-meta .shop-product-sold { padding: 2px 6px; border-radius: 5px; background: #edf5ff; color: #1263b0; font-weight: 700; }
-.shop-product-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-.shop-product-tags > span { padding: 1px 7px; border: 1px solid #e8d5b3; border-radius: var(--radius-pill); background: #fff6e8; color: #9c680c; font-size: 11px; line-height: 1.5; white-space: nowrap; }
-.shop-product-tags > .shop-product-availability { border-color: #dfe1e5; background: #f5f6f8; color: #73757d; }
-.shop-product-tags > .shop-product-availability.is-available { border-color: #b7ddd0; background: #edf8f3; color: #218364; }
+.shop-product-labels { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.shop-product-row .shop-referral-teaser { display: flex; gap: 6px; padding: 5px 8px; border-radius: 8px; }
+.shop-product-row .shop-referral-teaser .shop-referral-icon { align-self: center; flex-basis: 18px; width: 18px; height: 18px; border: 0; border-radius: 0; background: transparent; }
+.shop-product-row .shop-referral-teaser .shop-referral-icon svg { width: 16px; height: 16px; }
+.shop-product-row .shop-referral-teaser .shop-referral-link-copy strong { font-size: 11px; line-height: 1.4; }
+.shop-product-row .shop-referral-teaser .shop-referral-link-copy > span,
+.shop-product-row .shop-referral-teaser .shop-referral-link-action { display: none; }
+.shop-product-buy { display: grid; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px dashed #e6e8ec; }
+/* The price a buyer pays leads, in red when an 优惠价 lowers it, with its label before and the regular price struck after. */
+.shop-product-price { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; min-width: 0; color: #23262c; font-variant-numeric: tabular-nums; }
+.shop-product-price strong { font-size: 22px; font-weight: 750; letter-spacing: -.01em; line-height: 1.2; white-space: nowrap; }
+.shop-product-price strong small { font-size: 14px; font-weight: 650; letter-spacing: 0; }
+.shop-product-price strong.is-promo { color: #e0402a; }
+.shop-product-price .shop-promo-badge { height: 20px; padding: 0 6px; border-radius: 5px; font-size: 11px; }
+.shop-product-from { margin-left: -3px; color: #73757d; font-size: 12px; font-weight: 600; }
+.shop-product-price s { color: #9a9ca3; font-size: 12px; }
+.is-unavailable .shop-product-price strong { color: #8a8d95; }
+.is-unavailable .shop-product-price .shop-promo-badge { background: #c3c6cc; box-shadow: none; }
+.shop-product-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 36px; }
+.shop-product-status { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 10px; min-width: 0; color: #8a8d95; font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.5; }
+.shop-product-availability { display: inline-flex; align-items: center; gap: 5px; color: #8a8d95; font-weight: 600; white-space: nowrap; }
+.shop-product-availability::before { content: ""; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: #c3c6cc; }
+.shop-product-availability.is-available { color: #4e535c; }
+.shop-product-availability.is-available::before { background: #2fa37a; box-shadow: 0 0 0 3px rgb(47 163 122 / 15%); }
+.shop-product-availability.is-stock { color: #218364; }
+.shop-product-status .shop-product-stats { white-space: nowrap; }
+.shop-product-status .shop-product-sold { color: #4e535c; font-weight: 600; }
 .shop-note { color: var(--text-secondary); font-size: 12px; line-height: 1.8; }
-.shop-product-price { align-self: end; min-width: 0; color: #23262c; font-size: 18px; font-variant-numeric: tabular-nums; }
-.shop-product-price strong { display: block; white-space: nowrap; }
-.shop-product-price strong span { color: #8a8d95; font-size: 12px; font-weight: 600; }
-.shop-product-action { display: flex; align-items: center; align-self: end; gap: 6px; }
-.shop-product-cart, .shop-product-detail-link { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%; color: #30343c; }
-.shop-product-cart { padding: 0; border: 1px solid #d8dce3; background: #f5f6f8; cursor: pointer; }
+.shop-product-cart { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 36px; height: 36px; padding: 0; border: 1px solid #d8dce3; border-radius: 50%; background: #f5f6f8; color: #30343c; cursor: pointer; }
 .shop-product-cart:hover:not(:disabled) { border-color: #9cc8fc; background: #edf6ff; color: #1675dc; }
 .shop-product-cart:disabled { opacity: .4; cursor: not-allowed; }
-.shop-product-detail-link { width: 28px; color: #73757d; }
-.shop-product-detail-link:hover { background: #edf6ff; color: #1675dc; }
-.shop-product-action svg { width: 20px; height: 20px; }
+.shop-product-cart svg { width: 19px; height: 19px; }
 .shop-product-row a:focus-visible, .shop-product-row button:focus-visible { outline: 2px solid #1675dc; outline-offset: 4px; }
 .shop-notice { padding: 16px 24px; line-height: 1.7; }
 .shop-purchase { width: min(540px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); margin: auto; padding: 26px; border: 1px solid var(--border); border-radius: 24px; background: var(--bg-surface); color: var(--text-primary); box-shadow: var(--shadow-xs); overflow-y: auto; }
@@ -231,10 +230,11 @@ body.page-portal {
 @media (max-width: 600px) {
   .shop-product-list { gap: 10px; }
   .shop-product-row { gap: 10px; padding: 14px; }
+  .shop-product-buy { padding-top: 10px; }
   .shop-product-thumbnail { flex-basis: 48px; width: 48px; height: 48px; }
   .shop-product-thumbnail img { width: 84px; }
   .shop-product-name { gap: 12px; }
-  .shop-product-price { font-size: 16px; }
+  .shop-product-price strong { font-size: 20px; }
   .shop-purchase { padding: 20px; }
   .shop-purchase-actions > * { flex: 1; }
 }
@@ -271,7 +271,7 @@ body.page-portal {
 .shop-detail-intro > .shop-note { margin-top: 4px; }
 .shop-detail-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
 .shop-detail-heading h1 { margin: 0; font-size: clamp(21px, 2.4vw, 27px); line-height: 1.35; overflow-wrap: anywhere; }
-.shop-region-badge, .shop-warranty-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #d7e6f4; border-radius: 5px; background: #f1f7fc; color: #3b6085; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
+.shop-region-badge, .shop-warranty-badge, .shop-variants-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #d7e6f4; border-radius: 5px; background: #f1f7fc; color: #3b6085; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
 .shop-detail-heading .shop-product-labels { flex-basis: 100%; }
 .shop-detail-heading .shop-region-badge, .shop-detail-heading .shop-warranty-badge { padding: 4px 9px; font-size: 13px; }
 .shop-plans { display: flex; gap: 8px; margin-top: 14px; overflow-x: auto; scrollbar-width: none; }
@@ -408,14 +408,12 @@ html[data-shop-transition="previous"]::view-transition-new(shop-detail) { animat
 .shop-product-thumbnail img.shop-brand-square { width: 100%; height: 100%; object-fit: cover; }
 .shop-detail-image img.shop-brand-square { width: 100%; height: 100%; object-fit: cover; }
 
-/* Merchandising: a label before the title and the 优惠价 (学生价…) under the price, in red. */
+/* Merchandising: a label (学生价…) before the product page title or a card's price, and the 优惠价 in red. */
 .shop-promo-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; background: linear-gradient(135deg, #ff5a36, #f2364d); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .02em; line-height: 1; white-space: nowrap; box-shadow: 0 4px 10px -6px rgb(242 54 77 / 70%); }
 h1 > .shop-promo-badge { margin-right: 10px; vertical-align: 4px; }
 .shop-promo-price { display: inline-flex; align-items: baseline; gap: 2px; padding: 3px 10px; border-radius: var(--radius-pill); background: #fff0ed; color: #e0402a; font-size: 13px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .shop-promo-price strong { font-size: 16px; font-weight: 800; }
 .shop-promo-price small { margin-left: 2px; font-size: 12px; }
-.shop-product-price .shop-promo-price { flex-wrap: wrap; max-width: 100%; margin-top: 6px; white-space: normal; }
-.shop-product-price .shop-promo-price > span { min-width: 0; overflow-wrap: anywhere; }
 .shop-detail-price .shop-promo-price { padding: 6px 14px; font-size: 15px; }
 .shop-detail-price .shop-promo-price strong { color: inherit; font-size: 24px; }
 .shop-cart-row .shop-promo-price { margin-top: 6px; }

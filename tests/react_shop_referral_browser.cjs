@@ -44,8 +44,9 @@ function fixture() {
       const card = page.locator('.shop-product-row').filter({ has: teaser });
       await page.evaluate(() => document.fonts.ready);
       const promo = await teaser.boundingBox();
-      const actions = await card.locator('.shop-product-action').boundingBox();
-      assert.ok(promo.y >= actions.y + actions.height, `reward remains below cart actions at ${width}px`);
+      // The reward sits with the product's details, above the price and cart, so prices still line up across a row.
+      const buy = await card.locator('.shop-product-buy').boundingBox();
+      assert.ok(promo.y + promo.height <= buy.y, `reward stays clear of the price and cart at ${width}px`);
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `home fits ${width}px`);
       if (width === 390 || width === 1440) await screenshot(`referral-home-${width}.png`);
 

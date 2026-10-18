@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { countText, money, promoCents, promoName, type Product, type Variant } from './catalog';
 
 const WARRANTY_PRODUCTS = new Set(['ChatGPT Plus', 'ChatGPT Go', 'ChatGPT Pro 100', 'ChatGPT Pro 200', 'ChatGPT Pro 500']);
@@ -9,11 +9,12 @@ export function productHeading(product: Product): string {
   return product.category === 'GPT' ? product.title.replace(REGION_SUFFIX, '') : product.title;
 }
 
-export function ProductLabels({ product }: { product: Product }) {
+/** Region, warranty and end date; a card adds its variant count after them. */
+export function ProductLabels({ product, children }: { product: Product; children?: ReactNode }) {
   const region = product.category === 'GPT' ? product.title.match(REGION_SUFFIX)?.[1] : undefined;
   const warranty = product.category === 'GPT' && WARRANTY_PRODUCTS.has(productHeading(product));
-  if (!region && !warranty && !product.ends_at) return null;
-  return <div className="shop-product-labels">{region ? <span className="shop-region-badge">{region}</span> : null}<WarrantyBadge product={product}/><EndsBadge product={product}/></div>;
+  if (!region && !warranty && !product.ends_at && !children) return null;
+  return <div className="shop-product-labels">{region ? <span className="shop-region-badge">{region}</span> : null}<WarrantyBadge product={product}/><EndsBadge product={product}/>{children}</div>;
 }
 
 /** The merchant's 30-day warranty applies to these five GPT subscription plans. */

@@ -26,41 +26,56 @@ async function preview(run) {
 test('card advertises only available offers; selected unavailable detail remains explicit', async () => preview(async (page, data) => {
   const card = page.locator('.shop-product-row');
   await page.goto(process.env.PREVIEW_BASE_URL);
+  const price = card.locator('.shop-product-price');
   await expect(card.locator('.shop-product-availability')).toHaveText('可咨询购买');
-  await expect(card.locator('.shop-promo-price')).toHaveCount(0);
+  await expect(price.locator('strong')).toHaveText('¥1388.00');
+  await expect(price.locator('s')).toHaveCount(0);
+  await expect(price.locator('.shop-product-from')).toHaveCount(0);
   // A sold-out cheaper offer must not undercut the available one.
   data.products[0].variants[1].promo_price_cents = 128800;
   await page.reload();
-  await expect(card.locator('.shop-promo-price')).toHaveText('学生价：¥1288.00');
+  await expect(price.locator('strong')).toHaveText('¥1288.00');
+  await expect(price.locator('s')).toHaveText('原价 ¥1388.00');
+  await expect(price.locator('.shop-product-from')).toHaveCount(0);
   // With both available, the minimum and “起” are meaningful again.
   data.products[0].variants[0].available = true;
   await page.reload();
-  await expect(card.locator('.shop-promo-price')).toHaveText('学生价：¥1188.00起');
+  await expect(price.locator('strong')).toHaveText('¥1188.00');
+  await expect(price.locator('.shop-product-from')).toHaveText('起');
+  await expect(price.locator('s')).toHaveText('原价 ¥1288.00');
+  // With nothing available, no 优惠价 is advertised: the lowest regular price stays, greyed.
   data.products[0].variants.forEach(variant => { variant.available = false; });
   await page.reload();
-  await expect(card.locator('.shop-promo-price')).toHaveCount(0);
+  await expect(price.locator('strong')).toHaveText('¥1288.00');
+  await expect(price.locator('strong')).not.toHaveClass('is-promo');
+  await expect(price.locator('s')).toHaveCount(0);
+  await expect(card).toHaveClass(/is-unavailable/);
   await expect(card.getByRole('button', { name: /暂不可购买/ })).toBeDisabled();
   await page.goto(`${process.env.PREVIEW_BASE_URL}/?product=2`);
   await expect(page.locator('.shop-detail-price .shop-promo-price')).toHaveText('学生价：¥1188.00');
   await expect(page.getByRole('button', { name: '立即购买', exact: true })).toBeDisabled();
 }));
 
-test('long valid offer label never intersects the card action buttons', async () => preview(async (page, data) => {
+test('long valid offer label never intersects the card cart button', async () => preview(async (page, data) => {
   data.products[0].badge = '开学季学生优惠价';
   data.products[0].variants[0].available = true;
   for (const width of [1024, 1440, 768, 390]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(process.env.PREVIEW_BASE_URL);
     const card = page.locator('.shop-product-row');
-    const offer = card.locator('.shop-promo-price');
-    await expect(offer).toBeVisible();
+    const offer = card.locator('.shop-product-price');
+    await expect(offer.locator('.shop-promo-badge')).toHaveText('开学季学生优惠价');
+    await expect(offer.locator('s')).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
-    const a = await offer.boundingBox();
-    const b = await card.locator('.shop-product-action').boundingBox();
-    const overlaps = a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
-    assert.equal(overlaps, false, `offer overlaps actions at ${width}px: ${JSON.stringify({ a, b })}`);
+    const b = await card.locator('.shop-product-cart').boundingBox();
     const bounds = await card.boundingBox();
-    assert.ok(a.x + a.width <= bounds.x + bounds.width, `offer fits card at ${width}px`);
+    // The label, the price and the struck regular price each stay inside the card and clear of the cart.
+    for (const part of ['.shop-promo-badge', 'strong', 's']) {
+      const a = await offer.locator(part).boundingBox();
+      const overlaps = a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      assert.equal(overlaps, false, `${part} overlaps the cart at ${width}px: ${JSON.stringify({ a, b })}`);
+      assert.ok(a.x + a.width <= bounds.x + bounds.width, `${part} fits the card at ${width}px`);
+    }
     if (width === 1024 && process.env.REACT_SCREENSHOT_DIR) {
       fs.mkdirSync(process.env.REACT_SCREENSHOT_DIR, { recursive: true });
       await page.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, 'offer-1024.png'), fullPage: true });
