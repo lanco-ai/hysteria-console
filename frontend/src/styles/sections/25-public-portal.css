@@ -98,11 +98,11 @@ body.page-portal {
 .shop-announcement-icon svg { width: 20px; height: 20px; }
 .shop-announcement-body { display: grid; flex: 1; gap: 8px; min-width: 0; }
 .shop-announcement h2 { font-size: 15px; font-weight: 700; line-height: 1.4; }
-.shop-announcement p { color: #3c5068; font-size: 13px; line-height: 1.75; white-space: pre-line; }
+.shop-announcement p { color: #3c5068; font-size: 13px; line-height: 1.75; white-space: pre-line; overflow-wrap: anywhere; }
 .shop-announcement-items { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .shop-announcement-items > span { flex: 0 0 auto; padding-top: 3px; color: #5d7590; font-size: 12px; font-weight: 600; }
 .shop-announcement-items ul { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 0; padding: 0; list-style: none; }
-.shop-announcement-items li { padding: 2px 9px; border: 1px solid #d3e2f3; border-radius: var(--radius-pill); background: #fff; color: #2b4664; font-size: 12px; line-height: 1.6; white-space: nowrap; }
+.shop-announcement-items li { max-width: 100%; padding: 2px 9px; border: 1px solid #d3e2f3; border-radius: var(--radius-pill); background: #fff; color: #2b4664; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .shop-referral-teaser { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); gap: 5px 9px; padding: 11px; }
 .shop-referral-teaser .shop-referral-icon { align-self: start; }
 .shop-referral-teaser .shop-referral-link-action { grid-column: 2; }
@@ -181,6 +181,7 @@ body.page-portal {
   .shop-announcement-items { flex-direction: column; gap: 6px; }
   /* A long list scrolls sideways inside the note instead of making it tall. */
   .shop-announcement-items ul { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 88%, transparent); }
+  .shop-announcement-items li { flex: 0 0 auto; max-width: none; white-space: nowrap; }
   .shop-filterbar { margin-bottom: 18px; }
   .shop-search { width: 100%; }
   .shop-empty { min-height: 270px; }

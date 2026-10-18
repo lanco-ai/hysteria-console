@@ -82,3 +82,28 @@ test('long valid offer label never intersects the card cart button', async () =>
     }
   }
 }));
+
+test('an expired last new product returns the new filter to the complete catalog', async () => preview(async (page, data) => {
+  const now = Date.now();
+  await page.clock.install({ time: now });
+  data.products[0].new_until = Math.floor(now / 1000) + 30;
+  await page.goto(process.env.PREVIEW_BASE_URL);
+  await page.getByRole('button', { name: /^新品/ }).click();
+  await expect(page.locator('.shop-product-row')).toHaveCount(1);
+  await page.clock.runFor(61_000);
+  await expect(page.getByRole('button', { name: /^新品/ })).toHaveCount(0);
+  await expect(page.locator('.shop-product-row')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /^全部/ })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.shop-new-badge')).toHaveCount(0);
+}));
+
+test('maximum-length announcement copy fits tablet and phone layouts', async () => preview(async (page, data) => {
+  data.announcement = { text: 'A'.repeat(200), items: ['会员'.repeat(12)] };
+  for (const width of [1440, 1024, 800, 768, 640, 390, 320]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await page.goto(process.env.PREVIEW_BASE_URL);
+    await expect(page.getByRole('region', { name: '店铺公告' })).toBeVisible();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `announcement fits ${width}px`);
+    assert.ok(await page.locator('.shop-announcement p').evaluate(el => el.scrollWidth <= el.clientWidth + 1), `announcement text wraps at ${width}px`);
+  }
+}));

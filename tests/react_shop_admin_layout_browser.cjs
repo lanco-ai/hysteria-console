@@ -131,6 +131,16 @@ async function box(locator) {
     await expect(page.getByLabel('商品说明 2', { exact: true })).toHaveValue('尚未保存的说明草稿');
     await expect(page.getByLabel('上架 2:7', { exact: true })).toBeChecked();
     await expect(page.getByLabel('优惠价 2:7', { exact: true })).toHaveValue('118.00');
+    await page.getByLabel('新品标记 2', { exact: true }).selectOption('14');
+    for (const width of [1024, 900, 800, 769, 768, 390, 320]) {
+      await page.setViewportSize({ width, height: 1000 });
+      const overflow = await sourceProduct.locator('.shop-admin-display').evaluate(el => [...el.querySelectorAll('input,select')].some(control => {
+        const box = control.getBoundingClientRect();
+        const field = control.closest('.shop-admin-display-field').getBoundingClientRect();
+        return box.right > field.right - 6 || box.left < field.left + 6;
+      }));
+      assert.equal(overflow, false, `storefront settings controls fit ${width}px`);
+    }
     console.log('PASS: shop admin hierarchy, seven responsive widths, readable price controls, draft preservation and comparison navigation');
     await context.close();
   } finally { await browser.close(); }

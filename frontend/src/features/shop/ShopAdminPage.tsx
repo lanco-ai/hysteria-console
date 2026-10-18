@@ -295,7 +295,7 @@ export function ShopAdminPage() {
       if (!Number.isInteger(sold) || sold < 0 || sold > 10_000_000) { setError('已售件数请填写 0 到 10000000 之间的整数。'); return; }
       // An expired 新品 mark is dropped on the next save.
       const newUntil = value.newUntil > nowSeconds() ? value.newUntil : 0;
-      if (badge || sold || newUntil) shown[productId] = { badge, sold, ...(newUntil ? { new_until: newUntil } : {}) };
+      if (badge || sold || newUntil || state.display?.[productId]?.new_until) shown[productId] = { badge, sold, new_until: newUntil };
     }
     const shownNote = { text: announcement.text.trim(), items: itemsOf(announcement.items) };
     if (shownNote.text.length > 200 || /[<>]/.test(shownNote.text)) { setError('店铺公告最多 200 个字，不能包含 < 或 >。'); return; }

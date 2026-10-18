@@ -387,7 +387,7 @@ def test_promotion_prices_labels_sold_counts_and_wechat_reach_the_storefront(tmp
     {'display': {'2': {'badge': '学生价'}}},
     {'display': {'999': {'badge': '学生价', 'sold': 1}}},
     # A 新品 mark is a moment in seconds.
-    {'display': {'2': {'badge': '', 'sold': 0, 'new_until': 0}}},
+    {'display': {'2': {'badge': '', 'sold': 0, 'new_until': -1}}},
     {'display': {'2': {'badge': '', 'sold': 0, 'new_until': True}}},
     {'display': {'2': {'badge': '', 'sold': 0, 'new_until': '2026-10-31'}}},
     {'display': {'2': {'badge': '', 'sold': 0, 'new': True}}},
@@ -437,6 +437,28 @@ def test_new_marks_last_until_their_moment_and_the_announcement_defaults_until_s
         # A save from a page that predates the announcement leaves it as it is.
         assert client.put('/api/v1/shop/admin', headers=HEADERS, json={**payload, 'revision': 3}).status_code == 200
         assert client.get('/api/v1/shop/admin', headers=HEADERS).json()['announcement'] == hidden
+
+
+@pytest.mark.parametrize('legacy_display', [{}, {'2': {'badge': '限时价', 'sold': 7}}])
+def test_legacy_display_saves_preserve_new_marks_until_explicitly_cleared(tmp_path, legacy_display):
+    until = 1_760_086_400
+    store, app = shop_app(tmp_path, clock=lambda: 1_760_000_000)
+    payload = {'revision': 0, 'client': 3, 'telegram': '',
+               'skus': {'2:7': {'price_cents': 12800, 'published': True}},
+               'display': {'2': {'badge': '', 'sold': 0, 'new_until': until}}}
+    with TestClient(app) as client:
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json=payload).status_code == 200
+        legacy = {**payload, 'revision': 1, 'display': legacy_display}
+        saved = client.put('/api/v1/shop/admin', headers=HEADERS, json=legacy)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()['display']['2']['new_until'] == until
+        assert client.get('/api/v1/shop/catalog').json()['products'][0]['new_until'] == until
+        cleared = {**payload, 'revision': 2,
+                   'display': {'2': {'badge': '', 'sold': 0, 'new_until': 0}}}
+        saved = client.put('/api/v1/shop/admin', headers=HEADERS, json=cleared)
+        assert saved.status_code == 200, saved.text
+        assert 'new_until' not in saved.json()['display']['2']
+        assert 'new_until' not in client.get('/api/v1/shop/catalog').json()['products'][0]
 
 
 def test_visits_count_each_visitor_once_a_day_for_the_shop_and_each_product_on_sale(tmp_path):

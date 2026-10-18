@@ -186,6 +186,21 @@ const { expect } = require('@playwright/test');
       assert.ok(await manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `商品管理 fits ${width}px`);
     }
     await shot(page, 'shop-storefront-promo-390.png');
+    // Explicitly clearing the mark and both announcement fields survives save/reload.
+    await manager.getByRole('button', { name: '商品设置 2', exact: true }).click();
+    await manager.getByLabel('新品标记 2').selectOption('');
+    await manager.getByRole('button', { name: '编辑公告', exact: true }).click();
+    await manager.getByLabel('公告内容', { exact: true }).fill('');
+    await manager.getByLabel('还可代购的商品', { exact: true }).fill('');
+    await manager.getByRole('button', { name: '保存商品设置' }).click();
+    await expect(manager.getByRole('status')).toContainText('已保存');
+    const cleared = await (await manager.request.get(`${base}/api/v1/shop/admin`)).json();
+    assert.equal(cleared.display[2].new_until, undefined);
+    assert.deepEqual(cleared.announcement, { text: '', items: [] });
+    await page.reload();
+    await expect(page.locator('.shop-new-badge')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^新品/ })).toHaveCount(0);
+    await expect(page.getByRole('region', { name: '店铺公告' })).toHaveCount(0);
     console.log('PASS: 优惠价 leading card prices and under the regular price on the product page, cart and message; labels, 新品 marks, the announcement, sold counts, views and WeChat');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

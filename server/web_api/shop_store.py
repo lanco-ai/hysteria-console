@@ -356,7 +356,7 @@ def validate_settings(value):
             or not {'badge', 'sold'} <= set(item) <= {'badge', 'sold', 'new_until'}
             or not valid_badge(item['badge'])
             or not _integer(item['sold'], 0, MAX_SOLD)
-            or ('new_until' in item and not _integer(item['new_until'], 1, MAX_NEW_UNTIL))
+            or ('new_until' in item and not _integer(item['new_until'], 0, MAX_NEW_UNTIL))
         ):
             raise ValueError('invalid product display')
     metadata = value.get('products', {})
@@ -986,6 +986,17 @@ class ShopStore:
             # A page from before the announcement keeps the merchant's own.
             if 'announcement' not in payload and 'announcement' in current:
                 payload['announcement'] = current['announcement']
+            # Older pages do not know new_until, even when they send display.
+            # Omission preserves it; an explicit zero from today's page clears it.
+            display = {key: dict(item) for key, item in payload.get('display', {}).items()}
+            for key, item in current.get('display', {}).items():
+                if item.get('new_until') and 'new_until' not in display.get(key, {}):
+                    display.setdefault(key, {'badge': '', 'sold': 0})['new_until'] = item['new_until']
+            for item in display.values():
+                if item.get('new_until') == 0:
+                    item.pop('new_until')
+            if display or 'display' in payload:
+                payload['display'] = display
             controls = {provider: enabled for provider, enabled in controls.items()
                         if not is_source_deleted(current, provider)}
             if controls:

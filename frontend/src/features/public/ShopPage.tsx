@@ -103,6 +103,9 @@ export function ShopPage() {
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const categories = [...new Set(allProducts.map(product => product.category))].sort((a, b) => CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b));
   const newCount = allProducts.filter(product => isNew(product)).length;
+  useEffect(() => {
+    if (catalog && category === NEW_FILTER && !newCount) setCategory('全部商品');
+  }, [catalog, category, newCount]);
   // 新品 lead their category; the rest keep the shop's order.
   const products = allProducts.filter(product => (category === '全部商品' || (category === NEW_FILTER ? isNew(product) : product.category === category)) && `${product.title} ${product.variants.map(item => item.label).join(' ')}`.toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a, b) => Number(isNew(b)) - Number(isNew(a)));
