@@ -63,10 +63,12 @@
 /* A verified code: a green panel with the uses left, then the next action. */
 .sms-verified { display: grid; gap: 12px; margin-top: 4px; padding: 16px; border: 1px solid #cfe3d6; border-radius: 12px; background: #f3f9f5; }
 .sms-verified.is-empty { border-color: #ecd9c8; background: #fdf7f2; }
-.sms-verified-head { display: flex; align-items: center; gap: 10px; font-size: 14px; }
+.sms-verified-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 14px; }
+.sms-verified-head > strong { white-space: nowrap; }
 .sms-verified-mark { display: grid; width: 22px; height: 22px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: #397758; color: #fff; font-size: 12px; }
 .sms-verified.is-empty .sms-verified-mark { background: #b8875f; }
-.sms-uses { display: flex; align-items: baseline; gap: 6px; margin-left: auto; font-variant-numeric: tabular-nums; }
+.sms-uses { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-left: auto; font-variant-numeric: tabular-nums; }
+.sms-uses > span, .sms-uses > small { white-space: nowrap; }
 .sms-uses > span { color: #2a6248; font-weight: 650; }
 .sms-verified.is-empty .sms-uses > span { color: #a35335; }
 .sms-uses small { color: var(--text-secondary); font-size: 12px; }

@@ -28,6 +28,15 @@ const path = require('node:path');
       await page.getByLabel('激活码', { exact: true }).fill(code);
       await page.getByRole('button', { name: '验证激活码' }).click();
       await expect(page.getByText('激活码已验证', { exact: true })).toBeVisible();
+      // Keep the confirmation and each credit count readable, even if the row must wrap.
+      for (const selector of ['.sms-verified-head > strong', '.sms-uses > span', '.sms-uses > small']) {
+        const singleLine = await page.locator(selector).evaluate(element => {
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          return range.getBoundingClientRect().height <= parseFloat(getComputedStyle(element).fontSize) * 1.8;
+        });
+        assert.ok(singleLine, `verified label wraps at ${page.viewportSize().width}px: ${selector}`);
+      }
       await expect(page.getByLabel('激活码', { exact: true })).toBeDisabled();
       const beforeReveal = requests.length;
       await page.getByRole('button', { name: '显示激活码', exact: true }).click();
@@ -302,17 +311,30 @@ const path = require('node:path');
     await page.unroute('**/shop/sms/check');
 
     // Country labels do not confuse Canada/foreign numbers with US reuse.
-    for (const [code, phone, country, national] of [
-      ['FOREIGN-TEST-FAKE-CDK', '+44 7700 900123', '英国 · UK', '复制不含 +44'],
-      ['CANADA-TEST-FAKE-CDK', '+1 (416) 555-0123', '加拿大 · Canada', '复制不含 +1'],
-      ['UNKNOWN-TEST-FAKE-CDK', '2025550123', '国家/地区未确认', null],
-      ['LEGACY-TEST-FAKE-CDK', '+1 (202) 555-0123', '国家/地区未确认', null],
+    for (const [code, phone, country, dial, national, full] of [
+      ['FOREIGN-TEST-FAKE-CDK', '+44 7700 900123', '英国 · UK', '44', '7700900123', '+447700900123'],
+      ['CANADA-TEST-FAKE-CDK', '+1 (416) 555-0123', '加拿大 · Canada', '1', '4165550123', '+14165550123'],
+      ['BRAZIL-TEST-FAKE-CDK', '+55 11 91234-5678', '巴西 · Brazil', '55', '11912345678', '+5511912345678'],
+      ['BRAZIL-LAND-TEST-CDK', '+55 11 2345-6789', '巴西 · Brazil', '55', '1123456789', '+551123456789'],
+      ['UNKNOWN-TEST-FAKE-CDK', '2025550123', '国家/地区未确认', null, null, '2025550123'],
+      ['LEGACY-TEST-FAKE-CDK', '+1 (202) 555-0123', '国家/地区未确认', null, null, '+12025550123'],
     ]) {
       await open(code, phone);
       await expect(page.getByText(country, { exact: true })).toBeVisible();
       await expect(page.getByText('美国 · USA', { exact: true })).toHaveCount(0);
       // Without a confirmed country there is no calling code to leave out.
-      await expect(page.getByRole('button', { name: /^复制不含/ })).toHaveText(national ? [national] : []);
+      await expect(page.getByRole('button', { name: /^复制不含/ })).toHaveText(dial ? [`复制不含 +${dial}`] : []);
+      await page.getByRole('button', { name: '复制号码', exact: true }).click();
+      assert.equal(await page.evaluate(() => window.__smsClipboard), full);
+      if (dial) {
+        await page.getByRole('button', { name: `复制不含 +${dial}`, exact: true }).click();
+        assert.equal(await page.evaluate(() => window.__smsClipboard), national);
+      }
+      for (const width of [1440, 390, 320]) {
+        await page.setViewportSize({ width, height: 1000 });
+        assert.ok(await page.locator('.sms-number strong').evaluate(element => element.scrollWidth <= element.clientWidth), `international number fits ${width}px: ${country}`);
+        assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `international page fits ${width}px: ${country}`);
+      }
       await page.clock.runFor(10_500);
       await expect(page.getByText('246810', { exact: true })).toBeVisible();
       await expect(page.getByRole('button', { name: '再次使用此号码' })).toHaveCount(0);
