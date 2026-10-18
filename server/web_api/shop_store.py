@@ -198,6 +198,19 @@ CLIENT_VERSION = 3
 OLDER_CLIENTS = frozenset({2})
 MAX_BADGE = 8
 MAX_SOLD = 10_000_000
+# 新品 until this moment (seconds); an expired mark is kept but no longer shown.
+MAX_NEW_UNTIL = 2**40
+# The storefront announcement: what else the merchant sells beyond the listed products.
+MAX_ANNOUNCEMENT = 200
+MAX_ANNOUNCEMENT_ITEMS = 40
+# Shown until the merchant saves an announcement of their own (an empty one hides it).
+DEFAULT_ANNOUNCEMENT = {
+    'text': '主营 AI 会员与额度：ChatGPT、Claude、Gemini、Grok 等。'
+            '其他数字会员和账号也能代购，页面没上架的直接问我。',
+    'items': ['YouTube Premium', 'Gmail 账号', 'Outlook 邮箱', 'Office 365', 'Adobe Express',
+              'CapCut 剪映', 'Notion', 'Figma', 'Framer', 'JetBrains', 'ElevenLabs', 'Prime Video',
+              'Autodesk', 'Miro', 'Wispr Flow', 'Scribd'],
+}
 MAX_LOCAL_TITLE = 120
 MAX_LOCAL_LABEL = 80
 
@@ -231,6 +244,23 @@ def local_names(value):
 def valid_badge(text):
     """A short promotion label shown before a product title, e.g. 学生价; never a link or contact."""
     return isinstance(text, str) and (text == '' or (len(text) <= MAX_BADGE and safe_label(text)))
+
+
+# A product name in the announcement: letters, digits and the usual separators, never a link.
+SAFE_ITEM = re.compile(r'[0-9A-Za-z\u4e00-\u9fff][0-9A-Za-z\u4e00-\u9fff .+\-/&·]{0,23}')
+
+
+def announcement(value):
+    """The merchant's own words to buyers, and the unlisted products they can ask for."""
+    if (not isinstance(value, dict) or set(value) != {'text', 'items'}
+            or not isinstance(value['text'], str) or len(value['text']) > MAX_ANNOUNCEMENT
+            or any(unicodedata.category(char) in {'Cc', 'Cf', 'Cs', 'Zl', 'Zp'} and char != '\n'
+                   or char in '<>' for char in value['text'])
+            or not isinstance(value['items'], list) or len(value['items']) > MAX_ANNOUNCEMENT_ITEMS
+            or any(not isinstance(item, str) or not SAFE_ITEM.fullmatch(item) for item in value['items'])
+            or len(set(value['items'])) != len(value['items'])):
+        raise ValueError('invalid announcement')
+    return value
 
 
 def source_enabled(value):
@@ -272,7 +302,7 @@ def validate_settings(value):
     if (
         not isinstance(value, dict)
         or not {'revision', 'telegram', 'skus'} <= set(value)
-        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'client', 'local_names', 'source_enabled', 'source_lifecycle'}
+        or set(value) - {'revision', 'telegram', 'wechat', 'skus', 'products', 'display', 'announcement', 'client', 'local_names', 'source_enabled', 'source_lifecycle'}
         or (value.get('client', CLIENT_VERSION) != CLIENT_VERSION and value.get('client') not in OLDER_CLIENTS)
         or not _integer(value['revision'], 0, 2**53 - 2)
         or not isinstance(value['telegram'], str)
@@ -289,6 +319,8 @@ def validate_settings(value):
         local_names(value['local_names'])
     if 'source_enabled' in value:
         source_enabled(value['source_enabled'])
+    if 'announcement' in value:
+        announcement(value['announcement'])
     if 'source_lifecycle' in value:
         source_lifecycle(value['source_lifecycle'])
     for key, item in value['skus'].items():
@@ -321,9 +353,10 @@ def validate_settings(value):
             not isinstance(key, str)
             or not re.fullmatch(r'[1-9]\d{0,15}', key)
             or not isinstance(item, dict)
-            or set(item) != {'badge', 'sold'}
+            or not {'badge', 'sold'} <= set(item) <= {'badge', 'sold', 'new_until'}
             or not valid_badge(item['badge'])
             or not _integer(item['sold'], 0, MAX_SOLD)
+            or ('new_until' in item and not _integer(item['new_until'], 1, MAX_NEW_UNTIL))
         ):
             raise ValueError('invalid product display')
     metadata = value.get('products', {})
@@ -800,6 +833,7 @@ class ShopStore:
             })
         return {
             **settings,
+            'announcement': settings.get('announcement', DEFAULT_ANNOUNCEMENT),
             # Visit counts, for the merchant as for the storefront.
             'stats': self.stats.read(),
             # Read-only automatic counts are independent from revisioned manual settings;
@@ -852,6 +886,7 @@ class ShopStore:
         stats = state['stats']
         display = state.get('display', {})
         automatic_sold = state.get('automatic_sold', {})
+        now = self.clock()
         groups, applicable = {}, set()
         for row in state['items']:
             provider = provider_of(row['product_id'])
@@ -878,6 +913,9 @@ class ShopStore:
                     'sold': (display.get(row['product_id'], {}).get('sold', 0)
                              + automatic_sold.get(row['product_id'], 0)),
                     'views': stats['products'].get(row['product_id'], 0),
+                    # A product the merchant marked 新品, while the mark lasts.
+                    **({'new_until': new_until} if (new_until := display.get(row['product_id'], {})
+                                                    .get('new_until', 0)) > now else {}),
                     # A limited-time service shows when it leaves the shop.
                     **({'ends_at': local_ends_at(row['product_id'])}
                        if provider == 'local' and local_ends_at(row['product_id']) else {}),
@@ -912,6 +950,9 @@ class ShopStore:
             'currency': 'CNY',
             'telegram': state['telegram'],
             'wechat': state.get('wechat', ''),
+            # Shown only when the merchant has something to say.
+            **({'announcement': state['announcement']}
+               if state['announcement']['text'] or state['announcement']['items'] else {}),
             # Units sold over the shop's life, as in 商品管理: a product taken off sale keeps its count.
             'stats': {'views': stats['site'], 'sold': (sum(item['sold'] for item in display.values())
                                                      + sum(automatic_sold.values()))},
@@ -942,6 +983,9 @@ class ShopStore:
                 payload['local_names'] = names
             if current.get('source_lifecycle'):
                 payload['source_lifecycle'] = current['source_lifecycle']
+            # A page from before the announcement keeps the merchant's own.
+            if 'announcement' not in payload and 'announcement' in current:
+                payload['announcement'] = current['announcement']
             controls = {provider: enabled for provider, enabled in controls.items()
                         if not is_source_deleted(current, provider)}
             if controls:

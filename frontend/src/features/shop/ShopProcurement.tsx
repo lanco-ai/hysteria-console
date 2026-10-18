@@ -109,69 +109,82 @@ export function ShopProcurement({ unsavedProducts = false }: { unsavedProducts?:
   const count = /^\d{1,3}$/.test(quantity) ? Number(quantity) : 0;
   const estimate = trigger !== null && count >= 1 && count <= 100 ? trigger * count : null;
   const open = data?.jobs.filter(job => OPEN.has(job.status)).length ?? 0;
+  const done = data?.jobs.filter(job => job.status === 'delivered').length ?? 0;
+  const job = (item: Job) => <article key={item.id} className={`shop-procurement-job is-${item.status}`}>
+    <header className="shop-procurement-job-title"><strong>{item.title}</strong><span className={`shop-procurement-status is-${item.status}`}>{STATUS[item.status] ?? item.status}</span>{item.checked_at ? <small className="shop-procurement-checked">检查于 {when(item.checked_at)}</small> : null}</header>
+    <dl className="shop-procurement-facts">
+      <div><dt>数量</dt><dd>{item.quantity} 件</dd></div>
+      <div><dt>触发单价</dt><dd>≤ {usd(item.trigger_price_cents)}</dd></div>
+      <div><dt>条件金额</dt><dd>{usd(item.quantity * item.trigger_price_cents)}</dd></div>
+      <div><dt>截止</dt><dd>{short(item.expires_at)}</dd></div>
+    </dl>
+    {item.reason && REASON[item.reason] ? <p className="shop-procurement-reason">{REASON[item.reason]}</p> : null}
+    {item.order_id ? <p className="shop-procurement-order">订单 {item.order_id}{item.amount_cents !== null ? ` · 实付 ${usd(item.amount_cents)}` : ''}</p> : null}
+    <div className="shop-procurement-actions">
+      {['draft', 'paused'].includes(item.status) ? <button type="button" className="btn btn-primary btn-sm" disabled={busy || !data?.enabled || !data?.scheduler_enabled} onClick={() => { setConfirming(item); setAccepted(false); }}>启用预订</button> : null}
+      {item.status === 'waiting' ? <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(item, 'pause')}>暂停</button> : null}
+      {['draft', 'waiting', 'paused'].includes(item.status) ? <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(item, 'cancel')}>取消预订</button> : null}
+      {item.status === 'delivered' ? <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => revealed[item.id] ? setRevealed(old => { const next = { ...old }; delete next[item.id]; return next; }) : void act(item, 'reveal')}>{revealed[item.id] ? '隐藏交付内容' : `查看交付内容（${item.delivered_count} 件）`}</button> : null}
+      {['uncertain', 'failed'].includes(item.status) && data?.supplier?.site ? <a className="btn btn-secondary btn-sm" href={data.supplier.site} target="_blank" rel="noopener noreferrer">前往供应商核对 ↗</a> : null}
+    </div>
+    {confirming?.id === item.id ? <div className="shop-procurement-confirm" ref={confirmationRef} tabIndex={-1} role="group" aria-label="确认启用预订">
+      <h3>启用 {confirming.title} · {confirming.quantity} 件</h3>
+      <p>满足条件后将自动使用供应商余额采购，买满后停止。触发单价 {usd(confirming.trigger_price_cents)}，条件金额 {usd(confirming.quantity * confirming.trigger_price_cents)}。</p>
+      <label><input type="checkbox" checked={accepted} disabled={busy} onChange={e => setAccepted(e.target.checked)}/>我授权此预订自动采购，并理解供应商不支持锁价，最终扣款可能因其调价而变化。</label>
+      <div className="shop-procurement-actions"><button type="button" className="btn btn-primary" disabled={busy || !accepted} onClick={() => void act(confirming, 'enable')}>确认启用并允许扣款</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setConfirming(null)}>暂不启用</button></div>
+    </div> : null}
+    {revealed[item.id] ? <div className="shop-procurement-delivery"><textarea aria-label={`${item.title} 交付内容`} readOnly value={revealed[item.id]?.join('\n') ?? ''} spellCheck={false}/><button type="button" className="btn btn-secondary" onClick={() => void navigator.clipboard.writeText(revealed[item.id]?.join('\n') ?? '').then(() => setNotice('已复制交付内容。')).catch(() => setError('复制失败，请在文本框内手动复制。'))}>复制交付内容</button><small>切换标签页或 60 秒后隐藏。请自行妥善保存。</small></div> : null}
+  </article>;
+  const openJobs = data?.jobs.filter(item => OPEN.has(item.status)) ?? [];
+  const pastJobs = data?.jobs.filter(item => !OPEN.has(item.status)) ?? [];
+  // The balance and counts in one bar; below it, a new preorder beside the preorders so far.
   return <section className="shop-procurement" aria-label="采购预订">
     {unsavedProducts ? <p className="shop-procurement-banner">商品管理里还有未保存的修改，<a href="/admin/shop">返回商品管理</a>保存后再离开。</p> : null}
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
     <p role="status" className="shop-procurement-notice">{notice}</p>
     {!data ? <p className="shop-procurement-banner">正在读取采购记录…</p> : <>
       {!data.enabled || !data.scheduler_enabled ? <p className="shop-procurement-banner is-warn">{!data.enabled ? '供应商来源未启用，当前不会查询库存或采购。' : '采购调度未开启，草稿可以保存，暂不能启用。'}</p> : null}
-      <div className="shop-procurement-layout">
-        <div className="shop-procurement-side">
-          <section className="shop-procurement-card shop-procurement-balance" aria-label="供应商余额">
-            <div><span>{data.supplier?.name ?? '供应商'} 余额</span><strong>{data.balance_cents == null ? '—' : usd(data.balance_cents)}</strong>
-              <small>{data.balance_at ? `${data.balance_error ? '上次成功查询于' : '查询于'} ${when(data.balance_at)}` : '尚未成功查询'}{data.balance_error ? ` · ${BALANCE_REASON[data.balance_error] ?? '余额查询未成功'}${data.balance_cents == null ? '' : '，显示上次余额'}` : ''}</small></div>
-            <button className="btn btn-secondary" type="button" disabled={busy || !data.enabled} onClick={() => void request('balance', {})}>刷新余额和报价</button>
-          </section>
-          <form className="shop-procurement-card shop-procurement-form" aria-labelledby="shop-procurement-new" onSubmit={event => { event.preventDefault(); void create(); }}>
-            <h2 id="shop-procurement-new">新建预订</h2>
-            <fieldset className="shop-procurement-products"><legend>采购商品</legend>
-              {data.products.map(item => <label key={item.id} className={`shop-procurement-product${item.id === product ? ' is-selected' : ''}`}>
-                <input type="radio" name="shop-procurement-product" value={item.id} checked={item.id === product} disabled={busy} onChange={() => setProduct(item.id)}/>
-                <span className="shop-procurement-product-name">{item.title}</span>
-                <span className="shop-procurement-product-quote">{item.quote ? <><strong>{usd(item.quote.price_cents)}</strong><span className={inStock(item.quote) ? 'is-in' : 'is-out'}>{stockText(item.quote)}</span></> : <span>暂无报价</span>}</span>
-              </label>)}
-              <small>{quotedAt ? `报价更新于 ${short(quotedAt)}，缺货时同样显示供应商价格。` : '暂无报价，可点“刷新余额和报价”查询。'}</small>
-            </fieldset>
-            <div className="shop-procurement-fields">
-              <label>购买数量<input inputMode="numeric" value={quantity} disabled={busy} onChange={e => setQuantity(e.target.value)} /></label>
-              <label>触发单价（USDT）<input inputMode="decimal" value={price} placeholder={quote ? amount(quote.price_cents) : '可接受单价'} disabled={busy} onChange={e => setPrice(e.target.value)} /></label>
-            </div>
-            {quote ? <button type="button" className="shop-procurement-link" disabled={busy} onClick={() => setPrice(amount(quote.price_cents))}>按现价 {amount(quote.price_cents)} 填入触发单价</button> : null}
-            <label>截止时间（本地）<input type="datetime-local" value={deadline} disabled={busy} onChange={e => setDeadline(e.target.value)} /></label>
-            <div className="shop-procurement-quick" role="group" aria-label="截止时间快捷设置">{[1, 3, 7, 30].map(days => <button key={days} type="button" disabled={busy} onClick={() => setDeadline(inDays(days))}>{days} 天后</button>)}</div>
-            <p className="shop-procurement-estimate">{estimate === null ? '填写数量和触发单价后显示条件金额。' : <>条件金额 <strong>{usd(estimate)}</strong>{count > 1 && trigger !== null ? `（${count} × ${amount(trigger)}）` : ''}
-              {data.balance_cents != null && estimate > data.balance_cents ? <span className="is-warn">高于当前余额，启用后会因余额不足暂停。</span> : null}</>}</p>
-            <button type="submit" className="btn btn-primary" disabled={busy}>保存预订草稿</button>
-          </form>
+      <section className="shop-procurement-summary" aria-label="采购概览">
+        <div className="shop-procurement-balance" role="group" aria-label="供应商余额">
+          <span>{data.supplier?.name ?? '供应商'} 余额</span><strong>{data.balance_cents == null ? '—' : usd(data.balance_cents)}</strong>
+          <small>{data.balance_at ? `${data.balance_error ? '上次成功查询于' : '查询于'} ${when(data.balance_at)}` : '尚未成功查询'}{data.balance_error ? ` · ${BALANCE_REASON[data.balance_error] ?? '余额查询未成功'}${data.balance_cents == null ? '' : '，显示上次余额'}` : ''}</small>
         </div>
+        <dl className="shop-procurement-counts">
+          <div className={open ? 'is-active' : undefined}><dt>进行中</dt><dd>{open}</dd></div>
+          <div><dt>已完成</dt><dd>{done}</dd></div>
+          <div><dt>报价更新</dt><dd>{quotedAt ? short(quotedAt) : '—'}</dd></div>
+        </dl>
+        <button className="btn btn-secondary" type="button" disabled={busy || !data.enabled} onClick={() => void request('balance', {})}>刷新余额和报价</button>
+      </section>
+      <div className="shop-procurement-layout">
+        <form className="shop-procurement-card shop-procurement-form" aria-labelledby="shop-procurement-new" onSubmit={event => { event.preventDefault(); void create(); }}>
+          <h2 id="shop-procurement-new">新建预订</h2>
+          <fieldset className="shop-procurement-products"><legend>采购商品</legend>
+            {data.products.map(item => <label key={item.id} className={`shop-procurement-product${item.id === product ? ' is-selected' : ''}`}>
+              <input type="radio" name="shop-procurement-product" value={item.id} checked={item.id === product} disabled={busy} onChange={() => setProduct(item.id)}/>
+              <span className="shop-procurement-product-name">{item.title}</span>
+              <span className="shop-procurement-product-quote">{item.quote ? <><strong>{usd(item.quote.price_cents)}</strong><span className={inStock(item.quote) ? 'is-in' : 'is-out'}>{stockText(item.quote)}</span></> : <span>暂无报价</span>}</span>
+            </label>)}
+            <small>{quotedAt ? `报价更新于 ${short(quotedAt)}，缺货时同样显示供应商价格。` : '暂无报价，可点“刷新余额和报价”查询。'}</small>
+          </fieldset>
+          <div className="shop-procurement-fields">
+            <label>购买数量<input inputMode="numeric" value={quantity} disabled={busy} onChange={e => setQuantity(e.target.value)} /></label>
+            <label>触发单价（USDT）<input inputMode="decimal" value={price} placeholder={quote ? amount(quote.price_cents) : '可接受单价'} disabled={busy} onChange={e => setPrice(e.target.value)} /></label>
+          </div>
+          {quote ? <button type="button" className="shop-procurement-link" disabled={busy} onClick={() => setPrice(amount(quote.price_cents))}>按现价 {amount(quote.price_cents)} 填入触发单价</button> : null}
+          <label>截止时间（本地）<input type="datetime-local" value={deadline} disabled={busy} onChange={e => setDeadline(e.target.value)} /></label>
+          <div className="shop-procurement-quick" role="group" aria-label="截止时间快捷设置">{[1, 3, 7, 30].map(days => <button key={days} type="button" disabled={busy} onClick={() => setDeadline(inDays(days))}>{days} 天后</button>)}</div>
+          <p className="shop-procurement-estimate">{estimate === null ? '填写数量和触发单价后显示条件金额。' : <>条件金额 <strong>{usd(estimate)}</strong>{count > 1 && trigger !== null ? `（${count} × ${amount(trigger)}）` : ''}
+            {data.balance_cents != null && estimate > data.balance_cents ? <span className="is-warn">高于当前余额，启用后会因余额不足暂停。</span> : null}</>}</p>
+          <button type="submit" className="btn btn-primary" disabled={busy}>保存预订草稿</button>
+          <small className="shop-procurement-help">草稿不会扣款；在预订记录里启用并确认后，才会监控价格和库存并自动采购。</small>
+        </form>
         <section className="shop-procurement-records" aria-labelledby="shop-procurement-records">
           <header><h2 id="shop-procurement-records">预订记录</h2><span>{data.jobs.length ? `${open ? `未完成 ${open} · ` : ''}共 ${data.jobs.length} 条` : ''}</span></header>
-          {data.jobs.length === 0 ? <div className="shop-procurement-empty"><strong>暂无预订</strong><span>先保存草稿，再在这里单独启用。</span></div> : <div className="shop-procurement-list">{data.jobs.map(job => <article key={job.id} className="shop-procurement-job">
-            <header className="shop-procurement-job-title"><strong>{job.title}</strong><span className={`shop-procurement-status is-${job.status}`}>{STATUS[job.status] ?? job.status}</span></header>
-            <dl className="shop-procurement-facts">
-              <div><dt>数量</dt><dd>{job.quantity} 件</dd></div>
-              <div><dt>触发单价</dt><dd>≤ {usd(job.trigger_price_cents)}</dd></div>
-              <div><dt>条件金额</dt><dd>{usd(job.quantity * job.trigger_price_cents)}</dd></div>
-              <div><dt>截止</dt><dd>{short(job.expires_at)}</dd></div>
-            </dl>
-            {job.reason && REASON[job.reason] ? <p className="shop-procurement-reason">{REASON[job.reason]}</p> : null}
-            {job.order_id ? <p className="shop-procurement-order">订单 {job.order_id}{job.amount_cents !== null ? ` · 实付 ${usd(job.amount_cents)}` : ''}</p> : null}
-            {job.checked_at ? <small className="shop-procurement-checked">检查于 {when(job.checked_at)}</small> : null}
-            <div className="shop-procurement-actions">
-              {['draft', 'paused'].includes(job.status) ? <button type="button" className="btn btn-primary" disabled={busy || !data.enabled || !data.scheduler_enabled} onClick={() => { setConfirming(job); setAccepted(false); }}>启用预订</button> : null}
-              {job.status === 'waiting' ? <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(job, 'pause')}>暂停</button> : null}
-              {['draft', 'waiting', 'paused'].includes(job.status) ? <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => void act(job, 'cancel')}>取消预订</button> : null}
-              {job.status === 'delivered' ? <button type="button" className="btn btn-secondary" disabled={busy} onClick={() => revealed[job.id] ? setRevealed(old => { const next = { ...old }; delete next[job.id]; return next; }) : void act(job, 'reveal')}>{revealed[job.id] ? '隐藏交付内容' : `查看交付内容（${job.delivered_count} 件）`}</button> : null}
-              {['uncertain', 'failed'].includes(job.status) && data.supplier?.site ? <a className="btn btn-secondary" href={data.supplier.site} target="_blank" rel="noopener noreferrer">前往供应商核对 ↗</a> : null}
-            </div>
-            {confirming?.id === job.id ? <div className="shop-procurement-confirm" ref={confirmationRef} tabIndex={-1} role="group" aria-label="确认启用预订">
-              <h3>启用 {confirming.title} · {confirming.quantity} 件</h3>
-              <p>满足条件后将自动使用供应商余额采购，买满后停止。触发单价 {usd(confirming.trigger_price_cents)}，条件金额 {usd(confirming.quantity * confirming.trigger_price_cents)}。</p>
-              <label><input type="checkbox" checked={accepted} disabled={busy} onChange={e => setAccepted(e.target.checked)}/>我授权此预订自动采购，并理解供应商不支持锁价，最终扣款可能因其调价而变化。</label>
-              <div className="shop-procurement-actions"><button type="button" className="btn btn-primary" disabled={busy || !accepted} onClick={() => void act(confirming, 'enable')}>确认启用并允许扣款</button><button type="button" className="btn btn-secondary" disabled={busy} onClick={() => setConfirming(null)}>暂不启用</button></div>
-            </div> : null}
-            {revealed[job.id] ? <div className="shop-procurement-delivery"><textarea aria-label={`${job.title} 交付内容`} readOnly value={revealed[job.id]?.join('\n') ?? ''} spellCheck={false}/><button type="button" className="btn btn-secondary" onClick={() => void navigator.clipboard.writeText(revealed[job.id]?.join('\n') ?? '').then(() => setNotice('已复制交付内容。')).catch(() => setError('复制失败，请在文本框内手动复制。'))}>复制交付内容</button><small>切换标签页或 60 秒后隐藏。请自行妥善保存。</small></div> : null}
-          </article>)}</div>}
+          {data.jobs.length === 0 ? <div className="shop-procurement-empty"><strong>暂无预订</strong><span>先保存草稿，再在这里单独启用。</span></div> : <>
+            {openJobs.length ? <div className="shop-procurement-group"><h3>进行中 · {openJobs.length}</h3><div className="shop-procurement-list">{openJobs.map(job)}</div></div> : null}
+            {pastJobs.length ? <div className="shop-procurement-group"><h3>已结束 · {pastJobs.length}</h3><div className="shop-procurement-list">{pastJobs.map(job)}</div></div> : null}
+          </>}
         </section>
       </div>
     </>}

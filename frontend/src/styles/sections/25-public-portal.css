@@ -82,8 +82,27 @@ body.page-portal {
 .shop-referral-link-copy { display: grid; gap: 4px; min-width: 0; font-size: 12px; line-height: 1.6; }
 .shop-referral-link-copy strong { font-size: 13px; font-weight: 650; }
 .shop-referral-link-action { font-size: 12px; font-weight: 600; white-space: nowrap; }
-.shop-referral-banner { flex-basis: 100%; grid-template-columns: auto minmax(0, 1fr) auto; padding: 11px 14px; }
+.shop-referral-banner { grid-template-columns: auto minmax(0, 1fr) auto; padding: 14px 18px; border-radius: 16px; }
 .shop-referral-banner .shop-referral-link-copy { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 12px; }
+/* Above the products: the merchant's announcement and the current promotion, side by side. */
+.shop-board { display: grid; gap: 12px; margin-bottom: 22px; }
+.shop-board.is-pair { grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); }
+.shop-board.is-pair .shop-referral-banner { grid-template-columns: auto minmax(0, 1fr); align-content: center; gap: 8px 12px; }
+.shop-board.is-pair .shop-referral-banner .shop-referral-icon { align-self: start; }
+.shop-board.is-pair .shop-referral-banner .shop-referral-link-copy { display: grid; gap: 4px; word-break: keep-all; }
+.shop-board.is-pair .shop-referral-banner .shop-referral-link-action { grid-column: 2; }
+.shop-board .shop-referral-icon { width: 36px; height: 36px; border-radius: 10px; }
+.shop-board .shop-referral-link-copy strong { font-size: 15px; }
+.shop-announcement { display: flex; align-items: flex-start; gap: 14px; min-width: 0; padding: 16px 18px; border: 1px solid #d6e5f6; border-radius: 16px; background: linear-gradient(115deg, #f1f7ff, #fbfdff 65%); color: #23384f; }
+.shop-announcement-icon { display: grid; place-items: center; flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px; background: #1675dc; color: #fff; box-shadow: 0 6px 14px -8px rgb(22 117 220 / 70%); }
+.shop-announcement-icon svg { width: 20px; height: 20px; }
+.shop-announcement-body { display: grid; flex: 1; gap: 8px; min-width: 0; }
+.shop-announcement h2 { font-size: 15px; font-weight: 700; line-height: 1.4; }
+.shop-announcement p { color: #3c5068; font-size: 13px; line-height: 1.75; white-space: pre-line; }
+.shop-announcement-items { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.shop-announcement-items > span { flex: 0 0 auto; padding-top: 3px; color: #5d7590; font-size: 12px; font-weight: 600; }
+.shop-announcement-items ul { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.shop-announcement-items li { padding: 2px 9px; border: 1px solid #d3e2f3; border-radius: var(--radius-pill); background: #fff; color: #2b4664; font-size: 12px; line-height: 1.6; white-space: nowrap; }
 .shop-referral-teaser { grid-column: 1 / -1; grid-template-columns: auto minmax(0, 1fr); gap: 5px 9px; padding: 11px; }
 .shop-referral-teaser .shop-referral-icon { align-self: start; }
 .shop-referral-teaser .shop-referral-link-action { grid-column: 2; }
@@ -150,6 +169,18 @@ body.page-portal {
   .portal-main { margin-top: 20px; }
   .shop-hero { margin-bottom: 14px; }
   .shop-hero h1 { font-size: 22px; }
+  .shop-board { margin-bottom: 18px; }
+  .shop-board.is-pair { grid-template-columns: minmax(0, 1fr); }
+  .shop-announcement { padding: 14px; }
+  /* On a phone the offer is one line; the Plus card and its page carry the rules. */
+  .shop-board.is-pair .shop-referral-banner { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; padding: 10px 14px; }
+  .shop-board.is-pair .shop-referral-banner .shop-referral-link-action { grid-column: auto; }
+  .shop-board .shop-referral-icon { width: 30px; height: 30px; }
+  .shop-board .shop-referral-link-copy strong { font-size: 14px; }
+  .shop-board.is-pair .shop-referral-banner .shop-referral-link-copy > span { display: none; }
+  .shop-announcement-items { flex-direction: column; gap: 6px; }
+  /* A long list scrolls sideways inside the note instead of making it tall. */
+  .shop-announcement-items ul { flex-wrap: nowrap; max-width: 100%; overflow-x: auto; scrollbar-width: none; mask-image: linear-gradient(90deg, #000 88%, transparent); }
   .shop-filterbar { margin-bottom: 18px; }
   .shop-search { width: 100%; }
   .shop-empty { min-height: 270px; }
@@ -411,6 +442,19 @@ html[data-shop-transition="previous"]::view-transition-new(shop-detail) { animat
 /* Merchandising: a label (学生价…) before the product page title or a card's price, and the 优惠价 in red. */
 .shop-promo-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 6px; background: linear-gradient(135deg, #ff5a36, #f2364d); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: .02em; line-height: 1; white-space: nowrap; box-shadow: 0 4px 10px -6px rgb(242 54 77 / 70%); }
 h1 > .shop-promo-badge { margin-right: 10px; vertical-align: 4px; }
+/* 新品: a tab hanging from a card's top edge with a gradient frame, a label before the product page title,
+   and a filter beside the categories. */
+.shop-new-badge { display: inline-flex; align-items: center; gap: 3px; height: 22px; padding: 0 8px; border-radius: 6px; background: linear-gradient(120deg, #7b5cff, #2f7bff); color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .04em; line-height: 1; white-space: nowrap; box-shadow: 0 6px 14px -8px rgb(91 76 255 / 75%); }
+.shop-new-badge svg { width: 10px; height: 10px; }
+h1 > .shop-new-badge { margin-right: 8px; vertical-align: 4px; }
+.shop-product-row > .shop-new-badge { position: absolute; top: -1px; right: 16px; z-index: 2; height: 20px; padding: 0 9px 1px; border-radius: 0 0 8px 8px; font-size: 11px; pointer-events: none; }
+.shop-product-row.is-new, .shop-product-row.is-new:hover, .shop-product-row.is-new:focus-within { border-color: transparent; background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #8b6bff, #3d8bff 55%, #22c3a6) border-box; }
+.shop-product-row.is-new { box-shadow: 0 12px 26px -16px rgb(91 76 255 / 55%); }
+.shop-product-row.is-new:hover, .shop-product-row.is-new:focus-within { box-shadow: 0 14px 30px -14px rgb(91 76 255 / 60%); }
+.shop-category-list button.is-new { border-color: #d3c8ff; background: linear-gradient(120deg, #f4f0ff, #edf5ff); color: #4a37c8; }
+.shop-category-list button.is-new .shop-count { background: #fff; color: #5b47e0; }
+.shop-category-list button.is-new[aria-pressed="true"] { border-color: transparent; background: linear-gradient(120deg, #7b5cff, #2f7bff); color: #fff; }
+.shop-category-list button.is-new[aria-pressed="true"] .shop-count { background: rgb(255 255 255 / 22%); color: #fff; }
 .shop-promo-price { display: inline-flex; align-items: baseline; gap: 2px; padding: 3px 10px; border-radius: var(--radius-pill); background: #fff0ed; color: #e0402a; font-size: 13px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .shop-promo-price strong { font-size: 16px; font-weight: 800; }
 .shop-promo-price small { margin-left: 2px; font-size: 12px; }

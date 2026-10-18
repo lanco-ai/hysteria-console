@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from web_api import create_app
 from web_api.services import LoginRequired
 from web_api.shop_source import normalize_products
-from web_api.shop_store import ShopStore
+from web_api.shop_store import DEFAULT_ANNOUNCEMENT, ShopStore
 
 
 class Sessions:
@@ -386,12 +386,57 @@ def test_promotion_prices_labels_sold_counts_and_wechat_reach_the_storefront(tmp
     {'display': {'2': {'badge': '学生价', 'sold': True}}},
     {'display': {'2': {'badge': '学生价'}}},
     {'display': {'999': {'badge': '学生价', 'sold': 1}}},
+    # A 新品 mark is a moment in seconds.
+    {'display': {'2': {'badge': '', 'sold': 0, 'new_until': 0}}},
+    {'display': {'2': {'badge': '', 'sold': 0, 'new_until': True}}},
+    {'display': {'2': {'badge': '', 'sold': 0, 'new_until': '2026-10-31'}}},
+    {'display': {'2': {'badge': '', 'sold': 0, 'new': True}}},
+    # The announcement is plain text and plain product names.
+    {'announcement': {'text': '主营 AI'}},
+    {'announcement': {'text': '<b>主营 AI</b>', 'items': []}},
+    {'announcement': {'text': '主' * 201, 'items': []}},
+    {'announcement': {'text': '', 'items': ['https://example.invalid']}},
+    {'announcement': {'text': '', 'items': ['Gmail', 'Gmail']}},
+    {'announcement': {'text': '', 'items': ['Gmail'] + [f'商品 {n}' for n in range(40)]}},
 ])
 def test_invalid_merchandising_is_refused(tmp_path, change):
     store, app = shop_app(tmp_path)
     payload = {'revision': 0, 'client': 3, 'telegram': '', 'skus': {'2:7': {'price_cents': 12800, 'published': True}}, **change}
     with TestClient(app) as client:
         assert client.put('/api/v1/shop/admin', headers=HEADERS, json=payload).status_code == 422
+
+
+def test_new_marks_last_until_their_moment_and_the_announcement_defaults_until_saved(tmp_path):
+    now = [1_760_000_000.0]
+    store, app = shop_app(tmp_path, clock=lambda: now[0])
+    payload = {
+        'revision': 0, 'client': 3, 'telegram': '', 'wechat': 'upc-bh',
+        'skus': {'2:7': {'price_cents': 12800, 'published': True}},
+        'display': {'2': {'badge': '', 'sold': 0, 'new_until': 1_760_000_000 + 86400}},
+    }
+    with TestClient(app) as client:
+        # Until the merchant saves one, buyers see the built-in announcement.
+        assert client.get('/api/v1/shop/catalog').json()['announcement'] == DEFAULT_ANNOUNCEMENT
+        saved = client.put('/api/v1/shop/admin', headers=HEADERS, json=payload)
+        assert saved.status_code == 200, saved.text
+        assert saved.json()['display'] == payload['display']
+        assert saved.json()['announcement'] == DEFAULT_ANNOUNCEMENT
+        assert client.get('/api/v1/shop/catalog').json()['products'][0]['new_until'] == 1_760_000_000 + 86400
+        # The mark ends on its own; the setting stays for the merchant.
+        now[0] += 86400
+        assert 'new_until' not in client.get('/api/v1/shop/catalog').json()['products'][0]
+        own = {'text': '主营 AI 会员，\n其他商品可代购。', 'items': ['YouTube Premium', 'CapCut 剪映']}
+        saved = client.put('/api/v1/shop/admin', headers=HEADERS, json={**payload, 'revision': 1, 'announcement': own})
+        assert saved.status_code == 200, saved.text
+        assert client.get('/api/v1/shop/catalog').json()['announcement'] == own
+        # An empty announcement hides it rather than bringing the default back.
+        hidden = {'text': '', 'items': []}
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json={**payload, 'revision': 2, 'announcement': hidden}).status_code == 200
+        assert 'announcement' not in client.get('/api/v1/shop/catalog').json()
+        assert client.get('/api/v1/shop/admin', headers=HEADERS).json()['announcement'] == hidden
+        # A save from a page that predates the announcement leaves it as it is.
+        assert client.put('/api/v1/shop/admin', headers=HEADERS, json={**payload, 'revision': 3}).status_code == 200
+        assert client.get('/api/v1/shop/admin', headers=HEADERS).json()['announcement'] == hidden
 
 
 def test_visits_count_each_visitor_once_a_day_for_the_shop_and_each_product_on_sale(tmp_path):

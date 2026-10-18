@@ -1,9 +1,11 @@
 // promo_price_cents: an 优惠价 below the price, for buyers it applies to; badge: its name (学生价…), also shown before the title.
 // quantity: units in the merchant's own stock (本店库存), when there are any.
 export type Variant = { id: string; label: string; price_cents: number; promo_price_cents?: number | null; available: boolean; quantity: number | null; sales: null };
-// ends_at: when a limited-time service leaves the shop (seconds).
-export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; badge?: string; sold?: number; views?: number; ends_at?: number; variants: Variant[] };
-export type Catalog = { currency: 'CNY'; telegram: string; wechat?: string; stats?: { views: number; sold: number }; products: Product[]; status: 'ready' | 'stale' | 'unavailable'; updated_at: number | null };
+// ends_at: when a limited-time service leaves the shop (seconds); new_until: while the merchant's 新品 mark lasts.
+export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; badge?: string; sold?: number; views?: number; ends_at?: number; new_until?: number; variants: Variant[] };
+// announcement: the merchant's note to buyers and the unlisted products they can ask for.
+export type Announcement = { text: string; items: string[] };
+export type Catalog = { currency: 'CNY'; telegram: string; wechat?: string; announcement?: Announcement; stats?: { views: number; sold: number }; products: Product[]; status: 'ready' | 'stale' | 'unavailable'; updated_at: number | null };
 export function money(cents: number): string { return `¥${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`; }
 /** Buyers can reach the merchant by Telegram or WeChat. */
 export function hasContact(catalog: Catalog | null): boolean { return Boolean(catalog?.telegram || catalog?.wechat); }
@@ -12,6 +14,8 @@ export function promoCents(variant: Variant | undefined): number | null {
   const promo = variant?.promo_price_cents;
   return variant && promo && promo < variant.price_cents ? promo : null;
 }
+/** A product the merchant marked 新品, until the mark ends. */
+export function isNew(product: Product, now = Date.now()): boolean { return Boolean(product.new_until && product.new_until * 1000 > now); }
 /** What the 优惠价 is called: the product's label, such as 学生价. */
 export function promoName(product: Product): string { return product.badge || '优惠价'; }
 /** 1,234 or 1.2万, for view and sales counts. */

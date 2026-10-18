@@ -7,8 +7,10 @@ import { ShopInventory, useInventorySession, type StockedProduct } from './ShopI
 
 // promo_price_cents: the 优惠价 (学生价, 限时价…) under the selling price, for the buyers it applies to.
 type Setting = { price_cents: number | null; published: boolean; promo_price_cents?: number | null };
-// What the storefront shows with a product: the name of its 优惠价 (a label before the title) and units sold.
-type Display = Record<string, { badge: string; sold: number }>;
+// What the storefront shows with a product: the name of its 优惠价, units sold, and how long it is marked 新品.
+type Display = Record<string, { badge: string; sold: number; new_until?: number }>;
+// The storefront announcement: the merchant's note and the unlisted products buyers can ask for.
+type Announcement = { text: string; items: string[] };
 type LocalNames = { products: Record<string, string>; variants: Record<string, string> };
 // buy_url, provider and category come only with the administrator's view: where each item is bought,
 // from which feed, and the storefront category it belongs to.
@@ -17,9 +19,9 @@ type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; can_read?: boolean; site?: string; supplier?: string; covers?: string };
 type RemovedSource = Pick<SourceStatus, 'supplier' | 'covers' | 'site' | 'can_read'> & { can_add: boolean };
-type Merchant = { inventory_items?: SourceItem[]; inventory?: Record<string, number>; removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
+type Merchant = { inventory_items?: SourceItem[]; inventory?: Record<string, number>; removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; announcement?: Announcement; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
 type Draft = Record<string, { price: string; published: boolean; promo: string }>;
-type DisplayDraft = Record<string, { badge: string; sold: string }>;
+type DisplayDraft = Record<string, { badge: string; sold: string; newUntil: number }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '多邻国' | '短信接码' | 'VPN';
 type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
 // One supplier's product within a storefront plan, and the plan with every supplier offering it.
@@ -30,7 +32,12 @@ const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
 const EMPTY_COPY = { description: '', after_sales: '' };
 const EMPTY_DRAFT = { price: '', published: false, promo: '' };
-const EMPTY_DISPLAY = { badge: '', sold: '' };
+const EMPTY_DISPLAY = { badge: '', sold: '', newUntil: 0 };
+const EMPTY_ANNOUNCEMENT: Announcement = { text: '', items: [] };
+// How long a product stays 新品 when marked.
+const NEW_DAYS = [7, 14, 30];
+// A product name in the announcement: plain words, never a link (the server checks the same).
+const ANNOUNCEMENT_ITEM = /^[0-9A-Za-z\u4e00-\u9fff][0-9A-Za-z\u4e00-\u9fff .+\-/&·]{0,23}$/;
 const BADGES = ['学生价', '限时价', '推广价', '新人价'];
 const CUSTOM_BADGE = '__custom';
 const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
@@ -83,8 +90,12 @@ function draftFor(value: Merchant): Draft {
   return draft;
 }
 function displayFor(value: Merchant): DisplayDraft {
-  return Object.fromEntries(Object.entries(value.display ?? {}).map(([id, item]) => [id, { badge: item.badge, sold: item.sold ? String(item.sold) : '' }]));
+  return Object.fromEntries(Object.entries(value.display ?? {}).map(([id, item]) => [id, { badge: item.badge, sold: item.sold ? String(item.sold) : '', newUntil: item.new_until ?? 0 }]));
 }
+// Names separated by 、 , ， or new lines; repeats once.
+function itemsOf(text: string) { return [...new Set(text.split(/[、,，\n]/).map(item => item.trim()).filter(Boolean))]; }
+const nowSeconds = () => Math.floor(Date.now() / 1000);
+const dayText = (seconds: number) => new Date(seconds * 1000).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
 function namesFor(value: Merchant): LocalNames {
   const names = { products: { ...value.local_names?.products }, variants: { ...value.local_names?.variants } };
   for (const item of value.items) {
@@ -132,6 +143,8 @@ export function ShopAdminPage() {
   const [names, setNames] = useState<LocalNames>({ products: {}, variants: {} });
   const [sourceDraft, setSourceDraft] = useState<Record<string, boolean>>({});
   const [openSources, setOpenSources] = useState(false);
+  const [announcement, setAnnouncement] = useState({ text: '', items: '' });
+  const [openAnnouncement, setOpenAnnouncement] = useState(false);
   // Products whose label is being written by hand rather than picked from BADGES.
   const [customBadges, setCustomBadges] = useState<Set<string>>(() => new Set());
   // Products whose settings (label, names, description) are open.
@@ -150,7 +163,7 @@ export function ShopAdminPage() {
   }
   // 本店库存 reports its counts; only the per-SKU numbers change, unsaved inputs stay.
   const updateStock = useCallback((stock: Record<string, number>) => { setState(old => old && { ...old, inventory: stock }); }, []);
-  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setSourceDraft(sourcesFor(value)); setCustomBadges(new Set()); setCopy(value.products ?? {}); setOpenProducts(old => new Set([...old].filter(id => value.items.some(item => item.product_id === id)))); setDirty(false); }
+  function accept(value: Merchant) { setState(value); setTelegram(value.telegram); setWechat(value.wechat ?? ''); setDraft(draftFor(value)); setDisplay(displayFor(value)); setNames(namesFor(value)); setSourceDraft(sourcesFor(value)); setAnnouncement({ text: value.announcement?.text ?? '', items: (value.announcement?.items ?? []).join('、') }); setCustomBadges(new Set()); setCopy(value.products ?? {}); setOpenProducts(old => new Set([...old].filter(id => value.items.some(item => item.product_id === id)))); setDirty(false); }
   useEffect(() => {
     let active = true;
     void shopRequest<Merchant>('admin').then(value => { if (active) accept(value); }).catch(reason => { if (active) setError(String(reason.message)); });
@@ -168,6 +181,10 @@ export function ShopAdminPage() {
   }
   function editDisplay(productId: string, change: Partial<DisplayDraft[string]>) {
     setDisplay(value => ({ ...value, [productId]: { ...EMPTY_DISPLAY, ...value[productId], ...change } }));
+    setDirty(true); setNotice('');
+  }
+  function editAnnouncement(change: Partial<typeof announcement>) {
+    setAnnouncement(value => ({ ...value, ...change }));
     setDirty(true); setNotice('');
   }
   function editName(field: keyof LocalNames, id: string, name: string) {
@@ -276,8 +293,13 @@ export function ShopAdminPage() {
       const sold = value.sold.trim() === '' ? 0 : Number(value.sold.trim());
       if (badge.length > 8) { setError('优惠标签最多 8 个字，例如“学生价”。'); return; }
       if (!Number.isInteger(sold) || sold < 0 || sold > 10_000_000) { setError('已售件数请填写 0 到 10000000 之间的整数。'); return; }
-      if (badge || sold) shown[productId] = { badge, sold };
+      // An expired 新品 mark is dropped on the next save.
+      const newUntil = value.newUntil > nowSeconds() ? value.newUntil : 0;
+      if (badge || sold || newUntil) shown[productId] = { badge, sold, ...(newUntil ? { new_until: newUntil } : {}) };
     }
+    const shownNote = { text: announcement.text.trim(), items: itemsOf(announcement.items) };
+    if (shownNote.text.length > 200 || /[<>]/.test(shownNote.text)) { setError('店铺公告最多 200 个字，不能包含 < 或 >。'); return; }
+    if (shownNote.items.length > 40 || shownNote.items.some(item => !ANNOUNCEMENT_ITEM.test(item))) { setError('代购商品最多 40 个，每个最多 24 个字，只用文字、数字、空格和 . + - / & ·。'); return; }
     if (telegram && !/^[A-Za-z][A-Za-z0-9_]{4,31}$/.test(telegram)) { setError('请输入 5–32 位 Telegram 用户名，不包含 @ 或链接。'); return; }
     if (wechat && !/^[A-Za-z][-_A-Za-z0-9]{5,19}$/.test(wechat)) { setError('请输入 6–20 位微信号：字母开头，可包含字母、数字、下划线和减号。'); return; }
     const localNames: LocalNames = { products: {}, variants: {} };
@@ -290,7 +312,7 @@ export function ShopAdminPage() {
     }
     // Keep client 3 for existing price semantics; local_names is an explicit optional field.
     const controls = Object.fromEntries(Object.entries(sourceDraft).filter(([, enabled]) => !enabled));
-    const settings = { revision: state.revision, client: 3, telegram, wechat, skus, products: copy, display: shown, local_names: localNames, source_enabled: controls };
+    const settings = { revision: state.revision, client: 3, telegram, wechat, skus, products: copy, display: shown, announcement: shownNote, local_names: localNames, source_enabled: controls };
     const body = JSON.stringify(settings);
     const savedBody = JSON.stringify({ ...settings, revision: state.revision + 1 });
     const encoder = new TextEncoder();
@@ -333,8 +355,12 @@ export function ShopAdminPage() {
   const displayChanged = (productId: string) => {
     const current = display[productId] ?? EMPTY_DISPLAY;
     const base = state?.display?.[productId];
-    return current.badge.trim() !== (base?.badge ?? '') || (current.sold.trim() === '' ? 0 : Number(current.sold.trim())) !== (base?.sold ?? 0);
+    return current.badge.trim() !== (base?.badge ?? '') || (current.sold.trim() === '' ? 0 : Number(current.sold.trim())) !== (base?.sold ?? 0)
+      || current.newUntil !== (base?.new_until ?? 0);
   };
+  const savedAnnouncement = state?.announcement ?? EMPTY_ANNOUNCEMENT;
+  const announcementItems = itemsOf(announcement.items);
+  const announcementChanged = Boolean(state) && (announcement.text.trim() !== savedAnnouncement.text || announcementItems.join('\n') !== savedAnnouncement.items.join('\n'));
   const copyChanged = (productId: string) => {
     const current = copy[productId] ?? EMPTY_COPY;
     const base = state?.products?.[productId] ?? EMPTY_COPY;
@@ -344,11 +370,12 @@ export function ShopAdminPage() {
     [Object.keys(draft).filter(priceChanged).length, '个规格'],
     [Object.keys(names.products).filter(productNamesChanged).length, '个商品的名称或规格名称'],
     [Object.keys({ ...copy, ...state?.products }).filter(copyChanged).length, '个商品的说明'],
-    [Object.keys({ ...display, ...state?.display }).filter(displayChanged).length, '个商品的优惠标签或销量'],
+    [Object.keys({ ...display, ...state?.display }).filter(displayChanged).length, '个商品的前台展示'],
     [sourceChanges, '个来源读取设置'],
   ].filter(([count]) => count).map(([count, unit]) => `${count} ${unit}`);
   if (state && telegram !== state.telegram) pending.push('Telegram 用户名');
   if (state && wechat !== (state.wechat ?? '')) pending.push('微信号');
+  if (announcementChanged) pending.push('店铺公告');
   const shownCount = items.filter(visible).length;
   const brandDirty = (name: Brand) => items.some(item => brandOf(item) === name && (changed(item.key) || productNamesChanged(item.product_id) || copyChanged(item.product_id) || displayChanged(item.product_id)));
   const providerCount = (provider: string) => allItems.filter(item => providerOf(item) === provider).length;
@@ -429,6 +456,18 @@ export function ShopAdminPage() {
               </div>)}</div>
             </div> : null}
           </div> : null}
+          <div className="shop-admin-announcement" role="group" aria-label="店铺公告">
+            <div className="shop-admin-announcement-summary">
+              <strong>店铺公告</strong>
+              <span>{announcement.text.trim() || announcementItems.length ? <>{announcement.text.trim() || '（无公告文字）'}{announcementItems.length ? <b> · 还可代购 {announcementItems.length} 项</b> : null}</> : '未填写，前台不显示公告'}</span>
+              <button type="button" className="shop-admin-source-toggle" aria-expanded={openAnnouncement} aria-controls="shop-admin-announcement-fields" onClick={() => setOpenAnnouncement(value => !value)}>编辑公告{announcementChanged ? <span aria-hidden="true" className="shop-admin-source-dirty"/> : null}</button>
+            </div>
+            {openAnnouncement ? <div className="shop-admin-announcement-fields" id="shop-admin-announcement-fields">
+              <label><span>公告内容<small>{announcement.text.trim().length}/200</small></span><textarea aria-label="公告内容" rows={3} maxLength={220} value={announcement.text} disabled={busy} placeholder="例如：主营 AI 会员，其他商品没上架的直接问我。" onChange={event => editAnnouncement({ text: event.target.value })}/></label>
+              <label><span>还可代购<small>{announcementItems.length}/40 项</small></span><textarea aria-label="还可代购的商品" rows={3} value={announcement.items} disabled={busy} placeholder="用顿号、逗号或换行分隔，例如：YouTube Premium、Gmail 账号" onChange={event => editAnnouncement({ items: event.target.value })}/></label>
+              <small>显示在前台商品目录上方。两项都清空并保存后，前台不显示公告。</small>
+            </div> : null}
+          </div>
         </section>
         <div className="shop-admin-toolbar">
           {present.length > 1 ? <div className="shop-admin-brands" role="group" aria-label="品牌">
@@ -495,6 +534,7 @@ export function ShopAdminPage() {
                           {comparable && plan.best?.productId === productId ? <span className="badge ok">最低</span> : null}
                           {!product.enabled ? <span className="badge shop-admin-source-off">来源已停用 · 前台隐藏</span> : product.stale ? <span className="badge warn">价格待更新</span> : null}
                           <span className="shop-admin-product-flags">
+                            {shown.newUntil > nowSeconds() ? <span className="shop-new-badge">新品</span> : null}
                             {shown.badge.trim() ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
                             {sold ? <span>已售 {sold.toLocaleString('zh-CN')}</span> : null}
                             {views ? <span>浏览 {views.toLocaleString('zh-CN')}</span> : null}
@@ -532,22 +572,29 @@ export function ShopAdminPage() {
                         </article>;
                       })}
                     </div>
-                    <div className="shop-admin-sales" role="group" aria-label={`商品销量 ${productId}`}>
-                      <label>已售件数<input className="shop-admin-display-sold" aria-label={`已售件数 ${productId}`} aria-describedby={`shop-admin-sales-help-${productId}`} inputMode="numeric" autoComplete="off" placeholder="0" value={shown.sold} disabled={busy} onChange={event => editDisplay(productId, { sold: event.target.value.trim() })}/>件</label>
-                      <span>自动记录 {automaticSold.toLocaleString('zh-CN')} 件 · 合计 {sold.toLocaleString('zh-CN')} 件</span>
-                      <p id={`shop-admin-sales-help-${productId}`}>填写需要补录的历史销量，自动记录的件数无需重复填写。保存后显示在商品卡片和详情页。</p>
-                    </div>
                     {open ? <div className="shop-admin-product-settings" id={`shop-admin-settings-${productId}`}>
                       {product.provider === 'local' ? <div className="shop-admin-names">
                         <label className="shop-admin-product-name">商品名称<input aria-label={`商品名称 ${productId}`} aria-invalid={!validName(names.products[productId] ?? '', 120) || undefined} maxLength={120} value={names.products[productId] ?? ''} disabled={busy} onChange={event => editName('products', productId, event.target.value)}/></label>
                         {product.rows.map((item, index) => <label key={item.key}>规格 {index + 1} 名称<input aria-label={`规格名称 ${item.key}`} aria-invalid={!validName(names.variants[item.key] ?? '', 80) || undefined} maxLength={80} value={names.variants[item.key] ?? ''} disabled={busy} onChange={event => editName('variants', item.key, event.target.value)}/></label>)}
                       </div> : null}
-                      <div className="shop-admin-display">
-                        <label>优惠标签<select aria-label={`优惠标签 ${productId}`} value={custom ? CUSTOM_BADGE : shown.badge} disabled={busy} onChange={event => chooseBadge(productId, event.target.value)}>
-                          <option value="">不显示</option>{BADGES.map(name => <option key={name} value={name}>{name}</option>)}<option value={CUSTOM_BADGE}>自定义…</option>
-                        </select></label>
-                        {custom ? <input className="shop-admin-display-text" aria-label={`自定义标签 ${productId}`} maxLength={8} placeholder="最多 8 个字" value={shown.badge} disabled={busy} onChange={event => editDisplay(productId, { badge: event.target.value })}/> : null}
-                        <p className="shop-note">标签显示在前台标题前，并作为优惠价的名称，例如「学生价 ¥118.00」。优惠价在各规格行里填写。</p>
+                      <div className="shop-admin-display" role="group" aria-label={`前台展示 ${productId}`}>
+                        <div className="shop-admin-display-field">
+                          <label>优惠标签<select aria-label={`优惠标签 ${productId}`} value={custom ? CUSTOM_BADGE : shown.badge} disabled={busy} onChange={event => chooseBadge(productId, event.target.value)}>
+                            <option value="">不显示</option>{BADGES.map(name => <option key={name} value={name}>{name}</option>)}<option value={CUSTOM_BADGE}>自定义…</option>
+                          </select></label>
+                          {custom ? <input className="shop-admin-display-text" aria-label={`自定义标签 ${productId}`} maxLength={8} placeholder="最多 8 个字" value={shown.badge} disabled={busy} onChange={event => editDisplay(productId, { badge: event.target.value })}/> : null}
+                          <small>显示在前台价格和商品页标题前，也是优惠价的名称，如「学生价 ¥118.00」。优惠价在规格行里填写。</small>
+                        </div>
+                        <div className="shop-admin-display-field">
+                          <label>新品标记<select aria-label={`新品标记 ${productId}`} value={shown.newUntil > nowSeconds() ? 'keep' : ''} disabled={busy} onChange={event => editDisplay(productId, { newUntil: event.target.value === '' ? 0 : event.target.value === 'keep' ? shown.newUntil : nowSeconds() + Number(event.target.value) * 86400 })}>
+                            <option value="">不标记</option>{shown.newUntil > nowSeconds() ? <option value="keep">新品至 {dayText(shown.newUntil)}</option> : null}{NEW_DAYS.map(days => <option key={days} value={days}>标记 {days} 天</option>)}
+                          </select></label>
+                          <small>前台卡片显示「新品」角标、排在同类商品前面，并出现在「新品」筛选里；到期自动取消。</small>
+                        </div>
+                        <div className="shop-admin-display-field shop-admin-sales" role="group" aria-label={`商品销量 ${productId}`}>
+                          <label>已售件数<input className="shop-admin-display-sold" aria-label={`已售件数 ${productId}`} aria-describedby={`shop-admin-sales-help-${productId}`} inputMode="numeric" autoComplete="off" placeholder="0" value={shown.sold} disabled={busy} onChange={event => editDisplay(productId, { sold: event.target.value.trim() })}/>件</label>
+                          <small id={`shop-admin-sales-help-${productId}`}>补录历史销量，自动记录的无需重复填写。<span>自动记录 {automaticSold.toLocaleString('zh-CN')} 件 · 合计 {sold.toLocaleString('zh-CN')} 件</span></small>
+                        </div>
                       </div>
                       {isNoticeProduct(productId) && <p className="shop-note">商品说明支持 Markdown 标题、列表和强调。清空并保存后，客户将看到未填写提示。</p>}
                       <div className="shop-copy-fields">{(['description', 'after_sales'] as const).map(field => {

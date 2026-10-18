@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { money, shopRequest } from './catalog';
+import { ShopBrandImage } from './ShopBrandImage';
 
 // A Gemini or Muse AI SKU the merchant can stock: its storefront name and sale state.
 export type StockedProduct = { key: string; productId: string; title: string; label: string; category: string; priceCents: number | null; published: boolean; supplierAvailable: boolean };
@@ -149,9 +150,19 @@ export function ShopInventory({ session, products, loading = false, unsavedProdu
     void navigator.clipboard.writeText(text).then(() => setNotice('已复制，可直接发给买家。')).catch(() => setError('复制失败，请在文本框内手动复制。'));
   }
 
+  const totals = data ? Object.values(data.skus).reduce((sum, entry) => ({ stock: sum.stock + (entry?.stock.length ?? 0), delivered: sum.delivered + (entry?.delivered.length ?? 0) }), { stock: 0, delivered: 0 }) : null;
+  const hideLine = (id: string) => setRevealed(old => { const next = { ...old }; delete next[id]; return next; });
+  // One product per row: its state on top, then 发货 beside 补货, then the unit lists.
   return <section className="shop-inventory" aria-label="本店库存">
     {unsavedProducts ? <p className="shop-procurement-banner">商品管理里还有未保存的修改，<a href="/admin/shop">返回商品管理</a>保存后再离开。</p> : null}
-    <p className="shop-inventory-intro">账号和链接只保存在本服务器：列表和前台只显示数量，点“查看”或发货时才显示内容。有现货时，即使供应商缺货，前台也可下单；发货后自动计入已售。</p>
+    <div className="shop-inventory-summary">
+      {totals ? <dl className="shop-inventory-totals">
+        <div className={totals.stock ? 'is-stocked' : undefined}><dt>现货合计</dt><dd>{totals.stock}<small>件</small></dd></div>
+        <div><dt>已发货</dt><dd>{totals.delivered}<small>件</small></dd></div>
+        <div><dt>自营商品</dt><dd>{products.length}<small>个</small></dd></div>
+      </dl> : null}
+      <p className="shop-inventory-intro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>账号和链接只保存在本服务器：列表和前台只显示数量，点“查看”或发货时才显示内容。有现货时，即使供应商缺货，前台也可下单；发货后自动计入已售。</span></p>
+    </div>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
     <p role="status" className="shop-procurement-notice">{notice}</p>
     {loading || !data ? <p className="shop-procurement-banner">正在读取库存…</p> : !products.length ? <p className="shop-procurement-banner">暂无可管理库存的商品：Gemini 和 Muse AI 的来源启用后会显示在这里。</p>
@@ -161,46 +172,58 @@ export function ShopInventory({ session, products, loading = false, unsavedProdu
         const shown = delivered?.key === product.key ? delivered.item : null;
         return <article key={product.key} className="shop-inventory-product" aria-label={`${product.title} 库存`}>
           <header className="shop-inventory-head">
-            <div><h2>{product.title}</h2><small>{product.label}</small></div>
-            <div className="shop-inventory-tags">
-              <span className={product.published ? 'is-on' : undefined}>{product.published ? `已上架${product.priceCents !== null ? ` · ${money(product.priceCents)}` : ''}` : '未上架'}</span>
-              <span>{product.supplierAvailable ? '供应商有货' : '供应商缺货'}</span>
+            <span className="shop-product-thumbnail shop-inventory-logo" aria-hidden="true"><ShopBrandImage category={product.category}/></span>
+            <div className="shop-inventory-name"><h2>{product.title}</h2>
+              <div className="shop-inventory-tags"><small>{product.label}</small>
+                <span className={product.published ? 'is-on' : undefined}>{product.published ? `已上架${product.priceCents !== null ? ` · ${money(product.priceCents)}` : ''}` : '未上架'}</span>
+                <span className={product.supplierAvailable ? undefined : 'is-out'}>{product.supplierAvailable ? '供应商有货' : '供应商缺货'}</span>
+              </div>
             </div>
+            <dl className="shop-inventory-counts">
+              <div className={entry.stock.length ? 'is-stocked' : undefined}><dt>现货</dt><dd>{entry.stock.length}<small>件</small></dd></div>
+              <div><dt>已发货</dt><dd>{entry.delivered.length}<small>件</small></dd></div>
+            </dl>
           </header>
-          <dl className="shop-inventory-counts">
-            <div className={entry.stock.length ? 'is-stocked' : undefined}><dt>现货</dt><dd>{entry.stock.length}<small>件</small></dd></div>
-            <div><dt>已发货</dt><dd>{entry.delivered.length}<small>件</small></dd></div>
-          </dl>
           {!product.published && entry.stock.length ? <p className="shop-inventory-hint">未上架：在商品管理上架后，顾客才能看到现货并下单。</p> : null}
-          <div className="shop-inventory-deliver">
-            <label>发货备注<input value={notes[product.key] ?? ''} maxLength={60} placeholder="可选，例如买家微信" disabled={busy} onChange={event => setNotes(old => ({ ...old, [product.key]: event.target.value }))}/></label>
-            <button type="button" className="btn btn-primary" disabled={busy || !entry.stock.length} onClick={() => void deliver(product)}>发货一件</button>
+          <div className="shop-inventory-work">
+            <div className="shop-inventory-section">
+              <h3>发货</h3>
+              <div className="shop-inventory-deliver">
+                <label>发货备注<input value={notes[product.key] ?? ''} maxLength={60} placeholder="可选，例如买家微信" disabled={busy} onChange={event => setNotes(old => ({ ...old, [product.key]: event.target.value }))}/></label>
+                <button type="button" className="btn btn-primary" disabled={busy || !entry.stock.length} onClick={() => void deliver(product)}>发货一件</button>
+              </div>
+              {shown ? <div className="shop-inventory-delivered" role="group" aria-label="发货内容">
+                <textarea aria-label={`${product.title} 发货内容`} readOnly rows={product.category === 'Muse AI' ? 7 : 3} value={deliveryText(product, shown.line)} spellCheck={false}/>
+                <div><button type="button" className="btn btn-secondary" onClick={() => copy(deliveryText(product, shown.line))}>复制发货内容</button><button type="button" className="btn btn-secondary" onClick={() => setDelivered(null)}>隐藏</button></div>
+                <small>已从现货扣除并计入已售。切换标签页或 60 秒后隐藏；之后可在发货记录里查看。</small>
+              </div> : <small className="shop-inventory-help">{entry.stock.length ? '取出最早添加的一件，显示可直接发给买家的内容。' : '暂无现货：补货后即可发货。'}</small>}
+            </div>
+            <div className="shop-inventory-section">
+              <h3>补货</h3>
+              <label className="shop-inventory-add">添加库存<textarea value={drafts[product.key] ?? ''} rows={4} disabled={busy} spellCheck={false}
+                placeholder={product.category === 'Muse AI' ? '每行一件，例如：\n账号 | 密码' : '每行一件，例如：\n领取链接'}
+                onChange={event => setDrafts(old => ({ ...old, [product.key]: event.target.value }))}/></label>
+              <div className="shop-inventory-add-actions"><button type="button" className="btn btn-secondary" disabled={busy || !draft} onClick={() => void add(product)}>{draft ? `添加 ${draft} 件到库存` : '添加到库存'}</button><small>与已有库存完全相同的行会跳过。</small></div>
+            </div>
           </div>
-          {shown ? <div className="shop-inventory-delivered" role="group" aria-label="发货内容">
-            <textarea aria-label={`${product.title} 发货内容`} readOnly rows={product.category === 'Muse AI' ? 7 : 3} value={deliveryText(product, shown.line)} spellCheck={false}/>
-            <div><button type="button" className="btn btn-secondary" onClick={() => copy(deliveryText(product, shown.line))}>复制发货内容</button><button type="button" className="btn btn-secondary" onClick={() => setDelivered(null)}>隐藏</button></div>
-            <small>已从现货扣除并计入已售。切换标签页或 60 秒后隐藏；之后可在发货记录里查看。</small>
-          </div> : null}
-          <label className="shop-inventory-add">添加库存<textarea value={drafts[product.key] ?? ''} rows={4} disabled={busy} spellCheck={false}
-            placeholder={product.category === 'Muse AI' ? '每行一件，例如：\n账号 | 密码' : '每行一件，例如：\n领取链接'}
-            onChange={event => setDrafts(old => ({ ...old, [product.key]: event.target.value }))}/></label>
-          <div className="shop-inventory-add-actions"><button type="button" className="btn btn-secondary" disabled={busy || !draft} onClick={() => void add(product)}>{draft ? `添加 ${draft} 件到库存` : '添加到库存'}</button><small>与已有库存完全相同的行会跳过。</small></div>
-          <details className="shop-inventory-details"><summary>现货明细（{entry.stock.length}）</summary>
-            {entry.stock.length ? <ol>{entry.stock.map((item, index) => <li key={item.id}>
-              <span>第 {index + 1} 件 · 添加于 {when(item.added_at)}</span>
-              {revealed[item.id] ? <code>{revealed[item.id]}</code> : null}
-              <span className="shop-inventory-row-actions"><button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => revealed[item.id] ? setRevealed(old => { const next = { ...old }; delete next[item.id]; return next; }) : void act(item, 'reveal')}>{revealed[item.id] ? '隐藏' : '查看'}</button>
-                <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(item, 'remove')}>删除</button></span>
-            </li>)}</ol> : <p>暂无现货。</p>}
-          </details>
-          <details className="shop-inventory-details"><summary>发货记录（{entry.delivered.length}）</summary>
-            {entry.delivered.length ? <ol>{entry.delivered.map(item => <li key={item.id}>
-              <span>{when(item.delivered_at)} 发货{item.note ? ` · ${item.note}` : ''}</span>
-              {revealed[item.id] ? <code>{revealed[item.id]}</code> : null}
-              <span className="shop-inventory-row-actions"><button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => revealed[item.id] ? setRevealed(old => { const next = { ...old }; delete next[item.id]; return next; }) : void act(item, 'reveal')}>{revealed[item.id] ? '隐藏' : '查看'}</button>
-                <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(item, 'restock')}>退回现货</button></span>
-            </li>)}</ol> : <p>暂无发货记录。</p>}
-          </details>
+          <div className="shop-inventory-records">
+            <details className="shop-inventory-details"><summary>现货明细（{entry.stock.length}）</summary>
+              {entry.stock.length ? <ol>{entry.stock.map((item, index) => <li key={item.id}>
+                <span>第 {index + 1} 件 · 添加于 {when(item.added_at)}</span>
+                {revealed[item.id] ? <code>{revealed[item.id]}</code> : null}
+                <span className="shop-inventory-row-actions"><button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => revealed[item.id] ? hideLine(item.id) : void act(item, 'reveal')}>{revealed[item.id] ? '隐藏' : '查看'}</button>
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(item, 'remove')}>删除</button></span>
+              </li>)}</ol> : <p>暂无现货。</p>}
+            </details>
+            <details className="shop-inventory-details"><summary>发货记录（{entry.delivered.length}）</summary>
+              {entry.delivered.length ? <ol>{entry.delivered.map(item => <li key={item.id}>
+                <span>{when(item.delivered_at)} 发货{item.note ? ` · ${item.note}` : ''}</span>
+                {revealed[item.id] ? <code>{revealed[item.id]}</code> : null}
+                <span className="shop-inventory-row-actions"><button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => revealed[item.id] ? hideLine(item.id) : void act(item, 'reveal')}>{revealed[item.id] ? '隐藏' : '查看'}</button>
+                  <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => void act(item, 'restock')}>退回现货</button></span>
+              </li>)}</ol> : <p>暂无发货记录。</p>}
+            </details>
+          </div>
         </article>;
       })}</div>}
   </section>;

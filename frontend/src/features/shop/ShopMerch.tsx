@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { countText, money, promoCents, promoName, type Product, type Variant } from './catalog';
+import { countText, isNew, money, promoCents, promoName, type Announcement, type Product, type Variant } from './catalog';
 
 const WARRANTY_PRODUCTS = new Set(['ChatGPT Plus', 'ChatGPT Go', 'ChatGPT Pro 100', 'ChatGPT Pro 200', 'ChatGPT Pro 500']);
 const REGION_SUFFIX = /｜(菲律宾区|埃及区|智利区|卡付充值)$/;
@@ -28,6 +28,24 @@ export function EndsBadge({ product }: { product: Product }) {
   if (!product.ends_at) return null;
   const day = new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', month: 'long', day: 'numeric' }).format(new Date(product.ends_at * 1000));
   return <span className="shop-ends-badge">{day}截止</span>;
+}
+
+/** The 新品 mark: a tab on a catalog card, a label before the product page title. */
+export function NewBadge({ product }: { product: Product }) {
+  return isNew(product) ? <span className="shop-new-badge"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 9.6 6.4 14.5 8 9.6 9.6 8 14.5 6.4 9.6 1.5 8 6.4 6.4Z" fill="currentColor"/></svg>新品</span> : null;
+}
+
+/** The merchant's note: main business, and what else buyers can ask for though it is not listed. */
+export function ShopAnnouncement({ announcement }: { announcement?: Announcement | undefined }) {
+  if (!announcement || (!announcement.text && !announcement.items.length)) return null;
+  return <section className="shop-announcement" aria-labelledby="shop-announcement-title">
+    <span className="shop-announcement-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 10v4a1 1 0 0 0 1 1h2l5 4V5L7 9H5a1 1 0 0 0-1 1Z"/><path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></svg></span>
+    <div className="shop-announcement-body">
+      <h2 id="shop-announcement-title">店铺公告</h2>
+      {announcement.text ? <p>{announcement.text}</p> : null}
+      {announcement.items.length ? <div className="shop-announcement-items"><span>还可代购</span><ul>{announcement.items.map(item => <li key={item}>{item}</li>)}</ul></div> : null}
+    </div>
+  </section>;
 }
 
 /** A promotion label such as 学生价, shown before the title. */

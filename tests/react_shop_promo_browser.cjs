@@ -33,13 +33,18 @@ const { expect } = require('@playwright/test');
     await expect(manager.locator('.shop-admin-row').filter({ has: manager.getByLabel('售价 2:7') }).locator('.shop-admin-margin')).toContainText('优惠 ¥188.00');
     const settings = manager.getByRole('button', { name: '商品设置 2', exact: true });
     await expect(settings).toHaveAttribute('aria-expanded', 'false');
-    // Sales can be entered without opening the unrelated product settings.
-    await expect(manager.getByLabel('已售件数 2', { exact: true })).toBeVisible();
-    await manager.getByLabel('已售件数 2', { exact: true }).fill('36');
-    await expect(manager.getByRole('group', { name: '商品销量 2', exact: true })).toContainText('自动记录 0 件 · 合计 36 件');
+    // Units sold sit with the label and the 新品 mark in the product's settings, not on every product.
+    await expect(manager.getByLabel('已售件数 2', { exact: true })).toHaveCount(0);
     await settings.click();
     await expect(settings).toHaveAttribute('aria-expanded', 'true');
+    await manager.getByLabel('已售件数 2', { exact: true }).fill('36');
+    await expect(manager.getByRole('group', { name: '商品销量 2', exact: true })).toContainText('自动记录 0 件 · 合计 36 件');
     await manager.getByLabel('优惠标签 2').selectOption('学生价');
+    // 新品 for two weeks: the product's header says so before saving.
+    await manager.getByLabel('新品标记 2').selectOption('14');
+    await expect(manager.getByLabel('新品标记 2')).toHaveValue('keep');
+    await expect(manager.getByLabel('新品标记 2').locator('option:checked')).toHaveText(/^新品至 \d+\/\d+$/);
+    const markedAt = Date.now() / 1000;
     const product2 = manager.locator('.shop-admin-product').filter({ has: manager.getByLabel('优惠标签 2') });
     await expect(product2.locator('.shop-admin-product-flags .shop-promo-badge')).toHaveText('学生价');
     // The label also names the 优惠价 column of the product's rows on a phone.
@@ -56,6 +61,13 @@ const { expect } = require('@playwright/test');
     await manager.getByLabel('优惠标签 1').selectOption('__custom');
     await manager.getByLabel('自定义标签 1').fill('开学特惠');
     await expect(manager.locator('.shop-admin-product-toggle.is-changed')).toHaveCount(2);
+    // The announcement starts from the built-in note; the merchant writes their own.
+    await manager.getByRole('button', { name: '编辑公告', exact: true }).click();
+    await expect(manager.getByLabel('公告内容', { exact: true })).toHaveValue(/^主营 AI 会员与额度/);
+    await manager.getByLabel('公告内容', { exact: true }).fill('主营 AI 会员，其他商品没上架的直接问我。');
+    await manager.getByLabel('还可代购的商品', { exact: true }).fill('YouTube Premium、Gmail 账号\nCapCut 剪映，Gmail 账号');
+    await expect(manager.locator('.shop-admin-announcement-summary')).toContainText('还可代购 3 项');
+    await expect(manager.locator('.shop-admin-announcement .shop-admin-source-dirty')).toHaveCount(1);
     await manager.getByRole('button', { name: '保存商品设置' }).click();
     await expect(manager.getByRole('status')).toContainText('已保存');
     assert.equal(saves.length, 1);
@@ -63,7 +75,10 @@ const { expect } = require('@playwright/test');
     assert.deepEqual(saves[0].skus['2:7'], { price_cents: 128800, published: true, promo_price_cents: 118800 });
     const saved = await (await manager.request.get(`${base}/api/v1/shop/admin`)).json();
     assert.equal(saved.wechat, 'upc-bh');
-    assert.deepEqual(saved.display, { 1: { badge: '开学特惠', sold: 0 }, 2: { badge: '学生价', sold: 36 } });
+    const newUntil = saved.display[2].new_until;
+    assert.ok(Math.abs(newUntil - (markedAt + 14 * 86400)) < 120, '新品 lasts 14 days from marking');
+    assert.deepEqual(saved.display, { 1: { badge: '开学特惠', sold: 0 }, 2: { badge: '学生价', sold: 36, new_until: newUntil } });
+    assert.deepEqual(saved.announcement, { text: '主营 AI 会员，其他商品没上架的直接问我。', items: ['YouTube Premium', 'Gmail 账号', 'CapCut 剪映'] });
     assert.deepEqual(saved.skus['2:7'], { price_cents: 128800, published: true, promo_price_cents: 118800 });
     assert.equal(saved.skus['1:4'].promo_price_cents, undefined);
     // After a reload the settings come back, a hand-written label as one.
@@ -71,12 +86,13 @@ const { expect } = require('@playwright/test');
     await expect(manager.getByLabel('售价 2:7')).toHaveValue('1288.00');
     await expect(manager.getByLabel('优惠价 2:7')).toHaveValue('1188.00');
     await expect(manager.locator('#shop-admin-settings-2')).toHaveCount(0);
-    await expect(manager.getByLabel('已售件数 2', { exact: true })).toHaveValue('36');
+    await expect(manager.locator('.shop-admin-product').filter({ has: manager.getByRole('button', { name: '商品设置 2', exact: true }) }).locator('.shop-admin-product-flags .shop-new-badge')).toHaveText('新品');
     await manager.getByRole('button', { name: '商品设置 1', exact: true }).click();
     await expect(manager.getByLabel('自定义标签 1')).toHaveValue('开学特惠');
     await manager.getByRole('button', { name: '商品设置 2', exact: true }).click();
     await expect(manager.getByLabel('优惠标签 2')).toHaveValue('学生价');
     await expect(manager.getByLabel('已售件数 2')).toHaveValue('36');
+    await expect(manager.getByLabel('新品标记 2')).toHaveValue('keep');
     await shot(manager, 'shop-admin-promo.png');
 
     const shopper = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
@@ -93,6 +109,15 @@ const { expect } = require('@playwright/test');
     await expect(row.locator('.shop-product-from')).toHaveText('起');
     await expect(row.locator('.shop-product-price s')).toHaveText('原价 ¥1288.00');
     await expect(row.locator('.shop-product-stats')).toHaveText('已售 36 件');
+    // The 新品 gets its tab, leads its category and has a filter of its own.
+    await expect(row).toHaveClass(/is-new/);
+    await expect(row.locator('.shop-new-badge')).toHaveText('新品');
+    await expect(page.locator('.shop-category-group[data-category="GPT"] .shop-product-row').first()).toContainText('ChatGPT Pro 200');
+    await expect(page.getByRole('button', { name: /^新品/ })).toContainText('1');
+    // The merchant's announcement sits above the products.
+    const announcement = page.getByRole('region', { name: '店铺公告' });
+    await expect(announcement).toContainText('主营 AI 会员，其他商品没上架的直接问我。');
+    await expect(announcement.getByRole('listitem')).toHaveText(['YouTube Premium', 'Gmail 账号', 'CapCut 剪映']);
     const plus = page.locator('.shop-product-row').filter({ hasText: 'ChatGPT Plus' });
     await expect(plus.locator('.shop-promo-badge')).toHaveText('开学特惠');
     await expect(plus.locator('.shop-product-price s')).toHaveCount(0);
@@ -161,6 +186,6 @@ const { expect } = require('@playwright/test');
       assert.ok(await manager.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `商品管理 fits ${width}px`);
     }
     await shot(page, 'shop-storefront-promo-390.png');
-    console.log('PASS: 优惠价 leading card prices and under the regular price on the product page, cart and message; labels, sold counts, views and WeChat');
+    console.log('PASS: 优惠价 leading card prices and under the regular price on the product page, cart and message; labels, 新品 marks, the announcement, sold counts, views and WeChat');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });
