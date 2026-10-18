@@ -305,8 +305,11 @@ body.page-portal {
 .shop-detail-heading h1 { margin: 0; font-size: clamp(21px, 2.4vw, 27px); line-height: 1.35; overflow-wrap: anywhere; }
 .shop-region-badge, .shop-warranty-badge, .shop-variants-badge, .shop-tag-badge { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border: 1px solid #d7e6f4; border-radius: 5px; background: #f1f7fc; color: #3b6085; font-size: 11px; font-weight: 600; line-height: 1.4; white-space: nowrap; }
 .shop-detail-heading .shop-product-labels { flex-basis: 100%; }
+/* A hot tag (支持Codex) stands out in the promotion red. */
+.shop-tag-badge.is-hot { border-color: transparent; background: linear-gradient(135deg, #ff5a36, #f2364d); color: #fff; box-shadow: 0 4px 10px -6px rgb(242 54 77 / 70%); }
 .shop-detail-heading .shop-region-badge, .shop-detail-heading .shop-warranty-badge, .shop-detail-heading .shop-tag-badge { padding: 4px 9px; font-size: 13px; }
-.shop-plans { display: flex; gap: 8px; margin-top: 14px; overflow-x: auto; scrollbar-width: none; }
+/* Every plan of the brand stays in view: the chips wrap rather than scroll out of sight. */
+.shop-plans { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .shop-plans a { display: inline-flex; align-items: center; flex: 0 0 auto; min-height: 38px; padding: 6px 16px; border: 1px solid var(--border); border-radius: var(--radius-pill); background: var(--bg-surface); color: var(--text-secondary); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; }
 .shop-plans a:hover { border-color: var(--border-strong); color: var(--text-primary); }
 .shop-plans a[aria-current="page"] { border-color: #1675dc; background: #1675dc; color: #fff; }
@@ -392,7 +395,6 @@ body.page-portal {
   .shop-detail-image img { width: 98px; }
   .shop-detail-buy, .shop-detail-copy, .shop-cart { padding: 18px; }
   .shop-detail-price strong { font-size: 26px; }
-  .shop-plans { margin-inline: -14px; padding-inline: 14px; }
   .shop-cart-row { grid-template-columns: 56px minmax(0, 1fr); }
   .shop-cart-row img { width: 56px; }
   .shop-cart-row .shop-quantity { grid-column: 2; justify-self: start; }

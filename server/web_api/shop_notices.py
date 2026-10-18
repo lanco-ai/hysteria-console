@@ -13,9 +13,10 @@ PRODUCT_TITLES = {
     "6": "codex额度充值",
     "1000000000005": "Claude Pro 直充",
 }
-# Short merchant-approved labels shown beside a product's title.
+# Short merchant-approved labels shown beside a product's title; a hot one is set in red.
 PRODUCT_TAGS = {
-    "1000000000005": ("美区官方 iOS 充值", "掉订阅全程质保"),
+    "1000000000005": ({"text": "美区官方 iOS 充值"}, {"text": "掉订阅全程质保"}),
+    "6000000000002": ({"text": "固定IP"}, {"text": "支持各大 AI 软件"}, {"text": "Claude 不封号"}),
 }
 
 DUOLINGO_NOTICE = {

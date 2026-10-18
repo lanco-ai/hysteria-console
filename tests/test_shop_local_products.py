@@ -354,7 +354,8 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
         admin = await store.admin()
         categories = {row['product_id']: row['category'] for row in admin['items']}
         assert categories == {PRODUCT_ID: 'Claude', VPN_ID: 'VPN', STUDENT_ID: 'GPT', GROK_ID: 'Grok'}
-        assert '不提供 VPN' in admin['products'][VPN_ID]['description']
+        assert '> **服务器与域名：本店指导选购。**' in admin['products'][VPN_ID]['description']
+        assert '不提供 VPN' not in admin['products'][VPN_ID]['description']
         assert '流量额度' in admin['products'][VPN_ID]['description']
         assert '10 月 31 日' in admin['products'][STUDENT_ID]['description']
         assert '他人学籍' in admin['products'][STUDENT_ID]['description']
@@ -363,6 +364,7 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
         assert products[STUDENT_ID]['title'] == 'GPT 学生认证' and products[STUDENT_ID]['category'] == 'GPT'
         assert products[STUDENT_ID]['ends_at'] == STUDENT_ENDS_AT
         assert products[VPN_ID]['category'] == 'VPN' and 'ends_at' not in products[VPN_ID]
+        assert [tag['text'] for tag in products[VPN_ID]['tags']] == ['固定IP', '支持各大 AI 软件', 'Claude 不封号']
         now[0] = STUDENT_ENDS_AT + 1
         assert [item['id'] for item in (await store.public())['products']] == [VPN_ID]
         assert STUDENT_KEY not in [row['key'] for row in (await store.admin())['items']]
@@ -412,3 +414,16 @@ def test_local_grok_two_plans_publish_at_merchant_prices_without_supplier_or_cre
         assert not store.path.exists() and not list(tmp_path.glob('*local*'))
 
     asyncio.run(run())
+
+
+def test_saved_vpn_copy_swaps_only_the_retired_line_for_the_guide_line():
+    from web_api.shop_local_products import VPN_GUIDE_LINE, current_vpn_copy
+
+    old = '**本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。** 服务方式为远程分步指导。'
+    for line in (old, '> ' + old, '>' + old + '  '):
+        saved = {'description': f'## 本店自己的标题\n\n{line}\n\n本店自己的说明。', 'after_sales': '本店售后'}
+        assert current_vpn_copy(saved) == {**saved, 'description': f'## 本店自己的标题\n\n{VPN_GUIDE_LINE}\n\n本店自己的说明。'}
+    # Anything else the merchant wrote, including a reworded line, is left alone.
+    for description in ('', '本店自己的说明。', old.replace('费用自付', '费用另计')):
+        saved = {'description': description, 'after_sales': ''}
+        assert current_vpn_copy(saved) is saved

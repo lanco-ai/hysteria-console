@@ -14,14 +14,22 @@ function Quantity({ value, onChange, label = '购买数量' }: { value: string; 
   const count = Number(value);
   return <div className="shop-quantity"><button type="button" aria-label={`减少${label}`} disabled={count <= 1} onClick={() => onChange(String(Math.max(1, count - 1)))}>−</button><input aria-label={label} inputMode="numeric" type="number" min="1" max="99" step="1" value={value} onChange={event => onChange(event.target.value)}/><button type="button" aria-label={`增加${label}`} disabled={count >= 99} onClick={() => onChange(String(Math.min(99, count + 1)))}>+</button></div>;
 }
-/** Plan names within one brand: "Plus" and "Pro 200" rather than "ChatGPT Plus". */
+/** Plan names within one brand: "Plus" and "Pro 200" rather than "ChatGPT Plus｜菲律宾区". The word most plans
+ * start with is dropped (a plan without it, such as codex额度充值, keeps its name); the region stays on the
+ * product page unless two plans would otherwise read the same. */
 function planNames(products: Product[]): Map<string, string> {
-  const words = products.map(item => item.title.split(/\s+/));
-  const first = words[0] ?? [];
-  let shared = 0;
-  // Only a shared leading word that leaves every plan a name of its own.
-  while (words.length > 1 && words.every(parts => parts.length > shared + 1 && parts[shared] === first[shared])) shared += 1;
-  return new Map(products.map((item, index) => [item.id, (words[index] ?? []).slice(shared).join(' ') || item.title]));
+  const counts = new Map<string, number>();
+  for (const item of products) {
+    const parts = productHeading(item).split(/\s+/);
+    if (parts.length > 1) counts.set(parts[0]!, (counts.get(parts[0]!) ?? 0) + 1);
+  }
+  const [brand, uses = 0] = [...counts].sort((a, b) => b[1] - a[1])[0] ?? [];
+  const short = (title: string) => {
+    const parts = title.split(/\s+/);
+    return uses > 1 && parts.length > 1 && parts[0] === brand ? parts.slice(1).join(' ') : title;
+  };
+  const names = products.map(item => short(productHeading(item)));
+  return new Map(products.map((item, index) => [item.id, names.filter(name => name === names[index]).length > 1 ? short(item.title) : names[index]!]));
 }
 
 function backToCatalog(event: MouseEvent<HTMLAnchorElement>): void {

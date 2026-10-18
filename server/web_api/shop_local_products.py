@@ -1,5 +1,6 @@
 """Private, store-owned products; no supplier fetch or persisted source cache."""
 
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -23,7 +24,7 @@ VPN_NOTICE = {
 
 本店指导你在自己的境外服务器上搭建私人网络服务，并配置便于日常管理的可视化面板。
 
-**本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。** 服务方式为远程分步指导。
+> **服务器与域名：本店指导选购。** 选好后远程分步指导完成搭建。
 
 ### 指导内容
 
@@ -78,6 +79,19 @@ VPN_NOTICE = {
 # The student offer ends on this day (Beijing time); the service then leaves the shop by itself.
 STUDENT_PRODUCT_ID = str(PRODUCT_BASE + 3)
 STUDENT_ENDS_AT = int(datetime(2026, 10, 31, 23, 59, 59, tzinfo=ZoneInfo('Asia/Shanghai')).timestamp())
+# The guide once said what the store does not provide; it now says the store helps choose the
+# server and domain. A saved description that still has that line, plain or as a callout, shows
+# the new one in its place; everything else the merchant wrote stays as it is.
+RETIRED_VPN_LINE = re.compile(
+    r'^(?:> ?)?\*\*本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。\*\*[ \t]*服务方式为远程分步指导。[ \t]*$', re.M)
+VPN_GUIDE_LINE = '> **服务器与域名：本店指导选购。** 选好后远程分步指导完成搭建。'
+
+
+def current_vpn_copy(copy):
+    description = RETIRED_VPN_LINE.sub(VPN_GUIDE_LINE, copy.get('description', ''))
+    return copy if description == copy.get('description', '') else {**copy, 'description': description}
+
+
 STUDENT_NOTICE = {
     'description': 'ChatGPT 学生认证指导服务，2026 年 10 月 31 日截止，到期后自动下架。\n\n'
                    '适用于符合 OpenAI 学生优惠条件的买家本人账号：本店提供认证流程说明与问题排查指导，'

@@ -29,8 +29,10 @@ from .shop_lorry_source import PRODUCT_BASE as LORRY_BASE
 from .shop_lorry_source import PUBLIC_TITLES as LORRY_TITLES
 from .shop_local_products import BY_ID as LOCAL_PRODUCTS
 from .shop_local_products import PRODUCT_BASE as LOCAL_BASE
+from .shop_local_products import VPN_PRODUCT_ID as LOCAL_VPN_ID
 from .shop_local_products import catalog as local_catalog
 from .shop_local_products import category as local_category
+from .shop_local_products import current_vpn_copy
 from .shop_local_products import ends_at as local_ends_at
 from .shop_notices import (
     DUOLINGO_NOTICE,
@@ -781,6 +783,8 @@ class ShopStore:
             products[SMS_PRODUCT_ID] = current_sms_copy(dict(products.get(SMS_PRODUCT_ID, SMS_NOTICE)))
         for product_id in {row['product_id'] for row in items} & set(LOCAL_PRODUCTS):
             products.setdefault(product_id, dict(LOCAL_PRODUCTS[product_id]['notice']))
+        if LOCAL_VPN_ID in products:
+            products[LOCAL_VPN_ID] = current_vpn_copy(products[LOCAL_VPN_ID])
         for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
             # A saved custom or explicitly empty copy always wins. Defaults only
             # belong to this read projection, never the persisted merchant state.
@@ -917,7 +921,7 @@ class ShopStore:
                              + automatic_sold.get(row['product_id'], 0)),
                     'views': stats['products'].get(row['product_id'], 0),
                     # Short labels beside the title, e.g. 支持二验三验.
-                    **({'tags': list(tags)} if (tags := SMS_TAGS if row['product_id'] == SMS_PRODUCT_ID
+                    **({'tags': [dict(tag) for tag in tags]} if (tags := SMS_TAGS if row['product_id'] == SMS_PRODUCT_ID
                                                 else PRODUCT_TAGS.get(row['product_id'])) else {}),
                     # A product the merchant marked 新品, while the mark lasts.
                     **({'new_until': new_until} if (new_until := display.get(row['product_id'], {})

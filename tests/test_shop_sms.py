@@ -113,7 +113,7 @@ def test_sms_copy_follows_the_default_until_edited_and_carries_its_tag(tmp_path)
         for revision, old in enumerate([*PREVIOUS_DESCRIPTIONS, PREVIOUS_DESCRIPTIONS[-1].replace('\n\n', '\n')]):
             product = await published(store, revision, old)
             assert (product['description'], product['after_sales']) == (NOTICE['description'], '本店售后')
-            assert product['tags'] == ['支持二验三验']
+            assert product['tags'] == [{'text': '支持二验三验'}, {'text': '支持Codex', 'hot': True}]
             assert (await store.admin())['products']['5000000000001']['description'] == NOTICE['description']
         # The merchant's own words always win.
         product = await published(store, len(PREVIOUS_DESCRIPTIONS) + 1, '本店自己的接码说明')
@@ -135,7 +135,9 @@ def test_sms_formatted_historical_copy_upgrades_without_matching_custom_edits():
     upgraded = current_copy(saved)
     assert upgraded == {**saved, 'description': NOTICE['description']}
     assert '**支持二验、三验' in upgraded['description']
-    assert '> **号码有时效' in upgraded['description']
+    # 二验三验 is the highlighted note now; the reminder about a number's time limit is gone.
+    assert '> **支持二验、三验' in upgraded['description']
+    assert '号码有时效' not in upgraded['description']
     assert saved['description'] == historical
     assert current_copy(upgraded) == upgraded
     for description in ['', historical + '\n本店另有约定。', historical.replace('ChatGPT', '其他平台')]:

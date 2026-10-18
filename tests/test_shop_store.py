@@ -489,7 +489,7 @@ def test_claude_defaults_only_fill_source_present_absent_copy_without_persisting
         public = await store.public()
         assert next(p for p in public['products'] if p['id'] == '1000000000005')['title'] == titled['public_title']
         # The plan's details are short labels beside the shorter title.
-        assert next(p for p in public['products'] if p['id'] == '1000000000005')['tags'] == ['美区官方 iOS 充值', '掉订阅全程质保']
+        assert next(p for p in public['products'] if p['id'] == '1000000000005')['tags'] == [{'text': '美区官方 iOS 充值'}, {'text': '掉订阅全程质保'}]
         for product in public['products']:
             if product['id'] in ids:
                 assert {field: product[field] for field in CLAUDE_NOTICE} == CLAUDE_NOTICE

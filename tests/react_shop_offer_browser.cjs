@@ -107,3 +107,21 @@ test('maximum-length announcement copy fits tablet and phone layouts', async () 
     assert.ok(await page.locator('.shop-announcement p').evaluate(el => el.scrollWidth <= el.clientWidth + 1), `announcement text wraps at ${width}px`);
   }
 }));
+
+test('a brand\'s plans show short names and all stay in view', async () => preview(async (page, data) => {
+  const plan = (id, title) => ({ ...data.products[0], id, title, badge: '', variants: data.products[0].variants.map(variant => ({ ...variant, id: `${id}:1`, available: true })).slice(0, 1) });
+  // codex额度充值 does not start with ChatGPT; the others still lose the brand word and their region.
+  data.products = [plan('1', 'ChatGPT Plus｜菲律宾区'), plan('2', 'ChatGPT Go｜埃及区'), plan('3', 'ChatGPT Pro 100｜智利区'),
+    plan('4', 'ChatGPT Pro 200｜菲律宾区'), plan('5', 'ChatGPT Pro 500｜卡付充值'), plan('6', 'codex额度充值'), plan('7', 'ChatGPT 学生认证')];
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${process.env.PREVIEW_BASE_URL}/?product=4`);
+    const plans = page.getByRole('navigation', { name: 'GPT 其他商品' });
+    await expect(plans.getByRole('link')).toHaveText(['Plus', 'Go', 'Pro 100', 'Pro 200', 'Pro 500', 'codex额度充值', '学生认证']);
+    const box = await plans.boundingBox();
+    for (const link of await plans.getByRole('link').all()) {
+      const chip = await link.boundingBox();
+      assert.ok(chip.x >= box.x - 1 && chip.x + chip.width <= box.x + box.width + 1, `plan chip out of view at ${width}px`);
+    }
+  }
+}));
