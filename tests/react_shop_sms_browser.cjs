@@ -145,7 +145,7 @@ const path = require('node:path');
     await adminPage.getByRole('button', { name: `商品设置 ${id}`, exact: true }).click();
     await expect(adminPage.getByLabel(`已售件数 ${id}`, { exact: true })).toHaveValue('7');
     await adminPage.getByLabel(`已售件数 ${id}`, { exact: true }).fill('9');
-    await expect(adminPage.getByText('自动记录 1 次，合计 10 件', { exact: true })).toBeVisible();
+    await expect(adminPage.getByText('自动记录 1 件 · 合计 10 件', { exact: true })).toBeVisible();
     const reuseStart = requests.length;
     for (const [index, sms] of ['112233', '223344', '334455'].entries()) {
       await page.getByRole('button', { name: '验证激活码' }).click();
@@ -173,7 +173,7 @@ const path = require('node:path');
     }
     assert.equal((await (await context.request.get(`${base}/api/v1/shop/catalog`)).json()).stats.sold, 11);
     await adminPage.getByRole('button', { name: '刷新来源', exact: true }).click();
-    await expect(adminPage.getByText('自动记录 4 次，合计 13 件', { exact: true })).toBeVisible();
+    await expect(adminPage.getByText('自动记录 4 件 · 合计 13 件', { exact: true })).toBeVisible();
     await expect(adminPage.getByLabel(`已售件数 ${id}`, { exact: true })).toHaveValue('9');
     await expect(adminPage.locator('.shop-admin-product-header').getByText('已售 13', { exact: true })).toBeVisible();
     await expect(adminPage.locator('.shop-admin-kpis > div').filter({ hasText: '累计售出' }).locator('dd')).toHaveText('11件');
@@ -185,7 +185,7 @@ const path = require('node:path');
     assert.equal((await (await context.request.get(`${base}/api/v1/shop/catalog`)).json()).stats.sold, 13);
     for (const width of [1440, 390]) {
       await adminPage.setViewportSize({ width, height: 1000 });
-      await expect(adminPage.getByText('自动记录 4 次，合计 13 件', { exact: true })).toBeVisible();
+      await expect(adminPage.getByText('自动记录 4 件 · 合计 13 件', { exact: true })).toBeVisible();
       assert.ok(await adminPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       if (process.env.REACT_SCREENSHOT_DIR) await adminPage.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, `sms-sales-admin-${width}.png`), fullPage: true, animations: 'disabled' });
     }
@@ -387,7 +387,7 @@ const path = require('node:path');
     await adminPage.goto(`${base}/admin/shop`);
     await adminPage.getByRole('button', { name: /^短信接码 / }).click();
     await adminPage.getByRole('button', { name: `商品设置 ${id}`, exact: true }).click();
-    await expect(adminPage.getByText('自动记录 0 次，合计 9 件', { exact: true })).toBeVisible();
+    await expect(adminPage.getByText('自动记录 0 件 · 合计 9 件', { exact: true })).toBeVisible();
     assert.deepEqual(errors, []);
     assert.deepEqual(external, []);
     console.log('PASS: SMS country/full number/canonical copy, accessible credential visibility and reset, Canada/foreign/unknown labels, draft/private cost, specified phone, three separate reuse orders, automatic sold totals, repeated poll/copy dedup, old manual draft save/refresh, old backend compatibility, remaining credit, unavailable/no fallback, pending recovery, mismatch race, 10s polling, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');

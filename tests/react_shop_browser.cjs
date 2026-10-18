@@ -67,7 +67,7 @@ async function main() {
     // Copy lives in the product's settings, closed until asked for.
     await expect(manager.getByLabel('商品说明 2')).toHaveCount(0);
     await manager.getByRole('button', { name: '商品设置 2', exact: true }).click();
-    await manager.getByLabel('商品说明 2').fill('<img src=x onerror=alert(1)>\n商家自填说明\n兑换地址：https://aiflbchengzi.com/\n其他：https://external.invalid/x');
+    await manager.getByLabel('商品说明 2').fill('<img src=x onerror=alert(1)>\n\n**商家自填说明**\n\n兑换地址：[https://aiflbchengzi.com/](https://aiflbchengzi.com/)\n\n其他：[https://external.invalid/x](https://external.invalid/x)');
     await manager.getByLabel('售后条款 2').fill('本店售后请联系商家确认。');
     await manager.getByRole('button', { name: '保存商品设置' }).click();
     await expect(manager.getByRole('status')).toContainText('已保存');
@@ -90,7 +90,9 @@ async function main() {
       await page.getByRole('link', { name: 'ChatGPT Pro 200｜菲律宾区', exact: true }).click();
       await expect(page).toHaveURL(/product=2/);
       await expect(page.getByRole('heading', { name: '商品说明', exact: true })).toBeVisible();
-      await expect(page.getByText('<img src=x onerror=alert(1)>', { exact: false })).toBeVisible();
+      // Safe Markdown omits raw HTML while retaining formatted copy and allowed links.
+      await expect(page.getByText('<img src=x onerror=alert(1)>', { exact: false })).toHaveCount(0);
+      await expect(page.locator('.shop-detail-copy strong')).toHaveText('商家自填说明');
       await expect(page.locator('.shop-detail-copy img')).toHaveCount(0);
       // Only the redemption portal is a link; other URLs stay inert text.
       await expect(page.locator('.shop-detail-copy a')).toHaveCount(1);

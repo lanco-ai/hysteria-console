@@ -92,7 +92,7 @@ async function main() {
       await page.getByRole('searchbox', { name: '搜索商品' }).fill('20x');
       await expect(page.locator('.shop-product-row')).toHaveCount(1);
       await expect(page.getByRole('button', { name: 'Claude Max 20x 暂不可购买' })).toBeDisabled();
-      await page.getByRole('link', { name: 'Claude Max 20x 商品详情', exact: true }).click();
+      await page.getByRole('link', { name: 'Claude Max 20x', exact: true }).click();
       await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeDisabled();
       await page.goto(`${base}/?product=1000000000005`);
       await expect(page.locator('.shop-detail h1')).toHaveText('Claude Pro｜美区官方 iOS 充值 · 掉订阅全程质保');
