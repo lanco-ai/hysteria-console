@@ -146,6 +146,8 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-spec strong { min-width: 0; max-width: 100%; font-size: 13px; font-weight: 600; line-height: 1.6; overflow-wrap: anywhere; }
 .shop-admin-row.is-soldout .shop-admin-spec strong { color: var(--text-secondary); }
 .shop-admin-spec small { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--text-tertiary); font-size: 11px; line-height: 1.5; }
+/* The supplier's own spec name, under the name buyers see. */
+.shop-admin-spec .shop-admin-source-label { flex-basis: 100%; }
 .shop-admin-spec .badge { height: 20px; padding: 0 6px; border-color: transparent; border-radius: 5px; background: #f0f1ee; color: var(--text-secondary); font-size: 10px; }
 .shop-admin-spec .shop-admin-changed { border-color: transparent; background: var(--warn-soft); color: var(--warn); }
 .shop-admin-cost,

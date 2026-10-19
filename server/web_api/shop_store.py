@@ -28,11 +28,12 @@ from .shop_lorry_source import ORIGIN as LORRY_ORIGIN
 from .shop_lorry_source import PRODUCT_BASE as LORRY_BASE
 from .shop_lorry_source import PUBLIC_TITLES as LORRY_TITLES
 from .shop_local_products import BY_ID as LOCAL_PRODUCTS
+from .shop_local_products import GROK_IOS_PRODUCT_ID as LOCAL_GROK_IOS_ID
 from .shop_local_products import PRODUCT_BASE as LOCAL_BASE
 from .shop_local_products import VPN_PRODUCT_ID as LOCAL_VPN_ID
 from .shop_local_products import catalog as local_catalog
 from .shop_local_products import category as local_category
-from .shop_local_products import current_vpn_copy
+from .shop_local_products import current_grok_ios_copy, current_vpn_copy
 from .shop_local_products import ends_at as local_ends_at
 from .shop_notices import (
     DUOLINGO_NOTICE,
@@ -47,6 +48,7 @@ from .shop_notices import (
     MUSE_PRODUCT_IDS,
     PRODUCT_TAGS,
     PRODUCT_TITLES,
+    VARIANT_LABELS,
     X_PREMIUM_NOTICE,
     sanitize_product_copy,
 )
@@ -155,6 +157,10 @@ def storefront_title(row):
             label = '卡付充值' if prefix[1] == '卡付' else prefix[1] + '区'
             return f'{title}｜{label}'
     return title
+
+
+def storefront_label(row):
+    return VARIANT_LABELS.get(row['product_id'], {}).get(row['label'], row['label'])
 
 
 class Conflict(ValueError):
@@ -785,6 +791,8 @@ class ShopStore:
             products.setdefault(product_id, dict(LOCAL_PRODUCTS[product_id]['notice']))
         if LOCAL_VPN_ID in products:
             products[LOCAL_VPN_ID] = current_vpn_copy(products[LOCAL_VPN_ID])
+        if LOCAL_GROK_IOS_ID in products:
+            products[LOCAL_GROK_IOS_ID] = current_grok_ios_copy(products[LOCAL_GROK_IOS_ID])
         for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
             # A saved custom or explicitly empty copy always wins. Defaults only
             # belong to this read projection, never the persisted merchant state.
@@ -857,6 +865,8 @@ class ShopStore:
                 {
                     **row,
                     'public_title': storefront_title(row),
+                    # The spec name buyers see, when it differs from the supplier's.
+                    **({'public_label': label} if (label := storefront_label(row)) != row['label'] else {}),
                     'buy_url': buy_url(row),
                     'provider': provider_of(row['product_id']),
                     'category': category_of(provider_of(row['product_id']), row['public_title'], row['product_id']),
@@ -936,7 +946,7 @@ class ShopStore:
             group['variants'].append(
                 {
                     'id': row['key'],
-                    'label': row['label'],
+                    'label': row.get('public_label', row['label']),
                     'price_cents': merchant['price_cents'],
                     'promo_price_cents': merchant.get('promo_price_cents'),
                     # Units in the merchant's own stock sell whatever the supplier has.

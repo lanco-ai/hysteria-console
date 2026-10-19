@@ -116,6 +116,61 @@ GROK_IOS_PRODUCT_ID = str(PRODUCT_BASE + 4)
 GROK_IOS_NOTICE = {
     'description': '''## SuperGrok 充值｜旧版 · iOS 渠道
 
+**本人账号充值 · 人工发货 · 无需上号**
+
+iOS 印度区正规充值（非零元购），iOS 内购到账，网页、Android、iOS 通用。下单后联系店主人工发卡密，按充值页面填写本人账号的 User ID 即可，无需提供密码。
+
+### 规格：1 个月（月卡）
+
+- **套餐：** 1 个月 SuperGrok 旧版订阅。
+- **已有订阅：** 不支持覆盖，请等当前会员到期后再充值。
+- **充值地址：** [6661231.xyz](https://6661231.xyz/)，填入卡密和 User ID 提交。
+
+### 规格：3 个月（季卡）
+
+- **套餐：** 一次到账 3 个月 SuperGrok 旧版订阅（30 美元档）。
+- **到账：** 通常提交后 **3–15 分钟**，高峰期或个别订单会延迟，请耐心等待。
+- **新号、老号均可充：** 建议用当前没有 Grok 会员的账号。已有会员的账号充值后，新套餐要等当前会员到期才更新，部分账号会延迟，**请勿重复充值**。
+- **旧版会员：** 可能用不了 bot，额度也可能有问题。只保证充上 3 个月旧版会员，使用上的问题不负责，介意请勿下单。
+
+### 充值前请确认
+
+- **不可囤货，收到后请尽快使用，不承诺未使用卡密永久有效。**
+- 确认登录的是需要充值的 Grok 账号，提交前再次核对 User ID。**填错 ID 也会消耗充值凭证，无法退款。**
+- 提交后有效期暂未更新时，请先联系本店核查，**不要重复充值**。
+
+### 如何获取 User ID
+
+1. 在浏览器登录 **需要充值的 Grok 账号**。
+2. 在同一浏览器打开[账号信息页面](https://grok.com/api/auth/session)。
+3. 找到 **userId** 字段，只复制它的值。
+4. 页面打不开或没有该字段时，请联系本店。
+
+**只提供 User ID，不要发送整段页面内容、邮箱、密码、Cookie、Token 或其他登录会话信息。**
+
+![Grok User ID 获取示意图，仅展示虚构 ID，可点击放大](/shop-notices/grok/userid-guide)
+
+### 账号使用提醒
+
+批量注册、多人共享、频繁更换 IP、提问或翻译敏感内容等，都可能导致封号。账号风控由平台决定，本商品不承诺账号免封。''',
+    'after_sales': '''### 规格：1 个月（月卡）
+
+按所购 1 个月订阅周期质保，期内掉订阅按剩余天数退差价。
+
+### 规格：3 个月（季卡）
+
+质保 90 天不掉订阅，期内掉订阅按剩余天数退差价。bot、额度等旧版会员的使用问题不在质保范围。
+
+### 质保说明
+
+掉订阅请提供订单信息和订阅状态截图联系本店。**账号封禁不在质保范围内。** User ID 填错可能消耗充值凭证，无法退款；充值延迟或失败时请保留订单号联系本店，不要重复提交。''',
+}
+
+# The guide before each spec had its own section. A saved field still exactly this text (ignoring
+# spacing) shows today's, which is no longer, so a save never grows; anything changed stays as it is.
+PREVIOUS_GROK_IOS_NOTICE = {
+    'description': '''## SuperGrok 充值｜旧版 · iOS 渠道
+
 **本人账号充值 · 人工发货 · 1 个月 / 3 个月可选**
 
 本商品采用 iOS 印度区充值渠道。下单后请联系本店，由店主人工发放卡密或充值订单号，并确认对应的充值方式。无需提供账号密码，按充值页面要求填写本人账号的 User ID。
@@ -169,6 +224,15 @@ User ID 填错可能消耗充值凭证，无法退款。遇到延迟、失败或
 
 收到后请尽快使用，不支持囤货，不承诺未使用卡密永久有效。人工发货与售后处理请通过本店联系方式联系店主。''',
 }
+
+
+def current_grok_ios_copy(copy):
+    def untouched(field):
+        return re.sub(r'\s+', '', copy.get(field, '')) == re.sub(r'\s+', '', PREVIOUS_GROK_IOS_NOTICE[field])
+
+    upgraded = {**copy, **{field: GROK_IOS_NOTICE[field] for field in GROK_IOS_NOTICE if untouched(field)}}
+    return copy if upgraded == copy else upgraded
+
 
 BUSINESS_PRODUCT_ID = str(PRODUCT_BASE + 5)
 BUSINESS_NOTICE = {

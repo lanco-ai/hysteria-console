@@ -497,3 +497,28 @@ def test_business_and_discount_plans_are_official_gpt_drafts_that_ask_for_eligib
         assert products[BUSINESS_ID]['hot_tags'] == []
 
     asyncio.run(run())
+
+
+def test_saved_grok_guide_moves_to_per_spec_sections_only_while_untouched(tmp_path):
+    from web_api.shop_local_products import GROK_IOS_NOTICE, PREVIOUS_GROK_IOS_NOTICE, current_grok_ios_copy
+
+    # Each spec has its own section; what applies to both stays outside them.
+    for heading in ('### 规格：1 个月（月卡）', '### 规格：3 个月（季卡）'):
+        assert GROK_IOS_NOTICE['description'].count(heading) == 1 and GROK_IOS_NOTICE['after_sales'].count(heading) == 1
+    encode = lambda value: json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    # The admin saves the copy it shows, so the upgrade must never make settings larger.
+    assert all(len(encode(GROK_IOS_NOTICE[field])) <= len(encode(PREVIOUS_GROK_IOS_NOTICE[field])) for field in GROK_IOS_NOTICE)
+    spaced = {field: text.replace('\n\n', '\n \n') for field, text in PREVIOUS_GROK_IOS_NOTICE.items()}
+    assert current_grok_ios_copy(spaced) == GROK_IOS_NOTICE
+    edited = {**PREVIOUS_GROK_IOS_NOTICE, 'description': PREVIOUS_GROK_IOS_NOTICE['description'] + '\n\n本店补充。'}
+    assert current_grok_ios_copy(edited) == {**edited, 'after_sales': GROK_IOS_NOTICE['after_sales']}
+    for kept in ({'description': '本店说明', 'after_sales': ''}, dict(GROK_IOS_NOTICE)):
+        assert current_grok_ios_copy(kept) is kept
+
+    async def run():
+        store = local_store(tmp_path)
+        await store.update({'revision': 0, 'telegram': '', 'client': 3, 'skus': {},
+                            'products': {GROK_ID: dict(PREVIOUS_GROK_IOS_NOTICE)}})
+        assert (await store.admin())['products'][GROK_ID] == GROK_IOS_NOTICE
+
+    asyncio.run(run())

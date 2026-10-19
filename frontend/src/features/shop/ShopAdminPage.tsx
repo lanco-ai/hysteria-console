@@ -14,7 +14,7 @@ type Announcement = { text: string; items: string[] };
 type LocalNames = { products: Record<string, string>; variants: Record<string, string> };
 // buy_url, provider and category come only with the administrator's view: where each item is bought,
 // from which feed, and the storefront category it belongs to.
-type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; cost_cents: number; available: boolean; buy_url?: string; provider?: string; category?: string };
+type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; public_label?: string; cost_cents: number; available: boolean; buy_url?: string; provider?: string; category?: string };
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; can_read?: boolean; site?: string; supplier?: string; covers?: string };
@@ -340,7 +340,7 @@ export function ShopAdminPage() {
   const present = BRANDS.filter(name => byBrand.has(name));
   const activeBrand = present.find(name => name === brand) ?? present[0];
   const needle = query.trim().toLowerCase();
-  const found = (item: SourceItem) => !needle || [item.title, item.public_title, item.label, item.key].some(text => text?.toLowerCase().includes(needle));
+  const found = (item: SourceItem) => !needle || [item.title, item.public_title, item.label, item.public_label, item.key].some(text => text?.toLowerCase().includes(needle));
   // Tabs show one brand at a time; a search looks across every brand.
   const inScope = (item: SourceItem) => (needle !== '' || brandOf(item) === activeBrand) && found(item);
   const counts = Object.fromEntries(FILTERS.map(([value]) => [value, items.filter(item => inScope(item) && matchesFilter(value, item, saved[item.key], isEnabled(providerOf(item)))).length])) as Record<Filter, number>;
@@ -556,8 +556,9 @@ export function ShopAdminPage() {
                         const promoMargin = value.promo ? marginOf(item.cost_cents, value.promo, false) : null;
                         return <article key={item.key} className={`shop-admin-row${changed(item.key) ? ' is-changed' : ''}${item.available ? '' : ' is-soldout'}`} hidden={!visible(item)}>
                           <div className="shop-admin-spec">
-                            <strong>{item.label}</strong>
+                            <strong>{item.public_label ?? item.label}</strong>
                             {state.inventory?.[item.key] ? <a className="badge shop-admin-stock" href="/admin/shop?view=inventory" title="本店库存的现货件数">现货 {state.inventory[item.key]}</a> : null}
+                            {item.public_label ? <small className="shop-admin-source-label">来源规格：{item.label}</small> : null}
                             {(item.available || !product.enabled) && !changed(item.key) ? null : <small>{product.enabled && !item.available ? <span className="badge warn">来源售罄</span> : null}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
                           </div>
                           <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
@@ -596,7 +597,7 @@ export function ShopAdminPage() {
                           <small id={`shop-admin-sales-help-${productId}`}>补录历史销量，自动记录的无需重复填写。<span>自动记录 {automaticSold.toLocaleString('zh-CN')} 件 · 合计 {sold.toLocaleString('zh-CN')} 件</span></small>
                         </div>
                       </div>
-                      {isNoticeProduct(productId) && <p className="shop-note">商品说明支持 Markdown 标题、列表和强调。清空并保存后，客户将看到未填写提示。</p>}
+                      {isNoticeProduct(productId) && <p className="shop-note">商品说明支持 Markdown 标题、列表和强调。{product.rows.length > 1 ? '以「### 规格：规格名称」开头的小节，只在买家选中该规格时显示。' : ''}清空并保存后，客户将看到未填写提示。</p>}
                       <div className="shop-copy-fields">{(['description', 'after_sales'] as const).map(field => {
                         const name = field === 'description' ? '商品说明' : '售后条款';
                         return <label key={field}><span className="shop-copy-label">{name}<small>{productCopy[field].length}/4000</small></span><textarea aria-label={`${name} ${productId}`} rows={5} maxLength={4000} disabled={busy} value={productCopy[field]} onChange={event => editCopy(productId, field, event.target.value)}/></label>;

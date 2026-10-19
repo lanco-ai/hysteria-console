@@ -13,6 +13,10 @@ PRODUCT_TITLES = {
     "6": "codex额度充值",
     "1000000000005": "Claude Pro 直充",
 }
+# Merchant-approved spec names, by product and the supplier's spec name; an unknown name stays as it is.
+VARIANT_LABELS = {
+    "1": {"plus不可以覆盖": "plus新开卡密", "一卡一付": "plus续费卡密"},
+}
 # Short merchant-approved labels shown beside a product's title; a hot one is set in red.
 PRODUCT_TAGS = {
     "1000000000005": ({"text": "美区官方 iOS 充值"}, {"text": "掉订阅全程质保"}),

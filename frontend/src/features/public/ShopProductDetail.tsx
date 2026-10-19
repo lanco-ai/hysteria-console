@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
 import { closeShopProduct } from '../../shared/shopNavigation';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
-import { isNoticeProduct, ShopCopyText, ShopNotice } from '../shop/ShopNotice';
-import { hasContact, money, promoCents, promoName, type Catalog, type Product } from '../shop/catalog';
+import { isNoticeProduct, ShopCopyText, ShopNotice, variantCopy } from '../shop/ShopNotice';
+import { hasContact, money, promoCents, promoName, type Catalog, type Product, type Variant } from '../shop/catalog';
 import { NewBadge, ProductLabels, ProductStats, PromoBadge, PromoPrice, productHeading } from '../shop/ShopMerch';
 import { cartPromo, findSku, type CartItem } from '../shop/cart';
-import { PLUS_REFERRAL_ANCHOR, PlusReferralDetails, isPlusReferralVariant, plusReferralVariant } from '../shop/PlusReferral';
+import { PLUS_REFERRAL_ANCHOR, PlusReferralDetails, plusReferralVariant } from '../shop/PlusReferral';
 
 function CatalogNotice({ catalog, error, onRetry }: { catalog: Catalog | null; error: boolean; onRetry: () => void }) {
   return error ? <p role="alert">商品暂时无法加载。<button type="button" className="btn btn-secondary" onClick={onRetry}>重试</button></p> : !catalog ? <p role="status">正在加载商品…</p> : catalog.status !== 'ready' ? <p role="status">商品信息正在等待更新，暂时无法购买，请稍后再试。</p> : null;
@@ -30,6 +30,19 @@ function planNames(products: Product[]): Map<string, string> {
   };
   const names = products.map(item => short(productHeading(item)));
   return new Map(products.map((item, index) => [item.id, names.filter(name => name === names[index]).length > 1 ? short(item.title) : names[index]!]));
+}
+
+/** A spec with its own price and stock, so specs compare at a glance and picking one moves nothing. */
+function SpecButton({ product, variant, pressed, onSelect }: { product: Product; variant: Variant; pressed: boolean; onSelect: () => void }) {
+  const meta = useId();
+  const promo = promoCents(variant);
+  return <button type="button" className={variant.available ? undefined : 'is-off'} aria-pressed={pressed} aria-label={`${variant.label}${variant.available ? '' : ' · 暂不可购买'}`} aria-describedby={meta} onClick={onSelect}>
+    <span className="shop-spec-name">{variant.label}</span>
+    <span className="shop-spec-meta" id={meta}>
+      <span className={promo ? 'shop-spec-price is-promo' : 'shop-spec-price'}>{money(promo ?? variant.price_cents)}{promo ? ` ${promoName(product)}` : ''}</span>
+      {!variant.available ? <span className="shop-spec-off">暂不可购买</span> : variant.quantity ? <span className="shop-detail-stock">现货 {variant.quantity} 件</span> : null}
+    </span>
+  </button>;
 }
 
 function backToCatalog(event: MouseEvent<HTMLAnchorElement>): void {
@@ -57,6 +70,13 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
   const validCount = count >= 1 && count <= 99;
   const valid = catalog?.status === 'ready' && !!variant?.available && validCount;
   const promo = promoCents(variant);
+  // When any spec has an offer, every spec keeps its line, so switching specs moves nothing below it.
+  const offers = product?.variants.some(item => promoCents(item) !== null) ?? false;
+  // The referral rules stay in place whichever spec is picked; they name the spec they apply to.
+  const referralVariant = catalog?.status === 'ready' ? plusReferralVariant(product) : undefined;
+  const labels = product?.variants.map(item => item.label) ?? [];
+  const description = product?.description ? variantCopy(product.description, labels, variant?.label) : '';
+  const afterSales = product?.after_sales ? variantCopy(product.after_sales, labels, variant?.label) : '';
   const plans = product ? catalog?.products.filter(item => item.category === product.category) ?? [] : [];
   const names = planNames(plans);
   const position = plans.findIndex(item => item.id === product?.id);
@@ -87,8 +107,8 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
       </header>
       {plans.length > 1 ? <nav className="shop-plans" aria-label={`${product.category} 其他商品`}>{plans.map((item, index) => <a key={item.id} href={`/?product=${encodeURIComponent(item.id)}`} aria-current={item.id === product.id ? 'page' : undefined} data-shop-step={index < position ? 'previous' : 'next'}>{names.get(item.id)}</a>)}</nav> : null}
       <section className="shop-detail-buy" aria-label="购买选项">
-        <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{variant ? <PromoPrice product={product} variant={variant}/> : null}{variant?.available && variant.quantity ? <span className="shop-detail-stock">现货 {variant.quantity} 件</span> : null}</div>
-        <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <button key={item.id} type="button" aria-pressed={variantId === item.id} onClick={() => setSelection(item.id)}>{item.label}{!item.available ? ' · 暂不可购买' : ''}</button>)}</fieldset>
+        <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{offers ? <div className="shop-detail-offer">{variant && promo ? <PromoPrice product={product} variant={variant}/> : <span className="shop-detail-offer-none">此规格不参加{promoName(product)}</span>}</div> : null}</div>
+        <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <SpecButton key={item.id} product={product} variant={item} pressed={variantId === item.id} onSelect={() => setSelection(item.id)}/>)}</fieldset>
         <div className="shop-detail-quantity"><span>购买数量</span><Quantity value={quantity} onChange={setQuantity}/><small>每次 1–99 件</small></div>
         {!validCount ? <p role="alert">请输入 1–99 的整数数量。</p> : null}
         <div className="shop-detail-buybar">
@@ -99,8 +119,8 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
         </div>
         <p className="shop-note">购买信息需由商家人工确认。请在付款前确认账号条件、价格和交付方式。</p>
       </section>
-      {catalog?.status === 'ready' && isPlusReferralVariant(product, variant) ? <PlusReferralDetails sectionRef={referral}/> : null}
-      <section className="shop-detail-copy" data-product={product.id}><h2>商品说明</h2>{product.description && isNoticeProduct(product.id) ? <ShopNotice text={product.description} /> : (product.description ? <ShopCopyText text={product.description} /> : <p>商家暂未填写商品说明，请联系商家了解详情。</p>)}<h2>售后条款</h2>{product.after_sales && isNoticeProduct(product.id) ? <ShopNotice text={product.after_sales} /> : (product.after_sales ? <ShopCopyText text={product.after_sales} /> : <p>商家暂未填写售后条款，请在购买前与商家确认。</p>)}</section>
+      {referralVariant ? <PlusReferralDetails sectionRef={referral} label={referralVariant.label}/> : null}
+      <section className="shop-detail-copy" data-product={product.id}><h2>商品说明</h2>{description && isNoticeProduct(product.id) ? <ShopNotice text={description} /> : (description ? <ShopCopyText text={description} /> : <p>商家暂未填写商品说明，请联系商家了解详情。</p>)}<h2>售后条款</h2>{afterSales && isNoticeProduct(product.id) ? <ShopNotice text={afterSales} /> : (afterSales ? <ShopCopyText text={afterSales} /> : <p>商家暂未填写售后条款，请在购买前与商家确认。</p>)}</section>
     </article> : catalog ? <section className="shop-empty portal-card"><h1>商品不存在或已下架</h1><p>可以返回商品目录查看其他商品。</p><button className="btn btn-primary" type="button" onClick={closeShopProduct}>返回商品目录</button></section> : null}
   </div>;
 }
