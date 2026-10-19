@@ -436,15 +436,44 @@ def test_saved_vpn_copy_swaps_only_the_retired_line_for_the_guide_line():
         assert current_vpn_copy(saved) is saved
 
 
-def test_saved_vpn_guide_gains_the_latency_section_once():
-    from web_api.shop_local_products import VPN_LATENCY_IMAGE, VPN_LATENCY_SECTION, current_vpn_copy
+def test_vpn_latency_default_is_present_but_saved_edits_are_not_reinserted(tmp_path):
+    from web_api.shop_local_products import VPN_LATENCY_IMAGE, VPN_LATENCY_SECTION, VPN_NOTICE
 
-    # Before the panel screenshots when the guide has them, otherwise at its end.
-    saved = {'description': '## 指导\n\n### 管理面板功能展示\n\n面板截图。', 'after_sales': ''}
-    upgraded = current_vpn_copy(saved)
-    assert upgraded['description'] == f'## 指导\n\n{VPN_LATENCY_SECTION}\n\n### 管理面板功能展示\n\n面板截图。'
-    assert current_vpn_copy(upgraded) is upgraded and upgraded['description'].count(VPN_LATENCY_IMAGE) == 1
-    assert current_vpn_copy({'description': '本店自己的说明。\n', 'after_sales': ''})['description'] == f'本店自己的说明。\n\n{VPN_LATENCY_SECTION}'
+    async def run():
+        store = local_store(tmp_path)
+        admin = await store.admin()
+        description = admin['products'][VPN_ID]['description']
+        assert description.count(VPN_LATENCY_IMAGE) == 1
+        assert description.index('### 实测延迟') < description.index('### 管理面板功能展示')
+        edited = {**VPN_NOTICE, 'description': description.replace(VPN_LATENCY_SECTION, '本店修改后的说明。')}
+        await store.update({'revision': 0, 'telegram': '', 'client': 3, 'skus': {}, 'products': {VPN_ID: edited}})
+        assert (await store.admin())['products'][VPN_ID] == edited
+
+    asyncio.run(run())
+
+
+def test_vpn_latency_does_not_expand_near_limit_merchant_settings():
+    from web_api.shop_local_products import VPN_PRODUCT_ID, current_vpn_copy
+    from web_api.shop_store import validate_settings
+
+    # The admin sends displayed product copy on every save, even for unrelated edits.
+    for length in (13, 4000):
+        saved = {'description': '文' * length, 'after_sales': '本店自定义售后'}
+        displayed = current_vpn_copy(saved)
+        validate_settings({'revision': 0, 'telegram': '', 'skus': {}, 'products': {VPN_PRODUCT_ID: displayed}})
+        assert displayed is saved
+
+    settings = {'revision': 0, 'telegram': '', 'skus': {}, 'products': {VPN_PRODUCT_ID: {'description': '本店说明', 'after_sales': ''}}}
+    for product_id in ('1', '2', '3', '4', '5'):
+        settings['products'][product_id] = {'description': '文' * 4000, 'after_sales': ''}
+    settings['products']['1']['after_sales'] = '文' * 1000
+    encode = lambda value: json.dumps(value, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    settings['products']['5']['after_sales'] = 'x' * (65530 - len(encode(settings)))
+    assert len(encode(settings)) == 65530
+    validate_settings(settings)
+    settings['products'][VPN_PRODUCT_ID] = current_vpn_copy(settings['products'][VPN_PRODUCT_ID])
+    assert len(encode(settings)) == 65530
+    validate_settings(settings)
 
 
 

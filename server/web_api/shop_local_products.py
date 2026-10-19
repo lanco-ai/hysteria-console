@@ -91,8 +91,7 @@ STUDENT_PRODUCT_ID = str(PRODUCT_BASE + 3)
 STUDENT_ENDS_AT = int(datetime(2026, 10, 31, 23, 59, 59, tzinfo=ZoneInfo('Asia/Shanghai')).timestamp())
 # The guide once said what the store does not provide; it now says the store helps choose the
 # server and domain. A saved description that still has that line, plain or as a callout, shows
-# the new one in its place. A saved guide without the latency section gets it before the panel
-# screenshots (or at its end); everything else the merchant wrote stays as it is.
+# the new one in its place; everything else the merchant wrote stays as it is.
 RETIRED_VPN_LINE = re.compile(
     r'^(?:> ?)?\*\*本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。\*\*[ \t]*服务方式为远程分步指导。[ \t]*$', re.M)
 VPN_GUIDE_LINE = '> **服务器与域名：本店指导选购。** 选好后远程分步指导完成搭建。'
@@ -100,9 +99,6 @@ VPN_GUIDE_LINE = '> **服务器与域名：本店指导选购。** 选好后远�
 
 def current_vpn_copy(copy):
     description = RETIRED_VPN_LINE.sub(VPN_GUIDE_LINE, copy.get('description', ''))
-    if description.strip() and VPN_LATENCY_IMAGE not in description:
-        description = (description.replace(VPN_PANEL_HEADING, f'{VPN_LATENCY_SECTION}\n\n{VPN_PANEL_HEADING}', 1)
-                       if VPN_PANEL_HEADING in description else f'{description.rstrip()}\n\n{VPN_LATENCY_SECTION}')
     return copy if description == copy.get('description', '') else {**copy, 'description': description}
 
 
