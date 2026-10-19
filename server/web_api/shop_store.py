@@ -150,6 +150,11 @@ def category_of(provider, public_title, product_id=''):
     return 'GPT'
 
 
+# Own stock (本店库存) is for products the merchant buys in bulk and resells: links, accounts
+# and SMS activation codes.
+STOCKED_CATEGORIES = frozenset({'Gemini', 'Muse AI', '短信接码'})
+
+
 def storefront_title(row):
     title = PRODUCT_TITLES.get(row['product_id'], row['public_title'])
     if provider_of(row['product_id']) in {'gpt', 'fanai', 'shop16688'} and title.startswith('ChatGPT '):
@@ -835,8 +840,10 @@ class ShopStore:
         ]
         automatic_sold = {SMS_PRODUCT_ID: self.sms_sales.read()}
         for key, count in stock.items():
-            if count['delivered']:
-                product_id = key.split(':')[0]
+            product_id = key.split(':')[0]
+            # An SMS code already counts once per received SMS; counting its delivery too would
+            # count one sale twice.
+            if count['delivered'] and product_id != SMS_PRODUCT_ID:
                 automatic_sold[product_id] = automatic_sold.get(product_id, 0) + count['delivered']
         stock_items = []
         for key in stock:
@@ -1140,7 +1147,7 @@ class ShopStore:
             if self.inventory is not None:
                 stocked = self.inventory.counts()
                 self.inventory.remember([row for row in source['items'] if row['key'] in stocked
-                                         and category_of(provider, row['public_title'], row['product_id']) in {'Gemini', 'Muse AI'}])
+                                         and category_of(provider, row['public_title'], row['product_id']) in STOCKED_CATEGORIES])
             # Persist before acquisition so cancellation cannot busy-loop.
             source['retry_after'] = self.clock() + BACKOFF
             state_store.save_json(self._path(provider), source)

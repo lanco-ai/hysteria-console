@@ -12,7 +12,7 @@ from pathlib import Path
 
 import state_store
 
-from .shop_store import Conflict, category_of, provider_of, validate_items
+from .shop_store import STOCKED_CATEGORIES, Conflict, category_of, provider_of, validate_items
 
 MAX_ITEMS = 2000
 MAX_ADD = 500
@@ -50,7 +50,7 @@ class ShopInventory:
                 raise ValueError
             for key, row in value.items():
                 validate_items([row], provider_of(row['product_id']))
-                if key != row['key'] or category_of(provider_of(row['product_id']), row['public_title'], row['product_id']) not in {'Gemini', 'Muse AI'}:
+                if key != row['key'] or category_of(provider_of(row['product_id']), row['public_title'], row['product_id']) not in STOCKED_CATEGORIES:
                     raise ValueError
         except (ValueError, TypeError, KeyError) as exc:
             raise state_store.InvalidJsonState('invalid stock catalog') from exc
@@ -68,7 +68,7 @@ class ShopInventory:
             return
         for row in rows:
             validate_items([row], provider_of(row['product_id']))
-            if category_of(provider_of(row['product_id']), row['public_title'], row['product_id']) not in {'Gemini', 'Muse AI'}:
+            if category_of(provider_of(row['product_id']), row['public_title'], row['product_id']) not in STOCKED_CATEGORIES:
                 raise ValueError('invalid stock category')
         with state_store.file_lock(self.lock, timeout=2):
             old = self.catalog()

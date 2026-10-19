@@ -1,4 +1,4 @@
-"""The merchant's own Gemini/Muse AI stock: private lines, public counts, one unit per delivery."""
+"""The merchant's own Gemini, Muse AI and SMS code stock: private lines, public counts, one unit per delivery."""
 
 import asyncio
 import json
@@ -173,7 +173,7 @@ def test_routes_guard_stock_and_never_list_lines(tmp_path):
         added = client.post(root + '/add', headers=HEADERS, json={'revision': 0, 'sku': MUSE_KEY, 'lines': [SECRET]})
         assert added.status_code == 200 and added.json()['added'] == 1
         assert added.headers['cache-control'] == 'no-store'
-        # Only Gemini and Muse AI SKUs take own stock.
+        # Only Gemini, Muse AI and SMS code SKUs take own stock.
         assert client.post(root + '/add', headers=HEADERS, json={'revision': 1, 'sku': '1:1', 'lines': ['x']}).status_code == 422
         listed = client.get(root, headers=HEADERS)
         assert listed.status_code == 200 and SECRET not in listed.text
@@ -185,3 +185,37 @@ def test_routes_guard_stock_and_never_list_lines(tmp_path):
         assert delivered.json()['delivered']['line'] == SECRET
         for path in ['/api/v1/shop/admin', '/api/v1/shop/catalog']:
             assert SECRET not in client.get(path, headers=HEADERS).text
+
+
+def test_sms_activation_codes_take_own_stock_and_count_once_as_sold(tmp_path):
+    from test_shop_sms import CONFIG
+    from web_api.shop_sms_source import PRODUCT_ID as SMS_ID
+    from web_api.shop_sms_source import normalize_config
+
+    async def empty():
+        return []
+
+    async def sms():
+        return normalize_config(CONFIG)
+
+    store = ShopStore(tmp_path / 'source.json', fetcher=empty, sms_fetcher=sms, clock=lambda: 1800000000)
+    asyncio.run(store.refresh())
+    sms_key = f'{SMS_ID}:1'
+    async def dispatch(fn, request): return fn(headers=request.headers, path=request.url.path)
+    app = FastAPI()
+    register_shop_routes(app, Sessions(), dispatch, store=store)
+    root = '/api/v1/shop/admin/inventory'
+    code = 'FICTIONAL-SMS-CDK-0001'
+    with TestClient(app) as client:
+        added = client.post(root + '/add', headers=HEADERS, json={'revision': 0, 'sku': sms_key, 'lines': [code]})
+        assert added.status_code == 200 and added.json()['added'] == 1
+        assert {row['key'] for row in client.get('/api/v1/shop/admin', headers=HEADERS).json()['inventory_items']} == {sms_key}
+        publish(store, sms_key)
+        variant, = next(item for item in client.get('/api/v1/shop/catalog').json()['products'] if item['id'] == SMS_ID)['variants']
+        assert (variant['available'], variant['quantity']) == (True, 1)
+        delivered = client.post(root + '/deliver', headers=HEADERS, json={'sku': sms_key, 'request': 'b' * 32, 'note': ''})
+        assert delivered.json()['delivered']['line'] == code
+        # A delivered code is counted when its SMS arrives, not again when it is handed over.
+        assert client.get('/api/v1/shop/admin', headers=HEADERS).json()['automatic_sold'][SMS_ID] == 0
+        for path in ['/api/v1/shop/admin', '/api/v1/shop/catalog']:
+            assert code not in client.get(path, headers=HEADERS).text

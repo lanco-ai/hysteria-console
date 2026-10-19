@@ -41,8 +41,8 @@ const ANNOUNCEMENT_ITEM = /^[0-9A-Za-z\u4e00-\u9fff][0-9A-Za-z\u4e00-\u9fff .+\-
 const BADGES = ['学生价', '限时价', '推广价', '新人价'];
 const CUSTOM_BADGE = '__custom';
 const BRAND_KEY = 'hysteria.shop.admin.brand.v1';
-// Brands the merchant also stocks with own accounts and links (本店库存).
-const STOCKED = new Set<Brand>(['Gemini', 'Muse AI']);
+// Brands the merchant also stocks with own accounts, links and SMS codes (本店库存).
+const STOCKED = new Set<Brand>(['Gemini', 'Muse AI', '短信接码']);
 
 // The feed and category come from the server, which knows its feeds; this page does not.
 function providerOf(item: SourceItem | undefined) { return item?.provider ?? 'gpt'; }
@@ -400,7 +400,7 @@ export function ShopAdminPage() {
       key: item.key, productId: item.product_id, title: item.public_title ?? item.title, label: item.label, category: item.category ?? brandOf(item),
       priceCents: saved[item.key]?.price_cents ?? null, published: Boolean(saved[item.key]?.published) && Boolean(state?.sources?.[providerOf(item)]?.enabled ?? !state?.removed_sources?.[providerOf(item)]), supplierAvailable: item.available,
     }));
-    return <AdminShell active="inventory" pageTitle="本店库存" subtitle="自有账号与链接 · 有现货即可下单"><ShopInventory session={inventorySession} products={stocked} loading={!state} unsavedProducts={dirty} onCounts={updateStock}/></AdminShell>;
+    return <AdminShell active="inventory" pageTitle="本店库存" subtitle="自有账号、链接与激活码 · 有现货即可下单"><ShopInventory session={inventorySession} products={stocked} loading={!state} unsavedProducts={dirty} onCounts={updateStock}/></AdminShell>;
   }
   if (page === 'procurement') {
     return <AdminShell active="procurement" pageTitle="采购预订" subtitle="供应商余额采购 · 买满即停"><ShopProcurement unsavedProducts={dirty}/></AdminShell>;
