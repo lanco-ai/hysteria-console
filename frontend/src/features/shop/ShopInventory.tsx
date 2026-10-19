@@ -55,7 +55,7 @@ export function deliveryText(product: StockedProduct, line: string): string {
   if (product.category === 'Muse AI') return [`Muse AI 账号：${line}`, '登录：打开 https://muse.ai/ ，用以上账号和密码登录，先核对 Token 余额。', '', ...MUSE_TAKEOVER].join('\n');
   if (product.category === 'Gemini') return [`${product.title} 领取链接：${line}`, '请先登录你自己的 Google 账号，再用 Chrome 浏览器打开链接，按页面提示领取。'].join('\n');
   if (product.category === '短信接码') return [`短信接码激活码：${line}`, `使用：打开本店短信接码页面 ${new URL('/?view=sms', window.location.origin).href} ，输入激活码，验证后获取号码并查看验证码。`,
-    '二验、三验：再次验证时，在接码页面开启“指定手机号”并填入原号码即可。号码有时效，取号后请及时使用。'].join('\n');
+    '二验、三验：再次验证时，在接码页面开启“指定手机号”并填入原美国号码。每次需有可用激活次数，能否再次取得原号码以号码当前状态为准。'].join('\n');
   return `${product.title}：${line}`;
 }
 
@@ -163,7 +163,7 @@ export function ShopInventory({ session, products, loading = false, unsavedProdu
         <div><dt>已发货</dt><dd>{totals.delivered}<small>件</small></dd></div>
         <div><dt>自营商品</dt><dd>{products.length}<small>个</small></dd></div>
       </dl> : null}
-      <p className="shop-inventory-intro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>账号、链接和激活码只保存在本服务器：列表和前台只显示数量，点“查看”或发货时才显示内容。有现货时，即使供应商缺货，前台也可下单；发货后自动计入已售。</span></p>
+      <p className="shop-inventory-intro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>账号、链接和激活码只保存在本服务器：列表和前台只显示数量，点“查看”或发货时才显示内容。有现货时，即使供应商缺货，前台也可下单。账号和链接发货后自动计入已售；短信接码在收到短信时计入。</span></p>
     </div>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
     <p role="status" className="shop-procurement-notice">{notice}</p>

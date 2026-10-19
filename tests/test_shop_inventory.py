@@ -196,7 +196,9 @@ def test_sms_activation_codes_take_own_stock_and_count_once_as_sold(tmp_path):
         return []
 
     async def sms():
-        return normalize_config(CONFIG)
+        rows = normalize_config(CONFIG)
+        rows[0]['available'] = False
+        return rows
 
     store = ShopStore(tmp_path / 'source.json', fetcher=empty, sms_fetcher=sms, clock=lambda: 1800000000)
     asyncio.run(store.refresh())
@@ -207,15 +209,30 @@ def test_sms_activation_codes_take_own_stock_and_count_once_as_sold(tmp_path):
     root = '/api/v1/shop/admin/inventory'
     code = 'FICTIONAL-SMS-CDK-0001'
     with TestClient(app) as client:
+        publish(store, sms_key)
+        before = client.get('/api/v1/shop/catalog').json()['products'][0]['variants'][0]
+        assert (before['available'], before['quantity']) == (False, None)
         added = client.post(root + '/add', headers=HEADERS, json={'revision': 0, 'sku': sms_key, 'lines': [code]})
         assert added.status_code == 200 and added.json()['added'] == 1
         assert {row['key'] for row in client.get('/api/v1/shop/admin', headers=HEADERS).json()['inventory_items']} == {sms_key}
-        publish(store, sms_key)
+        # The SMS snapshot remains valid after inventory is reopened.
+        store.inventory = ShopInventory(tmp_path / 'inventory.json', clock=store.clock)
+        assert store.inventory.catalog()[sms_key]['product_id'] == SMS_ID
         variant, = next(item for item in client.get('/api/v1/shop/catalog').json()['products'] if item['id'] == SMS_ID)['variants']
         assert (variant['available'], variant['quantity']) == (True, 1)
-        delivered = client.post(root + '/deliver', headers=HEADERS, json={'sku': sms_key, 'request': 'b' * 32, 'note': ''})
+        payload = {'sku': sms_key, 'request': 'b' * 32, 'note': ''}
+        delivered = client.post(root + '/deliver', headers=HEADERS, json=payload)
         assert delivered.json()['delivered']['line'] == code
+        repeated = client.post(root + '/deliver', headers=HEADERS, json=payload)
+        assert repeated.status_code == 200 and repeated.json() == delivered.json()
+        assert store.inventory.counts() == {sms_key: {'stock': 0, 'delivered': 1}}
+        exhausted = client.get('/api/v1/shop/catalog').json()['products'][0]['variants'][0]
+        assert (exhausted['available'], exhausted['quantity']) == (False, None)
         # A delivered code is counted when its SMS arrives, not again when it is handed over.
         assert client.get('/api/v1/shop/admin', headers=HEADERS).json()['automatic_sold'][SMS_ID] == 0
-        for path in ['/api/v1/shop/admin', '/api/v1/shop/catalog']:
+        asyncio.run(store.record_sms_received(123))
+        asyncio.run(store.record_sms_received(123))
+        assert client.get('/api/v1/shop/admin', headers=HEADERS).json()['automatic_sold'][SMS_ID] == 1
+        assert client.get('/api/v1/shop/catalog').json()['products'][0]['sold'] == 1
+        for path in [root, '/api/v1/shop/admin', '/api/v1/shop/catalog']:
             assert code not in client.get(path, headers=HEADERS).text
