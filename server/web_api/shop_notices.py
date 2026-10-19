@@ -16,6 +16,8 @@ PRODUCT_TITLES = {
 # Short merchant-approved labels shown beside a product's title; a hot one is set in red.
 PRODUCT_TAGS = {
     "1000000000005": ({"text": "美区官方 iOS 充值"}, {"text": "掉订阅全程质保"}),
+    "2000000000001": ({"text": "支持最新 Gemini 模型"},),
+    "2000000000002": ({"text": "质保首次登录"}, {"text": "不换 IP 不封号"}),
     "6000000000002": ({"text": "固定IP"}, {"text": "支持各大 AI 软件"}, {"text": "Claude 不封号"}),
     "6000000000005": ({"text": "官方渠道"},),
     "6000000000006": ({"text": "官方直充"}, {"text": "8折", "hot": True}, {"text": "需先确认资格"}),

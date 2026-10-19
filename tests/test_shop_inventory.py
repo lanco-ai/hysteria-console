@@ -146,6 +146,9 @@ def test_own_stock_sells_when_the_supplier_is_out_and_deliveries_count_as_sold(t
     assert (muse['available'], muse['quantity']) == (True, 2)
     assert products['2000000000002']['sold'] == 1
     assert products['2000000000001']['variants'][0]['available'] is False  # Gemini has no own stock.
+    # The store's short labels for both products.
+    assert products['2000000000001']['tags'] == ['支持最新 Gemini 模型']
+    assert products['2000000000002']['tags'] == ['质保首次登录', '不换 IP 不封号']
     assert 'fictional' not in json.dumps(public) and 'two' not in json.dumps(public)
     admin = asyncio.run(store.admin())
     assert admin['inventory'] == {MUSE_KEY: 2}

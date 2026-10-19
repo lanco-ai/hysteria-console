@@ -7,6 +7,7 @@ import vpnUsers from '../../assets/shop-notices/vpn-users-redacted.png';
 import vpnTraffic from '../../assets/shop-notices/vpn-traffic-redacted.png';
 import vpnRouting from '../../assets/shop-notices/vpn-routing-redacted.png';
 import vpnOperations from '../../assets/shop-notices/vpn-operations-redacted.png';
+import vpnLatency from '../../assets/shop-notices/vpn-latency.png';
 import grokUserId from '../../assets/shop-notices/grok-userid-guide.png';
 
 const claudeProductIds = new Set(['1000000000005', '1000000000007', '1000000000008']);
@@ -22,6 +23,7 @@ const noticeImages = [
   { alias: '/shop-notices/claude/upgrade-restriction', src: upgradeRestriction, width: 1798, height: 608 },
   { alias: '/shop-notices/grok/supergrok-monthly', src: grokMonthly, width: 770, height: 1132 },
   { alias: '/shop-notices/grok/userid-guide', src: grokUserId, width: 1586, height: 992, preview: true },
+  { alias: '/shop-notices/vpn/latency', src: vpnLatency, width: 760, height: 380, preview: true },
   { alias: '/shop-notices/vpn/users', src: vpnUsers, width: 1863, height: 844, preview: true },
   { alias: '/shop-notices/vpn/traffic', src: vpnTraffic, width: 1717, height: 916, preview: true },
   { alias: '/shop-notices/vpn/routing', src: vpnRouting, width: 1777, height: 885, preview: true },

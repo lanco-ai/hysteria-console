@@ -424,16 +424,28 @@ def test_local_grok_two_plans_publish_at_merchant_prices_without_supplier_or_cre
 
 
 def test_saved_vpn_copy_swaps_only_the_retired_line_for_the_guide_line():
-    from web_api.shop_local_products import VPN_GUIDE_LINE, current_vpn_copy
+    from web_api.shop_local_products import VPN_GUIDE_LINE, VPN_LATENCY_SECTION, current_vpn_copy
 
     old = '**本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。** 服务方式为远程分步指导。'
     for line in (old, '> ' + old, '>' + old + '  '):
-        saved = {'description': f'## 本店自己的标题\n\n{line}\n\n本店自己的说明。', 'after_sales': '本店售后'}
-        assert current_vpn_copy(saved) == {**saved, 'description': f'## 本店自己的标题\n\n{VPN_GUIDE_LINE}\n\n本店自己的说明。'}
-    # Anything else the merchant wrote, including a reworded line, is left alone.
-    for description in ('', '本店自己的说明。', old.replace('费用自付', '费用另计')):
+        saved = {'description': f'## 本店自己的标题\n\n{line}\n\n本店自己的说明。\n\n{VPN_LATENCY_SECTION}', 'after_sales': '本店售后'}
+        assert current_vpn_copy(saved) == {**saved, 'description': f'## 本店自己的标题\n\n{VPN_GUIDE_LINE}\n\n本店自己的说明。\n\n{VPN_LATENCY_SECTION}'}
+    # Anything else the merchant wrote, including a reworded line, is left alone; an empty guide stays empty.
+    for description in ('', f'本店自己的说明。\n\n{VPN_LATENCY_SECTION}', old.replace('费用自付', '费用另计') + f'\n\n{VPN_LATENCY_SECTION}'):
         saved = {'description': description, 'after_sales': ''}
         assert current_vpn_copy(saved) is saved
+
+
+def test_saved_vpn_guide_gains_the_latency_section_once():
+    from web_api.shop_local_products import VPN_LATENCY_IMAGE, VPN_LATENCY_SECTION, current_vpn_copy
+
+    # Before the panel screenshots when the guide has them, otherwise at its end.
+    saved = {'description': '## 指导\n\n### 管理面板功能展示\n\n面板截图。', 'after_sales': ''}
+    upgraded = current_vpn_copy(saved)
+    assert upgraded['description'] == f'## 指导\n\n{VPN_LATENCY_SECTION}\n\n### 管理面板功能展示\n\n面板截图。'
+    assert current_vpn_copy(upgraded) is upgraded and upgraded['description'].count(VPN_LATENCY_IMAGE) == 1
+    assert current_vpn_copy({'description': '本店自己的说明。\n', 'after_sales': ''})['description'] == f'本店自己的说明。\n\n{VPN_LATENCY_SECTION}'
+
 
 
 def test_business_and_discount_plans_are_official_gpt_drafts_that_ask_for_eligibility(tmp_path):

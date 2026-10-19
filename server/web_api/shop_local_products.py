@@ -19,6 +19,14 @@ NOTICE = {
 }
 
 VPN_PRODUCT_ID = str(PRODUCT_BASE + 2)
+# The store's own lines as a client measures them, shown before the panel screenshots.
+VPN_LATENCY_IMAGE = '/shop-notices/vpn/latency'
+VPN_LATENCY_SECTION = f'''### 实测延迟
+
+本店自用线路在客户端中的测速截图：美国 TCP（VLESS + REALITY）、UDP（Hysteria2 端口跳跃）和 TUIC 线路延迟约 150–210 ms，GPT、Google、Telegram、GitHub 等分流组按测速和可用性自动选择线路。延迟为截图时的测速结果，实际速度以你的服务器线路和所在网络为准。
+
+![各线路与分流组的延迟测速，美国线路约 150–210 ms]({VPN_LATENCY_IMAGE})'''
+VPN_PANEL_HEADING = '### 管理面板功能展示'
 VPN_NOTICE = {
     'description': '''## VPN 自建搭建指导
 
@@ -33,7 +41,9 @@ VPN_NOTICE = {
 3. 搭建管理面板，设置使用者、流量额度、设备数、订阅与周期规则。
 4. 各平台客户端的导入配置与常见问题排查。
 
-### 管理面板功能展示
+''' + VPN_LATENCY_SECTION + '''
+
+''' + VPN_PANEL_HEADING + '''
 
 以下为本店自用网络管理面板的脱敏界面示例，域名、用户名及配置地址等关键信息已遮挡。点击图片可查看大图。图中流量、用户数和运行状态仅为截图时的示例，具体部署功能与配置以双方确认的指导范围为准。
 
@@ -81,7 +91,8 @@ STUDENT_PRODUCT_ID = str(PRODUCT_BASE + 3)
 STUDENT_ENDS_AT = int(datetime(2026, 10, 31, 23, 59, 59, tzinfo=ZoneInfo('Asia/Shanghai')).timestamp())
 # The guide once said what the store does not provide; it now says the store helps choose the
 # server and domain. A saved description that still has that line, plain or as a callout, shows
-# the new one in its place; everything else the merchant wrote stays as it is.
+# the new one in its place. A saved guide without the latency section gets it before the panel
+# screenshots (or at its end); everything else the merchant wrote stays as it is.
 RETIRED_VPN_LINE = re.compile(
     r'^(?:> ?)?\*\*本店不提供 VPN、节点或账号，服务器与域名由买家自备、费用自付。\*\*[ \t]*服务方式为远程分步指导。[ \t]*$', re.M)
 VPN_GUIDE_LINE = '> **服务器与域名：本店指导选购。** 选好后远程分步指导完成搭建。'
@@ -89,6 +100,9 @@ VPN_GUIDE_LINE = '> **服务器与域名：本店指导选购。** 选好后远�
 
 def current_vpn_copy(copy):
     description = RETIRED_VPN_LINE.sub(VPN_GUIDE_LINE, copy.get('description', ''))
+    if description.strip() and VPN_LATENCY_IMAGE not in description:
+        description = (description.replace(VPN_PANEL_HEADING, f'{VPN_LATENCY_SECTION}\n\n{VPN_PANEL_HEADING}', 1)
+                       if VPN_PANEL_HEADING in description else f'{description.rstrip()}\n\n{VPN_LATENCY_SECTION}')
     return copy if description == copy.get('description', '') else {**copy, 'description': description}
 
 
