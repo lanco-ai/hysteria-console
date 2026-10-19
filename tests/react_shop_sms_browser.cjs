@@ -50,6 +50,93 @@ const path = require('node:path');
         await page.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, name), fullPage: true, animations: 'disabled' });
       }
     };
+    // Fake-clock cancellation contracts: timings stay local, polling never resets fallback time.
+    const cancelEntry = () => page.getByRole('button', { name: '号码无法使用？申请取消' });
+    const cancelConfirm = () => page.getByRole('button', { name: '确认取消当前号码' });
+    const pending = { ok: true, status: 'PENDING', sms_code: null, wait_seconds: 50,
+      cancel_retry_after: 10, cancel_timing_source: 'fallback' };
+    let checkReply = () => pending;
+    let cancelReply = { ok: false, error: 'cancel_too_early', cancel_retry_after: 30, cancel_timing_source: 'upstream' };
+    let cancellationStatus = 409;
+    await page.route('**/shop/sms/acquire', route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...pending, phone: '+12025550123', country: 'US', order_id: 321 }) }));
+    await page.route('**/shop/sms/check', async route => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(await checkReply()) }));
+    await page.route('**/shop/sms/cancel', route => route.fulfill({ status: cancellationStatus, contentType: 'application/json', body: JSON.stringify(cancelReply) }));
+    await open('COUNTDOWN-TEST-FAKE-CDK');
+    const cancelRequests = () => requests.filter(request => request.url.endsWith('/cancel')).length;
+    const cancelStart = cancelRequests();
+    await expect(page.getByText('还需等待 0:10 才可申请取消', { exact: true })).toBeVisible();
+    await expect(page.getByText('已等待 0:50', { exact: true })).toBeVisible();
+    await expect(cancelEntry()).toBeDisabled();
+    for (const width of [1440, 320]) {
+      await page.setViewportSize({ width, height: 1000 });
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `cancel countdown overflow at ${width}`);
+      await screenshot(`sms-cancel-wait50-${width}.png`);
+    }
+    await cancelEntry().evaluate(button => { button.disabled = false; button.click(); });
+    await expect(cancelConfirm()).toHaveCount(0);
+    await page.clock.runFor(10_500);
+    await expect(cancelEntry()).toBeEnabled();
+    await cancelEntry().click();
+    await cancelConfirm().click();
+    await expect(page.getByRole('alert')).toContainText('当前号码尚未到可取消时间，请等待倒计时结束后重试。期间仍会继续查询短信。');
+    await expect(page.getByRole('alert')).not.toContainText('请求较频繁');
+    await expect(cancelEntry()).toBeDisabled();
+    await page.clock.runFor(10_500);
+    await expect(page.locator('.sms-cancel')).toContainText('还需等待');
+    await expect(page.getByText('+1 (202) 555-0123', { exact: true })).toBeVisible();
+    assert.equal(cancelRequests(), cancelStart + 1, 'early rejection must not automatically cancel again');
+    checkReply = () => ({ ok: true, status: 'RECEIVED', sms_code: '987654', wait_seconds: 70 });
+    await page.clock.runFor(10_500);
+    await expect(page.getByText('987654', { exact: true })).toBeVisible();
+    await expect(cancelEntry()).toHaveCount(0);
+    assert.equal(cancelRequests(), cancelStart + 1, 'SMS during countdown must not cause cancellation');
+
+    // An explicit supplier deadline beyond a minute wins; a late poll also guards an open confirmation.
+    pending.wait_seconds = 0; pending.cancel_retry_after = 90; pending.cancel_timing_source = 'upstream';
+    let began = 0, extend = false;
+    checkReply = async () => ({ ...pending, cancel_retry_after: extend ? 30 : Math.max(0, 90 - Math.floor(((await page.evaluate(() => Date.now())) - began) / 1000)) });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await open('LONG-COUNTDOWN-FAKE-CDK');
+    began = await page.evaluate(() => Date.now());
+    await page.clock.runFor(60_500);
+    await expect(cancelEntry()).toBeDisabled();
+    await expect(page.locator('.sms-cancel')).toContainText('0:30');
+    await page.clock.runFor(30_000);
+    await expect(cancelEntry()).toBeEnabled();
+    await cancelEntry().click();
+    extend = true;
+    await page.clock.runFor(10_500);
+    await expect(cancelConfirm()).toBeDisabled();
+    const guarded = cancelRequests();
+    await cancelConfirm().evaluate(button => { button.disabled = false; button.click(); });
+    assert.equal(cancelRequests(), guarded, 'perform must guard cancellation after a deadline changes');
+    checkReply = () => ({ ...pending, cancel_retry_after: 0 });
+    await page.clock.runFor(30_500);
+    await expect(cancelConfirm()).toBeEnabled();
+    cancellationStatus = 200;
+    cancelReply = { ok: true, status: 'CANCELED', sms_code: '654321', wait_seconds: 140 };
+    // The gateway normally projects this race to RECEIVED; keep that public contract here too.
+    cancelReply.status = 'RECEIVED';
+    await cancelConfirm().click();
+    await expect(page.getByText('654321', { exact: true })).toBeVisible();
+    await expect(page.getByText('本次接码已取消', { exact: true })).toHaveCount(0);
+
+    // Legacy responses lacking timing still count from acquisition across repeated zero-wait polls.
+    delete pending.cancel_retry_after; delete pending.cancel_timing_source;
+    checkReply = () => pending;
+    await open('FALLBACK-COUNTDOWN-FAKE-CDK');
+    await page.clock.runFor(50_500);
+    await expect(page.locator('.sms-cancel')).toContainText('0:10');
+    await expect(cancelEntry()).toBeDisabled();
+    await page.clock.runFor(10_000);
+    await expect(cancelEntry()).toBeEnabled();
+    const noAutoCancel = cancelRequests();
+    await page.clock.runFor(20_000);
+    assert.equal(cancelRequests(), noAutoCancel, 'eligibility must not cancel automatically');
+    await page.unroute('**/shop/sms/acquire');
+    await page.unroute('**/shop/sms/check');
+    await page.unroute('**/shop/sms/cancel');
+
     for (const width of [1440, 1024, 390, 320]) {
       await page.setViewportSize({ width, height: 950 });
       await page.goto(`${base}/?view=sms`);
@@ -214,6 +301,8 @@ const path = require('node:path');
     await expect(page.getByText('此激活码有未结束的接码，将恢复原订单，不重新申请指定号码。')).toBeVisible();
     await page.getByRole('button', { name: '恢复当前号码' }).click();
     await expect(page.getByText('+1 (202) 555-0123', { exact: true })).toBeVisible();
+    await expect(page.getByText('还需等待 0:10 才可申请取消', { exact: true })).toBeVisible();
+    await expect(cancelEntry()).toBeDisabled();
     assert.deepEqual(JSON.parse(requests.filter(r => r.url.endsWith('/acquire')).at(-1).body), { activation_code: 'PENDING-TEST-FAKE-CDK' });
 
     // Another device can acquire between verify and acquire. Keep the returned order visible.
@@ -236,6 +325,8 @@ const path = require('node:path');
     await page.getByRole('button', { name: '号码无法使用？申请取消' }).click();
     await page.getByRole('button', { name: '确认取消当前号码' }).click();
     await expect(page.getByText('正在确认取消', { exact: true })).toBeVisible();
+    await expect(page.getByText('本次接码已取消', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '返回激活码输入' })).toHaveCount(0);
     const acquisitions = requests.filter(r => r.url.endsWith('/acquire')).length;
     await page.clock.runFor(10_500);
     await expect(page.getByText('本次接码已取消', { exact: true })).toBeVisible();
@@ -406,6 +497,6 @@ const path = require('node:path');
     await expect(adminPage.getByText('自动记录 0 件 · 合计 9 件', { exact: true })).toBeVisible();
     assert.deepEqual(errors, []);
     assert.deepEqual(external, []);
-    console.log('PASS: SMS country with flag and calling code, full and national number copy, a readable one-time code with no back link, reset, Canada/foreign/unknown labels, draft/private cost, specified phone, three separate reuse orders, automatic sold totals, repeated poll/copy dedup, old manual draft save/refresh, old backend compatibility, remaining credit, unavailable/no fallback, pending recovery, mismatch race, 10s polling, cancel pending, double-click, 429, navigation cleanup, secret locality and 4 viewport layouts');
+    console.log('PASS: SMS cancel countdown at wait50, 90s supplier deadline, fallback across polls, forced entry/confirmation guards, early rejection keeps polling, SMS during countdown/cancel, pending recovery and confirmed cancellation; country and phone copy, credit reuse, sale dedup, 429, navigation cleanup, privacy and 4 viewport layouts');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

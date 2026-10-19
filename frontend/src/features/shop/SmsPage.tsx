@@ -6,6 +6,7 @@ type State = 'PENDING' | 'CANCEL_PENDING' | 'RECEIVED' | 'CANCELED' | 'TIMEOUT' 
 type Country = 'US' | 'CA' | 'BR' | 'GB';
 type Order = { order_id: number; phone: string; country?: Country | null; status: State; sms_code: string | null; wait_seconds: number; requested_phone?: string };
 type Verified = { remaining: number; max_uses: number; has_pending_order: boolean };
+type CancelTiming = { cancel_retry_after?: number; cancel_timing_source?: string; wait_seconds?: number };
 const ACTIVE = new Set<State>(['PENDING', 'CANCEL_PENDING']);
 const COUNTRIES: Record<Country, string> = { US: '美国 · USA', CA: '加拿大 · Canada', BR: '巴西 · Brazil', GB: '英国 · UK' };
 // The calling code a platform asks for beside the number, and the country's short name in its picker.
@@ -78,6 +79,7 @@ export function SmsPage() {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [due, setDue] = useState(0);
   const [cooldown, setCooldown] = useState(0);
+  const [cancelDeadline, setCancelDeadline] = useState(0);
   const [now, setNow] = useState(Date.now);
   const [paused, setPaused] = useState(false);
   const [visible, setVisible] = useState(() => !document.hidden);
@@ -86,8 +88,11 @@ export function SmsPage() {
   const failures = useRef(0);
   const controller = useRef<AbortController | null>(null);
   const mounted = useRef(true);
+  const currentOrder = useRef<Order | null>(null);
+  const cancelTiming = useRef({ deadline: 0, upstream: false });
   const active = order !== null && ACTIVE.has(order.status);
   const remainingCooldown = Math.max(0, Math.ceil((cooldown - now) / 1000));
+  const remainingCancel = Math.max(0, Math.ceil((cancelDeadline - now) / 1000));
   const requestedPhone = useSpecific && !verified?.has_pending_order ? usPhone(specificPhone) : '';
   const invalidPhone = useSpecific && !verified?.has_pending_order && !requestedPhone;
   const phoneMismatch = order?.requested_phone && usPhone(order.phone) !== order.requested_phone;
@@ -108,8 +113,27 @@ export function SmsPage() {
     };
   }, []);
 
+  function updateCancelTiming(value: CancelTiming, fresh = false, rejected = false) {
+    const supplied = typeof value.cancel_retry_after === 'number' && Number.isSafeInteger(value.cancel_retry_after)
+      && value.cancel_retry_after >= 0 && value.cancel_retry_after <= 86400;
+    const elapsed = typeof value.wait_seconds === 'number' && Number.isInteger(value.wait_seconds)
+      && value.wait_seconds >= 0 && value.wait_seconds <= 86400 ? value.wait_seconds : 0;
+    const seconds = supplied ? value.cancel_retry_after! : Math.max(0, 60 - elapsed);
+    const upstream = supplied && value.cancel_timing_source === 'upstream';
+    const deadline = Date.now() + (rejected ? Math.max(1, seconds) : seconds) * 1000;
+    const previous = cancelTiming.current;
+    // Fallback polls may omit elapsed time. They must neither restart the
+    // countdown nor shorten a known supplier deadline. A rejection can extend it.
+    cancelTiming.current = fresh || upstream ? { deadline, upstream }
+      : rejected ? { deadline: Math.max(previous.deadline, deadline), upstream: previous.upstream }
+      : previous.upstream ? previous : { deadline: Math.min(previous.deadline, deadline), upstream: false };
+    setCancelDeadline(cancelTiming.current.deadline);
+    setNow(Date.now());
+  }
+
   async function perform(action: Action) {
     if (lock.current || Date.now() < cooldown || ((action === 'verify' || action === 'acquire') && invalidPhone)) return;
+    if (action === 'cancel' && (currentOrder.current?.status !== 'PENDING' || Date.now() < cancelTiming.current.deadline)) return;
     lock.current = true;
     const epoch = generation.current;
     const abort = new AbortController(); controller.current = abort;
@@ -124,11 +148,15 @@ export function SmsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ activation_code: code.trim(),
           ...(action === 'acquire' && requestedPhone ? { specific_phone: requestedPhone } : {}),
-          ...((action === 'check' || action === 'cancel') && order ? { order_id: order.order_id } : {}) }),
+          ...((action === 'check' || action === 'cancel') && currentOrder.current ? { order_id: currentOrder.current.order_id } : {}) }),
       });
       const value = await response.json().catch(() => { throw new SmsRequestError(mutating ? UNKNOWN_RESULT : '接码服务返回异常，请稍后重试。'); });
       if (!current()) return;
       if (!response.ok || value.ok !== true) {
+        if (action === 'cancel' && value.error === 'cancel_too_early' && (response.status === 200 || response.status === 400 || response.status === 409)) {
+          updateCancelTiming(value, false, true); setConfirmCancel(false); setPaused(false);
+          throw new SmsRequestError('当前号码尚未到可取消时间，请等待倒计时结束后重试。期间仍会继续查询短信。');
+        }
         if (response.status === 429) {
           const seconds = Number(response.headers.get('Retry-After') ?? value.retry_after);
           delay = Math.max(10, Math.min(300, Number.isFinite(seconds) ? seconds : 10)) * 1000;
@@ -147,9 +175,15 @@ export function SmsPage() {
       if (action === 'verify') {
         setVerified(value as Verified);
       } else if (action === 'acquire') {
-        setOrder({ ...value, requested_phone: requestedPhone || undefined } as Order);
+        updateCancelTiming(value, true);
+        currentOrder.current = { ...value, requested_phone: requestedPhone || undefined } as Order;
+        setOrder(currentOrder.current);
       } else {
-        setOrder(old => old ? { ...old, status: value.status, sms_code: value.sms_code, wait_seconds: value.wait_seconds } : old);
+        if (value.status === 'PENDING') updateCancelTiming(value);
+        if (currentOrder.current) {
+          currentOrder.current = { ...currentOrder.current, status: value.status, sms_code: value.sms_code, wait_seconds: value.wait_seconds };
+          setOrder(currentOrder.current);
+        }
       }
     } catch (failure) {
       if (!current()) return;
@@ -174,6 +208,7 @@ export function SmsPage() {
 
   function reset(keepPhone = false) {
     generation.current += 1; controller.current?.abort(); lock.current = false; failures.current = 0;
+    currentOrder.current = null; cancelTiming.current = { deadline: 0, upstream: false }; setCancelDeadline(0);
     setBusy(null); setOrder(null); setVerified(null); setCode(''); setError(''); setNotice(''); setPaused(false); setConfirmCancel(false);
     if (!keepPhone) { setUseSpecific(false); setSpecificPhone(''); }
   }
@@ -236,7 +271,7 @@ export function SmsPage() {
             </div>
             {order.sms_code ? <div className="sms-code-result"><span>短信验证码</span><strong>{order.sms_code}</strong><button type="button" className="sms-copy is-primary" onClick={() => void copy(order.sms_code!, '验证码')}>复制验证码</button></div> : <div className={`sms-waiting${active ? ' is-active' : ''}`}><span className="sms-code-placeholder" aria-hidden="true">— — — — — —</span><p>{active ? order.status === 'CANCEL_PENDING' ? '正在等待取消结果。确认前请保留当前页面。' : country ? `在需要验证的平台选择「${PICKER[country]} +${DIAL[country]}」，填入上方号码并发送短信。` : '请在需要验证的平台填写上方号码并发送短信。' : '当前接码已结束，未收到验证码。'}</p>{active && order.wait_seconds ? <small className="sms-waited">已等待 {waited(order.wait_seconds)}</small> : null}</div>}
             {active ? <><div className="sms-poll-status"><span>{paused ? '自动查询已暂停' : !visible ? '返回页面后继续查询' : busy === 'check' ? '正在查询验证码…' : `约 ${Math.max(0, Math.ceil((Math.max(due, cooldown) - now) / 1000))} 秒后自动查询`}</span>{paused ? <button className="sms-text-button" type="button" disabled={blocked} onClick={() => void perform('check')}>重试查询</button> : <span>收到后自动停止</span>}</div>
-              {order.status === 'PENDING' ? <div className="sms-cancel">{confirmCancel ? <div className="sms-cancel-confirm"><p>确认取消当前号码？只有确认取消并退回次数后，才能再次取号。</p><div><button className="btn btn-secondary" type="button" disabled={blocked} onClick={() => void perform('cancel')}>{busy === 'cancel' ? '正在提交…' : '确认取消当前号码'}</button><button className="sms-text-button" type="button" disabled={busy !== null} onClick={() => setConfirmCancel(false)}>继续等待</button></div></div> : <button className="sms-text-button" type="button" disabled={blocked} onClick={() => setConfirmCancel(true)}>号码无法使用？申请取消</button>}</div> : null}
+              {order.status === 'PENDING' ? <div className="sms-cancel">{remainingCancel > 0 ? <p className="sms-cancel-countdown">还需等待 {waited(remainingCancel)} 才可申请取消</p> : null}{confirmCancel ? <div className="sms-cancel-confirm"><p>确认取消当前号码？取消结果确认前，请保留当前号码；再次取号前需重新验证剩余次数。</p><div><button className="btn btn-secondary" type="button" disabled={blocked || remainingCancel > 0} onClick={() => void perform('cancel')}>{busy === 'cancel' ? '正在提交…' : '确认取消当前号码'}</button><button className="sms-text-button" type="button" disabled={busy !== null} onClick={() => setConfirmCancel(false)}>继续等待</button></div></div> : <button className="sms-text-button" type="button" disabled={blocked || remainingCancel > 0} onClick={() => { if (!lock.current && Date.now() >= cancelTiming.current.deadline) setConfirmCancel(true); }}>号码无法使用？申请取消</button>}</div> : null}
             </> : <div className="sms-finish"><p>{order.status === 'RECEIVED' ? '请及时使用验证码。再次接码需重新验证可用次数，并申请新的接码订单。' : '如需再次取号，请重新验证激活码的剩余次数。'}</p><div className="sms-finish-actions">{reusablePhone(order) ? <button className="btn btn-secondary" type="button" onClick={reusePhone}>再次使用此号码</button> : null}<button className="sms-text-button" type="button" onClick={() => reset()}>返回激活码输入</button></div></div>}
           </div>}
           <div className="sms-feedback">{phoneMismatch ? <p role="alert">返回的号码与指定号码不同，已保留本次订单。请先核对处理，不要重复取号。</p> : null}{error ? <p role="alert">{error}{remainingCooldown ? `（${remainingCooldown} 秒后可重试）` : ''}</p> : null}<p role="status">{notice}</p></div>

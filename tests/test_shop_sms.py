@@ -9,7 +9,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-
 CODE = 'TEST-ONLY-FAKE-CDK-1234'
 CONFIG = {
     'ok': True, 'enabled': True, 'maintenance': {'sms': False},
@@ -160,7 +159,6 @@ HEADERS = {'Sec-Fetch-Site': 'same-origin'}
 
 def sales_shop(tmp_path, monkeypatch, handler, *, default_store=False):
     """Keep the route factory and store real, replacing only supplier HTTP."""
-    from functools import partial
 
     from web_api import shop_routes, shop_sms_gateway
     from web_api.shop_sms_source import normalize_config
@@ -405,6 +403,7 @@ def test_acquired_phone_uses_confirmed_country_without_leaking_supplier_metadata
         result = client.post('/api/v1/shop/sms/acquire', headers=HEADERS, json={'activation_code': CODE})
         assert result.status_code == 200
         assert result.json() == {'ok': True, 'status': 'PENDING', 'sms_code': None, 'wait_seconds': 0,
+                                 'cancel_retry_after': 60, 'cancel_timing_source': 'fallback',
                                  'phone': expected_phone, 'order_id': 123, 'country': expected_country}
         assert 'private-' not in result.text and 'price' not in result.text and CODE not in result.text
 
@@ -624,3 +623,78 @@ def test_timeout_releases_lock_without_exposing_sensitive_exception():
             assert not service.inflight
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('deadline,expected', [
+    ('2026-10-19T07:30:10Z', 10),
+    ('2026-10-19T09:31:30+02:00', 90),
+    ('2026-10-19T07:30:00.001+00:00', 1),
+    ('2026-10-19T07:29:59Z', 0),
+])
+def test_cancel_deadline_uses_backend_clock_and_only_projects_remaining_seconds(monkeypatch, deadline, expected):
+    from datetime import datetime
+
+    import web_api.shop_sms_gateway as module
+
+    monkeypatch.setattr(module.time, 'time', lambda: datetime.fromisoformat('2026-10-19T07:30:00+00:00').timestamp())
+    with gateway(lambda _: httpx.Response(200, json={
+        'ok': True, 'phone': '2025550123', 'order_id': 123, 'wait_seconds': 50,
+        'cancel_available_at': deadline, 'server_time': CODE, 'message': CODE,
+    })) as client:
+        result = client.post('/api/v1/shop/sms/acquire', headers=HEADERS, json={'activation_code': CODE})
+    assert result.status_code == 200
+    assert result.json()['cancel_retry_after'] == expected
+    assert result.json()['cancel_timing_source'] == 'upstream'
+    assert deadline not in result.text and CODE not in result.text and 'server_time' not in result.text
+
+
+@pytest.mark.parametrize('deadline', [None, True, 1792395060, '', 'invalid-' + CODE, {}, [],
+                                      '2026-10-19T07:31:00', '2026-02-30T07:31:00Z'])
+@pytest.mark.parametrize('waited,expected', [(0, 60), (50, 10), (70, 0)])
+def test_optional_bad_cancel_deadline_keeps_allocated_order_and_uses_wait_fallback(deadline, waited, expected):
+    with gateway(lambda _: httpx.Response(200, json={
+        'ok': True, 'phone': '2025550123', 'order_id': 123, 'wait_seconds': waited,
+        'cancel_available_at': deadline,
+    })) as client:
+        result = client.post('/api/v1/shop/sms/acquire', headers=HEADERS, json={'activation_code': CODE})
+    assert result.status_code == 200
+    assert result.json()['phone'] == '2025550123' and result.json()['order_id'] == 123
+    assert result.json()['cancel_retry_after'] == expected
+    assert result.json()['cancel_timing_source'] == 'fallback'
+    assert CODE not in result.text
+
+
+def test_implausible_future_cancel_deadline_is_optional_metadata():
+    from web_api.shop_sms_gateway import project
+
+    result = project('acquire', {'ok': True, 'phone': '2025550123', 'order_id': 123,
+                                 'wait_seconds': 50, 'cancel_available_at': '9999-12-31T23:59:59Z'})
+    assert result['order_id'] == 123
+    assert result['cancel_retry_after'] == 10 and result['cancel_timing_source'] == 'fallback'
+
+
+@pytest.mark.parametrize('status', [200, 400, 409])
+def test_early_cancel_rejection_is_structured_and_never_echoes_upstream_message(status):
+    with gateway(lambda _: httpx.Response(status, json={
+        'ok': False, 'cancel_too_early': True, 'wait_seconds': 50,
+        'message': CODE + ' secret SMS 246810', 'error': 'private upstream exception',
+        'full_sms': 'private SMS', 'retry_after': 777777,
+    })) as client:
+        result = client.post('/api/v1/shop/sms/cancel', headers=HEADERS,
+                             json={'activation_code': CODE, 'order_id': 123})
+    assert result.status_code == (409 if status == 409 else 400)
+    assert result.json()['error'] == 'cancel_too_early'
+    assert result.json()['cancel_retry_after'] == 10
+    assert result.json()['cancel_timing_source'] == 'fallback'
+    for private in (CODE, '246810', 'private', '777777', 'full_sms', 'message'):
+        assert private not in result.text
+    assert 'Retry-After' not in result.headers
+
+
+@pytest.mark.parametrize('flag', ['true', 1, {}, False, None])
+def test_early_cancel_flag_requires_true_boolean(flag):
+    with gateway(lambda _: httpx.Response(409, json={'ok': False, 'cancel_too_early': flag})) as client:
+        result = client.post('/api/v1/shop/sms/cancel', headers=HEADERS,
+                             json={'activation_code': CODE, 'order_id': 123})
+    assert result.json()['error'] == 'request_rejected'
+    assert 'cancel_retry_after' not in result.json()

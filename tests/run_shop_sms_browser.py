@@ -1,7 +1,7 @@
 """SMS UI with a fictional quote and a fully mocked provider; no real CDK calls."""
 
-import json
 import itertools
+import json
 import os
 import subprocess
 
@@ -52,6 +52,7 @@ class MockGateway(sms_gateway.SmsGateway):
                                  ('2025550123', {'note': 'private-country-note'}) if code.startswith('UNKNOWN') else \
                                  ('+12025550123', None) if code.startswith('LEGACY') else ('2025550123', 187)
                 return httpx.Response(200, json={'ok': True, 'phone': phone, 'country': country, 'order_id': 123,
+                                               'wait_seconds': 70 if code.startswith('CANCEL') else 50 if code.startswith('PENDING') else 0,
                                                'price': 0.13, 'operator': 'private-operator'})
             if request.url.path == '/api/cancel':
                 return httpx.Response(200, json={'ok': True, 'status': 'CANCEL_PENDING', 'cancel_pending': True})

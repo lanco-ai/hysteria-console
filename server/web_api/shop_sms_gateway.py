@@ -4,8 +4,10 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import re
 import time
+from datetime import datetime
 from types import SimpleNamespace
 
 import http_utils
@@ -33,8 +35,9 @@ logging.getLogger('httpx').addFilter(_PrivateRequestFilter())
 
 
 class SmsError(Exception):
-    def __init__(self, status=502, error='service_unavailable', retry_after=10):
+    def __init__(self, status=502, error='service_unavailable', retry_after=10, *, cancel_timing=None):
         self.status, self.error, self.retry_after = status, error, retry_after
+        self.cancel_timing = cancel_timing or {}
 
 
 def integer(value, maximum=2**53 - 1):
@@ -64,11 +67,37 @@ def retry_seconds(value):
 
 
 def rejection_reason(action, data):
+    if action == 'cancel' and isinstance(data, dict) and data.get('cancel_too_early') is True:
+        return 'cancel_too_early'
     if action == 'acquire' and isinstance(data, dict):
         for flag in ('specific_phone_invalid', 'specific_phone_unavailable', 'specific_phone_unsupported'):
             if data.get(flag) is True:
                 return flag
     return 'request_rejected'
+
+
+def cancel_timing(data, *, rejected=False):
+    # Optional supplier metadata must never make an already allocated order
+    # unusable. Only timezone-qualified timestamps have an unambiguous deadline.
+    deadline = data.get('cancel_available_at')
+    if (isinstance(deadline, str) and len(deadline) <= 64
+            and re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})', deadline)):
+        try:
+            seconds = max(0, math.ceil(datetime.fromisoformat(deadline.replace('Z', '+00:00')).timestamp() - time.time()))
+            if seconds <= 86400 and (not rejected or seconds > 0):
+                return {'cancel_retry_after': seconds, 'cancel_timing_source': 'upstream'}
+        except (ValueError, OverflowError, OSError):
+            pass
+    waited = data.get('wait_seconds', 0)
+    seconds = max(0, 60 - waited) if integer(waited, 86400) else 60
+    return {'cancel_retry_after': seconds if seconds or not rejected else 10,
+            'cancel_timing_source': 'fallback'}
+
+
+def rejection(action, data, status=400):
+    reason = rejection_reason(action, data)
+    return SmsError(status, reason, cancel_timing=cancel_timing(data, rejected=True)
+                    if reason == 'cancel_too_early' else None)
 
 
 def acquired_phone(phone, metadata):
@@ -92,7 +121,7 @@ def acquired_phone(phone, metadata):
 
 def project(action, data):
     if not isinstance(data, dict) or data.get('ok') is not True:
-        raise SmsError(400, rejection_reason(action, data))
+        raise rejection(action, data)
     if action == 'verify':
         remaining, maximum = data.get('remaining'), data.get('max_uses')
         if not integer(remaining) or not integer(maximum) or remaining > maximum:
@@ -113,6 +142,8 @@ def project(action, data):
     if status not in STATES or (status == 'RECEIVED' and not code):
         raise SmsError()
     result = {'ok': True, 'status': status, 'sms_code': code or None, 'wait_seconds': waited}
+    if status == 'PENDING':
+        result.update(cancel_timing(data))
     if action == 'acquire':
         phone, order = data.get('phone'), data.get('order_id')
         if not isinstance(phone, str) or not re.fullmatch(r'\+?[1-9]\d{6,14}', phone) or not integer(order) or not order:
@@ -173,7 +204,7 @@ class SmsGateway:
                                 data = json.loads(body)
                             except ValueError:
                                 data = None
-                            raise SmsError(409 if response.status_code == 409 else 400, rejection_reason(action, data))
+                            raise rejection(action, data, 409 if response.status_code == 409 else 400)
                         return project(action, json.loads(body))
         except (httpx.HTTPError, TimeoutError, ValueError, TypeError):
             raise SmsError() from None
@@ -218,7 +249,7 @@ def register_sms_routes(app, *, gateway=None, on_received=None):
                         logging.getLogger(__name__).warning('SMS sale could not be recorded')
                 return respond(result)
             except SmsError as exc:
-                return respond({'ok': False, 'error': exc.error, 'retry_after': exc.retry_after}, exc.status,
+                return respond({'ok': False, 'error': exc.error, 'retry_after': exc.retry_after, **exc.cancel_timing}, exc.status,
                                exc.retry_after if exc.status == 429 else None)
             except (ValueError, UnicodeError, TimeoutError):
                 return respond({'ok': False, 'error': 'invalid_request'}, 422)
