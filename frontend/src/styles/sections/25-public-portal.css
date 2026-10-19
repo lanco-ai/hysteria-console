@@ -345,9 +345,9 @@ body.page-portal {
 .shop-detail-buybar { margin-top: 18px; padding-top: 16px; border-top: 1px solid #eef0f2; }
 .shop-detail-feedback { margin-bottom: 10px; color: #277251; font-size: 13px; }
 .shop-detail-feedback:empty { display: none; }
-.shop-detail-buybar .shop-total { justify-content: flex-start; margin: 0 0 12px; gap: 4px 12px; font-size: 13px; }
+.shop-detail-buybar .shop-total { display: grid; grid-template-columns: auto 1fr; margin: 0 0 12px; gap: 4px 12px; font-size: 13px; }
 .shop-detail-buybar .shop-total strong { font-size: 24px; }
-.shop-detail-buybar .shop-promo-total { flex-basis: auto; margin: 0 0 0 auto; font-size: 13px; }
+.shop-detail-buybar .shop-promo-total { grid-column: 1 / -1; min-height: 1.6em; margin: 0; font-size: 13px; }
 .shop-detail-actions { gap: 10px; }
 .shop-detail-actions > .btn { flex: 1; min-height: 46px; }
 .shop-detail-buy > .shop-note { margin-top: 12px; }

@@ -74,9 +74,8 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
   const offers = product?.variants.some(item => promoCents(item) !== null) ?? false;
   // The referral rules stay in place whichever spec is picked; they name the spec they apply to.
   const referralVariant = catalog?.status === 'ready' ? plusReferralVariant(product) : undefined;
-  const labels = product?.variants.map(item => item.label) ?? [];
-  const description = product?.description ? variantCopy(product.description, labels, variant?.label) : '';
-  const afterSales = product?.after_sales ? variantCopy(product.after_sales, labels, variant?.label) : '';
+  const description = product?.description ? variantCopy(product.description, variant?.label, variant?.id) : '';
+  const afterSales = product?.after_sales ? variantCopy(product.after_sales, variant?.label, variant?.id) : '';
   const plans = product ? catalog?.products.filter(item => item.category === product.category) ?? [] : [];
   const names = planNames(plans);
   const position = plans.findIndex(item => item.id === product?.id);
@@ -113,7 +112,7 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
         {!validCount ? <p role="alert">请输入 1–99 的整数数量。</p> : null}
         <div className="shop-detail-buybar">
           <p className="shop-detail-feedback" role="status">{notice}</p>
-          <p className="shop-total">合计 <strong data-testid="purchase-total">{variant && validCount ? money(variant.price_cents * count) : '—'}</strong>{promo && validCount ? <span className="shop-promo-total">{promoName(product)}合计 {money(promo * count)}</span> : null}</p>
+          <p className="shop-total">合计 <strong data-testid="purchase-total">{variant && validCount ? money(variant.price_cents * count) : '—'}</strong>{offers ? <span className="shop-promo-total">{promo && validCount ? `${promoName(product)}合计 ${money(promo * count)}` : null}</span> : null}</p>
           <div className="shop-detail-actions"><button type="button" className="btn btn-secondary" disabled={!valid} onClick={() => variant && onAdd({ id: variant.id, quantity: count })}>加入购物车</button><button type="button" className="btn btn-primary" disabled={!valid || !hasContact(catalog)} onClick={() => variant && onBuy({ id: variant.id, quantity: count })}>立即购买</button></div>
           {!hasContact(catalog) ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}
         </div>

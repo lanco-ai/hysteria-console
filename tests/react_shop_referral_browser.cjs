@@ -17,6 +17,47 @@ function fixture() {
     ] };
 }
 
+function grokFixture() {
+  const sectioned = (kind) => `## ${kind}通用开头
+
+${kind}公共内容。
+
+### 规格：1 个月（月卡）
+
+${kind}月卡专属内容。
+
+#### 月卡补充
+
+${kind}月卡下级内容。
+
+### 规格：3 个月（季卡）
+
+${kind}季卡专属内容，质保 90 天。
+
+#### 季卡补充
+
+${kind}季卡下级内容，90 天。
+
+### 规格：已删除的未知规格
+
+${kind}未知规格内容。
+
+#### 未知规格补充
+
+${kind}未知下级内容。
+
+### 通用结尾
+
+${kind}通用结尾内容。`;
+  return { ...fixture(), products: [
+    { id: '6000000000004', title: 'SuperGrok 充值（旧版 · iOS）', category: 'Grok',
+      description: sectioned('说明'), after_sales: sectioned('售后'), variants: [
+        { id: '6000000000004:1', label: '1 个月（月卡）', price_cents: 14500, available: true },
+        { id: '6000000000004:2', label: '3 个月（季卡）', price_cents: 26800, available: true },
+      ] },
+  ] };
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -102,6 +143,69 @@ function fixture() {
       await expect(rules).toBeVisible();
     }
 
+    // Large totals at the quantity limit must not make the fixed mobile bar jump.
+    for (const otherPromo of [null, 119000]) {
+      data = fixture();
+      if (otherPromo) Object.assign(data.products[0].variants[0], { price_cents: 129000, promo_price_cents: otherPromo });
+      await page.setViewportSize({ width: 320, height: 1000 });
+      await page.goto(`${base}/?product=1&promo=${otherPromo ?? 'none'}#plus-referral`);
+      await page.getByRole('spinbutton', { name: '购买数量', exact: true }).fill('99');
+      await expect(page.getByTestId('purchase-total')).toHaveText('¥12672.00');
+      const buybarBoxes = () => page.evaluate(() => {
+        scrollTo({ top: 0, behavior: 'instant' });
+        return ['.shop-detail-buybar', '.shop-detail-actions', '[data-testid="purchase-total"]'].map(selector => {
+          const box = document.querySelector(selector).getBoundingClientRect();
+          return [Math.round(box.x), Math.round(box.y), Math.round(box.height)];
+        });
+      });
+      const before = await buybarBoxes();
+      await page.getByRole('button', { name: '其他规格', exact: true }).click();
+      await expect(page.getByTestId('purchase-total')).toHaveText(otherPromo ? '¥127710.00' : '¥12771.00');
+      assert.deepEqual(await buybarBoxes(), before, `mobile purchase bar stays put at quantity 99 with ${otherPromo ? 'different offers' : 'no sibling offer'}`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'quantity 99 detail fits 320px');
+    }
+
+    // A private sibling is absent from the public catalog; renaming either local spec also
+    // removes its original label. All explicit sections still belong only to their own spec.
+    for (const [caseIndex, change] of [
+      value => { value.products[0].variants.pop(); },
+      value => { value.products[0].variants[1].label = '季度续订'; },
+      value => { value.products[0].variants[0].label = '月度续订'; },
+    ].entries()) {
+      data = grokFixture(); change(data);
+      await page.goto(`${base}/?product=6000000000004&case=${caseIndex}`);
+      const copy = page.locator('.shop-detail-copy');
+      for (const kind of ['说明', '售后']) {
+        await expect(copy).toContainText(`${kind}公共内容。`);
+        await expect(copy).toContainText(`${kind}月卡专属内容。`);
+        await expect(copy).toContainText(`${kind}月卡下级内容。`);
+        await expect(copy).toContainText(`${kind}通用结尾内容。`);
+        await expect(copy).not.toContainText(`${kind}季卡`);
+        await expect(copy).not.toContainText(`${kind}未知`);
+      }
+      await expect(copy).not.toContainText('90 天');
+      if (data.products[0].variants.length > 1) {
+        await page.getByRole('button', { name: data.products[0].variants[1].label, exact: true }).click();
+        for (const kind of ['说明', '售后']) {
+          await expect(copy).toContainText(`${kind}季卡专属内容，质保 90 天。`);
+          await expect(copy).toContainText(`${kind}季卡下级内容，90 天。`);
+          await expect(copy).toContainText(`${kind}公共内容。`);
+          await expect(copy).toContainText(`${kind}通用结尾内容。`);
+          await expect(copy).not.toContainText(`${kind}月卡`);
+          await expect(copy).not.toContainText(`${kind}未知`);
+        }
+      }
+    }
+
+    // Merchant-authored headings may follow a renamed spec's current label as well.
+    data = grokFixture();
+    data.products[0].variants[0].label = '月度续订';
+    for (const field of ['description', 'after_sales']) data.products[0][field] = data.products[0][field].replace('规格：1 个月（月卡）', '规格：月度续订');
+    await page.goto(`${base}/?product=6000000000004`);
+    await expect(page.locator('.shop-detail-copy')).toContainText('说明月卡专属内容。');
+    await expect(page.locator('.shop-detail-copy')).toContainText('售后月卡专属内容。');
+    await expect(page.locator('.shop-detail-copy')).not.toContainText('90 天');
+
     // A stale, withdrawn, sold-out or repriced offer must not advertise ¥123
     // or imply that all Plus products participate in this specific campaign.
     const cases = [
@@ -128,6 +232,6 @@ function fixture() {
     Object.assign(data.products[0].variants[1], { price_cents: 12300, promo_price_cents: null });
     await page.goto(base);
     await expect(page.locator('.shop-referral-banner')).toBeVisible();
-    console.log('PASS: Plus referral banner/card/detail, correct SKU and anchor, ¥123 purchase price and ¥118 referral floor, unavailable/repriced/other-plan exclusions, four responsive layouts');
+    console.log('PASS: Plus referral banner/card/detail, correct SKU and anchor, ¥123 purchase price and ¥118 referral floor, unavailable/repriced/other-plan exclusions, four responsive layouts, stable 320px quantity-99 purchase bar, unpublished/renamed spec copy and common sections');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

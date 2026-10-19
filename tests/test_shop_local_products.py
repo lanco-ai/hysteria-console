@@ -522,3 +522,49 @@ def test_saved_grok_guide_moves_to_per_spec_sections_only_while_untouched(tmp_pa
         assert (await store.admin())['products'][GROK_ID] == GROK_IOS_NOTICE
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize('field', ['description', 'after_sales'])
+@pytest.mark.parametrize('formatting', ['bold', 'quote', 'both'])
+def test_saved_grok_guide_accepts_known_markdown_formatting_only(field, formatting):
+    from web_api.shop_local_products import GROK_IOS_NOTICE, PREVIOUS_GROK_IOS_NOTICE, current_grok_ios_copy
+
+    old = PREVIOUS_GROK_IOS_NOTICE[field]
+    if formatting in ('bold', 'both'):
+        old = old.replace('User ID', '**User ID**').replace('90 天', '**90 天**')
+    if formatting in ('quote', 'both'):
+        old = old.replace('\n**', '\n> **').replace('\nUser ID', '\n> User ID')
+    saved = {**PREVIOUS_GROK_IOS_NOTICE, field: old}
+    assert old != PREVIOUS_GROK_IOS_NOTICE[field]
+    assert current_grok_ios_copy(saved) == GROK_IOS_NOTICE
+
+    # Formatting may vary, but an edited word or punctuation belongs to the merchant.
+    for edited in (old.replace('账号', '账户', 1), old.replace('。', '！', 1),
+                   old.replace('User ID', '_User ID_', 1)):
+        custom = {**saved, field: edited}
+        assert current_grok_ios_copy(custom)[field] == edited
+
+
+def test_saved_grok_guide_markdown_upgrade_projects_without_writing_custom_copy(tmp_path):
+    from web_api.shop_local_products import GROK_IOS_NOTICE, PREVIOUS_GROK_IOS_NOTICE
+
+    async def run():
+        store = local_store(tmp_path)
+        saved = {field: text.replace('User ID', '**User ID**').replace('\n**', '\n> **')
+                 for field, text in PREVIOUS_GROK_IOS_NOTICE.items()}
+        await store.update({'revision': 0, 'telegram': '', 'client': 3,
+                            'skus': {GROK_MONTH_KEY: {'price_cents': 14500, 'published': True}},
+                            'products': {GROK_ID: saved}})
+        before = store.settings_path.read_bytes()
+        reopened = local_store(tmp_path)
+        assert (await reopened.admin())['products'][GROK_ID] == GROK_IOS_NOTICE
+        product, = (await reopened.public())['products']
+        assert {field: product[field] for field in GROK_IOS_NOTICE} == GROK_IOS_NOTICE
+        assert reopened.settings_path.read_bytes() == before
+
+        custom = {field: text + '\n本店补充。' for field, text in saved.items()}
+        await reopened.update({'revision': 1, 'telegram': '', 'client': 3, 'skus': {},
+                               'products': {GROK_ID: custom}})
+        assert (await local_store(tmp_path).admin())['products'][GROK_ID] == custom
+
+    asyncio.run(run())

@@ -167,7 +167,7 @@ iOS 印度区正规充值（非零元购），iOS 内购到账，网页、Androi
 }
 
 # The guide before each spec had its own section. A saved field still exactly this text (ignoring
-# spacing) shows today's, which is no longer, so a save never grows; anything changed stays as it is.
+# spacing, bold and line-start callouts) shows today's, which is no longer; changed wording stays.
 PREVIOUS_GROK_IOS_NOTICE = {
     'description': '''## SuperGrok 充值｜旧版 · iOS 渠道
 
@@ -227,8 +227,11 @@ User ID 填错可能消耗充值凭证，无法退款。遇到延迟、失败或
 
 
 def current_grok_ios_copy(copy):
+    def comparable(text):
+        return re.sub(r'\s+', '', re.sub(r'^> ', '', text.replace('**', ''), flags=re.M))
+
     def untouched(field):
-        return re.sub(r'\s+', '', copy.get(field, '')) == re.sub(r'\s+', '', PREVIOUS_GROK_IOS_NOTICE[field])
+        return comparable(copy.get(field, '')) == comparable(PREVIOUS_GROK_IOS_NOTICE[field])
 
     upgraded = {**copy, **{field: GROK_IOS_NOTICE[field] for field in GROK_IOS_NOTICE if untouched(field)}}
     return copy if upgraded == copy else upgraded

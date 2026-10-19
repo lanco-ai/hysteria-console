@@ -135,10 +135,11 @@ const { expect } = require('@playwright/test');
     await page.getByLabel('购买数量', { exact: true }).fill('2');
     await expect(page.getByTestId('purchase-total')).toHaveText('¥2576.00');
     await expect(page.locator('.shop-total .shop-promo-total')).toHaveText('学生价合计 ¥2376.00');
-    // The other variant has no 优惠价: its total stands alone.
+    // The other variant has no 优惠价: keep an empty total slot to avoid a layout jump.
     await page.getByRole('button', { name: '续费卡密不可新开', exact: true }).click();
     await expect(page.locator('.shop-detail-price .shop-promo-price')).toHaveCount(0);
-    await expect(page.locator('.shop-total .shop-promo-total')).toHaveCount(0);
+    await expect(page.locator('.shop-total .shop-promo-total')).toHaveText('');
+    await expect(page.locator('.shop-total .shop-promo-total')).toBeVisible();
     const views = async () => (await (await page.request.get(`${base}/api/v1/shop/catalog`)).json());
     await expect.poll(async () => (await views()).products.find(product => product.id === '2').views).toBe(1);
     assert.deepEqual((await views()).stats, { views: 1, sold: 36 });

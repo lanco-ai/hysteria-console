@@ -62,19 +62,23 @@ export function isNoticeProduct(productId: string) { return isClaudeNoticeProduc
 // the same or a higher level.
 const SPEC_HEADING = /^(#{1,6})[ \t]+规格[：:][ \t]*(.+?)[ \t#]*$/;
 const specName = (text: string) => text.replace(/\s+/g, '').toLowerCase();
+// Store-owned labels can be renamed without changing the spec named by the built-in copy.
+const builtInSpecNames: Record<string, string> = {
+  '6000000000004:1': '1 个月（月卡）',
+  '6000000000004:2': '3 个月（季卡）',
+};
 
-/** The copy for the selected spec: sections headed with another of the product's specs are left out.
- * A section naming no spec of the product (one renamed since, say) stays. */
-export function variantCopy(text: string, labels: string[], selected: string | undefined): string {
-  const others = new Set(labels.filter(label => label !== selected).map(specName));
-  others.delete(specName(selected ?? ''));
+/** Explicit spec sections show only for the selected spec; common sections stay. */
+export function variantCopy(text: string, selected: string | undefined, variantId?: string): string {
+  const matches = new Set([selected, builtInSpecNames[variantId ?? '']]
+    .filter((label): label is string => !!label).map(specName));
   let skipping = 0;
   return text.split('\n').filter(line => {
     const level = /^(#{1,6})[ \t]/.exec(line)?.[1]?.length ?? 0;
     if (skipping && (!level || level > skipping)) return false;
     skipping = 0;
     const spec = SPEC_HEADING.exec(line.trimEnd());
-    if (spec && others.has(specName(spec[2]!))) { skipping = spec[1]!.length; return false; }
+    if (spec && !matches.has(specName(spec[2]!))) { skipping = spec[1]!.length; return false; }
     return true;
   }).join('\n');
 }
