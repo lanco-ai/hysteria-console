@@ -319,11 +319,21 @@ body.page-portal {
 .shop-detail-price p > span { color: var(--text-secondary); font-size: 13px; }
 .shop-detail-price strong { color: #23262c; font-size: 30px; font-variant-numeric: tabular-nums; }
 .shop-detail-price small, .shop-detail-quantity small { color: #8a8d95; }
-.shop-specs { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; padding: 0; border: 0; }
+/* Taller than the offer pill, so a spec without an offer keeps the same line. */
+.shop-detail-offer { display: flex; align-items: center; min-height: 48px; }
+.shop-detail-offer-none { color: #8a8d95; font-size: 13px; }
+/* Specs sit in even columns, each with its price, offer and stock, so they compare at a glance. */
+.shop-specs { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; margin: 16px 0; padding: 0; border: 0; }
 .shop-specs legend { margin-bottom: 10px; color: var(--text-secondary); font-size: 13px; }
-.shop-specs button { padding: 9px 14px; border: 1px solid #d8dce3; border-radius: 10px; background: #fff; color: inherit; font: inherit; font-size: 14px; cursor: pointer; }
+.shop-specs button { display: grid; align-content: start; gap: 3px; min-width: 0; padding: 9px 12px; border: 1px solid #d8dce3; border-radius: 10px; background: #fff; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
 .shop-specs button:hover { border-color: #9cc8fc; }
-.shop-specs button[aria-pressed="true"] { border-color: #1675dc; background: #edf6ff; color: #0c5bb5; }
+.shop-specs button[aria-pressed="true"] { border-color: #1675dc; background: #edf6ff; color: #0c5bb5; box-shadow: inset 0 0 0 1px #1675dc; }
+.shop-spec-name { font-weight: 600; line-height: 1.4; overflow-wrap: anywhere; }
+.shop-specs button.is-off .shop-spec-name { color: #8a8d95; }
+.shop-spec-meta { display: flex; flex-wrap: wrap; gap: 0 8px; color: #6f737b; font-size: 12px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+.shop-spec-price.is-promo { color: #e0402a; font-weight: 600; }
+.shop-spec-off { color: #a0a3aa; }
+.shop-specs .shop-detail-stock { min-height: 0; padding: 0; border: 0; background: none; font-size: 12px; }
 .shop-specs button:focus-visible { outline: 2px solid #1675dc; outline-offset: 2px; }
 .shop-quantity { display: inline-flex; align-items: stretch; flex-shrink: 0; }
 .shop-quantity button, .shop-quantity input { min-height: 40px; border: 1px solid #d8dce3; background: #fff; color: inherit; text-align: center; }
@@ -335,7 +345,7 @@ body.page-portal {
 .shop-detail-buybar { margin-top: 18px; padding-top: 16px; border-top: 1px solid #eef0f2; }
 .shop-detail-feedback { margin-bottom: 10px; color: #277251; font-size: 13px; }
 .shop-detail-feedback:empty { display: none; }
-.shop-detail-buybar .shop-total { margin: 0 0 12px; gap: 4px 12px; font-size: 13px; }
+.shop-detail-buybar .shop-total { justify-content: flex-start; margin: 0 0 12px; gap: 4px 12px; font-size: 13px; }
 .shop-detail-buybar .shop-total strong { font-size: 24px; }
 .shop-detail-buybar .shop-promo-total { flex-basis: auto; margin: 0 0 0 auto; font-size: 13px; }
 .shop-detail-actions { gap: 10px; }
@@ -461,7 +471,7 @@ h1 > .shop-new-badge { margin-right: 8px; vertical-align: 4px; }
 .shop-promo-price { display: inline-flex; align-items: baseline; gap: 2px; padding: 3px 10px; border-radius: var(--radius-pill); background: #fff0ed; color: #e0402a; font-size: 13px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .shop-promo-price strong { font-size: 16px; font-weight: 800; }
 .shop-promo-price small { margin-left: 2px; font-size: 12px; }
-.shop-detail-price .shop-promo-price { padding: 6px 14px; font-size: 15px; }
+.shop-detail-price .shop-promo-price { padding: 6px 14px; font-size: 15px; line-height: 1.3; }
 .shop-detail-price .shop-promo-price strong { color: inherit; font-size: 24px; }
 .shop-cart-row .shop-promo-price { margin-top: 6px; }
 .shop-promo-total { flex-basis: 100%; margin-top: 4px; color: #e0402a; font-size: 14px; font-weight: 600; text-align: right; }

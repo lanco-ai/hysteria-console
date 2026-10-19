@@ -29,10 +29,11 @@ export function PlusReferralLink({ product, banner = false }: { product: Product
   </a>;
 }
 
-export function PlusReferralDetails({ sectionRef }: { sectionRef: Ref<HTMLElement> }) {
+export function PlusReferralDetails({ sectionRef, label }: { sectionRef: Ref<HTMLElement>; label: string }) {
   return <section id={PLUS_REFERRAL_ANCHOR} className="shop-referral-details" aria-labelledby="plus-referral-title" ref={sectionRef} tabIndex={-1}>
     <div className="shop-referral-heading"><span className="shop-referral-icon"><GiftIcon/></span><div><p>PLUS 好友推荐优惠</p><h2 id="plus-referral-title">推荐好友，续费更优惠</h2></div><span className="shop-referral-base">月订阅 ¥123</span></div>
     <ul>
+      <li>适用规格：<strong>{label}</strong>，以月订阅 ¥123 购买。</li>
       <li>每成功推荐 1 人购买，后续每月续费价格累计降低 <strong>¥1</strong>，最低 <strong>¥118/月</strong>。</li>
     </ul>
     <div className="shop-referral-examples">

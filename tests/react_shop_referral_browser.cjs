@@ -7,7 +7,7 @@ const { expect } = require('@playwright/test');
 function fixture() {
   return { currency: 'CNY', telegram: '', wechat: 'demo_shop', status: 'ready', updated_at: 1000,
     products: [
-      { id: '1', title: 'ChatGPT Plus｜菲律宾区', category: 'GPT', badge: '限时价', variants: [
+      { id: '1', title: 'ChatGPT Plus｜菲律宾区', category: 'GPT', badge: '限时价', description: '## Plus\n\n### 规格：一个月\n\n一个月专属说明。\n\n### 规格：其他规格\n\n其他规格专属说明。\n\n### 通用\n\n两个规格都适用。', variants: [
         { id: '1:4', label: '其他规格', price_cents: 12900, available: true },
         { id: '1:1', label: '一个月', price_cents: 12800, promo_price_cents: 12300, available: true },
       ] },
@@ -61,6 +61,7 @@ function fixture() {
       await expect(rules).toContainText('后续每月续费价格累计降低 ¥1，最低 ¥118/月');
       await expect(page.locator('body')).not.toContainText('返利');
       await expect(rules.locator('.shop-referral-base')).toHaveText('月订阅 ¥123');
+      await expect(rules.locator('li').first()).toHaveText('适用规格：一个月，以月订阅 ¥123 购买。');
       await expect(rules.locator('.shop-referral-examples > div')).toHaveText(['推荐 1 人¥122/月', '推荐 5 人及以上¥118/月']);
       await expect(rules).toContainText('续费优惠由商家确认');
       await expect(page.getByTestId('purchase-total')).toHaveText('¥128.00');
@@ -72,8 +73,31 @@ function fixture() {
       await expect(summary).toHaveValue(/限时价.*¥123\.00/);
       await expect(summary).not.toHaveValue(/¥118\.00/);
       await page.keyboard.press('Escape');
+      // Each spec shows its price on its button; the copy shows the picked spec's section.
+      await expect(page.locator('.shop-specs button .shop-spec-meta')).toHaveText(['¥129.00', '¥123.00 限时价']);
+      const copy = page.locator('.shop-detail-copy');
+      await expect(copy).toContainText('一个月专属说明。');
+      await expect(copy).not.toContainText('其他规格专属说明。');
+      // Switching specs moves nothing: the rules stay (they name their spec), the offer line and the
+      // total keep their place, and only the picked spec's copy changes.
+      // Measured from the top of the page, where the sticky and fixed parts sit in their own places.
+      const boxes = () => page.evaluate(() => {
+        scrollTo({ top: 0, behavior: 'instant' });
+        return Object.fromEntries(['.shop-detail-price', '.shop-specs', '.shop-detail-buybar', '#plus-referral', '.shop-detail-copy', '[data-testid="purchase-total"]']
+          .map(selector => { const box = document.querySelector(selector).getBoundingClientRect(); return [selector, [Math.round(box.x), Math.round(box.y), Math.round(box.height)]]; }));
+      });
+      const before = await boxes();
       await page.getByRole('button', { name: '其他规格', exact: true }).click();
-      await expect(rules).toHaveCount(0);
+      await expect(page.getByRole('button', { name: '其他规格', exact: true })).toHaveAttribute('aria-pressed', 'true');
+      await expect(rules).toBeVisible();
+      await expect(page.locator('.shop-detail-offer')).toHaveText('此规格不参加限时价');
+      await expect(page.getByTestId('purchase-total')).toHaveText('¥129.00');
+      await expect(copy).toContainText('其他规格专属说明。');
+      await expect(copy).not.toContainText('一个月专属说明。');
+      await expect(copy).toContainText('两个规格都适用。');
+      const after = await boxes();
+      for (const selector of Object.keys(before).filter(key => key !== '.shop-detail-copy')) assert.deepEqual(after[selector], before[selector], `${selector} stays put at ${width}px`);
+      assert.deepEqual(after['.shop-detail-copy'].slice(0, 2), before['.shop-detail-copy'].slice(0, 2), `copy starts in place at ${width}px`);
       await page.getByRole('button', { name: '一个月', exact: true }).click();
       await expect(rules).toBeVisible();
     }

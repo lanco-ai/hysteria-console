@@ -751,3 +751,32 @@ def test_admin_shows_where_to_buy_each_source_item_and_the_catalog_never_does(tm
             assert private not in public
 
     asyncio.run(run())
+
+
+def test_plus_specs_show_merchant_names_and_keep_the_supplier_name_for_the_admin(tmp_path):
+    async def run():
+        data = products()
+        plus = next(product for product in data if product['id'] == 1)
+        assert len(plus['skus']) == 2
+        for sku, label in zip(plus['skus'], ('plus不可以覆盖', '一卡一付')):
+            sku['spec_values'] = {'zh-CN': label}
+        next(product for product in data if product['id'] == 2)['skus'][0]['spec_values'] = {'zh-CN': '一卡一付'}
+
+        async def fetch():
+            return normalize_products(data)
+
+        store = make_store(tmp_path, fetcher=fetch)
+        await store.refresh()
+        rows = [row for row in (await store.admin())['items'] if row['product_id'] == '1']
+        supplier = {row['label']: row for row in rows}
+        assert supplier['plus不可以覆盖']['public_label'] == 'plus新开卡密'
+        assert supplier['一卡一付']['public_label'] == 'plus续费卡密'
+        await store.update({'revision': 0, 'telegram': 'merchant_shop',
+                            'skus': {row['key']: {'price_cents': 12800, 'published': True} for row in rows}})
+        public = next(product for product in (await store.public())['products'] if product['id'] == '1')
+        assert sorted(variant['label'] for variant in public['variants']) == ['plus新开卡密', 'plus续费卡密']
+        # The same supplier name on another product is not renamed.
+        pro = [row for row in (await store.admin())['items'] if row['product_id'] == '2']
+        assert '一卡一付' in [row['label'] for row in pro] and all('public_label' not in row for row in pro)
+
+    asyncio.run(run())
