@@ -482,17 +482,19 @@ def test_business_and_discount_plans_are_official_gpt_drafts_that_ask_for_eligib
         store = local_store(tmp_path, clock=lambda: 1000)
         admin = await store.admin()
         titles = {row['product_id']: row['public_title'] for row in admin['items']}
-        assert (titles[BUSINESS_ID], titles[DISCOUNT_ID]) == ('ChatGPT Business', 'ChatGPT 8折充值｜菲律宾区')
+        assert (titles[BUSINESS_ID], titles[DISCOUNT_ID]) == ('ChatGPT Business', 'ChatGPT 5折充值｜菲律宾区')
         # Nothing is on sale until the merchant prices and publishes it.
         assert (await store.public())['products'] == []
         assert '官方' in admin['products'][BUSINESS_ID]['description']
-        assert '> **需先确认账号资格：**' in admin['products'][DISCOUNT_ID]['description']
+        discount_description = admin['products'][DISCOUNT_ID]['description']
+        assert '> **下单前请自行查询半价资格：**' in discount_description
+        assert '确认符合条件后再下单。不符合资格或尚未确认时，请勿下单。' in discount_description
         skus = {key: {'price_cents': 9900, 'published': True} for key in (BUSINESS_KEY, DISCOUNT_KEY)}
         await store.update({'revision': 0, 'telegram': 'my_shop', 'client': 3, 'skus': skus})
         products = {item['id']: item for item in (await store.public())['products']}
         assert {products[BUSINESS_ID]['category'], products[DISCOUNT_ID]['category']} == {'GPT'}
-        assert products[DISCOUNT_ID]['tags'] == ['官方直充', '8折', '需先确认资格']
-        assert products[DISCOUNT_ID]['hot_tags'] == ['8折']
+        assert products[DISCOUNT_ID]['tags'] == ['官方直充', '5折', '自行查询资格']
+        assert products[DISCOUNT_ID]['hot_tags'] == ['5折']
         assert products[BUSINESS_ID]['tags'] == ['官方渠道']
         assert products[BUSINESS_ID]['hot_tags'] == []
 

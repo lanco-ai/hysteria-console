@@ -253,16 +253,16 @@ BUSINESS_NOTICE = {
 
 DISCOUNT_PRODUCT_ID = str(PRODUCT_BASE + 6)
 DISCOUNT_NOTICE = {
-    'description': '''## ChatGPT 8 折充值｜菲律宾区
+    'description': '''## ChatGPT 5折充值｜菲律宾区
 
-**OpenAI 官方渠道直充，8 折价格，充值到你自己的账号。**
+**OpenAI 官方渠道直充，符合条件的账号可享半价充值，充值到你自己的账号。**
 
-> **需先确认账号资格：** 8 折只适用于符合条件的账号。购买前请先联系本店，确认你的账号有资格后再下单。
+> **下单前请自行查询半价资格：** 请先自行查询当前账号是否具备半价充值资格，确认符合条件后再下单。不符合资格或尚未确认时，请勿下单。
 
 ### 下单前请确认
 
-- 账号资格、充值方案和到期时间，以本店确认的为准。
-- 充值完成后，请在 ChatGPT 设置中核对订阅状态和到期时间。''',
+- **核对充值方案：** 充值方案、适用条件及到期时间，请在下单前核对。
+- **充值后核对：** 充值完成后，请在 ChatGPT 设置中核对订阅状态和到期时间。''',
     'after_sales': '''账号不符合资格时请勿下单；已下单的请联系本店处理。充值异常时，请保留订单信息和截图联系本店核查，截图请遮挡邮箱等敏感信息。''',
 }
 
@@ -280,7 +280,7 @@ PRODUCTS = (
      'notice': GROK_IOS_NOTICE, 'ends_at': None},
     {'id': BUSINESS_PRODUCT_ID, 'title': 'ChatGPT Business', 'category': 'GPT',
      'variants': (('1', '标准规格', 0),), 'notice': BUSINESS_NOTICE, 'ends_at': None},
-    {'id': DISCOUNT_PRODUCT_ID, 'title': 'ChatGPT 8折充值｜菲律宾区', 'category': 'GPT',
+    {'id': DISCOUNT_PRODUCT_ID, 'title': 'ChatGPT 5折充值｜菲律宾区', 'category': 'GPT',
      'variants': (('1', '标准规格', 0),), 'notice': DISCOUNT_NOTICE, 'ends_at': None},
 )
 BY_ID = {product['id']: product for product in PRODUCTS}
