@@ -53,7 +53,10 @@ async function main() {
     await manager.getByLabel('上架 2:7').check();
     await manager.getByLabel('售价 2:2').fill('1200.02');
     await manager.getByLabel('上架 2:2').check();
-    await manager.getByLabel('售价 1:4').fill('130.00');
+    await manager.getByLabel('售价 1:1').fill('128.00');
+    await manager.getByLabel('优惠价 1:1').fill('123.00');
+    await manager.getByLabel('上架 1:1').check();
+    await manager.getByLabel('售价 1:4').fill('129.00');
     await manager.getByLabel('上架 1:4').check();
     await manager.getByRole('button', { name: '保存商品设置' }).focus();
     await manager.keyboard.press('Enter');
@@ -64,6 +67,68 @@ async function main() {
     assert.equal(response.status(), 200);
     const publicText = await response.text();
     assert.equal(/cost_cents|qiangyunai|source_url|cnadsiuvhga/.test(publicText), false);
+    const plus = JSON.parse(publicText).products.find(product => product.id === '1');
+    assert.equal(plus.variants.find(variant => variant.id === '1:4').contact_only, true);
+    assert.equal(plus.variants.find(variant => variant.id === '1:4').quantity, null);
+    assert.equal(adminSnapshot.items.find(item => item.key === '1:4').available, false);
+    const contactWrites = [];
+    const recordContactWrite = request => {
+      if (request.method() !== 'GET') contactWrites.push([request.method(), new URL(request.url()).pathname]);
+    };
+    page.on('request', recordContactWrite);
+    for (const width of [320, 390, 1440]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(`${base}/?product=1`);
+      const renewal = page.getByRole('button', { name: 'plus续费卡密', exact: true });
+      await expect(renewal).toContainText('可以购买');
+      await expect(renewal).not.toHaveClass(/is-off/);
+      await expect(renewal).not.toContainText('现货');
+      await expect(page.getByRole('button', { name: '立即购买', exact: true })).toBeEnabled();
+      await expect(page.locator('#plus-referral li').first()).toContainText('一卡二付');
+      await page.evaluate(() => document.fonts.ready);
+      const layout = () => page.evaluate(() => {
+        scrollTo({ top: 0, behavior: 'instant' });
+        return ['.shop-specs', '.shop-detail-buybar', '#plus-referral'].map(selector => {
+          const box = document.querySelector(selector).getBoundingClientRect();
+          return [Math.round(box.x), Math.round(box.y), Math.round(box.height)];
+        });
+      });
+      const before = await layout();
+      await renewal.click();
+      const contact = page.getByRole('button', { name: '联系商家购买', exact: true });
+      await expect(contact).toBeEnabled();
+      await expect(page.getByTestId('purchase-total')).toHaveText('¥129.00');
+      assert.deepEqual(await layout(), before, `Plus specs keep the layout at ${width}px`);
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+      await contact.click();
+      const dialog = page.getByRole('dialog', { name: '购买信息' });
+      await expect(dialog.getByLabel('可复制的购买信息')).toHaveValue(/ChatGPT Plus｜菲律宾区 · plus续费卡密\n数量：1 · 单价：¥129\.00/);
+      await expect(dialog.getByLabel('可复制的购买信息')).toHaveValue(/合计：¥129\.00 CNY/);
+      await expect(dialog.getByRole('link', { name: '联系商家 Telegram' })).toHaveAttribute('href', 'https://t.me/shop_owner');
+      await page.keyboard.press('Escape');
+      for (const quantity of ['0', '100', '1.5']) {
+        await page.getByLabel('购买数量', { exact: true }).fill(quantity);
+        await expect(contact).toBeDisabled();
+      }
+      await page.getByLabel('购买数量', { exact: true }).fill('1');
+      await expect(contact).toBeEnabled();
+      if (process.env.REACT_SHOP_SCREENSHOT_DIR) await page.screenshot({ path: path.join(process.env.REACT_SHOP_SCREENSHOT_DIR, `plus-renewal-contact-${width}.png`), fullPage: true });
+      await page.getByRole('button', { name: '一卡二付', exact: true }).click();
+      await expect(page.getByRole('button', { name: '立即购买', exact: true })).toBeEnabled();
+      await expect(page.getByRole('button', { name: '联系商家购买', exact: true })).toHaveCount(0);
+    }
+    for (const mode of ['no-contact', 'stale']) {
+      const guarded = JSON.parse(publicText);
+      if (mode === 'no-contact') { guarded.telegram = ''; guarded.wechat = ''; }
+      else guarded.status = 'stale';
+      await page.route('**/api/v1/shop/catalog', route => route.fulfill({ json: guarded }));
+      await page.goto(`${base}/?product=1`);
+      await page.getByRole('button', { name: 'plus续费卡密', exact: true }).click();
+      await expect(page.getByRole('button', { name: '联系商家购买', exact: true })).toBeDisabled();
+      await page.unroute('**/api/v1/shop/catalog');
+    }
+    page.off('request', recordContactWrite);
+    assert.ok(contactWrites.every(([method, pathname]) => method === 'POST' && pathname === '/api/v1/shop/visit'), JSON.stringify(contactWrites));
     // Copy lives in the product's settings, closed until asked for.
     await expect(manager.getByLabel('商品说明 2')).toHaveCount(0);
     await manager.getByRole('button', { name: '商品设置 2', exact: true }).click();
@@ -205,7 +270,7 @@ async function main() {
     await page.goto(`${base}/?product=99999`);
     await expect(page.getByRole('heading', { name: '商品不存在或已下架' })).toBeVisible();
     await page.goto(`${base}/?product=1`);
-    await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: '加入购物车', exact: true })).toBeEnabled();
     // Refresh/revision failures preserve both kinds of merchant drafts.
     await manager.getByLabel('售价 2:7').fill('999.99');
     await manager.getByLabel('商品说明 2').fill('未保存的商家说明');

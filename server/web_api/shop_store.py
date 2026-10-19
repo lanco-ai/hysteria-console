@@ -68,6 +68,8 @@ from .shop_sms_source import current_copy as current_sms_copy
 TTL = 900
 BACKOFF = 900
 MANUAL_COOLDOWN = 60
+# Plus renewal is arranged with the merchant even when its supplier has no stock.
+CONTACT_PURCHASE_SKUS = frozenset({'1:4'})
 REMOTE_SOURCES = frozenset({'gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms', 'shop16688'})
 # Private source links waiting for an integration: no fetcher or product namespace.
 BOOKMARKED_SOURCES = frozenset({'wzyp'})
@@ -943,15 +945,17 @@ class ShopStore:
                     'variants': [],
                 },
             )
+            contact_only = row['key'] in CONTACT_PURCHASE_SKUS and not row.get('archived')
             group['variants'].append(
                 {
                     'id': row['key'],
                     'label': row.get('public_label', row['label']),
                     'price_cents': merchant['price_cents'],
                     'promo_price_cents': merchant.get('promo_price_cents'),
+                    **({'contact_only': True} if contact_only else {}),
                     # Units in the merchant's own stock sell whatever the supplier has.
                     'available': bool(state['inventory'].get(row['key']))
-                    or (row['available'] and not state['sources'][provider]['is_stale']),
+                    or ((row['available'] or contact_only) and not state['sources'][provider]['is_stale']),
                     'quantity': state['inventory'].get(row['key']) or None,
                     'sales': None,
                 }

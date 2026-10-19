@@ -1,6 +1,7 @@
 // promo_price_cents: an 优惠价 below the price, for buyers it applies to; badge: its name (学生价…), also shown before the title.
 // quantity: units in the merchant's own stock (本店库存), when there are any.
-export type Variant = { id: string; label: string; price_cents: number; promo_price_cents?: number | null; available: boolean; quantity: number | null; sales: null };
+// contact_only: purchase must be arranged with the merchant; it does not imply stock.
+export type Variant = { id: string; label: string; price_cents: number; promo_price_cents?: number | null; available: boolean; contact_only?: boolean; quantity: number | null; sales: null };
 // ends_at: when a limited-time service leaves the shop (seconds); new_until: while the merchant's 新品 mark lasts.
 // Keep tags as text for open storefront tabs; hot_tags names the labels to highlight in red.
 export type Product = { id: string; title: string; category: string; description?: string; after_sales?: string; badge?: string; sold?: number; views?: number; ends_at?: number; new_until?: number; tags?: string[]; hot_tags?: string[]; variants: Variant[] };

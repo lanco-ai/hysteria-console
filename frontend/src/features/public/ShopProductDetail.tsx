@@ -40,7 +40,7 @@ function SpecButton({ product, variant, pressed, onSelect }: { product: Product;
     <span className="shop-spec-name">{variant.label}</span>
     <span className="shop-spec-meta" id={meta}>
       <span className={promo ? 'shop-spec-price is-promo' : 'shop-spec-price'}>{money(promo ?? variant.price_cents)}{promo ? ` ${promoName(product)}` : ''}</span>
-      {!variant.available ? <span className="shop-spec-off">暂不可购买</span> : variant.quantity ? <span className="shop-detail-stock">现货 {variant.quantity} 件</span> : null}
+      {!variant.available ? <span className="shop-spec-off">暂不可购买</span> : variant.contact_only ? <span>可以购买</span> : variant.quantity ? <span className="shop-detail-stock">现货 {variant.quantity} 件</span> : null}
     </span>
   </button>;
 }
@@ -113,7 +113,7 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
         <div className="shop-detail-buybar">
           <p className="shop-detail-feedback" role="status">{notice}</p>
           <p className="shop-total">合计 <strong data-testid="purchase-total">{variant && validCount ? money(variant.price_cents * count) : '—'}</strong>{offers ? <span className="shop-promo-total">{promo && validCount ? `${promoName(product)}合计 ${money(promo * count)}` : null}</span> : null}</p>
-          <div className="shop-detail-actions"><button type="button" className="btn btn-secondary" disabled={!valid} onClick={() => variant && onAdd({ id: variant.id, quantity: count })}>加入购物车</button><button type="button" className="btn btn-primary" disabled={!valid || !hasContact(catalog)} onClick={() => variant && onBuy({ id: variant.id, quantity: count })}>立即购买</button></div>
+          <div className="shop-detail-actions"><button type="button" className="btn btn-secondary" disabled={!valid} onClick={() => variant && onAdd({ id: variant.id, quantity: count })}>加入购物车</button><button type="button" className="btn btn-primary" disabled={!valid || !hasContact(catalog)} onClick={() => variant && onBuy({ id: variant.id, quantity: count })}>{variant?.contact_only ? '联系商家购买' : '立即购买'}</button></div>
           {!hasContact(catalog) ? <p className="shop-note">商家尚未配置联系方式，暂时无法联系购买。</p> : null}
         </div>
         <p className="shop-note">购买信息需由商家人工确认。请在付款前确认账号条件、价格和交付方式。</p>
