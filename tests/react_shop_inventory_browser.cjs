@@ -6,6 +6,7 @@ const { expect } = require('@playwright/test');
 
 const GEMINI = '2000000000001:1';
 const MUSE = '2000000000002:1';
+const SMS = '5000000000001:1';
 
 (async () => {
   const browser = await chromium.launch({ headless: true });
@@ -23,6 +24,7 @@ const MUSE = '2000000000002:1';
       items: [
         { key: GEMINI, product_id: '2000000000001', title: 'Gemini Pro 18Months (link) · $0.85', public_title: 'Gemini Pro 18 个月', label: '标准规格', cost_cents: 612, available: false, provider: 'prodseller', category: 'Gemini' },
         { key: MUSE, product_id: '2000000000002', title: 'Muse AI · $1.00', public_title: 'Muse AI', label: '标准规格', cost_cents: 720, available: false, provider: 'prodseller', category: 'Muse AI' },
+        { key: SMS, product_id: '5000000000001', title: '短信接码激活码', public_title: '短信接码激活码', label: '单次接码', cost_cents: 200, available: true, provider: 'sms', category: '短信接码' },
       ] };
     // A fictional stand-in for the private inventory API: lines only ever leave on reveal or delivery.
     let revision = 0, nextId = 0, failAdd = 0, addRequests = 0;
@@ -74,7 +76,7 @@ const MUSE = '2000000000002:1';
     await page.getByRole('link', { name: '本店库存', exact: true }).click();
     await expect(page).toHaveURL(`${base}/admin/shop?view=inventory`);
     const panel = page.getByRole('region', { name: '本店库存', exact: true });
-    await expect(panel.locator('.shop-inventory-product h2')).toHaveText(['Gemini Pro 18 个月', 'Muse AI']);
+    await expect(panel.locator('.shop-inventory-product h2')).toHaveText(['Gemini Pro 18 个月', 'Muse AI', '短信接码激活码']);
     const muse = panel.getByRole('article', { name: 'Muse AI 库存' });
     const gemini = panel.getByRole('article', { name: 'Gemini Pro 18 个月 库存' });
     await expect(muse).toContainText('已上架 · ¥18.88');
@@ -141,6 +143,15 @@ const MUSE = '2000000000002:1';
     await expect(gemini).toContainText('未上架：在商品管理上架后，顾客才能看到现货并下单。');
     await gemini.getByRole('button', { name: '发货一件', exact: true }).click();
     await expect(gemini.getByLabel('Gemini Pro 18 个月 发货内容')).toHaveValue(/^Gemini Pro 18 个月 领取链接：https:\/\/example\.invalid\/claim\/1\n请先登录你自己的 Google 账号/);
+
+    // An SMS activation code ships with where to redeem it and how 二验、三验 work.
+    const sms = panel.getByRole('article', { name: '短信接码激活码 库存' });
+    await expect(sms.getByLabel('添加库存')).toHaveAttribute('placeholder', '每行一件，例如：\n激活码');
+    await sms.getByLabel('添加库存').fill('FICTIONAL-SMS-CDK-0001');
+    await sms.getByRole('button', { name: '添加 1 件到库存', exact: true }).click();
+    await sms.getByRole('button', { name: '发货一件', exact: true }).click();
+    await expect(sms.getByLabel('短信接码激活码 发货内容')).toHaveValue(new RegExp(`^短信接码激活码：FICTIONAL-SMS-CDK-0001\n使用：打开本店短信接码页面 ${base.replace(/[.]/g, '\\.')}/\\?view=sms ，输入激活码`));
+    await expect(sms.getByLabel('短信接码激活码 发货内容')).toHaveValue(/二验、三验/);
 
     for (const width of [1440, 1024, 768, 390, 320]) {
       await page.setViewportSize({ width, height: 1000 });

@@ -7,9 +7,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from .shop_inventory import ShopInventory
-
-# Own stock is for the products the merchant buys in bulk and resells.
-STOCKED_CATEGORIES = frozenset({'Gemini', 'Muse AI'})
+from .shop_store import STOCKED_CATEGORIES
 
 
 def register_inventory_routes(app, store, guard, body, reply, *, inventory=None):

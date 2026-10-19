@@ -44,7 +44,7 @@ function nextBatch(sku: string, revision: number, lines: string[]) {
   return batch;
 }
 
-// What a buyer receives with a unit: the line itself and how to take the account over.
+// What a buyer receives with a unit: the line itself and how to use it or take the account over.
 const MUSE_TAKEOVER = [
   '到账后请立即修改：',
   'A）更改邮箱：「联络资料」→ 增加你的电邮；验证新电邮后，删除原旧电邮。',
@@ -54,10 +54,12 @@ const MUSE_TAKEOVER = [
 export function deliveryText(product: StockedProduct, line: string): string {
   if (product.category === 'Muse AI') return [`Muse AI 账号：${line}`, '登录：打开 https://muse.ai/ ，用以上账号和密码登录，先核对 Token 余额。', '', ...MUSE_TAKEOVER].join('\n');
   if (product.category === 'Gemini') return [`${product.title} 领取链接：${line}`, '请先登录你自己的 Google 账号，再用 Chrome 浏览器打开链接，按页面提示领取。'].join('\n');
+  if (product.category === '短信接码') return [`短信接码激活码：${line}`, `使用：打开本店短信接码页面 ${new URL('/?view=sms', window.location.origin).href} ，输入激活码，验证后获取号码并查看验证码。`,
+    '二验、三验：再次验证时，在接码页面开启“指定手机号”并填入原号码即可。号码有时效，取号后请及时使用。'].join('\n');
   return `${product.title}：${line}`;
 }
 
-// 商品管理 → 本店库存: the merchant's own accounts and links for Gemini and Muse AI.
+// 商品管理 → 本店库存: the merchant's own Gemini links, Muse AI accounts and SMS activation codes.
 export function ShopInventory({ session, products, loading = false, unsavedProducts = false, onCounts }: { session: ReturnType<typeof useInventorySession>; products: StockedProduct[]; loading?: boolean; unsavedProducts?: boolean; onCounts?: (stock: Record<string, number>) => void }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState('');
@@ -161,11 +163,11 @@ export function ShopInventory({ session, products, loading = false, unsavedProdu
         <div><dt>已发货</dt><dd>{totals.delivered}<small>件</small></dd></div>
         <div><dt>自营商品</dt><dd>{products.length}<small>个</small></dd></div>
       </dl> : null}
-      <p className="shop-inventory-intro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>账号和链接只保存在本服务器：列表和前台只显示数量，点“查看”或发货时才显示内容。有现货时，即使供应商缺货，前台也可下单；发货后自动计入已售。</span></p>
+      <p className="shop-inventory-intro"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><span>账号、链接和激活码只保存在本服务器：列表和前台只显示数量，点“查看”或发货时才显示内容。有现货时，即使供应商缺货，前台也可下单；发货后自动计入已售。</span></p>
     </div>
     {error ? <p role="alert" className="shop-admin-feedback is-error">{error}</p> : null}
     <p role="status" className="shop-procurement-notice">{notice}</p>
-    {loading || !data ? <p className="shop-procurement-banner">正在读取库存…</p> : !products.length ? <p className="shop-procurement-banner">暂无可管理库存的商品：Gemini 和 Muse AI 的来源启用后会显示在这里。</p>
+    {loading || !data ? <p className="shop-procurement-banner">正在读取库存…</p> : !products.length ? <p className="shop-procurement-banner">暂无可管理库存的商品：Gemini、Muse AI 和短信接码的来源启用后会显示在这里。</p>
       : <div className="shop-inventory-list">{products.map(product => {
         const entry = data.skus[product.key] ?? { stock: [], delivered: [] };
         const draft = linesOf(drafts[product.key] ?? '').length;
@@ -193,15 +195,15 @@ export function ShopInventory({ session, products, loading = false, unsavedProdu
                 <button type="button" className="btn btn-primary" disabled={busy || !entry.stock.length} onClick={() => void deliver(product)}>发货一件</button>
               </div>
               {shown ? <div className="shop-inventory-delivered" role="group" aria-label="发货内容">
-                <textarea aria-label={`${product.title} 发货内容`} readOnly rows={product.category === 'Muse AI' ? 7 : 3} value={deliveryText(product, shown.line)} spellCheck={false}/>
+                <textarea aria-label={`${product.title} 发货内容`} readOnly rows={product.category === 'Muse AI' ? 7 : product.category === '短信接码' ? 5 : 3} value={deliveryText(product, shown.line)} spellCheck={false}/>
                 <div><button type="button" className="btn btn-secondary" onClick={() => copy(deliveryText(product, shown.line))}>复制发货内容</button><button type="button" className="btn btn-secondary" onClick={() => setDelivered(null)}>隐藏</button></div>
-                <small>已从现货扣除并计入已售。切换标签页或 60 秒后隐藏；之后可在发货记录里查看。</small>
+                <small>{product.category === '短信接码' ? '已从现货扣除；买家收到短信时计入已售。' : '已从现货扣除并计入已售。'}切换标签页或 60 秒后隐藏；之后可在发货记录里查看。</small>
               </div> : <small className="shop-inventory-help">{entry.stock.length ? '取出最早添加的一件，显示可直接发给买家的内容。' : '暂无现货：补货后即可发货。'}</small>}
             </div>
             <div className="shop-inventory-section">
               <h3>补货</h3>
               <label className="shop-inventory-add">添加库存<textarea value={drafts[product.key] ?? ''} rows={4} disabled={busy} spellCheck={false}
-                placeholder={product.category === 'Muse AI' ? '每行一件，例如：\n账号 | 密码' : '每行一件，例如：\n领取链接'}
+                placeholder={product.category === 'Muse AI' ? '每行一件，例如：\n账号 | 密码' : product.category === '短信接码' ? '每行一件，例如：\n激活码' : '每行一件，例如：\n领取链接'}
                 onChange={event => setDrafts(old => ({ ...old, [product.key]: event.target.value }))}/></label>
               <div className="shop-inventory-add-actions"><button type="button" className="btn btn-secondary" disabled={busy || !draft} onClick={() => void add(product)}>{draft ? `添加 ${draft} 件到库存` : '添加到库存'}</button><small>与已有库存完全相同的行会跳过。</small></div>
             </div>
