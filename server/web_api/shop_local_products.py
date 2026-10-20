@@ -302,10 +302,10 @@ GROK_NEW_PRODUCTS = tuple(
      'variants': (('1', '1 个月', cost),), 'notice': _new_grok_notice(plan, dollars, quota),
      'ends_at': None}
     for offset, plan, dollars, quota, cost in (
-        (7, 'Grok Plus 1x', 8, 'Plus 标准额度', 0),
-        (8, 'Grok Premium 4x', 30, '4 倍 Plus 额度', 0),
-        (9, 'Grok Super 15x', 100, '15 倍 Plus 额度', 0),
-        (10, 'Grok Ultra 50x', 200, '50 倍 Plus 额度', 0),
+        (7, 'Grok Plus 1x', 8, 'Plus 标准额度', 6300),
+        (8, 'Grok Premium 4x', 30, '4 倍 Plus 额度', 11000),
+        (9, 'Grok Super 15x', 100, '15 倍 Plus 额度', 35500),
+        (10, 'Grok Ultra 50x', 200, '50 倍 Plus 额度', 69000),
     )
 )
 

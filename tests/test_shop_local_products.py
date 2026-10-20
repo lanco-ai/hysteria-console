@@ -60,10 +60,10 @@ def test_claude_guidance_draft_has_private_costs_and_own_copy_without_writes(tmp
             (GROK_QUARTER_KEY, '3 个月（季卡）', 25800),
             (BUSINESS_KEY, '标准规格', 0),
             (DISCOUNT_KEY, '标准规格', 0),
-            ('6000000000007:1', '1 个月', 0),
-            ('6000000000008:1', '1 个月', 0),
-            ('6000000000009:1', '1 个月', 0),
-            ('6000000000010:1', '1 个月', 0),
+            ('6000000000007:1', '1 个月', 6300),
+            ('6000000000008:1', '1 个月', 11000),
+            ('6000000000009:1', '1 个月', 35500),
+            ('6000000000010:1', '1 个月', 69000),
         ]
         for row in admin['items'][:2]:
             assert row['product_id'] == PRODUCT_ID
@@ -446,7 +446,7 @@ def test_new_grok_monthly_products_publish_independently_with_private_costs(tmp_
             (f'{product_id}:1', title, '1 个月', 'Grok', 'local')
             for product_id, title, *_ in NEW_GROK_PLANS
         ]
-        assert [row['cost_cents'] for row in rows] == [0, 0, 0, 0]
+        assert [row['cost_cents'] for row in rows] == [6300, 11000, 35500, 69000]
         assert all(row['source_url'] == row['buy_url'] == '' for row in rows)
         assert admin['skus'] == {} and (await store.public())['products'] == []
         assert not store.path.exists() and not store.settings_path.exists()
@@ -477,7 +477,8 @@ def test_new_grok_monthly_products_publish_independently_with_private_costs(tmp_
             assert '1 个月订阅质保' in after_sales and '异常' in after_sales and '联系本店' in after_sales
             assert '剩余天数' not in after_sales and '退差价' not in after_sales
         wire = json.dumps(catalog, ensure_ascii=False)
-        for private in ('cost_cents', 'provider', 'source_url', 'buy_url', 'sources', 'local_names'):
+        for private in ('cost_cents', 'provider', 'source_url', 'buy_url', 'sources', 'local_names',
+                        '6300', '11000', '35500', '69000'):
             assert private not in wire
         saved = json.loads(reopened.settings_path.read_text())
         assert saved['products'] == {} and 'SSO' not in json.dumps(saved)
