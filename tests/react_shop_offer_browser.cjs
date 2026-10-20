@@ -126,6 +126,41 @@ test('a brand\'s plans show short names and all stay in view', async () => previ
   }
 }));
 
+test('small brands share a row of equal cards: Claude\'s two beside Grok\'s four', async () => preview(async (page, data) => {
+  const card = (id, title, category) => ({ ...data.products[0], id, title, category, badge: '', variants: [{ ...data.products[0].variants[1], id: `${id}:1` }] });
+  data.products = [card('1000000000005', 'Claude Pro 直充', 'Claude'), card('1000000000007', 'Claude 普号', 'Claude'),
+    ...['07', '08', '09', '10'].map(n => card(`60000000000${n}`, `Grok ${n}`, 'Grok')),
+    card('2000000000001', 'Gemini AI Pro', 'Gemini'), card('2000000000002', 'Muse AI', 'Muse AI')];
+  // Cards by row, top to bottom and left to right, named by their brand.
+  const rows = () => page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.shop-product-row')].map(row => ({ brand: row.closest('[data-category]').dataset.category, box: row.getBoundingClientRect() }));
+    const tops = [...new Set(cards.map(item => Math.round(item.box.top)))].sort((a, b) => a - b);
+    return { widths: [...new Set(cards.map(item => Math.round(item.box.width)))],
+      rows: tops.map(top => cards.filter(item => Math.round(item.box.top) === top).sort((a, b) => a.box.left - b.box.left).map(item => item.brand)) };
+  });
+  const grok = ['Grok', 'Grok', 'Grok', 'Grok'];
+  for (const [width, expected] of [
+    [1920, [['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']]],
+    // Five columns: Grok moves down whole, and later single cards fill the row it left.
+    [1440, [['Claude', 'Claude', 'Gemini', 'Muse AI'], grok]],
+    [390, [['Claude'], ['Claude'], ['Grok'], ['Grok'], ['Grok'], ['Grok'], ['Gemini'], ['Muse AI']]],
+  ]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(process.env.PREVIEW_BASE_URL);
+    await expect(page.locator('.shop-product-row')).toHaveCount(8);
+    const layout = await rows();
+    assert.deepEqual(layout.rows, expected, `brand rows at ${width}px`);
+    assert.equal(layout.widths.length, 1, `every card shares one width at ${width}px`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `catalog fits ${width}px`);
+    // Each brand's heading sits over its own cards.
+    for (const brand of ['Claude', 'Grok']) {
+      const group = page.locator(`.shop-category-group[data-category="${brand}"]`);
+      const [heading, first] = await Promise.all([group.locator('.shop-group-heading').boundingBox(), group.locator('.shop-product-row').first().boundingBox()]);
+      assert.ok(Math.abs(heading.x - first.x) < 1 && heading.y < first.y, `${brand} heading above its cards at ${width}px`);
+    }
+  }
+}));
+
 test('Grok plans compare as priced tiles, and store-owned copy renders as Markdown', async () => preview(async (page, data) => {
   const plan = (id, title, cents, quota) => ({ id, title, category: 'Grok', badge: '', views: 0, sold: 0, tags: ['新版', quota, '质保30天'],
     description: `## ${title}\n\n**正规充值 · 无需上号**\n\n### 套餐信息\n\n- **套餐额度：** ${quota}。\n- **订阅质保：** 30 天。\n\n> **充值成功后不退不换。**`,
