@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { PortalShell, ShopIcon } from './PortalShell';
 import { countText, isNew, lowestOffer, money, reportVisit, shopRequest, type Catalog, type Product } from '../shop/catalog';
@@ -12,6 +12,71 @@ import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多邻国', '短信接码', 'VPN'];
 // A filter beside the categories: the products the merchant marked 新品.
 const NEW_FILTER = '新品';
+
+// Catalog cards are at least 300px wide and 14px apart. A row may widen into the page margins, stopping 40px
+// short of the window's edges, while its cards stay at least 280px wide.
+const CARD_MIN = 300, CARD_GAP = 14, WIDE_CARD_MIN = 280, WIDE_GUTTER = 40;
+type Brand = { name: string; products: Product[] };
+type Space = { width: number; room: number };
+type Shelf = { brands: Brand[]; columns: number; width: number | null };
+
+/** The catalog's width, and how wide a row may grow into the page margins. Measured on the storefront's parent,
+ * which keeps its width while a product page hides the storefront, so the catalog comes back laid out as it was. */
+function useShelfSpace(storefront: RefObject<HTMLDivElement | null>): Space | null {
+  const [space, setSpace] = useState<Space | null>(null);
+  useLayoutEffect(() => {
+    const parent = storefront.current?.parentElement;
+    if (!parent) return;
+    const measure = () => {
+      const style = getComputedStyle(parent);
+      const start = parseFloat(style.paddingLeft);
+      const width = parent.clientWidth - start - parseFloat(style.paddingRight);
+      const left = parent.getBoundingClientRect().left + parent.clientLeft + start;
+      const margin = Math.max(0, Math.min(left, document.documentElement.clientWidth - left - width) - WIDE_GUTTER);
+      setSpace(old => old && old.width === width && old.room === width + 2 * margin ? old : { width, room: width + 2 * margin });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(parent);
+    window.addEventListener('resize', measure);
+    return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
+  }, [storefront]);
+  return space;
+}
+
+/** Brands in rows ("shelves") of the catalog's columns, a column per card. A brand with a row of cards or more
+ * takes whole rows. Smaller ones share a row in order; when the next one needs more columns than are left and the
+ * row can widen into the page margins to take it (Claude's two beside Grok's four), the row widens, its cards as
+ * wide as the others where there is room, rather than splitting the brand. Otherwise a later brand that fits
+ * fills the gap. */
+function shelves(brands: Brand[], space: Space | null): Shelf[] {
+  if (!space) return brands.map(brand => ({ brands: [brand], columns: 1, width: null }));
+  const columns = Math.max(1, Math.floor((space.width + CARD_GAP) / (CARD_MIN + CARD_GAP)));
+  const card = (space.width - (columns - 1) * CARD_GAP) / columns;
+  const widest = space.room > space.width ? Math.floor((space.room + CARD_GAP) / (WIDE_CARD_MIN + CARD_GAP)) : columns;
+  const rest = [...brands];
+  const result: Shelf[] = [];
+  while (rest.length) {
+    const row = [rest.shift()!];
+    let used = row[0]!.products.length;
+    while (used < columns && rest.length) {
+      const next = rest[0]!.products.length;
+      if (used + next <= Math.max(columns, widest)) {
+        used += next;
+        row.push(rest.shift()!);
+        continue;
+      }
+      const fill = rest.findIndex(brand => used + brand.products.length <= columns);
+      if (fill < 0) break;
+      used += rest[fill]!.products.length;
+      row.push(...rest.splice(fill, 1));
+    }
+    result.push(used > columns && row.length > 1
+      ? { brands: row, columns: used, width: Math.min(space.room, used * card + (used - 1) * CARD_GAP) }
+      : { brands: row, columns, width: null });
+  }
+  return result;
+}
 
 /** The lowest price a buyer can pay now, with its regular price struck through when an 优惠价 lowers it. */
 function CardPrice({ product }: { product: Product }) {
@@ -60,6 +125,8 @@ export function ShopPage() {
   const isCart = query.get('view') === 'cart';
   const productId = isCart ? null : query.get('product') || null;
   const routeKey = window.location.search;
+  const storefront = useRef<HTMLDivElement>(null);
+  const space = useShelfSpace(storefront);
   useEffect(() => { setSelected(null); setNotice(''); }, [routeKey]);
   const requestId = useRef(0);
   const load = useCallback(async () => {
@@ -113,7 +180,7 @@ export function ShopPage() {
     </> : null}
     {productId !== null ? <ProductPage productId={productId} catalog={catalog} error={error} notice={notice} cartCount={cartCount} onAdd={add} onBuy={item => setSelected([item])} onRetry={() => void load()}/> : null}
     {/* The catalog stays mounted under product and cart pages, so it comes back exactly as it was left. */}
-    <div className="shop-storefront" hidden={isCart || productId !== null}>
+    <div className="shop-storefront" ref={storefront} hidden={isCart || productId !== null}>
     <header className="shop-hero">
       <div className="shop-hero-text">
         <h1 id="shop-catalog-title" tabIndex={-1}>商品目录</h1>
@@ -141,7 +208,9 @@ export function ShopPage() {
         {catalog?.status === 'unavailable' ? <p className="shop-notice" role="status">商品信息暂不可用，请稍后再试。</p> : null}
         {catalog?.status === 'stale' ? <p className="shop-notice" role="status">商品信息正在等待更新，暂时无法购买，请稍后再试。</p> : null}
         <div className="shop-catalog-body">
-          {products.length ? <>{categories.map(name => { const group = products.filter(product => product.category === name); return group.length ? <section className="shop-category-group" data-category={name} data-cards={group.length} key={name}>{category === '全部商品' || category === NEW_FILTER ? <h2 className="shop-group-heading">{name} 商品<span>（{group.length}）</span></h2> : null}<div className="shop-product-list">{group.map(product => <ProductRow key={product.id} product={product} catalogReady={catalog?.status === 'ready'} onAdd={add}/>)}</div></section> : null; })}</> : <div className="shop-empty" role="status"><span className="shop-empty-icon"><ShopIcon/></span><h2>{!catalog && !error ? '正在加载商品' : search.trim() ? '没有匹配的商品' : '暂无商品'}</h2><p>{search.trim() ? '试试其他关键词，或清除搜索。没上架的商品也可以联系商家代购。' : '商品上架后会显示在这里。'}</p>{search.trim() ? <WechatContact wechat={catalog?.wechat}/> : null}{search.trim() ? <button className="btn btn-secondary" type="button" onClick={() => setSearch('')}>清除搜索</button> : null}</div>}
+          {products.length ? shelves(categories.map(name => ({ name, products: products.filter(product => product.category === name) })).filter(brand => brand.products.length), space).map(shelf => <div key={shelf.brands[0]!.name} className={shelf.width ? 'shop-shelf is-wide' : 'shop-shelf'} style={{ '--shelf-columns': shelf.columns, ...(shelf.width ? { '--shelf-width': `${shelf.width}px` } : {}) } as CSSProperties}>
+            {shelf.brands.map(({ name, products: group }) => <section className="shop-category-group" data-category={name} key={name} style={{ '--group-columns': Math.min(group.length, shelf.columns) } as CSSProperties}>{category === '全部商品' || category === NEW_FILTER ? <h2 className="shop-group-heading">{name} 商品<span>（{group.length}）</span></h2> : null}<div className="shop-product-list">{group.map(product => <ProductRow key={product.id} product={product} catalogReady={catalog?.status === 'ready'} onAdd={add}/>)}</div></section>)}
+          </div>) : <div className="shop-empty" role="status"><span className="shop-empty-icon"><ShopIcon/></span><h2>{!catalog && !error ? '正在加载商品' : search.trim() ? '没有匹配的商品' : '暂无商品'}</h2><p>{search.trim() ? '试试其他关键词，或清除搜索。没上架的商品也可以联系商家代购。' : '商品上架后会显示在这里。'}</p>{search.trim() ? <WechatContact wechat={catalog?.wechat}/> : null}{search.trim() ? <button className="btn btn-secondary" type="button" onClick={() => setSearch('')}>清除搜索</button> : null}</div>}
         </div>
       </section>
     </div>

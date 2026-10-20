@@ -131,38 +131,20 @@ body.page-portal {
 .shop-search input { flex: 1 1 auto; width: 100%; min-width: 0; padding-block: 6px; border: 0; outline: 0; background: transparent; font: inherit; }
 .shop-search input::placeholder { color: var(--text-tertiary); }
 .shop-catalog { min-width: 0; container-type: inline-size; container-name: shop-catalog; }
-/* Every card in the catalog shares one set of columns, as many 250px ones as fit (up to six). A brand
-   takes as many columns as it has cards, so small brands share a row (Claude's two beside Grok's four)
-   and a brand with more cards than columns takes whole rows. A gap a brand leaves at the end of a row is
-   filled by a later, smaller one, so no row is left half empty while one below it is not. */
-.shop-catalog-body { --shop-columns: 1; display: grid; grid-template-columns: repeat(var(--shop-columns), minmax(0, 1fr)); grid-auto-flow: row dense; gap: 26px 14px; margin: 0; }
-.shop-category-group { display: grid; grid-template-rows: auto 1fr; grid-column: 1 / -1; min-width: 0; }
+/* The catalog is a stack of rows ("shelves", laid out in ShopPage.tsx): each has the catalog's columns, at
+   least 300px wide, and a brand takes a column per card, so small brands share a row. A row of small brands that
+   needs a few more columns than fit widens into the page margins, centred under the catalog, rather than split a
+   brand. Brands are subgrids, so every card in a row lines up with the others. */
+.shop-catalog-body { display: grid; gap: 26px; margin: 0; }
+.shop-shelf { display: grid; grid-template-columns: repeat(var(--shelf-columns, 1), minmax(0, 1fr)); column-gap: 14px; min-width: 0; }
+.shop-shelf.is-wide { width: var(--shelf-width); margin-inline: calc((100% - var(--shelf-width)) / 2); }
+.shop-category-group { display: grid; grid-template-rows: auto 1fr; grid-column: span var(--group-columns, 1); min-width: 0; }
 .shop-group-heading { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0 0 12px; padding-left: 10px; border-left: 3px solid #1675dc; font-size: 16px; line-height: 1.4; white-space: nowrap; }
 .shop-group-heading span { color: var(--text-tertiary); font-size: 13px; font-weight: 400; }
-.shop-product-list { display: grid; grid-row: 2; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 14px; }
+.shop-product-list { display: grid; grid-row: 2; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 14px; }
 @supports (grid-template-columns: subgrid) {
   .shop-category-group, .shop-product-list { grid-template-columns: subgrid; }
   .shop-category-group > * { grid-column: 1 / -1; }
-}
-@container shop-catalog (min-width: 514px) {
-  .shop-catalog-body { --shop-columns: 2; }
-  .shop-category-group[data-cards="1"] { grid-column: span 1; }
-}
-@container shop-catalog (min-width: 778px) {
-  .shop-catalog-body { --shop-columns: 3; }
-  .shop-category-group[data-cards="2"] { grid-column: span 2; }
-}
-@container shop-catalog (min-width: 1042px) {
-  .shop-catalog-body { --shop-columns: 4; }
-  .shop-category-group[data-cards="3"] { grid-column: span 3; }
-}
-@container shop-catalog (min-width: 1306px) {
-  .shop-catalog-body { --shop-columns: 5; }
-  .shop-category-group[data-cards="4"] { grid-column: span 4; }
-}
-@container shop-catalog (min-width: 1570px) {
-  .shop-catalog-body { --shop-columns: 6; }
-  .shop-category-group[data-cards="5"] { grid-column: span 5; }
 }
 .shop-empty { display: flex; align-items: center; justify-content: center; flex-direction: column; grid-column: 1 / -1; gap: 12px; min-height: 330px; padding: 36px 20px; text-align: center; }
 .shop-empty-icon { display: grid; place-items: center; width: 64px; height: 64px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 20px; background: var(--bg-overlay); color: var(--text-tertiary); }
