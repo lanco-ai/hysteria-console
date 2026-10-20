@@ -61,7 +61,7 @@ function shelves(brands: Brand[], space: Space | null): Shelf[] {
     let used = row[0]!.products.length;
     while (used < columns && rest.length) {
       const next = rest[0]!.products.length;
-      if (used + next <= Math.max(columns, widest)) {
+      if (next < columns && used + next <= Math.max(columns, widest)) {
         used += next;
         row.push(rest.shift()!);
         continue;

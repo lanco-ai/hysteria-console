@@ -145,8 +145,12 @@ test('small brands share a row, widening into the margins rather than split a br
   for (const [width, rows, wide] of [
     // Five columns: GPT keeps the catalog's width; Claude's two and Grok's four widen past both edges, evenly.
     [2560, [gpt(5), gpt(1), ['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']], 2],
+    // Less margin: the shared row's cards shrink evenly but keep 40px clear at each viewport edge.
+    [1920, [gpt(5), gpt(1), ['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']], 2],
     // No margin to widen into: Grok moves down whole, and later single cards fill the row it left.
     [1440, [gpt(4), gpt(2), ['Claude', 'Claude', 'Gemini', 'Muse AI'], grok], null],
+    [1024, [gpt(3), gpt(3), ['Claude', 'Claude', 'Gemini'], grok.slice(0, 3), ['Grok'], ['Muse AI']], null],
+    [580, [...gpt(6), 'Claude', 'Claude', ...grok, 'Gemini', 'Muse AI'].map(brand => [brand]), null],
     [390, [...gpt(6), 'Claude', 'Claude', ...grok, 'Gemini', 'Muse AI'].map(brand => [brand]), null],
   ]) {
     await page.setViewportSize({ width, height: 900 });
@@ -154,12 +158,20 @@ test('small brands share a row, widening into the margins rather than split a br
     await expect(page.locator('.shop-product-row')).toHaveCount(14);
     const result = await layout();
     assert.deepEqual(result.rows, rows, `brand rows at ${width}px`);
-    assert.equal(result.widths.length, 1, `every card shares one width at ${width}px`);
+    assert.equal(result.widths.length, width === 1920 ? 2 : 1, `only the widened row may shrink at ${width}px`);
     result.edges.forEach(([left, right], index) => {
-      if (index === wide) assert.ok(left < -100 && Math.abs(left - right) <= 1, `row ${index} widens evenly at ${width}px: ${left}, ${right}`);
+      if (index === wide) assert.ok(left < 0 && Math.abs(left - right) <= 1, `row ${index} widens evenly at ${width}px: ${left}, ${right}`);
       else assert.ok(left === 0 && right >= -1, `row ${index} stays within the catalog at ${width}px: ${left}, ${right}`);
     });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `catalog fits ${width}px`);
+    if (wide !== null) {
+      const bounds = await page.locator('.shop-shelf.is-wide').boundingBox();
+      assert.ok(bounds.x >= 40 && bounds.x + bounds.width <= width - 40, `wide row keeps viewport gutters at ${width}px`);
+      assert.ok(await page.locator('.shop-shelf.is-wide .shop-product-row').evaluateAll(cards => {
+        const widths = cards.map(card => card.getBoundingClientRect().width);
+        return Math.min(...widths) >= 280 && Math.max(...widths) - Math.min(...widths) < 1;
+      }), `wide cards remain equal and at least 280px at ${width}px`);
+    }
     // Each brand's heading sits over its own cards.
     for (const brand of ['Claude', 'Grok']) {
       const group = page.locator(`.shop-category-group[data-category="${brand}"]`);
@@ -173,6 +185,12 @@ test('small brands share a row, widening into the margins rather than split a br
   await page.getByRole('link', { name: '商品目录', exact: true }).click();
   await expect(page.locator('.shop-product-row').first()).toBeVisible();
   assert.deepEqual((await layout()).rows, [gpt(5), gpt(1), ['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']]);
+
+  // A brand that needs whole normal rows must not be pulled into a wider small-brand row.
+  data.products.push(card('6000000000011', 'Grok 11', 'Grok'), card('6000000000012', 'Grok 12', 'Grok'));
+  await page.reload();
+  await expect(page.locator('.shop-product-row')).toHaveCount(16);
+  assert.deepEqual((await layout()).rows, [gpt(5), gpt(1), ['Claude', 'Claude', 'Gemini', 'Muse AI'], Array(5).fill('Grok'), ['Grok']]);
 }));
 
 test('Grok plans compare as priced tiles, and store-owned copy renders as Markdown', async () => preview(async (page, data) => {
