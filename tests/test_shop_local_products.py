@@ -21,6 +21,12 @@ GROK_ID = '6000000000004'
 GROK_MONTH_KEY, GROK_QUARTER_KEY = f'{GROK_ID}:1', f'{GROK_ID}:2'
 BUSINESS_ID, BUSINESS_KEY = '6000000000005', '6000000000005:1'
 DISCOUNT_ID, DISCOUNT_KEY = '6000000000006', '6000000000006:1'
+NEW_GROK_PLANS = (
+    ('6000000000007', 'Grok Plus 1x（新版 · 1个月）', '8', 'Plus 标准额度'),
+    ('6000000000008', 'Grok Premium 4x（新版 · 1个月）', '30', '4 倍 Plus 额度'),
+    ('6000000000009', 'Grok Super 15x（新版 · 1个月）', '100', '15 倍 Plus 额度'),
+    ('6000000000010', 'Grok Ultra 50x（新版 · 1个月）', '200', '50 倍 Plus 额度'),
+)
 
 
 async def empty_supplier():
@@ -32,7 +38,8 @@ def local_keys(now=None):
     import time
     keys = [MICROSOFT_KEY, GOOGLE_KEY, VPN_KEY]
     return keys + ([STUDENT_KEY] if (time.time() if now is None else now) <= STUDENT_ENDS_AT else []) + [
-        GROK_MONTH_KEY, GROK_QUARTER_KEY, BUSINESS_KEY, DISCOUNT_KEY]
+        GROK_MONTH_KEY, GROK_QUARTER_KEY, BUSINESS_KEY, DISCOUNT_KEY,
+        *(f'{product_id}:1' for product_id, *_ in NEW_GROK_PLANS)]
 
 
 def local_store(tmp_path, **kwargs):
@@ -53,6 +60,10 @@ def test_claude_guidance_draft_has_private_costs_and_own_copy_without_writes(tmp
             (GROK_QUARTER_KEY, '3 个月（季卡）', 25800),
             (BUSINESS_KEY, '标准规格', 0),
             (DISCOUNT_KEY, '标准规格', 0),
+            ('6000000000007:1', '1 个月', 0),
+            ('6000000000008:1', '1 个月', 0),
+            ('6000000000009:1', '1 个月', 0),
+            ('6000000000010:1', '1 个月', 0),
         ]
         for row in admin['items'][:2]:
             assert row['product_id'] == PRODUCT_ID
@@ -304,7 +315,7 @@ def test_default_local_names_do_not_make_ordinary_saves_incompatible_with_old_sc
 @pytest.mark.parametrize('names', [
     None, [], {'unexpected': {}}, {'products': []}, {'variants': []},
     {'products': {'1': '供应商改名'}}, {'variants': {'1:1': '供应商改名'}},
-    {'products': {'6000000000009': '未知本店商品'}}, {'variants': {'6000000000001:3': '未知规格'}},
+    {'products': {'6000000000099': '未知本店商品'}}, {'variants': {'6000000000001:3': '未知规格'}},
     {'products': {PRODUCT_ID: ''}}, {'variants': {MICROSOFT_KEY: '  '}},
     {'products': {PRODUCT_ID: '商品\n名称'}}, {'variants': {MICROSOFT_KEY: '规格\x00名称'}},
     {'products': {PRODUCT_ID: '商品\u2028名称'}}, {'variants': {MICROSOFT_KEY: '规格\u2029名称'}},
@@ -359,7 +370,8 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
         admin = await store.admin()
         categories = {row['product_id']: row['category'] for row in admin['items']}
         assert categories == {PRODUCT_ID: 'Claude', VPN_ID: 'VPN', STUDENT_ID: 'GPT', GROK_ID: 'Grok',
-                              BUSINESS_ID: 'GPT', DISCOUNT_ID: 'GPT'}
+                              BUSINESS_ID: 'GPT', DISCOUNT_ID: 'GPT',
+                              **{product_id: 'Grok' for product_id, *_ in NEW_GROK_PLANS}}
         assert '> **服务器与域名：本店指导选购。**' in admin['products'][VPN_ID]['description']
         assert '不提供 VPN' not in admin['products'][VPN_ID]['description']
         assert '流量额度' in admin['products'][VPN_ID]['description']
@@ -419,6 +431,57 @@ def test_local_grok_two_plans_publish_at_merchant_prices_without_supplier_or_cre
         wire = json.dumps(product)
         assert all(private not in wire for private in ('cost_cents', 'source_url', 'provider', '13500', '25800'))
         assert not store.path.exists() and not list(tmp_path.glob('*local*'))
+
+    asyncio.run(run())
+
+
+def test_new_grok_monthly_products_publish_independently_with_private_costs(tmp_path):
+    async def run():
+        store = local_store(tmp_path, fetcher=None, clock=lambda: 1000)
+        admin = await store.admin()
+        ids = [product_id for product_id, *_ in NEW_GROK_PLANS]
+        rows = [row for row in admin['items'] if row['product_id'] in ids]
+        assert [(row['key'], row['public_title'], row['label'], row['category'], row['provider'])
+                for row in rows] == [
+            (f'{product_id}:1', title, '1 个月', 'Grok', 'local')
+            for product_id, title, *_ in NEW_GROK_PLANS
+        ]
+        assert [row['cost_cents'] for row in rows] == [0, 0, 0, 0]
+        assert all(row['source_url'] == row['buy_url'] == '' for row in rows)
+        assert admin['skus'] == {} and (await store.public())['products'] == []
+        assert not store.path.exists() and not store.settings_path.exists()
+
+        retail_prices = [8500, 15000, 45000, 85000]
+        skus = {f'{product_id}:1': {'price_cents': price, 'published': False}
+                for product_id, price in zip(ids, retail_prices)}
+        await store.update({'revision': 0, 'client': 3, 'telegram': 'my_shop', 'skus': skus})
+        assert (await local_store(tmp_path, fetcher=None).public())['products'] == []
+        await store.update({'revision': 1, 'client': 3, 'telegram': 'my_shop',
+                            'skus': {key: {**value, 'published': True} for key, value in skus.items()}})
+        reopened = local_store(tmp_path, fetcher=None)
+        catalog = await reopened.public()
+        assert catalog['status'] == 'ready'
+        assert [product['id'] for product in catalog['products']] == ids
+        for product, (product_id, title, dollars, quota), price in zip(
+                catalog['products'], NEW_GROK_PLANS, retail_prices):
+            assert product['title'] == title and product['category'] == 'Grok'
+            assert [(variant['id'], variant['label'], variant['price_cents'], variant['available'])
+                    for variant in product['variants']] == [(f'{product_id}:1', '1 个月', price, True)]
+            assert product['tags'] == ['新版', quota.replace(' ', ''), '质保1个月']
+            assert product['hot_tags'] == []
+            description, after_sales = product['description'], product['after_sales']
+            for clause in ('### 套餐信息', f'${dollars}/月', quota, '正规充值', '无需上号',
+                           'SSO', '私下', '**充值成功后不退不换', '下单即默认同意以上规则'):
+                assert clause in description
+            assert '> **' in description
+            assert '1 个月订阅质保' in after_sales and '异常' in after_sales and '联系本店' in after_sales
+            assert '剩余天数' not in after_sales and '退差价' not in after_sales
+        wire = json.dumps(catalog, ensure_ascii=False)
+        for private in ('cost_cents', 'provider', 'source_url', 'buy_url', 'sources', 'local_names'):
+            assert private not in wire
+        saved = json.loads(reopened.settings_path.read_text())
+        assert saved['products'] == {} and 'SSO' not in json.dumps(saved)
+        assert not store.path.exists()
 
     asyncio.run(run())
 

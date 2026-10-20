@@ -266,6 +266,49 @@ DISCOUNT_NOTICE = {
     'after_sales': '''账号不符合资格时请勿下单；已下单的请联系本店处理。充值异常时，请保留订单信息和截图联系本店核查，截图请遮挡邮箱等敏感信息。''',
 }
 
+
+def _new_grok_notice(plan, dollars, quota):
+    return {
+        'description': f'''## {plan}｜新版 · 1 个月
+
+**正规充值 · 无需上号 · 提供 SSO 即可充值**
+
+### 套餐信息
+
+- **订阅档位：** {plan}（${dollars}/月）。
+- **订阅期限：** 1 个月新版订阅。
+- **套餐额度：** {quota}。
+- **订阅质保：** 1 个月。
+
+### 充值方式
+
+下单后请联系本店，按店主说明**私下提供 SSO**，用于本次账号充值，无需提供账号密码。SSO 属于敏感登录会话信息，请仅通过双方确认的私下渠道提供，不要公开留言或分享。
+
+充值完成后，请在本人账号内核对订阅档位及到期时间。
+
+> **充值成功后不退不换，下单即默认同意以上规则。**''',
+        'after_sales': '''### 订阅质保
+
+提供 **1 个月订阅质保**。质保期内订阅状态异常时，请保留订单信息和订阅状态截图联系本店核查，截图请遮挡 SSO 等敏感信息。
+
+### 购买规则
+
+**充值成功后不退不换，下单即默认同意以上规则。**''',
+    }
+
+
+GROK_NEW_PRODUCTS = tuple(
+    {'id': str(PRODUCT_BASE + offset), 'title': f'{plan}（新版 · 1个月）', 'category': 'Grok',
+     'variants': (('1', '1 个月', cost),), 'notice': _new_grok_notice(plan, dollars, quota),
+     'ends_at': None}
+    for offset, plan, dollars, quota, cost in (
+        (7, 'Grok Plus 1x', 8, 'Plus 标准额度', 0),
+        (8, 'Grok Premium 4x', 30, '4 倍 Plus 额度', 0),
+        (9, 'Grok Super 15x', 100, '15 倍 Plus 额度', 0),
+        (10, 'Grok Ultra 50x', 200, '50 倍 Plus 额度', 0),
+    )
+)
+
 # Every store-owned product: storefront category, variants (label, administrator-only cost),
 # default copy, and the moment it leaves the shop, if any. Zero is the local cost default.
 PRODUCTS = (
@@ -282,6 +325,7 @@ PRODUCTS = (
      'variants': (('1', '标准规格', 0),), 'notice': BUSINESS_NOTICE, 'ends_at': None},
     {'id': DISCOUNT_PRODUCT_ID, 'title': 'ChatGPT 5折充值｜菲律宾区', 'category': 'GPT',
      'variants': (('1', '标准规格', 0),), 'notice': DISCOUNT_NOTICE, 'ends_at': None},
+    *GROK_NEW_PRODUCTS,
 )
 BY_ID = {product['id']: product for product in PRODUCTS}
 
