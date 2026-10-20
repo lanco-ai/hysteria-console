@@ -29,11 +29,12 @@ from .shop_lorry_source import PRODUCT_BASE as LORRY_BASE
 from .shop_lorry_source import PUBLIC_TITLES as LORRY_TITLES
 from .shop_local_products import BY_ID as LOCAL_PRODUCTS
 from .shop_local_products import GROK_IOS_PRODUCT_ID as LOCAL_GROK_IOS_ID
+from .shop_local_products import PREVIOUS_NEW_GROK_NOTICES
 from .shop_local_products import PRODUCT_BASE as LOCAL_BASE
 from .shop_local_products import VPN_PRODUCT_ID as LOCAL_VPN_ID
 from .shop_local_products import catalog as local_catalog
 from .shop_local_products import category as local_category
-from .shop_local_products import current_grok_ios_copy, current_vpn_copy
+from .shop_local_products import current_grok_ios_copy, current_new_grok_copy, current_vpn_copy
 from .shop_local_products import ends_at as local_ends_at
 from .shop_notices import (
     DUOLINGO_NOTICE,
@@ -800,6 +801,8 @@ class ShopStore:
             products[LOCAL_VPN_ID] = current_vpn_copy(products[LOCAL_VPN_ID])
         if LOCAL_GROK_IOS_ID in products:
             products[LOCAL_GROK_IOS_ID] = current_grok_ios_copy(products[LOCAL_GROK_IOS_ID])
+        for product_id in products.keys() & PREVIOUS_NEW_GROK_NOTICES.keys():
+            products[product_id] = current_new_grok_copy(product_id, products[product_id])
         for product_id in {row['product_id'] for row in items} & CLAUDE_PRODUCT_IDS:
             # A saved custom or explicitly empty copy always wins. Defaults only
             # belong to this read projection, never the persisted merchant state.

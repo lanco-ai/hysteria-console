@@ -16,6 +16,16 @@ export function promoCents(variant: Variant | undefined): number | null {
   const promo = variant?.promo_price_cents;
   return variant && promo && promo < variant.price_cents ? promo : null;
 }
+/** The lowest price a buyer can pay now, the regular price an 优惠价 lowers, and whether specs pay different prices ("起"). */
+export function lowestOffer(product: Product): { cents: number; regular: number | null; from: boolean } | null {
+  const offered = product.variants.filter(item => item.available);
+  const pool = offered.length ? offered : product.variants;
+  const pay = (item: Variant) => (offered.length ? promoCents(item) : null) ?? item.price_cents;
+  if (!pool.length) return null;
+  const cheapest = pool.reduce((best, item) => pay(item) < pay(best) ? item : best);
+  const cents = pay(cheapest);
+  return { cents, regular: cents < cheapest.price_cents ? cheapest.price_cents : null, from: new Set(pool.map(pay)).size > 1 };
+}
 /** A product the merchant marked 新品, until the mark ends. */
 export function isNew(product: Product, now = Date.now()): boolean { return Boolean(product.new_until && product.new_until * 1000 > now); }
 /** What the 优惠价 is called: the product's label, such as 学生价. */

@@ -37,7 +37,7 @@ const catalog = { currency: 'CNY', telegram: 'demo_shop', wechat: '', status: 'r
     await student.getByRole('link', { name: 'ChatGPT 学生认证', exact: true }).click();
     await expect(page.locator('#shop-detail-title')).toHaveText('ChatGPT 学生认证');
     await expect(page.locator('.shop-detail-heading .shop-ends-badge')).toHaveText('10月31日截止');
-    await expect(page.getByRole('navigation', { name: 'GPT 其他商品' }).getByRole('link')).toHaveText(['Plus', '学生认证']);
+    await expect(page.getByRole('navigation', { name: 'GPT 其他商品' }).locator('.shop-plans-name')).toHaveText(['Plus', '学生认证']);
     await expect.poll(() => page.evaluate(() => document.documentElement.dataset.shopTransition ?? null)).toBe(null);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'product page fits 390px');
     if (process.env.REACT_SCREENSHOT_DIR) {

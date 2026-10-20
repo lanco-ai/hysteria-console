@@ -11,12 +11,13 @@ import vpnLatency from '../../assets/shop-notices/vpn-latency.png';
 import grokUserId from '../../assets/shop-notices/grok-userid-guide.png';
 
 const claudeProductIds = new Set(['1000000000005', '1000000000007', '1000000000008']);
-const grokProductIds = new Set(['1000000000011', '6000000000004']);
+const grokProductIds = new Set(['1000000000011']);
 const geminiProductIds = new Set(['2000000000001']);
 const museProductIds = new Set(['2000000000002']);
 const duolingoProductIds = new Set(['2000000000003']);
-const vpnProductIds = new Set(['6000000000002']);
-const textProductIds = new Set(['1', '2', '3', '4', '5', '6', '5000000000001', '6000000000001', '6000000000003', '6000000000005', '6000000000006']);
+const textProductIds = new Set(['1', '2', '3', '4', '5', '6', '5000000000001']);
+// Store-owned products (6000000000000 + n on the server) always ship Markdown copy, so a new one needs no entry here.
+const storeProductId = /^6000000000\d{3}$/;
 const noticeImages = [
   { alias: '/shop-notices/claude/active-subscription', src: activeSubscription, width: 1280, height: 957 },
   { alias: '/shop-notices/claude/message-restriction', src: messageRestriction, width: 2672, height: 1466 },
@@ -56,7 +57,7 @@ export function ShopCopyText({ text }: { text: string }) {
 }
 
 export function isClaudeNoticeProduct(productId: string) { return claudeProductIds.has(productId); }
-export function isNoticeProduct(productId: string) { return isClaudeNoticeProduct(productId) || grokProductIds.has(productId) || geminiProductIds.has(productId) || museProductIds.has(productId) || duolingoProductIds.has(productId) || vpnProductIds.has(productId) || textProductIds.has(productId); }
+export function isNoticeProduct(productId: string) { return isClaudeNoticeProduct(productId) || grokProductIds.has(productId) || geminiProductIds.has(productId) || museProductIds.has(productId) || duolingoProductIds.has(productId) || textProductIds.has(productId) || storeProductId.test(productId); }
 
 // A heading such as "### 规格：3 个月（季卡）" starts copy for that spec alone; it runs to the next heading of
 // the same or a higher level.

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { PortalShell, ShopIcon } from './PortalShell';
-import { countText, isNew, money, promoCents, reportVisit, shopRequest, type Catalog, type Product, type Variant } from '../shop/catalog';
+import { countText, isNew, lowestOffer, money, reportVisit, shopRequest, type Catalog, type Product } from '../shop/catalog';
 import { NewBadge, ProductLabels, ProductStats, PromoBadge, ShopAnnouncement, WechatContact, productHeading } from '../shop/ShopMerch';
 import { CART_KEY, MAX_CART_ITEMS, readCart, type CartItem } from '../shop/cart';
 import { restoreScrollPosition } from '../../shared/shopNavigation';
@@ -15,17 +15,13 @@ const NEW_FILTER = '新品';
 
 /** The lowest price a buyer can pay now, with its regular price struck through when an 优惠价 lowers it. */
 function CardPrice({ product }: { product: Product }) {
-  const offered = product.variants.filter(item => item.available);
-  const pool = offered.length ? offered : product.variants;
-  const pay = (item: Variant) => (offered.length ? promoCents(item) : null) ?? item.price_cents;
-  if (!pool.length) return null;
-  const cheapest = pool.reduce((best, item) => pay(item) < pay(best) ? item : best);
-  const cents = pay(cheapest);
-  const regular = cents < cheapest.price_cents ? cheapest.price_cents : null;
+  const offer = lowestOffer(product);
+  if (!offer) return null;
+  const { cents, regular, from } = offer;
   return <div className="shop-product-price">
     <PromoBadge text={product.badge}/>
     <strong className={regular ? 'is-promo' : undefined}><small>¥</small>{Math.floor(cents / 100)}<small>.{String(cents % 100).padStart(2, '0')}</small></strong>
-    {new Set(pool.map(pay)).size > 1 ? <span className="shop-product-from">起</span> : null}
+    {from ? <span className="shop-product-from">起</span> : null}
     {regular ? <s><span className="sr-only">原价 </span>{money(regular)}</s> : null}
   </div>;
 }

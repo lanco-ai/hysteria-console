@@ -467,14 +467,15 @@ def test_new_grok_monthly_products_publish_independently_with_private_costs(tmp_
             assert product['title'] == title and product['category'] == 'Grok'
             assert [(variant['id'], variant['label'], variant['price_cents'], variant['available'])
                     for variant in product['variants']] == [(f'{product_id}:1', '1 个月', price, True)]
-            assert product['tags'] == ['新版', quota.replace(' ', ''), '质保1个月']
+            assert product['tags'] == ['新版', quota.replace(' ', ''), '质保30天']
             assert product['hot_tags'] == []
             description, after_sales = product['description'], product['after_sales']
             for clause in ('### 套餐信息', f'${dollars}/月', quota, '正规充值', '无需上号',
                            'SSO', '私下', '**充值成功后不退不换', '下单即默认同意以上规则'):
                 assert clause in description
             assert '> **' in description
-            assert '1 个月订阅质保' in after_sales and '异常' in after_sales and '联系本店' in after_sales
+            assert '**订阅质保：** 30 天。' in description and '**30 天订阅质保**' in after_sales
+            assert '异常' in after_sales and '联系本店' in after_sales
             assert '剩余天数' not in after_sales and '退差价' not in after_sales
         wire = json.dumps(catalog, ensure_ascii=False)
         for private in ('cost_cents', 'provider', 'source_url', 'buy_url', 'sources', 'local_names',
@@ -561,6 +562,39 @@ def test_business_and_discount_plans_are_official_gpt_drafts_that_ask_for_eligib
         assert products[DISCOUNT_ID]['hot_tags'] == ['5折']
         assert products[BUSINESS_ID]['tags'] == ['官方渠道']
         assert products[BUSINESS_ID]['hot_tags'] == []
+
+    asyncio.run(run())
+
+
+def test_saved_new_grok_copy_shows_the_30_day_warranty_only_while_untouched(tmp_path):
+    from web_api.shop_local_products import (BY_ID, PREVIOUS_NEW_GROK_NOTICES,
+                                             current_new_grok_copy)
+
+    assert sorted(PREVIOUS_NEW_GROK_NOTICES) == [product_id for product_id, *_ in NEW_GROK_PLANS]
+    for product_id, previous in PREVIOUS_NEW_GROK_NOTICES.items():
+        current = BY_ID[product_id]['notice']
+        assert '1 个月订阅质保' in previous['after_sales'] and '30 天' not in json.dumps(previous)
+        assert all(len(current[field].encode()) <= len(previous[field].encode()) for field in current)
+        spaced = {field: text.replace('\n\n', '\n \n') for field, text in previous.items()}
+        assert current_new_grok_copy(product_id, spaced) == current
+        edited = {**previous, 'description': previous['description'] + '\n\n本店补充。'}
+        assert current_new_grok_copy(product_id, edited) == {**edited, 'after_sales': current['after_sales']}
+        for kept in ({'description': '本店说明', 'after_sales': ''}, dict(current)):
+            assert current_new_grok_copy(product_id, kept) is kept
+
+    plus_id = NEW_GROK_PLANS[0][0]
+
+    async def run():
+        store = local_store(tmp_path, fetcher=None)
+        await store.update({'revision': 0, 'telegram': 'my_shop', 'client': 3,
+                            'skus': {f'{plus_id}:1': {'price_cents': 7300, 'published': True}},
+                            'products': {plus_id: dict(PREVIOUS_NEW_GROK_NOTICES[plus_id])}})
+        before = store.settings_path.read_bytes()
+        reopened = local_store(tmp_path, fetcher=None)
+        assert (await reopened.admin())['products'][plus_id] == BY_ID[plus_id]['notice']
+        product, = (await reopened.public())['products']
+        assert '30 天订阅质保' in product['after_sales'] and '1 个月订阅质保' not in product['after_sales']
+        assert reopened.settings_path.read_bytes() == before
 
     asyncio.run(run())
 

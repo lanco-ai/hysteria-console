@@ -226,15 +226,19 @@ User ID 填错可能消耗充值凭证，无法退款。遇到延迟、失败或
 }
 
 
-def current_grok_ios_copy(copy):
+def _upgrade_untouched(copy, previous, current):
     def comparable(text):
         return re.sub(r'\s+', '', re.sub(r'^> ', '', text.replace('**', ''), flags=re.M))
 
     def untouched(field):
-        return comparable(copy.get(field, '')) == comparable(PREVIOUS_GROK_IOS_NOTICE[field])
+        return comparable(copy.get(field, '')) == comparable(previous[field])
 
-    upgraded = {**copy, **{field: GROK_IOS_NOTICE[field] for field in GROK_IOS_NOTICE if untouched(field)}}
+    upgraded = {**copy, **{field: current[field] for field in current if untouched(field)}}
     return copy if upgraded == copy else upgraded
+
+
+def current_grok_ios_copy(copy):
+    return _upgrade_untouched(copy, PREVIOUS_GROK_IOS_NOTICE, GROK_IOS_NOTICE)
 
 
 BUSINESS_PRODUCT_ID = str(PRODUCT_BASE + 5)
@@ -267,7 +271,7 @@ DISCOUNT_NOTICE = {
 }
 
 
-def _new_grok_notice(plan, dollars, quota):
+def _new_grok_notice(plan, dollars, quota, warranty='30 天'):
     return {
         'description': f'''## {plan}｜新版 · 1 个月
 
@@ -278,7 +282,7 @@ def _new_grok_notice(plan, dollars, quota):
 - **订阅档位：** {plan}（${dollars}/月）。
 - **订阅期限：** 1 个月新版订阅。
 - **套餐额度：** {quota}。
-- **订阅质保：** 1 个月。
+- **订阅质保：** {warranty}。
 
 ### 充值方式
 
@@ -287,9 +291,9 @@ def _new_grok_notice(plan, dollars, quota):
 充值完成后，请在本人账号内核对订阅档位及到期时间。
 
 > **充值成功后不退不换，下单即默认同意以上规则。**''',
-        'after_sales': '''### 订阅质保
+        'after_sales': f'''### 订阅质保
 
-提供 **1 个月订阅质保**。质保期内订阅状态异常时，请保留订单信息和订阅状态截图联系本店核查，截图请遮挡 SSO 等敏感信息。
+提供 **{warranty}订阅质保**。质保期内订阅状态异常时，请保留订单信息和订阅状态截图联系本店核查，截图请遮挡 SSO 等敏感信息。
 
 ### 购买规则
 
@@ -297,17 +301,28 @@ def _new_grok_notice(plan, dollars, quota):
     }
 
 
+GROK_NEW_PLANS = (
+    (7, 'Grok Plus 1x', 8, 'Plus 标准额度', 6300),
+    (8, 'Grok Premium 4x', 30, '4 倍 Plus 额度', 11000),
+    (9, 'Grok Super 15x', 100, '15 倍 Plus 额度', 35500),
+    (10, 'Grok Ultra 50x', 200, '50 倍 Plus 额度', 69000),
+)
 GROK_NEW_PRODUCTS = tuple(
     {'id': str(PRODUCT_BASE + offset), 'title': f'{plan}（新版 · 1个月）', 'category': 'Grok',
      'variants': (('1', '1 个月', cost),), 'notice': _new_grok_notice(plan, dollars, quota),
      'ends_at': None}
-    for offset, plan, dollars, quota, cost in (
-        (7, 'Grok Plus 1x', 8, 'Plus 标准额度', 6300),
-        (8, 'Grok Premium 4x', 30, '4 倍 Plus 额度', 11000),
-        (9, 'Grok Super 15x', 100, '15 倍 Plus 额度', 35500),
-        (10, 'Grok Ultra 50x', 200, '50 倍 Plus 额度', 69000),
-    )
+    for offset, plan, dollars, quota, cost in GROK_NEW_PLANS
 )
+# The warranty first read "1 个月"; saved copy still in that wording shows the 30-day term.
+PREVIOUS_NEW_GROK_NOTICES = {
+    str(PRODUCT_BASE + offset): _new_grok_notice(plan, dollars, quota, '1 个月')
+    for offset, plan, dollars, quota, _cost in GROK_NEW_PLANS
+}
+
+
+def current_new_grok_copy(product_id, copy):
+    return _upgrade_untouched(copy, PREVIOUS_NEW_GROK_NOTICES[product_id], BY_ID[product_id]['notice'])
+
 
 # Every store-owned product: storefront category, variants (label, administrator-only cost),
 # default copy, and the moment it leaves the shop, if any. Zero is the local cost default.

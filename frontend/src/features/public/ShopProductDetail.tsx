@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type MouseEvent } from 'react';
 import { closeShopProduct } from '../../shared/shopNavigation';
 import { ShopBrandImage } from '../shop/ShopBrandImage';
 import { isNoticeProduct, ShopCopyText, ShopNotice, variantCopy } from '../shop/ShopNotice';
-import { hasContact, money, promoCents, promoName, type Catalog, type Product, type Variant } from '../shop/catalog';
+import { hasContact, lowestOffer, money, promoCents, promoName, type Catalog, type Product, type Variant } from '../shop/catalog';
 import { NewBadge, ProductLabels, ProductStats, PromoBadge, PromoPrice, productHeading } from '../shop/ShopMerch';
 import { cartPromo, findSku, type CartItem } from '../shop/cart';
 import { PLUS_REFERRAL_ANCHOR, PlusReferralDetails, plusReferralVariant } from '../shop/PlusReferral';
@@ -14,9 +14,12 @@ function Quantity({ value, onChange, label = '购买数量' }: { value: string; 
   const count = Number(value);
   return <div className="shop-quantity"><button type="button" aria-label={`减少${label}`} disabled={count <= 1} onClick={() => onChange(String(Math.max(1, count - 1)))}>−</button><input aria-label={label} inputMode="numeric" type="number" min="1" max="99" step="1" value={value} onChange={event => onChange(event.target.value)}/><button type="button" aria-label={`增加${label}`} disabled={count >= 99} onClick={() => onChange(String(Math.min(99, count + 1)))}>+</button></div>;
 }
+// A bracketed qualifier at the end of a title, such as "（新版 · 1个月）".
+const QUALIFIER = /\s*[（(][^（）()]+[）)]$/;
+
 /** Plan names within one brand: "Plus" and "Pro 200" rather than "ChatGPT Plus｜菲律宾区". The word most plans
  * start with is dropped (a plan without it, such as codex额度充值, keeps its name); the region stays on the
- * product page unless two plans would otherwise read the same. */
+ * product page unless two plans would otherwise read the same, and so does a qualifier every plan shares. */
 function planNames(products: Product[]): Map<string, string> {
   const counts = new Map<string, number>();
   for (const item of products) {
@@ -29,7 +32,21 @@ function planNames(products: Product[]): Map<string, string> {
     return uses > 1 && parts.length > 1 && parts[0] === brand ? parts.slice(1).join(' ') : title;
   };
   const names = products.map(item => short(productHeading(item)));
-  return new Map(products.map((item, index) => [item.id, names.filter(name => name === names[index]).length > 1 ? short(item.title) : names[index]!]));
+  const unique = products.map((item, index) => names.filter(name => name === names[index]).length > 1 ? short(item.title) : names[index]!);
+  const qualifiers = new Set(unique.map(name => QUALIFIER.exec(name)?.[0].trim() ?? ''));
+  const shared = qualifiers.size === 1 && !qualifiers.has('');
+  return new Map(products.map((item, index) => [item.id, (shared && unique[index]!.replace(QUALIFIER, '')) || unique[index]!]));
+}
+
+/** A plan of the brand as a tile with the lowest price it sells at, so plans compare at a glance. */
+function PlanLink({ product, name, current, step }: { product: Product; name: string; current: boolean; step: 'previous' | 'next' }) {
+  const meta = useId();
+  const offer = lowestOffer(product);
+  const available = product.variants.some(item => item.available);
+  return <a href={`/?product=${encodeURIComponent(product.id)}`} aria-current={current ? 'page' : undefined} aria-label={name} aria-describedby={meta} data-shop-step={step}>
+    <span className="shop-plans-name">{name}</span>
+    <span className={available ? offer?.regular ? 'shop-plans-price is-promo' : 'shop-plans-price' : 'shop-plans-price is-off'} id={meta}>{available && offer ? `${money(offer.cents)}${offer.from ? ' 起' : ''}` : '暂不可购买'}</span>
+  </a>;
 }
 
 /** A spec with its own price and stock, so specs compare at a glance and picking one moves nothing. */
@@ -104,7 +121,7 @@ export function ProductPage({ productId, catalog, error, notice, cartCount, onAd
           {product.category === '短信接码' ? <p className="shop-note">已有激活码？<a href="/?view=sms">进入短信接码</a></p> : null}
         </div>
       </header>
-      {plans.length > 1 ? <nav className="shop-plans" aria-label={`${product.category} 其他商品`}>{plans.map((item, index) => <a key={item.id} href={`/?product=${encodeURIComponent(item.id)}`} aria-current={item.id === product.id ? 'page' : undefined} data-shop-step={index < position ? 'previous' : 'next'}>{names.get(item.id)}</a>)}</nav> : null}
+      {plans.length > 1 ? <nav className="shop-plans" aria-label={`${product.category} 其他商品`}>{plans.map((item, index) => <PlanLink key={item.id} product={item} name={names.get(item.id) ?? item.title} current={item.id === product.id} step={index < position ? 'previous' : 'next'}/>)}</nav> : null}
       <section className="shop-detail-buy" aria-label="购买选项">
         <div className="shop-detail-price"><p><span>售价</span><strong>{variant ? money(variant.price_cents) : '—'}</strong><small>CNY / 件</small></p>{offers ? <div className="shop-detail-offer">{variant && promo ? <PromoPrice product={product} variant={variant}/> : <span className="shop-detail-offer-none">此规格不参加{promoName(product)}</span>}</div> : null}</div>
         <fieldset className="shop-specs"><legend>商品规格</legend>{product.variants.map(item => <SpecButton key={item.id} product={product} variant={item} pressed={variantId === item.id} onSelect={() => setSelection(item.id)}/>)}</fieldset>

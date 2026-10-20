@@ -91,7 +91,7 @@ function recordTransitions() {
 
       // The brand's other plans swap in place, without new history entries.
       const plans = page.getByRole('navigation', { name: 'GPT 其他商品' });
-      await expect(plans.getByRole('link')).toHaveText(['Plus', 'Go', 'Pro 100', 'Pro 200', 'Pro 500']);
+      await expect(plans.locator('.shop-plans-name')).toHaveText(['Plus', 'Go', 'Pro 100', 'Pro 200', 'Pro 500']);
       await expect(plans.getByRole('link', { name: 'Pro 200', exact: true })).toHaveAttribute('aria-current', 'page');
       await page.getByLabel('购买数量', { exact: true }).fill('3');
       await plans.getByRole('link', { name: 'Pro 500', exact: true }).click();

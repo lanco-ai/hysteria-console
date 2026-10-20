@@ -117,13 +117,61 @@ test('a brand\'s plans show short names and all stay in view', async () => previ
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${process.env.PREVIEW_BASE_URL}/?product=4`);
     const plans = page.getByRole('navigation', { name: 'GPT 其他商品' });
-    await expect(plans.getByRole('link')).toHaveText(['Plus', 'Go', 'Pro 100', 'Pro 200', 'Pro 500', 'codex额度充值', '学生认证']);
+    await expect(plans.locator('.shop-plans-name')).toHaveText(['Plus', 'Go', 'Pro 100', 'Pro 200', 'Pro 500', 'codex额度充值', '学生认证']);
     const box = await plans.boundingBox();
     for (const link of await plans.getByRole('link').all()) {
       const chip = await link.boundingBox();
       assert.ok(chip.x >= box.x - 1 && chip.x + chip.width <= box.x + box.width + 1, `plan chip out of view at ${width}px`);
     }
   }
+}));
+
+test('Grok plans compare as priced tiles, and store-owned copy renders as Markdown', async () => preview(async (page, data) => {
+  const plan = (id, title, cents, quota) => ({ id, title, category: 'Grok', badge: '', views: 0, sold: 0, tags: ['新版', quota, '质保30天'],
+    description: `## ${title}\n\n**正规充值 · 无需上号**\n\n### 套餐信息\n\n- **套餐额度：** ${quota}。\n- **订阅质保：** 30 天。\n\n> **充值成功后不退不换。**`,
+    after_sales: '### 订阅质保\n\n提供 **30 天订阅质保**。',
+    variants: [{ id: `${id}:1`, label: '1 个月', price_cents: cents, promo_price_cents: null, available: true, quantity: null, sales: null }] });
+  data.products = [plan('6000000000007', 'Grok Plus 1x（新版 · 1个月）', 7300, 'Plus标准额度'),
+    plan('6000000000008', 'Grok Premium 4x（新版 · 1个月）', 12900, '4倍Plus额度'),
+    plan('6000000000009', 'Grok Super 15x（新版 · 1个月）', 38900, '15倍Plus额度'),
+    plan('6000000000010', 'Grok Ultra 50x（新版 · 1个月）', 75900, '50倍Plus额度')];
+  data.products[0].variants[0].promo_price_cents = 6900;
+  data.products[3].variants[0].available = false;
+  const plans = page.getByRole('navigation', { name: 'Grok 其他商品' });
+  for (const [width, columns] of [[1440, 4], [390, 2]]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${process.env.PREVIEW_BASE_URL}/?product=6000000000008`);
+    // The qualifier every plan shares stays in the title; each tile keeps its name and lowest price.
+    await expect(page.locator('#shop-detail-title')).toHaveText('Grok Premium 4x（新版 · 1个月）');
+    await expect(plans.locator('.shop-plans-name')).toHaveText(['Plus 1x', 'Premium 4x', 'Super 15x', 'Ultra 50x']);
+    await expect(plans.locator('.shop-plans-price')).toHaveText(['¥69.00', '¥129.00', '¥389.00', '暂不可购买']);
+    await expect(plans.locator('.shop-plans-price').first()).toHaveClass(/is-promo/);
+    await expect(plans.getByRole('link', { name: 'Premium 4x', exact: true })).toHaveAttribute('aria-current', 'page');
+    await expect(plans.getByRole('link', { name: 'Plus 1x', exact: true })).toHaveAccessibleDescription('¥69.00');
+    // Tiles share one width and fill whole rows: four across on a wide screen, two by two on a phone.
+    const boxes = await Promise.all((await plans.getByRole('link').all()).map(link => link.boundingBox()));
+    assert.equal(new Set(boxes.map(box => Math.round(box.width))).size, 1, `plan tiles differ in width at ${width}px`);
+    assert.equal(new Set(boxes.map(box => Math.round(box.y))).size, 4 / columns, `plan tile rows at ${width}px`);
+    const nav = await plans.boundingBox();
+    assert.ok(Math.abs(boxes[columns - 1].x + boxes[columns - 1].width - nav.x - nav.width) < 2, `plan tiles fill the row at ${width}px`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `product page fits ${width}px`);
+    await expect(page.locator('.shop-detail-heading .shop-tag-badge')).toHaveText(['新版', '4倍Plus额度', '质保30天']);
+    // Store-owned copy is Markdown: headings, lists, emphasis and callouts, never their symbols.
+    const copy = page.locator('.shop-detail-copy');
+    await expect(copy.getByRole('heading', { name: '套餐信息', exact: true })).toBeVisible();
+    await expect(copy.locator('li').first()).toHaveText('套餐额度： 4倍Plus额度。');
+    await expect(copy.locator('blockquote')).toHaveText('充值成功后不退不换。');
+    await expect(copy.locator('strong', { hasText: '30 天订阅质保' })).toBeVisible();
+    for (const symbol of ['##', '**', '- ', '> ']) await expect(copy).not.toContainText(symbol);
+    if (process.env.REACT_SCREENSHOT_DIR) {
+      fs.mkdirSync(process.env.REACT_SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, `grok-plans-${width}.png`), fullPage: true });
+    }
+  }
+  // A qualifier only some plans carry tells them apart, so it stays.
+  data.products.push(plan('6000000000004', 'SuperGrok 充值（旧版 · iOS）', 13500, '旧版'));
+  await page.reload();
+  await expect(plans.locator('.shop-plans-name')).toHaveText(['Plus 1x（新版 · 1个月）', 'Premium 4x（新版 · 1个月）', 'Super 15x（新版 · 1个月）', 'Ultra 50x（新版 · 1个月）', 'SuperGrok 充值（旧版 · iOS）']);
 }));
 
 test('text tags remain readable with or without optional highlight metadata', async () => preview(async (page, data) => {
