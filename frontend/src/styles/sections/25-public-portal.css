@@ -282,7 +282,7 @@ body.page-portal {
 /* Brand tabs stay reachable below the sticky shell topbar while a long brand list scrolls. */
 
 @media (max-width: 600px) {
-  .shop-product-list { gap: 10px; }
+  .shop-product-list { row-gap: 10px; }
   .shop-product-row { gap: 10px; padding: 14px; }
   .shop-product-buy { padding-top: 10px; }
   .shop-product-thumbnail { flex-basis: 48px; width: 48px; height: 48px; }

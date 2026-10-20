@@ -143,6 +143,10 @@ test('small brands share a row of equal cards: Claude\'s two beside Grok\'s four
     [1920, [['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']]],
     // Five columns: Grok moves down whole, and later single cards fill the row it left.
     [1440, [['Claude', 'Claude', 'Gemini', 'Muse AI'], grok]],
+    [1024, [['Claude', 'Claude', 'Gemini'], ['Grok', 'Grok', 'Grok'], ['Grok'], ['Muse AI']]],
+    // The compact mobile spacing must keep multi-card and single-card brands aligned.
+    [580, [['Claude', 'Claude'], ['Grok', 'Grok'], ['Grok', 'Grok'], ['Gemini', 'Muse AI']]],
+    [546, [['Claude', 'Claude'], ['Grok', 'Grok'], ['Grok', 'Grok'], ['Gemini', 'Muse AI']]],
     [390, [['Claude'], ['Claude'], ['Grok'], ['Grok'], ['Grok'], ['Grok'], ['Gemini'], ['Muse AI']]],
   ]) {
     await page.setViewportSize({ width, height: 900 });
