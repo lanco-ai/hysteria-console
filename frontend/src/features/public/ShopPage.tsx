@@ -12,6 +12,8 @@ import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多邻国', '短信接码', 'VPN'];
 // A filter beside the categories: the products the merchant marked 新品.
 const NEW_FILTER = '新品';
+// These groups keep their own rows and separate the shared rows on either side.
+const SEPARATE_ROW_CATEGORIES = new Set(['Grok', '短信接码', 'VPN']);
 
 // Catalog cards are at least 300px wide and 14px apart. A row may widen into the page margins, stopping 40px
 // short of the window's edges, while its cards stay at least 280px wide.
@@ -46,9 +48,9 @@ function useShelfSpace(storefront: RefObject<HTMLDivElement | null>): Space | nu
 
 /** Brands in rows ("shelves") of the catalog's columns, a column per card. A brand with a row of cards or more
  * takes whole rows. Smaller ones share a row in order; when the next one needs more columns than are left and the
- * row can widen into the page margins to take it (Claude's two beside Grok's four), the row widens, its cards as
+ * row can widen into the page margins to take it, the row widens, its cards as
  * wide as the others where there is room, rather than splitting the brand. Otherwise a later brand that fits
- * fills the gap. */
+ * fills the gap. Dedicated groups keep their own rows and their place in the catalog. */
 function shelves(brands: Brand[], space: Space | null): Shelf[] {
   if (!space) return brands.map(brand => ({ brands: [brand], columns: 1, width: null }));
   const columns = Math.max(1, Math.floor((space.width + CARD_GAP) / (CARD_MIN + CARD_GAP)));
@@ -59,14 +61,16 @@ function shelves(brands: Brand[], space: Space | null): Shelf[] {
   while (rest.length) {
     const row = [rest.shift()!];
     let used = row[0]!.products.length;
-    while (used < columns && rest.length) {
+    while (!SEPARATE_ROW_CATEGORIES.has(row[0]!.name) && used < columns && rest.length) {
+      if (SEPARATE_ROW_CATEGORIES.has(rest[0]!.name)) break;
       const next = rest[0]!.products.length;
       if (next < columns && used + next <= Math.max(columns, widest)) {
         used += next;
         row.push(rest.shift()!);
         continue;
       }
-      const fill = rest.findIndex(brand => used + brand.products.length <= columns);
+      const boundary = rest.findIndex(brand => SEPARATE_ROW_CATEGORIES.has(brand.name));
+      const fill = rest.findIndex((brand, index) => (boundary < 0 || index < boundary) && used + brand.products.length <= columns);
       if (fill < 0) break;
       used += rest[fill]!.products.length;
       row.push(...rest.splice(fill, 1));

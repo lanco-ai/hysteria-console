@@ -126,13 +126,14 @@ test('a brand\'s plans show short names and all stay in view', async () => previ
   }
 }));
 
-test('small brands share a row, widening into the margins rather than split a brand', async () => preview(async (page, data) => {
+test('Grok, SMS and VPN keep separate rows without stretching their cards', async () => preview(async (page, data) => {
   const card = (id, title, category) => ({ ...data.products[0], id, title, category, badge: '', variants: [{ ...data.products[0].variants[1], id: `${id}:1` }] });
   data.products = [...[1, 2, 3, 4, 5, 6].map(n => card(String(n), `ChatGPT ${n}`, 'GPT')),
     card('1000000000005', 'Claude Pro 直充', 'Claude'), card('1000000000007', 'Claude 普号', 'Claude'),
     ...['07', '08', '09', '10'].map(n => card(`60000000000${n}`, `Grok ${n}`, 'Grok')),
-    card('2000000000001', 'Gemini AI Pro', 'Gemini'), card('2000000000002', 'Muse AI', 'Muse AI')];
-  // Cards by row, top to bottom and left to right, named by their brand, with the catalog's own edges.
+    card('2000000000001', 'Gemini AI Pro', 'Gemini'), card('2000000000002', 'Muse AI', 'Muse AI'),
+    card('2000000000003', 'Duolingo Super', '多邻国'), card('6000000000001', '短信接码激活码', '短信接码'),
+    card('6000000000002', 'VPN 搭建指导', 'VPN')];
   const layout = () => page.evaluate(() => {
     const cards = [...document.querySelectorAll('.shop-product-row')].map(row => ({ brand: row.closest('[data-category]').dataset.category, box: row.getBoundingClientRect() }));
     const tops = [...new Set(cards.map(item => Math.round(item.box.top)))].sort((a, b) => a - b);
@@ -142,55 +143,44 @@ test('small brands share a row, widening into the margins rather than split a br
       edges: rows.map(row => [Math.round(row[0].box.left - body.left), Math.round(body.right - row.at(-1).box.right)]) };
   });
   const gpt = n => Array(n).fill('GPT'), grok = Array(4).fill('Grok');
-  for (const [width, rows, wide] of [
-    // Five columns: GPT keeps the catalog's width; Claude's two and Grok's four widen past both edges, evenly.
-    [2560, [gpt(5), gpt(1), ['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']], 2],
-    // Less margin: the shared row's cards shrink evenly but keep 40px clear at each viewport edge.
-    [1920, [gpt(5), gpt(1), ['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']], 2],
-    // No margin to widen into: Grok moves down whole, and later single cards fill the row it left.
-    [1440, [gpt(4), gpt(2), ['Claude', 'Claude', 'Gemini', 'Muse AI'], grok], null],
-    [1024, [gpt(3), gpt(3), ['Claude', 'Claude', 'Gemini'], grok.slice(0, 3), ['Grok'], ['Muse AI']], null],
-    [580, [...gpt(6), 'Claude', 'Claude', ...grok, 'Gemini', 'Muse AI'].map(brand => [brand]), null],
-    [390, [...gpt(6), 'Claude', 'Claude', ...grok, 'Gemini', 'Muse AI'].map(brand => [brand]), null],
+  const small = ['Gemini', 'Muse AI', '多邻国'], services = [['短信接码'], ['VPN']];
+  const desktop = [gpt(5), gpt(1), ['Claude', 'Claude'], grok, small, ...services];
+  for (const [width, rows] of [
+    [2560, desktop],
+    [1920, desktop],
+    [1440, [gpt(4), gpt(2), ['Claude', 'Claude'], grok, small, ...services]],
+    [1024, [gpt(3), gpt(3), ['Claude', 'Claude'], grok.slice(0, 3), ['Grok'], small, ...services]],
+    [580, [...gpt(6), 'Claude', 'Claude', ...grok, ...small, '短信接码', 'VPN'].map(brand => [brand])],
+    [390, [...gpt(6), 'Claude', 'Claude', ...grok, ...small, '短信接码', 'VPN'].map(brand => [brand])],
   ]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(process.env.PREVIEW_BASE_URL);
-    await expect(page.locator('.shop-product-row')).toHaveCount(14);
+    await expect(page.locator('.shop-product-row')).toHaveCount(17);
     const result = await layout();
     assert.deepEqual(result.rows, rows, `brand rows at ${width}px`);
-    assert.equal(result.widths.length, width === 1920 ? 2 : 1, `only the widened row may shrink at ${width}px`);
+    assert.equal(result.widths.length, 1, `standalone cards keep normal widths at ${width}px`);
     result.edges.forEach(([left, right], index) => {
-      if (index === wide) assert.ok(left < 0 && Math.abs(left - right) <= 1, `row ${index} widens evenly at ${width}px: ${left}, ${right}`);
-      else assert.ok(left === 0 && right >= -1, `row ${index} stays within the catalog at ${width}px: ${left}, ${right}`);
+      assert.ok(left === 0 && right >= -1, `row ${index} stays within the catalog at ${width}px: ${left}, ${right}`);
     });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `catalog fits ${width}px`);
-    if (wide !== null) {
-      const bounds = await page.locator('.shop-shelf.is-wide').boundingBox();
-      assert.ok(bounds.x >= 40 && bounds.x + bounds.width <= width - 40, `wide row keeps viewport gutters at ${width}px`);
-      assert.ok(await page.locator('.shop-shelf.is-wide .shop-product-row').evaluateAll(cards => {
-        const widths = cards.map(card => card.getBoundingClientRect().width);
-        return Math.min(...widths) >= 280 && Math.max(...widths) - Math.min(...widths) < 1;
-      }), `wide cards remain equal and at least 280px at ${width}px`);
-    }
-    // Each brand's heading sits over its own cards.
-    for (const brand of ['Claude', 'Grok']) {
+    for (const brand of ['Claude', 'Grok', '短信接码', 'VPN']) {
       const group = page.locator(`.shop-category-group[data-category="${brand}"]`);
       const [heading, first] = await Promise.all([group.locator('.shop-group-heading').boundingBox(), group.locator('.shop-product-row').first().boundingBox()]);
       assert.ok(Math.abs(heading.x - first.x) < 1 && heading.y < first.y, `${brand} heading above its cards at ${width}px`);
     }
   }
-  // A product page hides the catalog without changing its layout, so it comes back as it was left.
+  // Returning from a product preserves the dedicated rows.
   await page.setViewportSize({ width: 2560, height: 900 });
   await page.goto(`${process.env.PREVIEW_BASE_URL}/?product=6000000000007`);
   await page.getByRole('link', { name: '商品目录', exact: true }).click();
   await expect(page.locator('.shop-product-row').first()).toBeVisible();
-  assert.deepEqual((await layout()).rows, [gpt(5), gpt(1), ['Claude', 'Claude', ...grok], ['Gemini', 'Muse AI']]);
+  assert.deepEqual((await layout()).rows, desktop);
 
-  // A brand that needs whole normal rows must not be pulled into a wider small-brand row.
+  // Adding products to a dedicated brand wraps only within that brand.
   data.products.push(card('6000000000011', 'Grok 11', 'Grok'), card('6000000000012', 'Grok 12', 'Grok'));
   await page.reload();
-  await expect(page.locator('.shop-product-row')).toHaveCount(16);
-  assert.deepEqual((await layout()).rows, [gpt(5), gpt(1), ['Claude', 'Claude', 'Gemini', 'Muse AI'], Array(5).fill('Grok'), ['Grok']]);
+  await expect(page.locator('.shop-product-row')).toHaveCount(19);
+  assert.deepEqual((await layout()).rows, [gpt(5), gpt(1), ['Claude', 'Claude'], Array(5).fill('Grok'), ['Grok'], small, ...services]);
 }));
 
 test('Grok plans compare as priced tiles, and store-owned copy renders as Markdown', async () => preview(async (page, data) => {
