@@ -126,7 +126,7 @@ test('a brand\'s plans show short names and all stay in view', async () => previ
   }
 }));
 
-test('Grok, SMS and VPN keep separate rows without stretching their cards', async () => preview(async (page, data) => {
+test('SMS and VPN share a service row while Grok keeps its own rows', async () => preview(async (page, data) => {
   const card = (id, title, category) => ({ ...data.products[0], id, title, category, badge: '', variants: [{ ...data.products[0].variants[1], id: `${id}:1` }] });
   data.products = [...[1, 2, 3, 4, 5, 6].map(n => card(String(n), `ChatGPT ${n}`, 'GPT')),
     card('1000000000005', 'Claude Pro 直充', 'Claude'), card('1000000000007', 'Claude 普号', 'Claude'),
@@ -143,7 +143,7 @@ test('Grok, SMS and VPN keep separate rows without stretching their cards', asyn
       edges: rows.map(row => [Math.round(row[0].box.left - body.left), Math.round(body.right - row.at(-1).box.right)]) };
   });
   const gpt = n => Array(n).fill('GPT'), grok = Array(4).fill('Grok');
-  const small = ['Gemini', 'Muse AI', '多邻国'], services = [['短信接码'], ['VPN']];
+  const small = ['Gemini', 'Muse AI', '多邻国'], services = [['短信接码', 'VPN']];
   const desktop = [gpt(5), gpt(1), ['Claude', 'Claude'], grok, small, ...services];
   for (const [width, rows] of [
     [2560, desktop],
@@ -169,7 +169,7 @@ test('Grok, SMS and VPN keep separate rows without stretching their cards', asyn
       assert.ok(Math.abs(heading.x - first.x) < 1 && heading.y < first.y, `${brand} heading above its cards at ${width}px`);
     }
   }
-  // Returning from a product preserves the dedicated rows.
+  // Returning from a product preserves the service row and Grok's dedicated rows.
   await page.setViewportSize({ width: 2560, height: 900 });
   await page.goto(`${process.env.PREVIEW_BASE_URL}/?product=6000000000007`);
   await page.getByRole('link', { name: '商品目录', exact: true }).click();

@@ -12,8 +12,9 @@ import { PlusReferralLink, plusReferralVariant } from '../shop/PlusReferral';
 const CATEGORY_ORDER = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多邻国', '短信接码', 'VPN'];
 // A filter beside the categories: the products the merchant marked 新品.
 const NEW_FILTER = '新品';
-// These groups keep their own rows and separate the shared rows on either side.
-const SEPARATE_ROW_CATEGORIES = new Set(['Grok', '短信接码', 'VPN']);
+// Grok keeps its own rows; SMS and VPN share a service row when space permits.
+const SERVICE_ROW_CATEGORIES = new Set(['短信接码', 'VPN']);
+const ROW_BOUNDARY_CATEGORIES = new Set(['Grok', ...SERVICE_ROW_CATEGORIES]);
 
 // Catalog cards are at least 300px wide and 14px apart. A row may widen into the page margins, stopping 40px
 // short of the window's edges, while its cards stay at least 280px wide.
@@ -61,15 +62,23 @@ function shelves(brands: Brand[], space: Space | null): Shelf[] {
   while (rest.length) {
     const row = [rest.shift()!];
     let used = row[0]!.products.length;
-    while (!SEPARATE_ROW_CATEGORIES.has(row[0]!.name) && used < columns && rest.length) {
-      if (SEPARATE_ROW_CATEGORIES.has(rest[0]!.name)) break;
+    if (SERVICE_ROW_CATEGORIES.has(row[0]!.name)) {
+      while (rest.length && SERVICE_ROW_CATEGORIES.has(rest[0]!.name) && used + rest[0]!.products.length <= columns) {
+        used += rest[0]!.products.length;
+        row.push(rest.shift()!);
+      }
+      result.push({ brands: row, columns, width: null });
+      continue;
+    }
+    while (!ROW_BOUNDARY_CATEGORIES.has(row[0]!.name) && used < columns && rest.length) {
+      if (ROW_BOUNDARY_CATEGORIES.has(rest[0]!.name)) break;
       const next = rest[0]!.products.length;
       if (next < columns && used + next <= Math.max(columns, widest)) {
         used += next;
         row.push(rest.shift()!);
         continue;
       }
-      const boundary = rest.findIndex(brand => SEPARATE_ROW_CATEGORIES.has(brand.name));
+      const boundary = rest.findIndex(brand => ROW_BOUNDARY_CATEGORIES.has(brand.name));
       const fill = rest.findIndex((brand, index) => (boundary < 0 || index < boundary) && used + brand.products.length <= columns);
       if (fill < 0) break;
       used += rest[fill]!.products.length;
