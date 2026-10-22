@@ -328,28 +328,28 @@ MUSE_TOKEN_PRODUCT_ID = str(PRODUCT_BASE + 11)
 MUSE_TOKEN_NOTICE = {
     'description': '''## Muse AI Token 帮拉取
 
-**按量计费 · 人工处理**
+**邀请码助力 · 人工处理**
 
-本店提供 Muse AI Token 帮拉取服务，**每 10 亿 Token ¥2**。
+下单后请向本店发送 **Muse 邀请码**。本店为 **同一个邀请码** 提供邀请助力，按助力次数计费。
 
-> **拉取 300 亿 Token：** 请选择购买数量 **30 份，合计 ¥60**。
+> **10 次助力优惠包 ¥16：** 平均每次 ¥1.60，比单次购买节省 ¥4。请选择对应规格下单。
 
 ### 计价方式
 
-- **1 份：** 10 亿 Token，¥2。
-- **10 份：** 100 亿 Token，¥20。
-- **30 份：** 300 亿 Token，¥60。
+- **1 次邀请助力：** ¥2。
+- **10 次邀请助力：** ¥16。
+- **30 次邀请助力：** 选择「10 次邀请助力」规格，购买数量填 **3**，合计 **¥48**。
 
 ### 下单与交付
 
-1. 按需要的 Token 数量选择购买份数。
-2. 下单后联系本店，确认需要处理的 Muse 账号、数量及处理安排。
-3. 处理完成后，请在账号内核对 Token 余额；如有疑问，请及时联系本店。
+1. 选择需要的助力套餐和购买数量。
+2. 下单后联系本店，发送 **Muse 邀请码和订单号**，确认助力次数及处理安排。
+3. 处理完成后，请在 Muse 账号内核对邀请记录和 Token 余额；如有疑问，请及时联系本店。
 
-本商品为 **Token 帮拉取服务**，不是 Muse 成品账号。''',
-    'after_sales': '''### 到账核对
+本商品为 **邀请助力服务**，不是 Muse 成品账号。**Token 奖励以 Muse 当前活动规则及账号实际到账为准。**''',
+    'after_sales': '''### 助力与到账核对
 
-请保留订单信息，并在处理完成后核对 Token 余额。若未到账或数量与订单不符，请联系本店核查处理，提供截图时请遮挡账号敏感信息。''',
+请保留订单信息，并在处理完成后核对邀请记录和 Token 余额。若助力次数与订单不符，或奖励未到账，请联系本店核查处理。提供截图时请遮挡账号敏感信息。''',
 }
 
 
@@ -371,7 +371,7 @@ PRODUCTS = (
      'variants': (('1', '标准规格', 0),), 'notice': DISCOUNT_NOTICE, 'ends_at': None},
     *GROK_NEW_PRODUCTS,
     {'id': MUSE_TOKEN_PRODUCT_ID, 'title': 'Muse AI Token 帮拉取', 'category': 'Muse AI',
-     'variants': (('1', '10 亿 Token / 份', 0),), 'notice': MUSE_TOKEN_NOTICE, 'ends_at': None},
+     'variants': (('1', '1 次邀请助力', 0), ('2', '10 次邀请助力', 0)), 'notice': MUSE_TOKEN_NOTICE, 'ends_at': None},
 )
 BY_ID = {product['id']: product for product in PRODUCTS}
 

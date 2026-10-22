@@ -22,6 +22,7 @@ GROK_MONTH_KEY, GROK_QUARTER_KEY = f'{GROK_ID}:1', f'{GROK_ID}:2'
 BUSINESS_ID, BUSINESS_KEY = '6000000000005', '6000000000005:1'
 DISCOUNT_ID, DISCOUNT_KEY = '6000000000006', '6000000000006:1'
 MUSE_TOKEN_ID, MUSE_TOKEN_KEY = '6000000000011', '6000000000011:1'
+MUSE_TOKEN_BUNDLE_KEY = '6000000000011:2'
 NEW_GROK_PLANS = (
     ('6000000000007', 'Grok Plus 1x（新版 · 1个月）', '8', 'Plus 标准额度'),
     ('6000000000008', 'Grok Premium 4x（新版 · 1个月）', '30', '4 倍 Plus 额度'),
@@ -40,7 +41,7 @@ def local_keys(now=None):
     keys = [MICROSOFT_KEY, GOOGLE_KEY, VPN_KEY]
     return keys + ([STUDENT_KEY] if (time.time() if now is None else now) <= STUDENT_ENDS_AT else []) + [
         GROK_MONTH_KEY, GROK_QUARTER_KEY, BUSINESS_KEY, DISCOUNT_KEY,
-        *(f'{product_id}:1' for product_id, *_ in NEW_GROK_PLANS), MUSE_TOKEN_KEY]
+        *(f'{product_id}:1' for product_id, *_ in NEW_GROK_PLANS), MUSE_TOKEN_KEY, MUSE_TOKEN_BUNDLE_KEY]
 
 
 def local_store(tmp_path, **kwargs):
@@ -65,7 +66,8 @@ def test_claude_guidance_draft_has_private_costs_and_own_copy_without_writes(tmp
             ('6000000000008:1', '1 个月', 11000),
             ('6000000000009:1', '1 个月', 35500),
             ('6000000000010:1', '1 个月', 69000),
-            (MUSE_TOKEN_KEY, '10 亿 Token / 份', 0),
+            (MUSE_TOKEN_KEY, '1 次邀请助力', 0),
+            (MUSE_TOKEN_BUNDLE_KEY, '10 次邀请助力', 0),
         ]
         for row in admin['items'][:2]:
             assert row['product_id'] == PRODUCT_ID
@@ -490,26 +492,36 @@ def test_new_grok_monthly_products_publish_independently_with_private_costs(tmp_
     asyncio.run(run())
 
 
-def test_muse_token_service_publishes_per_billion_without_inventory(tmp_path):
+def test_muse_invitation_bundles_publish_persist_and_hide_without_inventory(tmp_path):
     async def run():
         store = local_store(tmp_path, fetcher=None)
         assert (await store.public())['products'] == []
         admin = await store.admin()
-        row = next(row for row in admin['items'] if row['key'] == MUSE_TOKEN_KEY)
-        assert (row['provider'], row['category'], row['cost_cents']) == ('local', 'Muse AI', 0)
-        await store.update({'revision': 0, 'telegram': 'my_shop', 'client': 3,
-                            'skus': {MUSE_TOKEN_KEY: {'price_cents': 200, 'published': True}}})
+        rows = [row for row in admin['items'] if row['product_id'] == MUSE_TOKEN_ID]
+        assert len(rows) == 2
+        assert all((row['provider'], row['category'], row['cost_cents']) == ('local', 'Muse AI', 0) for row in rows)
+        skus = {MUSE_TOKEN_KEY: {'price_cents': 200, 'published': True},
+                MUSE_TOKEN_BUNDLE_KEY: {'price_cents': 1600, 'published': True}}
+        await store.update({'revision': 0, 'telegram': 'my_shop', 'client': 3, 'skus': skus})
         product, = (await local_store(tmp_path, fetcher=None).public())['products']
         assert product['title'] == 'Muse AI Token 帮拉取' and product['category'] == 'Muse AI'
-        variant, = product['variants']
-        assert (variant['id'], variant['label'], variant['price_cents'], variant['available'], variant['quantity']) == (
-            MUSE_TOKEN_KEY, '10 亿 Token / 份', 200, True, None)
+        assert [(v['id'], v['label'], v['price_cents'], v['available'], v['quantity'])
+                for v in product['variants']] == [
+                    (MUSE_TOKEN_KEY, '1 次邀请助力', 200, True, None),
+                    (MUSE_TOKEN_BUNDLE_KEY, '10 次邀请助力', 1600, True, None)]
         assert product['tags'] == ['按量计费', '人工处理']
-        assert '30 份，合计 ¥60' in product['description'] and '未到账' in product['after_sales']
+        assert '同一个邀请码' in product['description'] and 'Muse 邀请码和订单号' in product['description']
+        assert '合计 **¥48**' in product['description'] and '未到账' in product['after_sales']
+        assert '10 亿 Token' not in product['description'] and '¥60' not in product['description']
         assert 'cost_cents' not in json.dumps(product) and 'provider' not in json.dumps(product)
         assert not store.path.exists() and not (tmp_path / 'inventory.json').exists()
-        await store.update({'revision': 1, 'telegram': 'my_shop', 'client': 3,
-                            'skus': {MUSE_TOKEN_KEY: {'price_cents': 200, 'published': False}}})
+        # Each bundle can be unpublished independently without removing the other choice.
+        skus[MUSE_TOKEN_BUNDLE_KEY]['published'] = False
+        await store.update({'revision': 1, 'telegram': 'my_shop', 'client': 3, 'skus': skus})
+        product, = (await local_store(tmp_path, fetcher=None).public())['products']
+        assert [v['id'] for v in product['variants']] == [MUSE_TOKEN_KEY]
+        skus[MUSE_TOKEN_KEY]['published'] = False
+        await store.update({'revision': 2, 'telegram': 'my_shop', 'client': 3, 'skus': skus})
         assert (await local_store(tmp_path, fetcher=None).public())['products'] == []
 
     asyncio.run(run())
