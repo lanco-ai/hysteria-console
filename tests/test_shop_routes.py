@@ -53,6 +53,7 @@ def test_default_shop_routes_enable_private_local_claude_guidance(tmp_path, monk
             ('6000000000004:1', 13500), ('6000000000004:2', 25800), ('6000000000005:1', 0), ('6000000000006:1', 0),
             ('6000000000007:1', 6300), ('6000000000008:1', 11000),
             ('6000000000009:1', 35500), ('6000000000010:1', 69000),
+            ('6000000000011:1', 0),
         ]
         public = client.get('/api/v1/shop/catalog')
         assert public.status_code == 200 and public.json()['products'] == []

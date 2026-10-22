@@ -394,7 +394,7 @@ export function ShopAdminPage() {
   // 本店库存 and 采购预订 are their own pages; product edits stay in this component while they show.
   const page = new URLSearchParams(window.location.search).get('view');
   if (page === 'inventory') {
-    const inventoryItems = new Map(items.filter(item => STOCKED.has(brandOf(item))).map(item => [item.key, item]));
+    const inventoryItems = new Map(items.filter(item => providerOf(item) !== 'local' && STOCKED.has(brandOf(item))).map(item => [item.key, item]));
     for (const item of state?.inventory_items ?? []) inventoryItems.set(item.key, item);
     const stocked: StockedProduct[] = [...inventoryItems.values()].map(item => ({
       key: item.key, productId: item.product_id, title: item.public_title ?? item.title, label: item.label, category: item.category ?? brandOf(item),

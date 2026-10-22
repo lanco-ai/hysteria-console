@@ -21,6 +21,7 @@ GROK_ID = '6000000000004'
 GROK_MONTH_KEY, GROK_QUARTER_KEY = f'{GROK_ID}:1', f'{GROK_ID}:2'
 BUSINESS_ID, BUSINESS_KEY = '6000000000005', '6000000000005:1'
 DISCOUNT_ID, DISCOUNT_KEY = '6000000000006', '6000000000006:1'
+MUSE_TOKEN_ID, MUSE_TOKEN_KEY = '6000000000011', '6000000000011:1'
 NEW_GROK_PLANS = (
     ('6000000000007', 'Grok Plus 1x（新版 · 1个月）', '8', 'Plus 标准额度'),
     ('6000000000008', 'Grok Premium 4x（新版 · 1个月）', '30', '4 倍 Plus 额度'),
@@ -39,7 +40,7 @@ def local_keys(now=None):
     keys = [MICROSOFT_KEY, GOOGLE_KEY, VPN_KEY]
     return keys + ([STUDENT_KEY] if (time.time() if now is None else now) <= STUDENT_ENDS_AT else []) + [
         GROK_MONTH_KEY, GROK_QUARTER_KEY, BUSINESS_KEY, DISCOUNT_KEY,
-        *(f'{product_id}:1' for product_id, *_ in NEW_GROK_PLANS)]
+        *(f'{product_id}:1' for product_id, *_ in NEW_GROK_PLANS), MUSE_TOKEN_KEY]
 
 
 def local_store(tmp_path, **kwargs):
@@ -64,6 +65,7 @@ def test_claude_guidance_draft_has_private_costs_and_own_copy_without_writes(tmp
             ('6000000000008:1', '1 个月', 11000),
             ('6000000000009:1', '1 个月', 35500),
             ('6000000000010:1', '1 个月', 69000),
+            (MUSE_TOKEN_KEY, '10 亿 Token / 份', 0),
         ]
         for row in admin['items'][:2]:
             assert row['product_id'] == PRODUCT_ID
@@ -370,7 +372,7 @@ def test_new_services_have_own_categories_copy_and_the_student_service_ends(tmp_
         admin = await store.admin()
         categories = {row['product_id']: row['category'] for row in admin['items']}
         assert categories == {PRODUCT_ID: 'Claude', VPN_ID: 'VPN', STUDENT_ID: 'GPT', GROK_ID: 'Grok',
-                              BUSINESS_ID: 'GPT', DISCOUNT_ID: 'GPT',
+                              BUSINESS_ID: 'GPT', DISCOUNT_ID: 'GPT', MUSE_TOKEN_ID: 'Muse AI',
                               **{product_id: 'Grok' for product_id, *_ in NEW_GROK_PLANS}}
         assert '> **服务器与域名：本店指导选购。**' in admin['products'][VPN_ID]['description']
         assert '不提供 VPN' not in admin['products'][VPN_ID]['description']
@@ -484,6 +486,31 @@ def test_new_grok_monthly_products_publish_independently_with_private_costs(tmp_
         saved = json.loads(reopened.settings_path.read_text())
         assert saved['products'] == {} and 'SSO' not in json.dumps(saved)
         assert not store.path.exists()
+
+    asyncio.run(run())
+
+
+def test_muse_token_service_publishes_per_billion_without_inventory(tmp_path):
+    async def run():
+        store = local_store(tmp_path, fetcher=None)
+        assert (await store.public())['products'] == []
+        admin = await store.admin()
+        row = next(row for row in admin['items'] if row['key'] == MUSE_TOKEN_KEY)
+        assert (row['provider'], row['category'], row['cost_cents']) == ('local', 'Muse AI', 0)
+        await store.update({'revision': 0, 'telegram': 'my_shop', 'client': 3,
+                            'skus': {MUSE_TOKEN_KEY: {'price_cents': 200, 'published': True}}})
+        product, = (await local_store(tmp_path, fetcher=None).public())['products']
+        assert product['title'] == 'Muse AI Token 帮拉取' and product['category'] == 'Muse AI'
+        variant, = product['variants']
+        assert (variant['id'], variant['label'], variant['price_cents'], variant['available'], variant['quantity']) == (
+            MUSE_TOKEN_KEY, '10 亿 Token / 份', 200, True, None)
+        assert product['tags'] == ['按量计费', '人工处理']
+        assert '30 份，合计 ¥60' in product['description'] and '未到账' in product['after_sales']
+        assert 'cost_cents' not in json.dumps(product) and 'provider' not in json.dumps(product)
+        assert not store.path.exists() and not (tmp_path / 'inventory.json').exists()
+        await store.update({'revision': 1, 'telegram': 'my_shop', 'client': 3,
+                            'skus': {MUSE_TOKEN_KEY: {'price_cents': 200, 'published': False}}})
+        assert (await local_store(tmp_path, fetcher=None).public())['products'] == []
 
     asyncio.run(run())
 

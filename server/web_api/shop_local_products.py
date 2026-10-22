@@ -324,6 +324,35 @@ def current_new_grok_copy(product_id, copy):
     return _upgrade_untouched(copy, PREVIOUS_NEW_GROK_NOTICES[product_id], BY_ID[product_id]['notice'])
 
 
+MUSE_TOKEN_PRODUCT_ID = str(PRODUCT_BASE + 11)
+MUSE_TOKEN_NOTICE = {
+    'description': '''## Muse AI Token 帮拉取
+
+**按量计费 · 人工处理**
+
+本店提供 Muse AI Token 帮拉取服务，**每 10 亿 Token ¥2**。
+
+> **拉取 300 亿 Token：** 请选择购买数量 **30 份，合计 ¥60**。
+
+### 计价方式
+
+- **1 份：** 10 亿 Token，¥2。
+- **10 份：** 100 亿 Token，¥20。
+- **30 份：** 300 亿 Token，¥60。
+
+### 下单与交付
+
+1. 按需要的 Token 数量选择购买份数。
+2. 下单后联系本店，确认需要处理的 Muse 账号、数量及处理安排。
+3. 处理完成后，请在账号内核对 Token 余额；如有疑问，请及时联系本店。
+
+本商品为 **Token 帮拉取服务**，不是 Muse 成品账号。''',
+    'after_sales': '''### 到账核对
+
+请保留订单信息，并在处理完成后核对 Token 余额。若未到账或数量与订单不符，请联系本店核查处理，提供截图时请遮挡账号敏感信息。''',
+}
+
+
 # Every store-owned product: storefront category, variants (label, administrator-only cost),
 # default copy, and the moment it leaves the shop, if any. Zero is the local cost default.
 PRODUCTS = (
@@ -341,6 +370,8 @@ PRODUCTS = (
     {'id': DISCOUNT_PRODUCT_ID, 'title': 'ChatGPT 5折充值｜菲律宾区', 'category': 'GPT',
      'variants': (('1', '标准规格', 0),), 'notice': DISCOUNT_NOTICE, 'ends_at': None},
     *GROK_NEW_PRODUCTS,
+    {'id': MUSE_TOKEN_PRODUCT_ID, 'title': 'Muse AI Token 帮拉取', 'category': 'Muse AI',
+     'variants': (('1', '10 亿 Token / 份', 0),), 'notice': MUSE_TOKEN_NOTICE, 'ends_at': None},
 )
 BY_ID = {product['id']: product for product in PRODUCTS}
 

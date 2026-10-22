@@ -15,10 +15,15 @@ def register_inventory_routes(app, store, guard, body, reply, *, inventory=None)
     store.inventory = inventory
 
     def stocked():
-        return {row['key'] for row in store._admin()['items'] if row['category'] in STOCKED_CATEGORIES}
+        return {row['key'] for row in stock_rows()}
+
+    def stock_rows():
+        # Store-owned services are fulfilled manually, not as stocked accounts or codes.
+        return [row for row in store._admin()['items']
+                if row['provider'] != 'local' and row['category'] in STOCKED_CATEGORIES]
 
     def add_stock(payload):
-        rows = [row for row in store._admin()['items'] if row['category'] in STOCKED_CATEGORIES]
+        rows = stock_rows()
         if isinstance(payload, dict):
             inventory.remember([row for row in rows if row['key'] == payload.get('sku')])
         return inventory.add(payload, {row['key'] for row in rows})

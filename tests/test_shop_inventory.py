@@ -187,6 +187,20 @@ def test_routes_guard_stock_and_never_list_lines(tmp_path):
             assert SECRET not in client.get(path, headers=HEADERS).text
 
 
+def test_muse_manual_service_cannot_import_account_inventory(tmp_path):
+    store, _ = store_with_prodseller(tmp_path)
+    store.local_products = True
+    async def dispatch(fn, request): return fn(headers=request.headers, path=request.url.path)
+    app = FastAPI()
+    register_shop_routes(app, Sessions(), dispatch, store=store)
+    with TestClient(app) as client:
+        response = client.post('/api/v1/shop/admin/inventory/add', headers=HEADERS,
+                               json={'revision': 0, 'sku': '6000000000011:1', 'lines': [SECRET]})
+        assert response.status_code == 422
+        assert store.inventory.view()['skus'] == {} and store.inventory.catalog() == {}
+        assert not store.inventory.path.exists() and not store.inventory.catalog_path.exists()
+
+
 def test_sms_activation_codes_take_own_stock_and_count_once_as_sold(tmp_path):
     from test_shop_sms import CONFIG
     from web_api.shop_sms_source import PRODUCT_ID as SMS_ID

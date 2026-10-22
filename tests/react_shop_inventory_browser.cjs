@@ -25,6 +25,7 @@ const SMS = '5000000000001:1';
         { key: GEMINI, product_id: '2000000000001', title: 'Gemini Pro 18Months (link) · $0.85', public_title: 'Gemini Pro 18 个月', label: '标准规格', cost_cents: 612, available: false, provider: 'prodseller', category: 'Gemini' },
         { key: MUSE, product_id: '2000000000002', title: 'Muse AI · $1.00', public_title: 'Muse AI', label: '标准规格', cost_cents: 720, available: false, provider: 'prodseller', category: 'Muse AI' },
         { key: SMS, product_id: '5000000000001', title: '短信接码激活码', public_title: '短信接码激活码', label: '单次接码', cost_cents: 200, available: true, provider: 'sms', category: '短信接码' },
+        { key: '6000000000011:1', product_id: '6000000000011', title: 'Muse AI Token 帮拉取', public_title: 'Muse AI Token 帮拉取', label: '10 亿 Token / 份', cost_cents: 0, available: true, provider: 'local', category: 'Muse AI' },
       ] };
     // A fictional stand-in for the private inventory API: lines only ever leave on reveal or delivery.
     let revision = 0, nextId = 0, failAdd = 0, addRequests = 0;
@@ -77,6 +78,7 @@ const SMS = '5000000000001:1';
     await expect(page).toHaveURL(`${base}/admin/shop?view=inventory`);
     const panel = page.getByRole('region', { name: '本店库存', exact: true });
     await expect(panel.locator('.shop-inventory-product h2')).toHaveText(['Gemini Pro 18 个月', 'Muse AI', '短信接码激活码']);
+    await expect(panel.getByRole('article', { name: 'Muse AI Token 帮拉取 库存' })).toHaveCount(0);
     const muse = panel.getByRole('article', { name: 'Muse AI 库存' });
     const gemini = panel.getByRole('article', { name: 'Gemini Pro 18 个月 库存' });
     await expect(muse).toContainText('已上架 · ¥18.88');
