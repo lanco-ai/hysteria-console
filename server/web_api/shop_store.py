@@ -71,6 +71,8 @@ BACKOFF = 900
 MANUAL_COOLDOWN = 60
 # Plus renewal is arranged with the merchant even when its supplier has no stock.
 CONTACT_PURCHASE_SKUS = frozenset({'1:4'})
+# Only the merchant-approved Gemini SKU supports automatic cost-plus pricing.
+DYNAMIC_PRICING_SKU = '2000000000001:1'
 REMOTE_SOURCES = frozenset({'gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms', 'shop16688'})
 # Private source links waiting for an integration: no fetcher or product namespace.
 BOOKMARKED_SOURCES = frozenset({'wzyp'})
@@ -207,6 +209,16 @@ def from_older_page(payload, current):
 
 def _integer(value, minimum, maximum):
     return type(value) is int and minimum <= value <= maximum
+
+
+def cost_plus_price(cost, profit=500):
+    """Smallest integer/.88/.99 price above the profit floor, in integer cents."""
+    if not _integer(cost, 1, MAX_CENTS) or not _integer(profit, 500, MAX_CENTS):
+        return None
+    floor = cost + profit
+    whole, remainder = divmod(floor, 100)
+    rounded = whole * 100 + (0 if remainder == 0 else 88 if remainder <= 88 else 99)
+    return rounded if rounded <= MAX_CENTS else None
 
 
 # A WeChat ID: 6–20 characters, starting with a letter.
@@ -348,12 +360,19 @@ def validate_settings(value):
             or not re.fullmatch(r'[1-9]\d{0,15}:[1-9]\d{0,15}', key)
             or not isinstance(item, dict)
             or not {'price_cents', 'published'} <= set(item)
-            or set(item) - {'price_cents', 'published', 'promo_price_cents', 'list_price_cents'}
+            or set(item) - {'price_cents', 'published', 'promo_price_cents', 'list_price_cents', 'pricing'}
             or type(item['published']) is not bool
             or (item['price_cents'] is not None and not _integer(item['price_cents'], 1, MAX_CENTS))
             or (item['published'] and item['price_cents'] is None)
         ):
             raise ValueError('invalid SKU settings')
+        pricing = item.get('pricing')
+        if pricing is not None and (
+            key != DYNAMIC_PRICING_SKU or not isinstance(pricing, dict)
+            or set(pricing) != {'mode', 'profit_cents'} or pricing['mode'] != 'cost_plus'
+            or not _integer(pricing['profit_cents'], 500, MAX_CENTS)
+        ):
+            raise ValueError('invalid dynamic pricing')
         # 优惠价 (学生价, 限时价…): shown under the price, for buyers it applies to; it must be lower.
         promo = item.get('promo_price_cents')
         if promo is not None and (item['price_cents'] is None or not _integer(promo, 1, item['price_cents'] - 1)):
@@ -924,6 +943,12 @@ class ShopStore:
             merchant = state['skus'].get(row['key'], {})
             if not merchant.get('published'):
                 continue
+            pricing = merchant.get('pricing')
+            quote = cost_plus_price(row.get('cost_cents'), pricing['profit_cents']) if pricing else None
+            quote_ready = not pricing or (
+                quote is not None and not row.get('archived')
+                and not state['sources'][provider]['is_stale']
+            )
             applicable.add(provider)
             group = groups.setdefault(
                 row['product_id'],
@@ -938,7 +963,7 @@ class ShopStore:
                     .get(row['product_id'], {})
                     .get('after_sales', ''),
                     # Merchandising set by the merchant: a label before the title and units sold.
-                    'badge': display.get(row['product_id'], {}).get('badge', ''),
+                    'badge': '' if pricing else display.get(row['product_id'], {}).get('badge', ''),
                     'sold': (display.get(row['product_id'], {}).get('sold', 0)
                              + automatic_sold.get(row['product_id'], 0)),
                     'views': stats['products'].get(row['product_id'], 0),
@@ -960,13 +985,13 @@ class ShopStore:
                 {
                     'id': row['key'],
                     'label': row.get('public_label', row['label']),
-                    'price_cents': merchant['price_cents'],
-                    'promo_price_cents': merchant.get('promo_price_cents'),
+                    'price_cents': quote if quote is not None else merchant['price_cents'],
+                    'promo_price_cents': None if pricing else merchant.get('promo_price_cents'),
                     **({'contact_only': True} if contact_only else {}),
                     # Units in the merchant's own stock sell whatever the supplier has.
-                    'available': bool(state['inventory'].get(row['key']))
-                    or ((row['available'] or contact_only) and not state['sources'][provider]['is_stale']),
-                    'quantity': state['inventory'].get(row['key']) or None,
+                    'available': bool(quote_ready and (state['inventory'].get(row['key'])
+                    or ((row['available'] or contact_only) and not state['sources'][provider]['is_stale']))),
+                    'quantity': (state['inventory'].get(row['key']) or None) if quote_ready else None,
                     'sales': None,
                 }
             )
@@ -975,7 +1000,7 @@ class ShopStore:
             if status['enabled'] and (not applicable or provider in applicable)
         ]
         ready = any(not status['is_stale'] for status in relevant) or any(
-            variant['quantity'] for group in groups.values() for variant in group['variants']
+            variant['quantity'] and variant['available'] for group in groups.values() for variant in group['variants']
         )
         successes = [
             status['last_success'] for status in relevant if status['last_success'] is not None
@@ -1014,6 +1039,13 @@ class ShopStore:
                 raise ValueError('a 原价 is not part of today\'s settings')
             payload = {key: value for key, value in payload.items()
                        if key not in {'client', 'local_names', 'source_enabled'}}
+            # Older admin tabs omit pricing. Only an explicit null switches back to manual.
+            payload['skus'] = {key: dict(item) for key, item in payload['skus'].items()}
+            for key, item in payload['skus'].items():
+                if 'pricing' not in item and current['skus'].get(key, {}).get('pricing'):
+                    item['pricing'] = dict(current['skus'][key]['pricing'])
+                elif item.get('pricing') is None:
+                    item.pop('pricing', None)
             if names:
                 payload['local_names'] = names
             if current.get('source_lifecycle'):

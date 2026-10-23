@@ -30,7 +30,9 @@ const { expect } = require('@playwright/test');
     await manager.getByLabel('上架 2:7').check();
     await manager.getByLabel('售价 2:2').fill('1388');
     await manager.getByLabel('上架 2:2').check();
-    await expect(manager.locator('.shop-admin-row').filter({ has: manager.getByLabel('售价 2:7') }).locator('.shop-admin-margin')).toContainText('优惠 ¥188.00');
+    const margin = manager.locator('.shop-admin-row').filter({ has: manager.getByLabel('售价 2:7') }).locator('.shop-admin-margin');
+    await expect(margin.locator('strong')).toHaveText('¥188.00');
+    await expect(margin.locator('small')).toHaveText('原价毛利 ¥288.00');
     const settings = manager.getByRole('button', { name: '商品设置 2', exact: true });
     await expect(settings).toHaveAttribute('aria-expanded', 'false');
     // Units sold sit with the label and the 新品 mark in the product's settings, not on every product.

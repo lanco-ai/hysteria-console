@@ -137,6 +137,13 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-buy { display: inline-flex; flex: 0 0 auto; align-items: center; min-height: 32px; color: var(--text-secondary); font-weight: 400; text-decoration: none; }
 .shop-admin-buy:hover { color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; }
 .shop-admin-variants { min-width: 0; align-self: start; }
+.shop-admin-pricing { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px; margin: 0 0 20px; padding: 14px 16px; border: 1px solid #cfe2f8; border-radius: 10px; background: #f4f9ff; color: var(--text-secondary); font-size: 13px; }
+.shop-admin-pricing-toggle,
+.shop-admin-profit-floor { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 600; }
+.shop-admin-pricing-toggle input { width: 17px; height: 17px; accent-color: #1677ff; }
+.shop-admin-profit-floor input { width: 82px; min-height: 34px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 7px; background: #fff; font: inherit; }
+.shop-admin-pricing small { flex-basis: 100%; font-size: 12px; line-height: 1.65; }
+.shop-admin-price > small { display: block; margin-top: 5px; color: #2763a5; font-size: 11px; }
 .shop-admin-row { position: relative; min-width: 0; padding: 12px 24px; }
 .shop-admin-row + .shop-admin-row { border-top: 1px solid #f0f0ec; }
 .shop-admin-row:hover { background: #fafbf9; }
@@ -174,6 +181,8 @@ a.shop-source-chip:hover { border-color: var(--border-strong); color: var(--text
 .shop-admin-row .shop-admin-affix { border-color: #e1e5df; border-radius: 8px; background: #fff; color: var(--text-tertiary); }
 .shop-admin-row .shop-admin-affix input { min-height: 38px; border-radius: 8px; font-size: 15px; font-weight: 600; }
 .shop-admin-row .shop-admin-affix input::placeholder { color: var(--text-tertiary); font-size: 12px; font-weight: 400; }
+.shop-admin-row .shop-admin-affix.is-automatic { border-color: #b8d5f5; background: #f4f9ff; }
+.shop-admin-row .shop-admin-affix.is-automatic input:disabled { opacity: 1; color: #185da8; -webkit-text-fill-color: #185da8; }
 .shop-admin-row .shop-admin-promo .shop-admin-affix:has(input:not(:placeholder-shown)) { border-color: #eadfd1; background: #fcf9f5; color: #90633d; }
 .shop-admin-row .shop-admin-promo input:not(:placeholder-shown) { color: #90633d; }
 .shop-admin-row .shop-admin-affix:focus-within,

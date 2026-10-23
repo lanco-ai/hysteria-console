@@ -96,9 +96,10 @@ async function box(locator) {
         return failures;
       });
       assert.deepEqual(problems, [], `layout at ${width}px`);
-      const regular = await box(sourceProduct.locator('.shop-admin-margin strong').first());
-      const promo = await box(sourceProduct.locator('.shop-admin-margin small').filter({ hasText: '优惠 ¥10.50' }));
-      assert(promo.y >= regular.y + regular.height - 1, 'promotional profit needs its own line');
+      await expect(sourceProduct.locator('.shop-admin-margin strong').first()).toHaveText('¥10.50');
+      const effective = await box(sourceProduct.locator('.shop-admin-margin strong').first());
+      const regular = await box(sourceProduct.locator('.shop-admin-margin small').filter({ hasText: '原价毛利 ¥20.50' }));
+      assert(regular.y >= effective.y + effective.height - 1, 'regular margin stays below effective margin');
       if (width <= 768) {
         const heading = await box(sourceProduct.locator('.shop-admin-product-header'));
         const firstRow = await box(sourceProduct.locator('.shop-admin-row').first());

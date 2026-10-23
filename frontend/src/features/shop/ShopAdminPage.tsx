@@ -6,7 +6,7 @@ import { ShopProcurement } from './ShopProcurement';
 import { ShopInventory, useInventorySession, type StockedProduct } from './ShopInventory';
 
 // promo_price_cents: the 优惠价 (学生价, 限时价…) under the selling price, for the buyers it applies to.
-type Setting = { price_cents: number | null; published: boolean; promo_price_cents?: number | null };
+type Setting = { price_cents: number | null; published: boolean; promo_price_cents?: number | null; pricing?: { mode: 'cost_plus'; profit_cents: number } | null };
 // What the storefront shows with a product: the name of its 优惠价, units sold, and how long it is marked 新品.
 type Display = Record<string, { badge: string; sold: number; new_until?: number }>;
 // The storefront announcement: the merchant's note and the unlisted products buyers can ask for.
@@ -14,13 +14,13 @@ type Announcement = { text: string; items: string[] };
 type LocalNames = { products: Record<string, string>; variants: Record<string, string> };
 // buy_url, provider and category come only with the administrator's view: where each item is bought,
 // from which feed, and the storefront category it belongs to.
-type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; public_label?: string; cost_cents: number; available: boolean; buy_url?: string; provider?: string; category?: string };
+type SourceItem = { key: string; product_id: string; title: string; public_title?: string; label: string; public_label?: string; cost_cents: number; available: boolean; archived?: boolean; buy_url?: string; provider?: string; category?: string };
 type ProductCopy = Record<string, { description: string; after_sales: string }>;
 // site, supplier and covers come with the administrator's view only; this code is public and names no supplier.
 type SourceStatus = { last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number; enabled?: boolean; can_read?: boolean; site?: string; supplier?: string; covers?: string };
 type RemovedSource = Pick<SourceStatus, 'supplier' | 'covers' | 'site' | 'can_read'> & { can_add: boolean };
 type Merchant = { inventory_items?: SourceItem[]; inventory?: Record<string, number>; removed_sources?: Record<string, RemovedSource>; source_enabled?: Record<string, boolean>; sources?: Record<string, SourceStatus>; products?: ProductCopy; display?: Display; announcement?: Announcement; automatic_sold?: Record<string, number>; local_names?: Partial<LocalNames>; stats?: { site: number; products: Record<string, number> }; revision: number; telegram: string; wechat?: string; skus: Record<string, Setting>; items: SourceItem[]; last_success: number | null; error: string | null; is_stale: boolean; cooldown_seconds: number; retry_after_seconds: number };
-type Draft = Record<string, { price: string; published: boolean; promo: string }>;
+type Draft = Record<string, { price: string; published: boolean; promo: string; automatic: boolean; profit: string }>;
 type DisplayDraft = Record<string, { badge: string; sold: string; newUntil: number }>;
 type Brand = 'GPT' | 'Claude' | 'Grok' | 'Gemini' | 'X' | 'Muse AI' | '多邻国' | '短信接码' | 'VPN';
 type Filter = 'all' | 'published' | 'unpublished' | 'unpriced' | 'soldout';
@@ -31,7 +31,8 @@ type Plan = { key: string; title: string; products: SupplierProduct[]; best: Sup
 const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多邻国', '短信接码', 'VPN'];
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
 const EMPTY_COPY = { description: '', after_sales: '' };
-const EMPTY_DRAFT = { price: '', published: false, promo: '' };
+const EMPTY_DRAFT = { price: '', published: false, promo: '', automatic: false, profit: '5.00' };
+const DYNAMIC_PRICING_SKU = '2000000000001:1';
 const EMPTY_DISPLAY = { badge: '', sold: '', newUntil: 0 };
 const EMPTY_ANNOUNCEMENT: Announcement = { text: '', items: [] };
 // How long a product stays 新品 when marked.
@@ -83,9 +84,17 @@ function storedBrand(): Brand | null {
   try { return BRANDS.find(brand => brand === localStorage.getItem(BRAND_KEY)) ?? null; } catch { return null; }
 }
 function priceText(cents: number | null | undefined) { return cents == null ? '' : money(cents).slice(1); }
+// Preview only; the server independently calculates the authoritative selling price.
+function costPlusPrice(cost: number, profit: number | null) {
+  if (!Number.isInteger(cost) || cost <= 0 || profit === null || profit < 500) return null;
+  const floor = cost + profit;
+  const remainder = floor % 100;
+  const rounded = floor - remainder + (remainder === 0 ? 0 : remainder <= 88 ? 88 : 99);
+  return rounded <= 100_000_000 ? rounded : null;
+}
 function draftFor(value: Merchant): Draft {
   const draft: Draft = {};
-  for (const [key, setting] of Object.entries(value.skus)) draft[key] = { price: priceText(setting.price_cents), published: setting.published, promo: priceText(setting.promo_price_cents) };
+  for (const [key, setting] of Object.entries(value.skus)) draft[key] = { price: priceText(setting.price_cents), published: setting.published, promo: priceText(setting.promo_price_cents), automatic: Boolean(setting.pricing), profit: priceText(setting.pricing?.profit_cents ?? 500) };
   for (const item of value.items) draft[item.key] ??= { ...EMPTY_DRAFT };
   return draft;
 }
@@ -286,6 +295,11 @@ export function ShopAdminPage() {
       const promo = value.promo === '' ? null : priceCents(value.promo);
       if (value.promo !== '' && (promo === null || price === null || promo >= price)) { setError('优惠价需低于售价（最多两位小数）；不做优惠可以留空。'); return; }
       skus[key] = { price_cents: price, published: value.published, ...(promo === null ? {} : { promo_price_cents: promo }) };
+      if (key === DYNAMIC_PRICING_SKU) {
+        const profit = priceCents(value.profit);
+        if (value.automatic && (profit === null || profit < 500)) { setError('动态定价的最低毛利不能低于 ¥5，请填写有效金额。'); return; }
+        skus[key].pricing = value.automatic ? { mode: 'cost_plus', profit_cents: profit! } : null;
+      }
     }
     const shown: Display = {};
     for (const [productId, value] of Object.entries(display)) {
@@ -349,7 +363,9 @@ export function ShopAdminPage() {
   const priceChanged = (key: string) => {
     const value = draft[key];
     return value !== undefined && (value.published !== (saved[key]?.published ?? false) || draftCents(value.price) !== (saved[key]?.price_cents ?? null)
-      || draftCents(value.promo) !== (saved[key]?.promo_price_cents ?? null));
+      || draftCents(value.promo) !== (saved[key]?.promo_price_cents ?? null)
+      || value.automatic !== Boolean(saved[key]?.pricing)
+      || (value.automatic && draftCents(value.profit) !== saved[key]?.pricing?.profit_cents));
   };
   const changed = (key: string) => priceChanged(key) || nameChanged('variants', key);
   const displayChanged = (productId: string) => {
@@ -502,7 +518,10 @@ export function ShopAdminPage() {
             {plans.map(plan => {
               const planItems = plan.products.flatMap(product => product.rows);
               const publishedRows = planItems.filter(item => isEnabled(providerOf(item)) && saved[item.key]?.published && saved[item.key]?.price_cents != null);
-              const prices = publishedRows.map(item => saved[item.key]!.price_cents!);
+              const prices = publishedRows.map(item => {
+                const setting = saved[item.key]!;
+                return setting.pricing ? costPlusPrice(item.cost_cents, setting.pricing.profit_cents) : setting.promo_price_cents ?? setting.price_cents;
+              }).filter((price): price is number => price !== null);
               const sellers = new Set(publishedRows.map(item => providerOf(item))).size;
               const comparable = new Set(plan.products.filter(product => product.enabled).map(product => product.provider)).size > 1;
               return <article key={plan.key} className="shop-plan" aria-label={plan.title} hidden={!planItems.some(visible)}>
@@ -535,7 +554,7 @@ export function ShopAdminPage() {
                           {!product.enabled ? <span className="badge shop-admin-source-off">来源已停用 · 前台隐藏</span> : product.stale ? <span className="badge warn">价格待更新</span> : null}
                           <span className="shop-admin-product-flags">
                             {shown.newUntil > nowSeconds() ? <span className="shop-new-badge">新品</span> : null}
-                            {shown.badge.trim() ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
+                            {shown.badge.trim() && !product.rows.some(item => draft[item.key]?.automatic) ? <span className="shop-promo-badge">{shown.badge.trim()}</span> : null}
                             {sold ? <span>已售 {sold.toLocaleString('zh-CN')}</span> : null}
                             {views ? <span>浏览 {views.toLocaleString('zh-CN')}</span> : null}
                             {published && !filled ? <span className="is-warn">缺说明</span> : null}
@@ -548,12 +567,23 @@ export function ShopAdminPage() {
                         {first?.buy_url ? <a className="shop-admin-buy" href={first.buy_url} target="_blank" rel="noopener noreferrer" aria-label={`去来源购买 ${product.title}`}>去进货<span aria-hidden="true"> ↗</span></a> : null}
                       </div>
                     </header>
+                    {product.rows.filter(item => item.key === DYNAMIC_PRICING_SKU).map(item => {
+                      const value = draft[item.key] ?? EMPTY_DRAFT;
+                      return <div className="shop-admin-pricing" key={item.key}>
+                        <label className="shop-admin-pricing-toggle"><input type="checkbox" checked={value.automatic} disabled={busy} aria-label={`动态定价 ${item.key}`} onChange={event => edit(item.key, { automatic: event.target.checked })}/>动态定价</label>
+                        {value.automatic ? <><label className="shop-admin-profit-floor">每份最低毛利 ¥<input aria-label={`最低毛利 ${item.key}`} inputMode="decimal" value={value.profit} disabled={busy} onChange={event => edit(item.key, { profit: event.target.value })}/></label><span>按同步成本加毛利，向上取整至整数、.88 或 .99。</span><small>成本约每 15 分钟同步；固定售价和优惠价暂不生效，切回手动时恢复。成本失效时暂停购买。</small></> : <span>开启后随同步成本调价，每份至少赚 ¥5。</span>}
+                      </div>;
+                    })}
                     <div className="shop-admin-variants">
-                      <div className="shop-admin-columns" aria-hidden="true"><span/><span>成本</span><span>售价（元）</span><span>{shown.badge.trim() || '优惠价'}（元）</span><span>毛利 / 毛利率</span><span>上架</span></div>
+                      <div className="shop-admin-columns" aria-hidden="true"><span/><span>成本</span><span>售价（元）</span><span>{shown.badge.trim() || '优惠价'}（元）</span><span>成交毛利 / 毛利率</span><span>上架</span></div>
                       {[...product.rows].sort((a, b) => a.cost_cents - b.cost_cents).map(item => {
                         const value = draft[item.key] ?? EMPTY_DRAFT;
-                        const margin = marginOf(item.cost_cents, value.price, value.published);
-                        const promoMargin = value.promo ? marginOf(item.cost_cents, value.promo, false) : null;
+                        const quote = value.automatic ? costPlusPrice(item.cost_cents, priceCents(value.profit)) : null;
+                        const shownPrice = value.automatic ? priceText(quote) : value.price;
+                        const promo = !value.automatic && value.promo && priceCents(value.promo) !== null && (priceCents(value.promo) ?? 0) < (priceCents(value.price) ?? 0) ? value.promo : '';
+                        const unavailableQuote = value.automatic && (quote === null || product.stale || item.archived);
+                        const margin = unavailableQuote ? { tone: 'empty', amount: '待同步成本', rate: '' } : marginOf(item.cost_cents, promo || shownPrice, value.published);
+                        const regularMargin = promo ? marginOf(item.cost_cents, value.price, value.published) : null;
                         return <article key={item.key} className={`shop-admin-row${changed(item.key) ? ' is-changed' : ''}${item.available ? '' : ' is-soldout'}`} hidden={!visible(item)}>
                           <div className="shop-admin-spec">
                             <strong>{item.public_label ?? item.label}</strong>
@@ -562,12 +592,12 @@ export function ShopAdminPage() {
                             {(item.available || !product.enabled) && !changed(item.key) ? null : <small>{product.enabled && !item.available ? <span className="badge warn">来源售罄</span> : null}{changed(item.key) ? <span className="badge shop-admin-changed">已修改</span> : null}</small>}
                           </div>
                           <div className="shop-admin-cost"><span className="shop-admin-mobile-label">成本</span><strong>{money(item.cost_cents)}</strong></div>
-                          <label className="shop-admin-price"><span className="shop-admin-mobile-label">售价</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`售价 ${item.key}`} aria-invalid={margin.tone === 'invalid' || undefined} inputMode="decimal" autoComplete="off" value={value.price} disabled={busy} placeholder="待填写" onChange={event => edit(item.key, { price: event.target.value })}/></span></label>
-                          <label className="shop-admin-promo"><span className="shop-admin-mobile-label">{shown.badge.trim() || '优惠价'}</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`优惠价 ${item.key}`} inputMode="decimal" autoComplete="off" value={value.promo} disabled={busy} placeholder="不优惠" onChange={event => edit(item.key, { promo: event.target.value })}/></span></label>
+                          <label className="shop-admin-price"><span className="shop-admin-mobile-label">售价</span><span className={`shop-admin-affix${value.automatic ? ' is-automatic' : ''}`}><span aria-hidden="true">¥</span><input aria-label={`售价 ${item.key}`} aria-invalid={margin.tone === 'invalid' || undefined} inputMode="decimal" autoComplete="off" value={shownPrice} disabled={busy || value.automatic} placeholder={value.automatic ? '待同步' : '待填写'} onChange={event => edit(item.key, { price: event.target.value })}/></span>{value.automatic ? <small>{unavailableQuote ? '成本待更新 · 暂停购买' : '自动成交价'}</small> : null}</label>
+                          <label className="shop-admin-promo"><span className="shop-admin-mobile-label">{shown.badge.trim() || '优惠价'}</span><span className="shop-admin-affix"><span aria-hidden="true">¥</span><input aria-label={`优惠价 ${item.key}`} inputMode="decimal" autoComplete="off" value={value.automatic ? '' : value.promo} disabled={busy || value.automatic} placeholder={value.automatic ? '动态定价中' : '不优惠'} onChange={event => edit(item.key, { promo: event.target.value })}/></span></label>
                           <div className={`shop-admin-margin is-${margin.tone}`}>
                             <span className="shop-admin-mobile-label">毛利</span>
                             <div className="shop-admin-margin-main"><strong>{margin.amount}</strong>{margin.rate ? <span>{margin.rate}</span> : null}</div>
-                            {margin.rate && promoMargin && promoMargin.tone !== 'invalid' && promoMargin.tone !== 'empty' ? <small className={promoMargin.tone === 'loss' ? 'is-loss' : undefined}>优惠 {promoMargin.amount}</small> : null}
+                            {regularMargin?.rate ? <small>原价毛利 {regularMargin.amount}</small> : null}
                           </div>
                           <label className="shop-publish"><input aria-label={`上架 ${item.key}`} className="shop-admin-switch" type="checkbox" checked={value.published} disabled={busy} onChange={event => edit(item.key, { published: event.target.checked })}/><span>上架</span></label>
                         </article>;
