@@ -144,7 +144,7 @@ const { expect } = require('@playwright/test');
     await expect.poll(async () => (await views()).products.find(product => product.id === '2').views).toBe(1);
     assert.deepEqual((await views()).stats, { views: 1, sold: 36 });
     await page.goto(`${base}/`);
-    await expect(page.locator('.shop-store-stats')).toHaveText('累计浏览 1 人次 · 累计售出 36 件');
+    await expect(page.getByRole('group', { name: '店铺数据' }).locator('.shop-store-stat')).toHaveText(['累计浏览 1 人次', '累计售出 36 件']);
     await expect(row.locator('.shop-product-stats')).toHaveText('1 人看过 · 已售 36 件');
     assert.deepEqual((await views()).stats, { views: 1, sold: 36 });
 

@@ -71,7 +71,7 @@ body.page-portal {
 .shop-hero { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px 24px; margin-bottom: 18px; }
 .shop-hero h1 { font-size: 26px; letter-spacing: -.02em; }
 .shop-hero-text > p { margin-top: 6px; color: var(--text-secondary); font-size: 14px; }
-.shop-hero-text > .shop-store-stats { margin-top: 4px; }
+.shop-hero-text > .shop-store-stats { margin-top: 12px; }
 .shop-hero-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 /* The Plus referral offer is separate from the current purchase price. */
 .shop-referral-link { display: grid; align-items: center; gap: 10px; border: 1px solid #ead9b9; border-radius: 12px; background: linear-gradient(110deg, #fff9ed, #fffdf8); color: #765322; text-decoration: none; }
@@ -221,12 +221,13 @@ body.page-portal {
 .shop-product-row .shop-referral-teaser .shop-referral-link-action { display: none; }
 .shop-product-buy { display: grid; gap: 8px; margin-top: auto; padding-top: 12px; border-top: 1px dashed #e6e8ec; }
 /* The price a buyer pays leads, in red when an 优惠价 lowers it, with its label before and the regular price struck after. */
-.shop-product-price { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 6px; min-width: 0; color: #23262c; font-variant-numeric: tabular-nums; }
+.shop-product-price { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 6px; min-width: 0; color: #23262c; font-variant-numeric: tabular-nums; }
+.shop-product-amount { display: inline-flex; align-items: baseline; flex: 0 0 auto; gap: 4px; white-space: nowrap; }
 .shop-product-price strong { font-size: 22px; font-weight: 750; letter-spacing: -.01em; line-height: 1.2; white-space: nowrap; }
 .shop-product-price strong small { font-size: 14px; font-weight: 650; letter-spacing: 0; }
 .shop-product-price strong.is-promo { color: #e0402a; }
 .shop-product-price .shop-promo-badge { height: 20px; padding: 0 6px; border-radius: 5px; font-size: 11px; }
-.shop-product-from { margin-left: -3px; color: #73757d; font-size: 12px; font-weight: 600; }
+.shop-product-from { color: #73757d; font-size: 12px; font-weight: 600; line-height: 1.2; }
 .shop-product-price s { color: #9a9ca3; font-size: 12px; }
 .is-unavailable .shop-product-price strong { color: #8a8d95; }
 .is-unavailable .shop-product-price .shop-promo-badge { background: #c3c6cc; box-shadow: none; }
@@ -488,7 +489,11 @@ h1 > .shop-new-badge { margin-right: 8px; vertical-align: 4px; }
 .shop-cart-row .shop-promo-price { margin-top: 6px; }
 .shop-promo-total { flex-basis: 100%; margin-top: 4px; color: #e0402a; font-size: 14px; font-weight: 600; text-align: right; }
 .shop-cart-footer .shop-promo-total { display: block; text-align: left; }
-.shop-store-stats { margin: 6px 0 0; color: #7b7d85; font-size: 13px; font-variant-numeric: tabular-nums; }
+.shop-store-stats { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-variant-numeric: tabular-nums; }
+.shop-store-stat { display: inline-flex; align-items: baseline; gap: 6px; padding: 7px 12px; border: 1px solid #d8e5f6; border-radius: 10px; background: #eef5ff; color: #466180; font-size: 12px; line-height: 1.4; white-space: nowrap; }
+.shop-store-stat strong { color: #245798; font-size: 20px; font-weight: 750; line-height: 1.2; }
+.shop-store-stat.is-sold { border-color: #efd7b7; background: #fff5e9; color: #8c5c2e; }
+.shop-store-stat.is-sold strong { color: #9b4c13; }
 .shop-toolbar-end { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 10px; }
 .shop-contact { display: inline-flex; align-items: center; gap: 8px; padding: 4px 6px 4px 12px; border: 1px solid #c9e7d7; border-radius: var(--radius-pill); background: #effaf4; color: #1f6f4b; font-size: 13px; }
 .shop-contact strong { font-variant-numeric: tabular-nums; }

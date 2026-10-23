@@ -59,7 +59,7 @@ test('card advertises only available offers; selected unavailable detail remains
 test('long valid offer label never intersects the card cart button', async () => preview(async (page, data) => {
   data.products[0].badge = '开学季学生优惠价';
   data.products[0].variants[0].available = true;
-  for (const width of [1024, 1440, 768, 390]) {
+  for (const width of [1024, 1440, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(process.env.PREVIEW_BASE_URL);
     const card = page.locator('.shop-product-row');
@@ -67,6 +67,23 @@ test('long valid offer label never intersects the card cart button', async () =>
     await expect(offer.locator('.shop-promo-badge')).toHaveText('开学季学生优惠价');
     await expect(offer.locator('s')).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
+    // “起” travels with the amount, including when a long badge makes the row wrap.
+    const amount = await offer.locator('strong').boundingBox();
+    const from = await offer.locator('.shop-product-from').boundingBox();
+    assert.ok(from.x >= amount.x + amount.width && from.y < amount.y + amount.height,
+      `price suffix shares the amount's line at ${width}px`);
+    const baselines = await offer.evaluate(el => {
+      const markers = ['strong', '.shop-product-from'].map(selector => {
+        const marker = document.createElement('span');
+        marker.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+        el.querySelector(selector).append(marker);
+        return marker;
+      });
+      const result = markers.map(marker => marker.getBoundingClientRect().top);
+      markers.forEach(marker => marker.remove());
+      return result;
+    });
+    assert.ok(Math.abs(baselines[0] - baselines[1]) < 1, `price suffix aligns with amount baseline at ${width}px`);
     const b = await card.locator('.shop-product-cart').boundingBox();
     const bounds = await card.boundingBox();
     // The label, the price and the struck regular price each stay inside the card and clear of the cart.
@@ -81,6 +98,28 @@ test('long valid offer label never intersects the card cart button', async () =>
       await page.screenshot({ path: path.join(process.env.REACT_SCREENSHOT_DIR, 'offer-1024.png'), fullPage: true });
     }
   }
+}));
+
+test('store totals emphasize the counts and wrap whole badges on small screens', async () => preview(async (page, data) => {
+  for (const stats of [{ views: 62, sold: 18 }, { views: 9999, sold: 9999 }, { views: 0, sold: 18 }, { views: 62, sold: 0 }]) {
+    data.stats = stats;
+    for (const width of [1440, 390, 320]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(process.env.PREVIEW_BASE_URL);
+      const totals = page.getByRole('group', { name: '店铺数据' });
+      await expect(totals.locator('.shop-store-stat')).toHaveCount(Number(Boolean(stats.views)) + Number(Boolean(stats.sold)));
+      await expect(totals.locator('strong')).toHaveText([stats.views, stats.sold].filter(Boolean).map(n => n.toLocaleString('zh-CN')));
+      for (const badge of await totals.locator('.shop-store-stat').all()) {
+        const fits = await badge.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
+        const box = await badge.boundingBox();
+        assert.ok(fits && box.x >= 0 && box.x + box.width <= width, `store total fits ${width}px`);
+      }
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `store totals fit ${width}px`);
+    }
+  }
+  data.stats = { views: 0, sold: 0 };
+  await page.reload();
+  await expect(page.getByRole('group', { name: '店铺数据' })).toHaveCount(0);
 }));
 
 test('an expired last new product returns the new filter to the complete catalog', async () => preview(async (page, data) => {
