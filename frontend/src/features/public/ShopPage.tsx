@@ -199,11 +199,13 @@ export function ShopPage() {
     <header className="shop-hero">
       <div className="shop-hero-text">
         <h1 id="shop-catalog-title" tabIndex={-1}>商品目录</h1>
-        <p>AI 会员订阅 · 商家人工交付 · 确认后再付款</p>
-        {catalog?.stats && (catalog.stats.views || catalog.stats.sold) ? <div className="shop-store-stats" role="group" aria-label="店铺数据">
-          {catalog.stats.views ? <span className="shop-store-stat"><span>累计浏览 </span><strong>{countText(catalog.stats.views)}</strong><span> 人次</span></span> : null}
-          {catalog.stats.sold ? <span className="shop-store-stat is-sold"><span>累计售出 </span><strong>{countText(catalog.stats.sold)}</strong><span> 件</span></span> : null}
-        </div> : null}
+        <div className="shop-hero-summary">
+          <p>AI 会员订阅 · 商家人工交付 · 确认后再付款</p>
+          {catalog?.stats && (catalog.stats.views || catalog.stats.sold) ? <div className="shop-store-stats" role="group" aria-label="店铺数据">
+            {catalog.stats.views ? <span className="shop-store-stat"><span>累计浏览 </span><strong>{countText(catalog.stats.views)}</strong><span> 人次</span></span> : null}
+            {catalog.stats.sold ? <span className="shop-store-stat is-sold"><span>累计售出 </span><strong>{countText(catalog.stats.sold)}</strong><span> 件</span></span> : null}
+          </div> : null}
+        </div>
       </div>
       <div className="shop-hero-actions"><WechatContact wechat={catalog?.wechat}/><a className="btn btn-secondary" href="/?view=cart">购物车（{cartCount}）</a></div>
     </header>
