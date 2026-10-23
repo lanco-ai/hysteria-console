@@ -32,7 +32,7 @@ const BRANDS: Brand[] = ['GPT', 'Claude', 'Grok', 'Gemini', 'X', 'Muse AI', '多
 const FILTERS: [Filter, string][] = [['all', '全部'], ['published', '已上架'], ['unpublished', '未上架'], ['unpriced', '待定价'], ['soldout', '来源售罄']];
 const EMPTY_COPY = { description: '', after_sales: '' };
 const EMPTY_DRAFT = { price: '', published: false, promo: '', automatic: false, profit: '5.00' };
-const DYNAMIC_PRICING_SKU = '2000000000001:1';
+const DYNAMIC_PRICING_MINIMUMS: Record<string, number> = { '2000000000001:1': 500, '2000000000003:1': 1000 };
 const EMPTY_DISPLAY = { badge: '', sold: '', newUntil: 0 };
 const EMPTY_ANNOUNCEMENT: Announcement = { text: '', items: [] };
 // How long a product stays 新品 when marked.
@@ -94,8 +94,8 @@ function costPlusPrice(cost: number, profit: number | null) {
 }
 function draftFor(value: Merchant): Draft {
   const draft: Draft = {};
-  for (const [key, setting] of Object.entries(value.skus)) draft[key] = { price: priceText(setting.price_cents), published: setting.published, promo: priceText(setting.promo_price_cents), automatic: Boolean(setting.pricing), profit: priceText(setting.pricing?.profit_cents ?? 500) };
-  for (const item of value.items) draft[item.key] ??= { ...EMPTY_DRAFT };
+  for (const [key, setting] of Object.entries(value.skus)) draft[key] = { price: priceText(setting.price_cents), published: setting.published, promo: priceText(setting.promo_price_cents), automatic: Boolean(setting.pricing), profit: priceText(setting.pricing?.profit_cents ?? DYNAMIC_PRICING_MINIMUMS[key] ?? 500) };
+  for (const item of value.items) draft[item.key] ??= { ...EMPTY_DRAFT, profit: priceText(DYNAMIC_PRICING_MINIMUMS[item.key] ?? 500) };
   return draft;
 }
 function displayFor(value: Merchant): DisplayDraft {
@@ -295,9 +295,10 @@ export function ShopAdminPage() {
       const promo = value.promo === '' ? null : priceCents(value.promo);
       if (value.promo !== '' && (promo === null || price === null || promo >= price)) { setError('优惠价需低于售价（最多两位小数）；不做优惠可以留空。'); return; }
       skus[key] = { price_cents: price, published: value.published, ...(promo === null ? {} : { promo_price_cents: promo }) };
-      if (key === DYNAMIC_PRICING_SKU) {
+      const minimum = DYNAMIC_PRICING_MINIMUMS[key];
+      if (minimum !== undefined) {
         const profit = priceCents(value.profit);
-        if (value.automatic && (profit === null || profit < 500)) { setError('动态定价的最低毛利不能低于 ¥5，请填写有效金额。'); return; }
+        if (value.automatic && (profit === null || profit < minimum)) { setError(`动态定价的最低毛利不能低于 ¥${minimum / 100}，请填写有效金额。`); return; }
         skus[key].pricing = value.automatic ? { mode: 'cost_plus', profit_cents: profit! } : null;
       }
     }
@@ -567,11 +568,11 @@ export function ShopAdminPage() {
                         {first?.buy_url ? <a className="shop-admin-buy" href={first.buy_url} target="_blank" rel="noopener noreferrer" aria-label={`去来源购买 ${product.title}`}>去进货<span aria-hidden="true"> ↗</span></a> : null}
                       </div>
                     </header>
-                    {product.rows.filter(item => item.key === DYNAMIC_PRICING_SKU).map(item => {
+                    {product.rows.filter(item => DYNAMIC_PRICING_MINIMUMS[item.key] !== undefined).map(item => {
                       const value = draft[item.key] ?? EMPTY_DRAFT;
                       return <div className="shop-admin-pricing" key={item.key}>
                         <label className="shop-admin-pricing-toggle"><input type="checkbox" checked={value.automatic} disabled={busy} aria-label={`动态定价 ${item.key}`} onChange={event => edit(item.key, { automatic: event.target.checked })}/>动态定价</label>
-                        {value.automatic ? <><label className="shop-admin-profit-floor">每份最低毛利 ¥<input aria-label={`最低毛利 ${item.key}`} inputMode="decimal" value={value.profit} disabled={busy} onChange={event => edit(item.key, { profit: event.target.value })}/></label><span>按同步成本加毛利，向上取整至整数、.88 或 .99。</span><small>成本约每 15 分钟同步；固定售价和优惠价暂不生效，切回手动时恢复。成本失效时暂停购买。</small></> : <span>开启后随同步成本调价，每份至少赚 ¥5。</span>}
+                        {value.automatic ? <><label className="shop-admin-profit-floor">每份最低毛利 ¥<input aria-label={`最低毛利 ${item.key}`} inputMode="decimal" value={value.profit} disabled={busy} onChange={event => edit(item.key, { profit: event.target.value })}/></label><span>按同步成本加毛利，向上取整至整数、.88 或 .99。</span><small>成本约每 15 分钟同步；固定售价和优惠价暂不生效，切回手动时恢复。成本失效时暂停购买。</small></> : <span>开启后随同步成本调价，每份至少赚 ¥{DYNAMIC_PRICING_MINIMUMS[item.key]! / 100}。</span>}
                       </div>;
                     })}
                     <div className="shop-admin-variants">

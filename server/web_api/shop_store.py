@@ -71,8 +71,8 @@ BACKOFF = 900
 MANUAL_COOLDOWN = 60
 # Plus renewal is arranged with the merchant even when its supplier has no stock.
 CONTACT_PURCHASE_SKUS = frozenset({'1:4'})
-# Only the merchant-approved Gemini SKU supports automatic cost-plus pricing.
-DYNAMIC_PRICING_SKU = '2000000000001:1'
+# Per-SKU minimums keep automatic pricing limited to the approved products.
+DYNAMIC_PRICING_MINIMUMS = {'2000000000001:1': 500, '2000000000003:1': 1000}
 REMOTE_SOURCES = frozenset({'gpt', 'anli', 'prodseller', 'lorry', 'fanai', 'sms', 'shop16688'})
 # Private source links waiting for an integration: no fetcher or product namespace.
 BOOKMARKED_SOURCES = frozenset({'wzyp'})
@@ -368,9 +368,9 @@ def validate_settings(value):
             raise ValueError('invalid SKU settings')
         pricing = item.get('pricing')
         if pricing is not None and (
-            key != DYNAMIC_PRICING_SKU or not isinstance(pricing, dict)
+            key not in DYNAMIC_PRICING_MINIMUMS or not isinstance(pricing, dict)
             or set(pricing) != {'mode', 'profit_cents'} or pricing['mode'] != 'cost_plus'
-            or not _integer(pricing['profit_cents'], 500, MAX_CENTS)
+            or not _integer(pricing['profit_cents'], DYNAMIC_PRICING_MINIMUMS[key], MAX_CENTS)
         ):
             raise ValueError('invalid dynamic pricing')
         # 优惠价 (学生价, 限时价…): shown under the price, for buyers it applies to; it must be lower.

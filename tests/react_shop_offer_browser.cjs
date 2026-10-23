@@ -122,6 +122,27 @@ test('store totals emphasize the counts and wrap whole badges on small screens',
   await expect(page.getByRole('group', { name: '店铺数据' })).toHaveCount(0);
 }));
 
+test('store totals refresh after counting the visit and poll later views and sales', async () => preview(async (page, data) => {
+  await page.clock.install();
+  data.stats = { views: 63, sold: 18 };
+  let completeVisit;
+  const visitPending = new Promise(resolve => { completeVisit = resolve; });
+  await page.route('**/api/v1/shop/visit', async route => {
+    await visitPending;
+    data.stats.views = 64;
+    await route.fulfill({ status: 204 });
+  });
+  await page.goto(process.env.PREVIEW_BASE_URL);
+  const totals = page.getByRole('group', { name: '店铺数据' }).locator('strong');
+  await expect(totals).toHaveText(['63', '18']);
+  completeVisit();
+  // No timer advancement or page reload: count completion triggers the update.
+  await expect(totals).toHaveText(['64', '18']);
+  data.stats = { views: 65, sold: 19 };
+  await page.clock.runFor(61_000);
+  await expect(totals).toHaveText(['65', '19']);
+}));
+
 test('an expired last new product returns the new filter to the complete catalog', async () => preview(async (page, data) => {
   const now = Date.now();
   await page.clock.install({ time: now });

@@ -493,6 +493,17 @@ def test_visits_count_each_visitor_once_a_day_for_the_shop_and_each_product_on_s
     assert set(stats['products']) == {'2'}
 
 
+def test_distinct_forwarded_visitors_increase_total_but_reload_does_not(tmp_path):
+    store, app = shop_app(tmp_path)
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        for address in ['192.0.2.1', '192.0.2.1', '192.0.2.2']:
+            response = client.post('/api/v1/shop/visit', json={},
+                                   headers={'Sec-Fetch-Site': 'same-origin', 'X-Real-IP': address})
+            assert response.status_code == 204
+        assert client.get('/api/v1/shop/catalog').json()['stats']['views'] == 2
+        assert store.stats.read()['site'] == 2
+
+
 def test_unreadable_statistics_never_break_the_catalog(tmp_path):
     store, app = shop_app(tmp_path)
     (tmp_path / 'stats.json').write_text('{"broken":')

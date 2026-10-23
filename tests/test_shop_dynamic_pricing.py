@@ -1,4 +1,4 @@
-"""Authoritative Gemini pricing, quote freshness and backward-compatible settings."""
+"""Authoritative cost-plus pricing, quote freshness and backward-compatible settings."""
 import asyncio
 import copy
 import json
@@ -6,10 +6,14 @@ import json
 import pytest
 
 from test_shop_store import make_store, prodseller_rows
+from test_shop_prodseller_duolingo import products as duolingo_products
 from web_api.shop_inventory import ShopInventory
+from web_api.shop_prodseller_source import normalize_products
 from web_api.shop_source import MAX_CENTS
-from web_api.shop_store import DYNAMIC_PRICING_SKU as SKU, cost_plus_price, validate_settings
+from web_api.shop_store import DYNAMIC_PRICING_MINIMUMS, cost_plus_price, validate_settings
 
+SKU = '2000000000001:1'
+DUO_SKU = '2000000000003:1'
 RULE = {'mode': 'cost_plus', 'profit_cents': 500}
 MANUAL = {'price_cents': 1000, 'promo_price_cents': 700, 'published': True}
 
@@ -42,6 +46,41 @@ def test_invalid_rules_rejected(rule):
 def test_rule_cannot_be_enabled_for_other_products():
     with pytest.raises(ValueError):
         validate_settings({'revision': 0, 'telegram': '', 'skus': {'1:4': {**MANUAL, 'pricing': RULE}}})
+
+
+@pytest.mark.parametrize('profit', [500, 999])
+def test_duolingo_requires_ten_yuan_minimum(profit):
+    with pytest.raises(ValueError):
+        validate_settings({'revision': 0, 'telegram': '', 'skus': {
+            DUO_SKU: {**MANUAL, 'pricing': {**RULE, 'profit_cents': profit}}}})
+    assert DYNAMIC_PRICING_MINIMUMS == {SKU: 500, DUO_SKU: 1000}
+
+
+def test_duolingo_cost_plus_ten_changes_with_cost_without_overriding_supplier_stock(tmp_path):
+    async def run():
+        now, cost, available = [1000], [209], [False]
+
+        async def feed():
+            return [{**row, **({'cost_cents': cost[0], 'available': available[0]} if row['key'] == DUO_SKU else {})}
+                    for row in prodseller_rows() + normalize_products(duolingo_products())]
+
+        store = make_store(tmp_path, prodseller_fetcher=feed, clock=lambda: now[0])
+        await store.refresh()
+        gemini = {**MANUAL, 'pricing': RULE}
+        await store.update({'revision': 0, 'telegram': '', 'skus': {
+            SKU: gemini, DUO_SKU: {**MANUAL, 'pricing': {**RULE, 'profit_cents': 1000}}},
+            'display': {'2000000000003': {'badge': '学生价', 'sold': 0}}})
+        saved = store.settings_path.read_bytes()
+        for next_cost, next_stock, expected in [(209, False, 1288), (1522, True, 2588), (1089, True, 2099)]:
+            cost[0], available[0], now[0] = next_cost, next_stock, now[0] + 901
+            await store.refresh()
+            product = next(p for p in (await store.public())['products'] if p['id'] == '2000000000003')
+            variant, = product['variants']
+            assert (variant['price_cents'], variant['promo_price_cents'], variant['available']) == (expected, None, next_stock)
+            assert variant['price_cents'] - next_cost >= 1000 and product['badge'] == ''
+            assert store.settings_path.read_bytes() == saved
+            assert (await store.admin())['skus'][SKU] == gemini
+    asyncio.run(run())
 
 
 def test_live_cost_projection_ignores_fixed_promo_preserves_manual_and_old_clients(tmp_path):

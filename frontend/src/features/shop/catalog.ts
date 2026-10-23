@@ -35,11 +35,11 @@ export function countText(value: number): string {
   return value >= 10_000 ? `${(Math.floor(value / 1000) / 10).toFixed(1).replace(/\.0$/, '')}万` : value.toLocaleString('zh-CN');
 }
 /** Tell the shop someone opened it (and which product); it counts each visitor once a day. */
-export function reportVisit(product: string | null): void {
-  void fetch('/api/v1/shop/visit', {
+export async function reportVisit(product: string | null): Promise<boolean> {
+  return fetch('/api/v1/shop/visit', {
     method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(product ? { product } : {}),
-  }).catch(() => undefined);
+  }).then(response => response.ok).catch(() => false);
 }
 export function priceCents(value: string): number | null {
   if (!/^\d{1,7}(?:\.\d{1,2})?$/.test(value)) return null;

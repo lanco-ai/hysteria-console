@@ -160,8 +160,12 @@ export function ShopPage() {
     const timer = window.setInterval(() => void load(), 60_000);
     return () => { clearInterval(timer); requestId.current += 1; };
   }, [load]);
-  // One page view for the shop, and for the product when one is open.
-  useEffect(() => { reportVisit(productId); }, [productId]);
+  // Refresh after counting: the first catalog request can arrive before the visit write.
+  useEffect(() => {
+    let active = true;
+    void reportVisit(productId).then(recorded => { if (active && recorded) void load(); });
+    return () => { active = false; };
+  }, [productId, load]);
   // Reloads and history returns from SMS wait until products give the page height.
   useLayoutEffect(() => {
     if (catalog || error) restoreScrollPosition();
